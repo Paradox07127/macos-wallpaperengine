@@ -11,12 +11,9 @@ struct LiteSKUSmokeTests {
     func liteCatalogSurfaceArea() {
         let capabilities = ProductCapabilities.lite
         #expect(capabilities.sku == .lite)
-        #expect(capabilities.selectableWallpaperTypes == [.video, .html])
         #expect(capabilities.canRender(.video))
         #expect(capabilities.canRender(.html))
         #expect(!capabilities.canRender(.scene))
-        #expect(capabilities.selectableWallpaperModes.contains(.playlist))
-        #expect(capabilities.selectableWallpaperModes.contains(.schedule))
         #expect(capabilities.enabledFeatures.contains(.appleAerials))
         #expect(capabilities.enabledFeatures.contains(.scheduleAutomation))
         #expect(capabilities.enabledFeatures.contains(.playlists))

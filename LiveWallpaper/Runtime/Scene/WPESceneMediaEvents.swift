@@ -1,6 +1,5 @@
 #if !LITE_BUILD
 import Foundation
-import JavaScriptCore
 import LiveWallpaperProWPE
 import Metal
 
@@ -157,31 +156,6 @@ extension [WPESceneMediaEvent] {
     }
 }
 
-struct WPESceneMediaHandlerSet: Sendable, Equatable {
-    var playback = false
-    var properties = false
-    var thumbnail = false
-    var timeline = false
-
-    init() {}
-
-    init(in context: JSContext) {
-        playback = wpeExportsFunction(named: "mediaPlaybackChanged", in: context)
-        properties = wpeExportsFunction(named: "mediaPropertiesChanged", in: context)
-        thumbnail = wpeExportsFunction(named: "mediaThumbnailChanged", in: context)
-        timeline = wpeExportsFunction(named: "mediaTimelineChanged", in: context)
-    }
-
-    func handles(_ event: WPESceneMediaEvent) -> Bool {
-        switch event {
-        case .playbackChanged: playback
-        case .propertiesChanged: properties
-        case .thumbnailChanged: thumbnail
-        case .timelineChanged: timeline
-        }
-    }
-}
-
 struct WPESceneMediaSnapshot: Sendable, Equatable {
     var state: WPESceneMediaPlaybackState
     var properties: WPESceneMediaProperties?
@@ -225,62 +199,6 @@ struct WPESceneMediaSnapshot: Sendable, Equatable {
         self.thumbnail = thumbnail
         self.timeline = timeline
     }
-}
-
-func wpeMediaEventObject(_ event: WPESceneMediaEvent, in context: JSContext) -> JSValue {
-    guard let object = JSValue(newObjectIn: context) else {
-        return JSValue(undefinedIn: context) ?? JSValue(nullIn: context)!
-    }
-    switch event {
-    case let .playbackChanged(state):
-        object.setObject(state.rawValue, forKeyedSubscript: "state" as NSString)
-    case let .thumbnailChanged(thumbnail):
-        object.setObject(thumbnail.hasThumbnail, forKeyedSubscript: "hasThumbnail" as NSString)
-        object.setObject(wpeVec3(thumbnail.primaryColor, in: context), forKeyedSubscript: "primaryColor" as NSString)
-        object.setObject(wpeVec3(thumbnail.secondaryColor, in: context), forKeyedSubscript: "secondaryColor" as NSString)
-        object.setObject(wpeVec3(thumbnail.tertiaryColor, in: context), forKeyedSubscript: "tertiaryColor" as NSString)
-        object.setObject(wpeVec3(thumbnail.textColor, in: context), forKeyedSubscript: "textColor" as NSString)
-        object.setObject(
-            wpeVec3(thumbnail.highContrastColor, in: context),
-            forKeyedSubscript: "highContrastColor" as NSString
-        )
-    case let .timelineChanged(timeline):
-        object.setObject(timeline.position, forKeyedSubscript: "position" as NSString)
-        object.setObject(timeline.duration, forKeyedSubscript: "duration" as NSString)
-    case .propertiesChanged(nil):
-        break
-    case let .propertiesChanged(properties?):
-        object.setObject(properties.title, forKeyedSubscript: "title" as NSString)
-        object.setObject(properties.artist, forKeyedSubscript: "artist" as NSString)
-        object.setObject(properties.subTitle, forKeyedSubscript: "subTitle" as NSString)
-        object.setObject(properties.albumTitle, forKeyedSubscript: "albumTitle" as NSString)
-        object.setObject(properties.albumArtist, forKeyedSubscript: "albumArtist" as NSString)
-        object.setObject(properties.genres, forKeyedSubscript: "genres" as NSString)
-        object.setObject(properties.contentType, forKeyedSubscript: "contentType" as NSString)
-    }
-    return object
-}
-
-/// Colours must arrive as real Vec3 instances, not plain {x,y,z} bags: corpus scenes call vector methods on them.
-private func wpeVec3(_ value: SIMD3<Double>, in context: JSContext) -> JSValue {
-    if let constructor = context.objectForKeyedSubscript("Vec3"),
-       !constructor.isUndefined,
-       let vector = constructor.construct(withArguments: [value.x, value.y, value.z]) {
-        return vector
-    }
-    // Only reachable if the sandbox failed to install; components still read.
-    guard let object = JSValue(newObjectIn: context) else {
-        return JSValue(undefinedIn: context) ?? JSValue(nullIn: context)!
-    }
-    object.setObject(value.x, forKeyedSubscript: "x" as NSString)
-    object.setObject(value.y, forKeyedSubscript: "y" as NSString)
-    object.setObject(value.z, forKeyedSubscript: "z" as NSString)
-    return object
-}
-
-func wpeExportsFunction(named name: String, in context: JSContext) -> Bool {
-    guard let value = context.objectForKeyedSubscript(name) else { return false }
-    return !value.isUndefined && value.hasProperty("call")
 }
 
 /// Force events on the first delivery after load, then send each only when its own fields moved.

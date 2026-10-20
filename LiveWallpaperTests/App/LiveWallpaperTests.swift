@@ -846,62 +846,6 @@ struct GlobalSettingsDecoderTests {
     }
 }
 
-@Suite("ScheduleSlot.timelineSegments()")
-struct ScheduleSlotTimelineSegmentsTests {
-
-    @Test("Normal slot produces a single segment")
-    func normalSlotSingleSegment() {
-        let slot = ScheduleSlot(startHour: 6, endHour: 12, label: "Morning")
-        let segments = slot.timelineSegments()
-
-        #expect(segments.count == 1)
-        #expect(segments[0].start == 6)
-        #expect(segments[0].end == 12)
-        #expect(segments[0].wraps == false)
-    }
-
-    @Test("Wrapping slot (22→6) produces two segments")
-    func wrappingSlotTwoSegments() {
-        let slot = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
-        let segments = slot.timelineSegments()
-
-        #expect(segments.count == 2)
-        #expect(segments[0].start == 22)
-        #expect(segments[0].end == 24)
-        #expect(segments[0].wraps == true)
-        #expect(segments[1].start == 0)
-        #expect(segments[1].end == 6)
-        #expect(segments[1].wraps == true)
-    }
-
-    @Test("Zero-length slot produces no segments")
-    func zeroLengthSlotIsEmpty() {
-        let slot = ScheduleSlot(startHour: 12, endHour: 12, label: "Empty")
-        #expect(slot.timelineSegments().isEmpty)
-    }
-
-    @Test("All default slots produce non-negative widths")
-    func defaultSlotsHaveNonNegativeWidths() {
-        for slot in ScheduleSlot.defaultSlots {
-            for segment in slot.timelineSegments() {
-                #expect(segment.end > segment.start, "Segment for slot \(slot.label) has non-positive width")
-            }
-        }
-    }
-
-    @Test("Slot ending at next-day midnight (1→0) collapses to a single segment")
-    func slotEndingAtNextDayMidnight() {
-        let slot = ScheduleSlot(startHour: 1, endHour: 0, label: "Almost full day")
-        let segments = slot.timelineSegments()
-
-        #expect(segments.count == 1)
-        #expect(segments[0].start == 1)
-        #expect(segments[0].end == 24)
-        #expect(segments[0].wraps == true)
-    }
-
-}
-
 @Suite("FrameRateLimit.resolveCompositionFPS")
 struct ResolveCompositionFPSTests {
 

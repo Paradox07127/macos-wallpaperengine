@@ -13,13 +13,6 @@ final class WPEParityResourceSaverFlagsTests: XCTestCase {
         XCTAssertEqual(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults), Self.defaultFlags)
     }
 
-    func testExplicitFalseTurnsCompressionOff() throws {
-        let suite = try TestScratch.defaultsSuite(prefix: "WPEParityResourceSaverFlagsTests")
-        defer { suite.discard() }
-        suite.defaults.set(false, forKey: WPEParityResourceSaverFlags.textureCompressionDefaultsKey)
-        XCTAssertFalse(WPEParityResourceSaverFlags.resolve(defaults: suite.defaults).textureCompression)
-    }
-
     func testEachKeyFlipsOnlyItsOwnField() throws {
         let cases: [(String, Any, WPEParityResourceSaverFlags)] = [
             (WPEParityResourceSaverFlags.textureCompressionDefaultsKey, false,

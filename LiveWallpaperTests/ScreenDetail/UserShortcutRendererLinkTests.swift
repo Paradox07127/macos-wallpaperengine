@@ -132,7 +132,7 @@ struct UserShortcutRendererLinkTests {
 
         #expect(!Self.hasIcon(icons, "background"), "undecodable bytes must leave the author's image in the slot")
         try Self.writePNG(rgba: [200, 100, 50, 255], width: 1, height: 1, to: file)
-        link.updateDeclaredKeys([], for: bridge)
+        link.attach(bridge, icons: icons, wallpaperID: "w1", declaredKeys: [], textureKeys: ["background"])
         #expect(Self.hasIcon(icons, "background"), "an earlier decode failure must not stick once the file decodes")
     }
 
@@ -355,25 +355,6 @@ struct UserShortcutRendererLinkTests {
 
         let run = try #require(store.binding(for: Self.key("w1", "run")))
         #expect(executed == [run])
-    }
-
-    @Test("A reload's declared keys replace the attached ones and push their bindings")
-    func updateDeclaredKeysRepushes() throws {
-        let store = Self.makeStore()
-        try store.setShortcut(name: "Lights", arguments: nil, for: Self.key("w1", "run"))
-        let link = UserShortcutRendererLink(store: store)
-        let bridge = WPEUserShortcutScriptBridge()
-        try link.attach(bridge, icons: Self.makeIcons(), wallpaperID: "w1", declaredKeys: ["open"])
-        #expect(bridge.snapshot().bound.isEmpty)
-
-        link.updateDeclaredKeys(["run"], for: bridge)
-
-        let run = try #require(store.binding(for: Self.key("w1", "run")))
-        #expect(bridge.snapshot().declared == ["run"])
-        #expect(bridge.snapshot().bound == ["run": Entry(commandType: "cmd", displayName: "Lights", revision: run.revision,
-                                                         target: "Lights")])
-        try store.setWebsite("https://example.com", for: Self.key("w1", "open"))
-        #expect(bridge.snapshot().bound["open"] == nil, "a store change re-pushed the stale declared keys")
     }
 
     @Test("A store change marks only the rebound key for applyUserProperties, once")

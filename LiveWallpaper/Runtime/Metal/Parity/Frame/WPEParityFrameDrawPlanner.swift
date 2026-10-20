@@ -1422,27 +1422,6 @@ struct WPEParityFrameDrawPlanner {
         }, indices: indices, inputs: inputs, device: device)
     }
 
-    /// Maps the immutable native stream to MSC's tightly packed stage inputs once at draw planning. Native
-    /// input-layout types feed registers as raw 32-bit words, including uint BLENDINDICES and float NaN payloads.
-    /// D3D11 missing format components are zero except W=1 in the source element's interpretation.
-    static func rawVertexWords(_ stream: WPEPuppetVertexStream, inputs: [WPEStageReflection.StageAttribute],
-                               uvMax: SIMD2<Float> = .one) throws(WPEParityFrameSkip) -> [UInt32] {
-        let count = try rawVertexWordCount(stream, inputs: inputs)
-        var words = [UInt32](repeating: 0, count: count)
-        let failure = words.withUnsafeMutableBufferPointer { buffer -> WPEParityFrameSkip? in
-            do throws(WPEParityFrameSkip) {
-                try writeRawVertexWords(stream, inputs: inputs, uvMax: uvMax, to: buffer)
-                return nil
-            } catch {
-                return error
-            }
-        }
-        if let failure {
-            throw failure
-        }
-        return words
-    }
-
     static func rawVertexWordCount(_ stream: WPEPuppetVertexStream,
                                    inputs: [WPEStageReflection.StageAttribute]) throws(WPEParityFrameSkip) -> Int {
         var width = 0
@@ -1457,7 +1436,8 @@ struct WPEParityFrameDrawPlanner {
         return count.partialValue
     }
 
-    /// ModelData writes straight into its immutable Metal upload, without a second full CPU word array.
+    /// Maps the native stream straight into its Metal upload in MSC reflection order, preserving uint
+    /// BLENDINDICES and float NaN payloads. D3D11 missing components are zero except W=1 in the source type.
     static func writeRawVertexWords(_ stream: WPEPuppetVertexStream, inputs: [WPEStageReflection.StageAttribute],
                                     uvMax: SIMD2<Float> = .one,
                                     to destination: UnsafeMutableBufferPointer<UInt32>) throws(WPEParityFrameSkip) {

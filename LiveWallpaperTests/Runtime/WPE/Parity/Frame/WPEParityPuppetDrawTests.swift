@@ -97,7 +97,13 @@ final class WPEParityPuppetDrawTests: XCTestCase {
         }
         let inputs = try JSONDecoder().decode([WPEStageReflection.StageAttribute].self,
                                               from: JSONSerialization.data(withJSONObject: attributes))
-        let words = try WPEParityFrameDrawPlanner.rawVertexWords(stream, inputs: inputs, uvMax: SIMD2(0.5, 0.25))
+        let puppet = WPEParityScenePuppet(vertices: [], indices: [0, 1, 2], boneCount: 0, skinned: false,
+                                          vertexStream: stream)
+        let geometry = try XCTUnwrap(WPEParityFrameDrawPlanner.puppetGeometry(
+            puppet, uvMax: SIMD2(0.5, 0.25), inputs: inputs, device: device
+        ))
+        let words = UnsafeBufferPointer(start: geometry.vertices.contents().assumingMemoryBound(to: UInt32.self),
+                                        count: geometry.vertices.length / MemoryLayout<UInt32>.stride)
         XCTAssertEqual(Array(words[0 ..< 4]), floats([41, 42, 0, 1]))
         XCTAssertEqual(Array(words[4 ..< 8]), [16_777_217, 0xFFFF_FFFE, 2, 3])
         XCTAssertEqual(Array(words[8 ..< 12]), floats([-1, -1, 0, 2]))
@@ -108,11 +114,6 @@ final class WPEParityPuppetDrawTests: XCTestCase {
         XCTAssertEqual(Array(words[28 ..< 32]), floats([31, 32, 33, 34]))
         XCTAssertEqual(Array(words[32 ..< 36]), floats([0.25, 0.75, 0, 0]))
 
-        let puppet = WPEParityScenePuppet(vertices: [], indices: [0, 1, 2], boneCount: 0, skinned: false,
-                                          vertexStream: stream)
-        let geometry = try XCTUnwrap(WPEParityFrameDrawPlanner.puppetGeometry(
-            puppet, uvMax: SIMD2(0.5, 0.25), inputs: inputs, device: device
-        ))
         let start = WPEParityMSCRuntime.stageInAttributeStartIndex
         let library = try await device.makeLibrary(source: """
         #include <metal_stdlib>
@@ -186,7 +187,9 @@ final class WPEParityPuppetDrawTests: XCTestCase {
         for format: UInt32 in [0, 0x8000_0001] {
             let layout = WPEPuppetVertexLayout(format: format)
             let stream = WPEPuppetVertexStream(data: Data(repeating: 0, count: layout.stride), layout: layout)
-            XCTAssertThrowsError(try WPEParityFrameDrawPlanner.rawVertexWords(stream, inputs: [])) { error in
+            XCTAssertThrowsError(try WPEParityFrameDrawPlanner.writeRawVertexWords(
+                stream, inputs: [], to: UnsafeMutableBufferPointer(start: nil, count: 0)
+            )) { error in
                 guard case let WPEParityFrameSkip.pipeline(message) = error else {
                     return XCTFail("unexpected readiness error: \(error)")
                 }

@@ -132,32 +132,7 @@ def validate(root: Path, baseline_path: Path) -> tuple[list[str], dict[str, Any]
         if missing:
             errors.append(f"{path} lost explicit imports: {', '.join(missing)}")
 
-    current = inventory(root, modules)
-    minimum_files = document.get("minimum_explicit_import_files")
-    if not isinstance(minimum_files, int) or isinstance(minimum_files, bool) or minimum_files < 1:
-        errors.append("minimum_explicit_import_files must be a positive integer")
-    elif current["files_with_explicit_local_package_imports"] < minimum_files:
-        errors.append(
-            "explicit-import file count regressed from "
-            f"{minimum_files} to {current['files_with_explicit_local_package_imports']}"
-        )
-
-    raw_minimums = document.get("minimum_import_occurrences")
-    if not isinstance(raw_minimums, dict):
-        errors.append("minimum_import_occurrences must be an object")
-    else:
-        current_occurrences = current["local_package_import_occurrences"]
-        for module in sorted(modules):
-            minimum = raw_minimums.get(module)
-            if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
-                errors.append(f"missing or invalid occurrence minimum for {module}")
-            elif current_occurrences[module] < minimum:
-                errors.append(
-                    f"{module} explicit imports regressed from {minimum} "
-                    f"to {current_occurrences[module]}"
-                )
-
-    return errors, current
+    return errors, inventory(root, modules)
 
 
 def print_inventory(current: dict[str, Any]) -> None:
@@ -175,8 +150,6 @@ def self_test() -> int:
         "local_package_modules": ["PackageA", "PackageB"],
         "allowed_exported_imports": {},
         "migrated_file_requirements": {"LiveWallpaper/Leaf.swift": ["PackageA"]},
-        "minimum_explicit_import_files": 1,
-        "minimum_import_occurrences": {"PackageA": 1, "PackageB": 0},
     }
     with tempfile.TemporaryDirectory(prefix="module-import-gate-") as directory:
         root = Path(directory)

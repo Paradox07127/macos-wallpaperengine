@@ -78,18 +78,6 @@ public enum WPETexFormat: Int, Sendable, Equatable {
         default: false
         }
     }
-
-    public var isPhase21Decodable: Bool {
-        switch self {
-        case .rgba8888, .r8, .rg88:
-            true
-        case .dxt1, .dxt3, .dxt5, .bc7:
-            false
-        case .rgba1010102, .rg16Float, .r16Float, .rgba16Float, .rgba16Float15, .r32Float,
-             .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20:
-            false
-        }
-    }
 }
 
 public enum WPETexDecodeError: Error, Equatable, Sendable, LocalizedError {

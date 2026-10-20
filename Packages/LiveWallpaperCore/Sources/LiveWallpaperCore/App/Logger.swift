@@ -186,8 +186,6 @@ public final class Logger {
         }
     }
 
-    private static let authoredErrorBudget = OSAllocatedUnfairLock(initialState: AuthoredErrorBudget())
-
     public enum RepeatedWarningSource: String, Sendable {
         case bookmarkResolution, sceneSpanPresent, soundEngineStart
     }
@@ -209,23 +207,6 @@ public final class Logger {
             warning(message, category: category, file: file, function: function, line: line)
         case .suppressionStarted:
             warning("\(source.rawValue): repeated/excess messages suppressed; budget is 20 distinct messages per 10 seconds", category: category, file: file, function: function, line: line)
-        case nil:
-            break
-        }
-    }
-
-    public static func authoredScriptError(_ message: String) {
-        let admission = authoredErrorBudget.withLock {
-            $0.admit(key: message.hashValue, at: ProcessInfo.processInfo.systemUptime)
-        }
-        switch admission {
-        case let .message(suppressed):
-            if suppressed > 0 {
-                warning("SceneScript console.error: suppressed \(suppressed) messages in the previous logging window", category: .wpeRender)
-            }
-            error("SceneScript console.error: \(message)", category: .wpeRender)
-        case .suppressionStarted:
-            warning("SceneScript console.error: repeated/excess messages suppressed; budget is 20 distinct messages per 10 seconds", category: .wpeRender)
         case nil:
             break
         }

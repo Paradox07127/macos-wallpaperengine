@@ -173,9 +173,6 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
     public let vertexStream: WPEPuppetVertexStream?
     public var indices: [UInt16]
     public let parts: [WPEPuppetMeshPart]
-    /// Stable part-table indices, supplied by the animation sort consumer when its order actually changes.
-    public private(set) var partOrder: [Int]
-    public private(set) var clipGeneration: UInt64 = 0
     /// MDLS bone count; BONECOUNT and the length of `g_Bones`.
     public var boneCount: Int
     /// FUN_1402076e0: mesh0's format has bone indices (0x800000) and the model has bones.
@@ -206,7 +203,6 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         self.vertexStream = vertexStream
         self.indices = indices
         self.parts = parts
-        partOrder = Array(parts.indices)
         self.boneCount = boneCount
         self.skinned = skinned
         self.skinningAlpha = skinningAlpha
@@ -215,32 +211,12 @@ public struct WPEParityScenePuppet: Hashable, Sendable {
         (clipIndices, clipSegments, clipOperations) = Self.clipPlan(parts: parts, groups: clipGroups, indices: indices)
     }
 
-    /// Rebuild only when the sorted order changes. Invalid/duplicate entries are ignored and unauthored entries
-    /// keep their original relative order; no per-frame vertex stream or shader rebuild is required.
-    @discardableResult
-    public mutating func setPartOrder(_ order: [Int]) -> Bool {
-        let order = Self.normalizedPartOrder(order, count: parts.count)
-        guard order != partOrder else { return false }
-        partOrder = order
-        (clipIndices, clipSegments, clipOperations) = Self.clipPlan(parts: parts, groups: clipGroups, indices: indices,
-                                                                    partOrder: order)
-        clipGeneration &+= 1
-        return true
-    }
-
-    private static func normalizedPartOrder(_ order: [Int], count: Int) -> [Int] {
-        var seen: Set<Int> = []
-        let accepted = order.filter { (0 ..< count).contains($0) && seen.insert($0).inserted }
-        return accepted + (0 ..< count).filter { !seen.contains($0) }
-    }
-
     /// FUN_14020b720 over the part table in file order, which is the draw order while no animation reorders it
     /// (1401fdf90.c:4434-4470). A segment concatenates the index ranges of its parts (14020c710).
-    static func clipPlan(parts: [WPEPuppetMeshPart], groups: [WPEParityPuppetClipGroup], indices: [UInt16],
-                         partOrder: [Int]? = nil)
+    static func clipPlan(parts: [WPEPuppetMeshPart], groups: [WPEParityPuppetClipGroup], indices: [UInt16])
         -> (indices: [UInt16], segments: [Range<Int>], operations: [WPEParityPuppetClipOperation]) {
         guard !groups.isEmpty else { return ([], [], []) }
-        let order = normalizedPartOrder(partOrder ?? Array(parts.indices), count: parts.count)
+        let order = Array(parts.indices)
         // 14020ae00.c:289-314: bit0 clipped, bit2 clipped in a group with flag 8, bit3 mask part.
         var partFlags = [UInt32](repeating: 0, count: parts.count)
         for group in groups {

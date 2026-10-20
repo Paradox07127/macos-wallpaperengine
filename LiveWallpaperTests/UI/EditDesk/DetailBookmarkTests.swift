@@ -62,12 +62,11 @@ struct DetailBookmarkTests {
         )
     }
 
-    @Test("A video is saved under its file's name and is then the bookmarked one; another file is not")
+    @Test("A video is saved under its file's name")
     func videoRoundTrip() {
         let configuration = Self.configuration(.video(bookmarkData: Data([1, 2]), packageEntryName: nil))
         let name = DetailBookmark.sourceDisplayName(for: configuration.activeWallpaper) { _ in "clip.mov" }
         #expect(name == "clip.mov")
-        #expect(store.equivalentBookmark(content: configuration.activeWallpaper) == nil)
 
         let saved = DetailBookmark.save(configuration, label: "  ", sourceDisplayName: name, in: store)
 
@@ -75,9 +74,7 @@ struct DetailBookmarkTests {
         #expect(saved.content == configuration.activeWallpaper)
         #expect(saved.sourceDisplayName == "clip.mov")
         #expect(saved.wpeOrigin == nil)
-        #expect(store.equivalentBookmark(content: configuration.activeWallpaper)?.id == saved.id)
-        let other = Self.configuration(.video(bookmarkData: Data([9]), packageEntryName: nil))
-        #expect(store.equivalentBookmark(content: other.activeWallpaper) == nil)
+        #expect(store.bookmarks == [saved])
     }
 
     @Test("A Workshop web page keeps its origin and the typed name")
@@ -92,7 +89,7 @@ struct DetailBookmarkTests {
         #expect(saved.label == "My Page")
         #expect(saved.content == configuration.activeWallpaper)
         #expect(saved.wpeOrigin == origin)
-        #expect(store.equivalentBookmark(content: configuration.activeWallpaper)?.id == saved.id)
+        #expect(store.bookmarks == [saved])
     }
 
     @Test("A scene is saved with its overrides, preset and origin, so a changed look is a second entry")
@@ -103,7 +100,6 @@ struct DetailBookmarkTests {
         let original = DetailBookmark.save(plainConfiguration, label: "", sourceDisplayName: nil, in: store)
         let tuned = plain.withPresetLayer(id: "calm", snapshot: ["speed": .number(1)]).withPropertyOverrides(["speed": .number(2)])
         let tunedConfiguration = Self.configuration(.scene(tuned), origin: origin)
-        #expect(store.equivalentBookmark(content: tunedConfiguration.activeWallpaper) == nil, "the tuned scene is not the plain one")
 
         let name = DetailBookmark.sourceDisplayName(for: tunedConfiguration.activeWallpaper) { _ in "never read" }
         let variant = DetailBookmark.save(tunedConfiguration, label: "", sourceDisplayName: name, in: store)
@@ -113,9 +109,7 @@ struct DetailBookmarkTests {
         #expect(descriptor.propertyOverrides == ["speed": .number(2)])
         #expect(descriptor.presetID == "calm")
         #expect(variant.wpeOrigin == origin)
-        #expect(store.bookmarks.map(\.id) == [original.id, variant.id])
-        #expect(store.equivalentBookmark(content: tunedConfiguration.activeWallpaper)?.id == variant.id)
-        #expect(store.equivalentBookmark(content: plainConfiguration.activeWallpaper)?.id == original.id)
+        #expect(store.bookmarks == [original, variant])
     }
 
     @Test("The display's row is its saved entry, else the installed Workshop row it folds into, else the aerial it plays")

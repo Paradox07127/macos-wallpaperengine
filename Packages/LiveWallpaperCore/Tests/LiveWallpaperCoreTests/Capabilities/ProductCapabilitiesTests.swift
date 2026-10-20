@@ -19,8 +19,7 @@ struct ProductCapabilitiesTests {
 
         #expect(capabilities.sku == .unconfigured)
         #expect(capabilities.enabledFeatures.isEmpty)
-        #expect(capabilities.selectableWallpaperTypes.isEmpty)
-        #expect(capabilities.selectableWallpaperModes.isEmpty)
+        #expect(WallpaperType.allCases.allSatisfy { !capabilities.canRender($0) })
         #expect(forged.enabledFeatures.isEmpty)
         #expect(workshopAttempt.enabledFeatures.isEmpty)
         #expect(ProductCapabilities.lite.withWorkshopOnline() == .lite)
@@ -32,7 +31,6 @@ struct ProductCapabilitiesTests {
     func liteCatalogWallpaperTypes() {
         let catalog = ProductCapabilities.lite
         #expect(catalog.sku == .lite)
-        #expect(catalog.selectableWallpaperTypes == [.video, .html])
         #expect(catalog.canRender(.video))
         #expect(catalog.canRender(.html))
         #expect(!catalog.canRender(.scene))
@@ -48,22 +46,12 @@ struct ProductCapabilitiesTests {
     func proCatalogWallpaperTypes() {
         let catalog = ProductCapabilities.pro
         #expect(catalog.sku == .pro)
-        #expect(Set(catalog.selectableWallpaperTypes) == Set(WallpaperType.allCases))
+        #expect(WallpaperType.allCases.allSatisfy { catalog.canRender($0) })
     }
 
     @Test("HTML wallpaper type is presented to users as Web")
     func htmlWallpaperTypeIsPresentedAsWeb() {
         #expect(WallpaperType.html.titleKey == LocalizedStringKey("Web"))
-    }
-
-    @Test("Lite catalog exposes playlist and schedule automation modes")
-    func liteCatalogWallpaperModes() {
-        #expect(ProductCapabilities.lite.selectableWallpaperModes == [.playlist, .schedule, .libraryShuffle])
-    }
-
-    @Test("Pro catalog keeps every automation mode")
-    func proCatalogWallpaperModes() {
-        #expect(Set(ProductCapabilities.pro.selectableWallpaperModes) == Set(WallpaperMode.allCases))
     }
 
     @Test("Legacy `single` raw value decodes to .playlist")

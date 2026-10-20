@@ -28,24 +28,6 @@ struct ParityScenePuppetClipContractTests {
         #expect(puppet.clipIndices == [6, 7, 8, 3, 4, 5, 0, 1, 2, 6, 7, 8, 3, 4, 5])
     }
 
-    @Test func unchangedPartOrderKeepsClipGenerationAndStableSegments() {
-        var puppet = WPEParityScenePuppet(vertices: [], indices: Array(0 ... 8), boneCount: 1, skinned: true,
-                                          parts: parts, clipGroups: [.init(clipped: [1], mask: [0], maskTexture: "mask")])
-        let unchanged = puppet.setPartOrder([0, 1, 2])
-        #expect(!unchanged)
-        #expect(puppet.clipGeneration == 0)
-        let reordered = puppet.setPartOrder([2, 0, 1])
-        #expect(reordered)
-        #expect(puppet.clipGeneration == 1)
-        #expect(puppet.clipIndices == [6, 7, 8, 0, 1, 2, 0, 1, 2, 3, 4, 5])
-        let segments = puppet.clipSegments
-        let normalizedUnchanged = puppet.setPartOrder([2, 2, -1, 0])
-        #expect(!normalizedUnchanged)
-        #expect(puppet.partOrder == [2, 0, 1])
-        #expect(puppet.clipSegments == segments)
-        #expect(puppet.clipGeneration == 1)
-    }
-
     @Test func clipTargetInheritsDirectOrCompositePublishColorRole() throws {
         for composite in [false, true] {
             for clipped in [false, true] {

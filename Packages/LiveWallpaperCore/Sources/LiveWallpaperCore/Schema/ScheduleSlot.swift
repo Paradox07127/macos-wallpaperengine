@@ -43,34 +43,6 @@ public struct ScheduleSlot: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
-    /// Half-open [start,end) segments on 0–24; wrapping yields up to two; empty halves dropped.
-    public func timelineSegments() -> [TimelineSegment] {
-        if startHour == endHour { return [] }
-        if startHour < endHour {
-            return [TimelineSegment(start: startHour, end: endHour, wraps: false)]
-        }
-        var segments: [TimelineSegment] = []
-        if startHour < 24 {
-            segments.append(TimelineSegment(start: startHour, end: 24, wraps: true))
-        }
-        if endHour > 0 {
-            segments.append(TimelineSegment(start: 0, end: endHour, wraps: true))
-        }
-        return segments
-    }
-
-    public struct TimelineSegment: Equatable, Sendable {
-        public let start: Int
-        public let end: Int
-        public let wraps: Bool
-
-        public init(start: Int, end: Int, wraps: Bool) {
-            self.start = start
-            self.end = end
-            self.wraps = wraps
-        }
-    }
-
     public var localizedLabel: String {
         switch label {
         case "Morning":

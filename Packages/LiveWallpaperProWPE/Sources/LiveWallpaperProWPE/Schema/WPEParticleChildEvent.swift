@@ -19,11 +19,4 @@ public enum WPEParticleChildEventKind: Equatable, Sendable {
         default: self = .unsupported(authoredType)
         }
     }
-
-    public var isEventDriven: Bool {
-        switch self {
-        case .follow, .spawn, .death: true
-        case .staticSystem, .unsupported: false
-        }
-    }
 }

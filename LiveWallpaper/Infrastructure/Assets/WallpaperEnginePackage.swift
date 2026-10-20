@@ -70,8 +70,6 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         }
     }
 
-    /// Per-component cap when writing to disk. APFS rejects a component over 255 UTF-8 bytes, so over-long components are shortened on extraction.
-    static let maxComponentBytes = 250
     static func parseIndex(
         streamingFrom handle: FileHandle,
         limits: IndexLimits = .production,
@@ -186,78 +184,6 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         )
     }
 
-    #if DEBUG
-    func extractAll(streamingFrom handle: FileHandle, to rootURL: URL) throws {
-        let fileManager = FileManager.default
-        let parentURL = rootURL.deletingLastPathComponent()
-        let rootName = rootURL.lastPathComponent
-        let runID = UUID().uuidString
-        let inflightURL = parentURL.appendingPathComponent("\(rootName).inflight-\(runID)", isDirectory: true)
-        let backupURL = parentURL.appendingPathComponent("\(rootName).replaced-\(runID)", isDirectory: true)
-
-        try fileManager.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: inflightURL, withIntermediateDirectories: true)
-
-        let inflightPath = inflightURL.standardizedFileURL.path
-        var movedExistingRoot = false
-
-        do {
-            let chunkSize = 1 << 20
-            for entry in entries {
-                let targetURL = inflightURL.appendingPathComponent(Self.filesystemSafeEntryName(entry.name))
-                let standardizedTarget = targetURL.standardizedFileURL
-                guard standardizedTarget.path.hasPrefix(inflightPath + "/") else {
-                    throw WPEPackageError.pathTraversal(name: entry.name)
-                }
-                try fileManager.createDirectory(
-                    at: standardizedTarget.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-
-                let absoluteStart = dataStart + entry.dataOffset
-                try handle.seek(toOffset: absoluteStart)
-
-                fileManager.createFile(atPath: standardizedTarget.path, contents: nil)
-                let writer = try FileHandle(forWritingTo: standardizedTarget)
-                do {
-                    var remaining = entry.dataSize
-                    while remaining > 0 {
-                        let toRead = Int(min(UInt64(chunkSize), remaining))
-                        guard let chunk = try handle.read(upToCount: toRead),
-                              chunk.count == toRead else {
-                            try? writer.close()
-                            throw WPEPackageError.entryOutOfBounds(name: entry.name)
-                        }
-                        try writer.write(contentsOf: chunk)
-                        remaining -= UInt64(chunk.count)
-                    }
-                    try writer.close()
-                } catch {
-                    try? writer.close()
-                    throw error
-                }
-            }
-
-            if fileManager.fileExists(atPath: rootURL.path) {
-                try fileManager.moveItem(at: rootURL, to: backupURL)
-                movedExistingRoot = true
-            }
-            try fileManager.moveItem(at: inflightURL, to: rootURL)
-            if movedExistingRoot {
-                try? fileManager.removeItem(at: backupURL)
-            }
-        } catch {
-            try? fileManager.removeItem(at: inflightURL)
-            if movedExistingRoot,
-               !fileManager.fileExists(atPath: rootURL.path),
-               fileManager.fileExists(atPath: backupURL.path) {
-                try? fileManager.moveItem(at: backupURL, to: rootURL)
-            }
-            throw error
-        }
-    }
-    #endif
-
     private static func validateEntryCount(_ count: UInt32, limits: IndexLimits) throws {
         guard count <= limits.maxEntryCount else {
             throw WPEPackageError.resourceLimitExceeded(.entryCount)
@@ -362,34 +288,6 @@ struct WallpaperEnginePackage: Sendable, Equatable {
             canonical.append(String(component))
         }
         return canonical.isEmpty ? nil : canonical.joined(separator: "/")
-    }
-
-    /// Truncation is deterministic (char-boundary base + stable FNV-1a suffix + original extension), so re-extraction is idempotent.
-    static func filesystemSafeEntryName(_ name: String) -> String {
-        name.split(separator: "/", omittingEmptySubsequences: false).map { raw -> String in
-            let component = String(raw)
-            guard component.utf8.count > maxComponentBytes else { return component }
-
-            let nsName = component as NSString
-            let ext = nsName.pathExtension
-            let tail = ext.isEmpty ? "" : "." + ext
-
-            var hash: UInt32 = 2166136261
-            for byte in component.utf8 { hash = (hash ^ UInt32(byte)) &* 16777619 }
-            let suffix = "~" + String(format: "%08x", hash)
-
-            let budget = maxComponentBytes - suffix.utf8.count - tail.utf8.count
-            var base = ""
-            var used = 0
-            for character in nsName.deletingPathExtension {
-                let bytes = String(character).utf8.count
-                if used + bytes > budget { break }
-                base.append(character)
-                used += bytes
-            }
-            return base + suffix + tail
-        }
-        .joined(separator: "/")
     }
 
     private static func canonicalEntryName(

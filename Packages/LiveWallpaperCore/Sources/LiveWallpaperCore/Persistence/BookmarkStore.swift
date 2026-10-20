@@ -101,11 +101,6 @@ public final class BookmarkStore {
         Logger.info("Bookmark renamed: type \(bookmarks[index].wallpaperType.rawValue)", category: .ui)
     }
 
-    /// Identity is the content; `wpeOrigin` is provenance, and saved scene bookmarks now carry one.
-    public func equivalentBookmark(content: WallpaperContent) -> WallpaperBookmark? {
-        bookmarks.first { $0.content == content }
-    }
-
     public func containsWPEBookmark(workshopID: String) -> Bool {
         bookmarks.contains { Self.matchesWPEBookmark($0, workshopID: workshopID) }
     }

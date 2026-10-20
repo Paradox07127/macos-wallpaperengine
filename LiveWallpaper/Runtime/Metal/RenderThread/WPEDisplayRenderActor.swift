@@ -722,12 +722,6 @@ actor WPEDisplayRenderActor {
         parityDriver?.setAudioVolume(volume)
     }
 
-    #if DEBUG
-    func currentPendingAudioVolume() -> Double? {
-        parityDriver?.audioVolume
-    }
-    #endif
-
     func requiresSystemAudioCapture() -> Bool {
         parityDriver?.requiresSystemAudioCapture ?? false
     }

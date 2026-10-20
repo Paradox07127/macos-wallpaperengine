@@ -208,10 +208,6 @@ final class WPEPointerMailbox: Sendable {
         state.desktopFrame = .neutral
     }
 
-    func isCurrentButtonCursor(_ cursor: ButtonCursor) -> Bool {
-        lock.withLock { $0.epoch == cursor.epoch }
-    }
-
     func takeButtonEvents(through cursor: ButtonCursor) -> ButtonBatch {
         lock.withLock { state in
             guard cursor.epoch == state.epoch else {

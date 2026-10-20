@@ -92,20 +92,6 @@ public struct ProductCapabilities: Sendable, Equatable {
         }
     }
 
-    /// Lite UI uses this instead of `WallpaperType.allCases`.
-    public var selectableWallpaperTypes: [WallpaperType] {
-        WallpaperType.allCases.filter { canRender($0) }
-    }
-
-    public var selectableWallpaperModes: [WallpaperMode] {
-        guard enabledFeatures.contains(.playlists) else { return [] }
-        return WallpaperMode.allCases.filter { mode in
-            switch mode {
-            case .playlist, .libraryShuffle: true
-            case .schedule: enabledFeatures.contains(.scheduleAutomation)
-            }
-        }
-    }
 }
 
 public struct FeatureCatalog: Sendable, Equatable {

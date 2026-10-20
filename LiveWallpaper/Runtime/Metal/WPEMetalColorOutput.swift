@@ -16,9 +16,7 @@ enum WPEMetalColorOutput {
         default:
             false
         }
-        if constants["wpe_unorm_target"] != nil {
-            values.setConstantValue(&clampsSource, type: .bool, index: 1023)
-        }
+        values.setConstantValue(&clampsSource, type: .bool, index: 1023)
         return try library.makeFunction(name: name, constantValues: values)
     }
 }

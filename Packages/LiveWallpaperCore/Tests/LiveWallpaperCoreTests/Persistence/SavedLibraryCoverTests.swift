@@ -142,21 +142,6 @@ struct SavedLibraryCoverTests {
         #expect(store.schemes.first?.coverFileName == "cover.png")
     }
 
-    /// Saved scene bookmarks carry their origin; the popover's "already bookmarked" lookup
-    /// keys on content alone, or every Save would insert a duplicate.
-    @MainActor
-    @Test("A bookmark saved with an origin is still found by its content")
-    func originDoesNotHideAnEquivalentBookmark() {
-        let store = BookmarkStore(persistence: MemoryBookmarkPersistence())
-        let content = WallpaperContent.video(bookmarkData: Data([0x0A]))
-        let origin = WPEOrigin(
-            workshopID: "1234", title: "Night", originalType: .video, sourceFolderBookmark: Data([1]),
-            cacheRelativePath: nil, previewFileName: nil, entryFile: nil
-        )
-        let saved = store.add(label: "Night", content: content, wpeOrigin: origin)
-        #expect(store.equivalentBookmark(content: content)?.id == saved.id)
-    }
-
     @MainActor
     @Test("A cover set for an entry that is gone changes nothing")
     func setCoverIgnoresMissingEntry() {

@@ -11,7 +11,7 @@ final class UserShortcutRendererLink {
         weak var bridge: WPEUserShortcutScriptBridge?
         weak var icons: WPEUserShortcutIconStore?
         let wallpaperID: String
-        var declared: Set<String>
+        let declared: Set<String>
         /// Scene texture keys: their bound image or video goes to `icons` only, never to the script bridge.
         let textureKeys: Set<String>
     }
@@ -50,13 +50,6 @@ final class UserShortcutRendererLink {
         bridge.setLauncher { [weak self] propertyKey, revision in
             Task { @MainActor in self?.launch(wallpaperID: wallpaperID, propertyKey: propertyKey, revision: revision) }
         }
-    }
-
-    /// A reload's manifest may declare different keys; no-op for a bridge that was never attached.
-    func updateDeclaredKeys(_ declaredKeys: Set<String>, for bridge: WPEUserShortcutScriptBridge) {
-        guard let index = registrations.firstIndex(where: { $0.bridge === bridge }) else { return }
-        registrations[index].declared = declaredKeys
-        push(registrations[index])
     }
 
     nonisolated static func declaredTextureKeys(manifestRoot: URL) -> Set<String> {

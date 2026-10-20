@@ -100,10 +100,6 @@ final class SystemAudioCaptureManager {
 
     #if DEBUG
     var consumerCountForTesting: Int { consumerCount }
-
-    nonisolated static func setCapturingForTesting(_ active: Bool) {
-        captureActive.withLock { $0 = active }
-    }
     #endif
 
     private func reconcile() {

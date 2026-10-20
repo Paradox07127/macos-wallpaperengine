@@ -163,10 +163,6 @@ final class WPEVideoTextureSource {
     var forceBGRAWrapFailureForTesting = false
     var forceWorkingTextureClearFailureForTesting = false
     var forceConversionEncoderFailureForTesting = false
-    var publishedTextureForTesting: MTLTexture? {
-        latest?.texture
-    }
-
     var lastPlayerPresentationTimeForTesting: CMTime? {
         lastPlayerLevelPresentationTime
     }
@@ -1099,10 +1095,7 @@ final class WPEVideoTextureSource {
         return seconds.isFinite ? seconds : 0
     }
 
-    // MARK: - Intro→loop phase alignment
-
-    /// On-disk MP4 for offline analysis (custom in-memory URL is unreadable by ImageGenerator).
-    var analysisURL: URL? { cleanupURL }
+    // MARK: - Playback state
 
     var currentPlayheadSeconds: TimeInterval { playheadSeconds }
 
@@ -1127,16 +1120,6 @@ final class WPEVideoTextureSource {
     /// Completed plays of the item; grows on every loop wrap.
     var completedLoopCount: Int {
         playerLooper?.loopCount ?? 0
-    }
-
-    /// Phase-align seek (does not enter script-controlled mode).
-    func alignPlayhead(to seconds: TimeInterval) {
-        guard !isInvalidated, !scriptControlled else { return }
-        player?.seek(
-            to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
     }
 
     #if DEBUG

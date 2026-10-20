@@ -78,8 +78,6 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
     private let lock = NSLock()
     private var icons: [String: Icon] = [:]
     private var videos: [String: URL] = [:]
-    /// passID → texture slot → user-shortcut property key; replaced on every scene load.
-    private var slotsByPassID: [String: [Int: String]] = [:]
     private var changeHandler: (@Sendable () -> Void)?
 
     init(device: MTLDevice) {
@@ -90,15 +88,6 @@ final class WPEUserShortcutIconStore: @unchecked Sendable { // NSLock guards all
     var onChange: (@Sendable () -> Void)? {
         get { lock.withLock { changeHandler } }
         set { lock.withLock { changeHandler = newValue } }
-    }
-
-    func setDeclarations(_ byPassID: [String: [Int: String]]) {
-        lock.withLock { slotsByPassID = byPassID }
-    }
-
-    /// nil when this pass declares no user-shortcut slot.
-    func declarations(forPassID passID: String) -> [Int: String]? {
-        lock.withLock { slotsByPassID[passID] }
     }
 
     /// nil clears the key; returns false when the bytes match the current icon, so nothing is rebuilt.

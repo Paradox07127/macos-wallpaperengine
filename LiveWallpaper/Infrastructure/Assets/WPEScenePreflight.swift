@@ -43,10 +43,7 @@ enum WPEScenePreflight {
         let tier = Self.tier(for: flags, hasImageObjects: !document.imageObjects.isEmpty)
         return WPEScenePreflightResult(
             tier: tier,
-            featureFlags: flags,
-            shaderImplementationInventory: WPEShaderImplementationInventory.preflightEntries(
-                document: document
-            )
+            featureFlags: flags
         )
     }
 
@@ -80,7 +77,6 @@ enum WPEScenePreflight {
 struct WPEScenePreflightResult: Equatable, Sendable {
     let tier: WPEScenePreflightTier
     let featureFlags: Set<WPESceneFeatureFlag>
-    let shaderImplementationInventory: [WPEShaderImplementationInventoryEntry]
 }
 
 #endif

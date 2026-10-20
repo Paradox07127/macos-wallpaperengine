@@ -1008,11 +1008,6 @@ public struct WPESceneGeneral: Equatable, Sendable {
     /// Non-nil when the scene enables HDR bloom (`bloom:true` + `hdr:true`).
     public let bloom: WPESceneBloomSettings?
 
-    /// hdr=true with bloom off renders through the ordinary UNORM/g_Color4 path.
-    public var usesHDRRendering: Bool {
-        hdr && bloom != nil
-    }
-
     public init(
         clearColor: SIMD3<Double>,
         orthogonalProjection: WPESceneOrthogonalProjection,
