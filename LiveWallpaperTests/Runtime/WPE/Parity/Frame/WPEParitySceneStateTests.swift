@@ -10,7 +10,7 @@ import XCTest
 final class WPEParitySceneStateTests: XCTestCase {
     private static let width = 1920
     private static let height = 1080
-    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true)
+    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaaSampleCount: 2)
 
     private var scratch: URL!
 

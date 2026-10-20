@@ -849,27 +849,6 @@ struct WPESceneDocumentParserTests {
         #expect(document.diagnostics.contains { $0.message.contains("dynamic instance user textures") })
     }
 
-    @Test("Image numeric colorBlendMode maps to layer additive blend")
-    func imageNumericColorBlendModeMapsToLayerBlend() throws {
-        let payload: [String: Any] = [
-            "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
-            "objects": [[
-                "id": "ripple",
-                "name": "ripple1440p",
-                "type": "image",
-                "image": "models/workshop/2655151285/ripple.json",
-                "colorBlendMode": 9
-            ]]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
-
-        let document = try WPESceneDocumentParser.parse(data: data)
-
-        let layer = try #require(document.imageObjects.first)
-        #expect(layer.blendMode == .additive)
-    }
-
     @Test("Destination-reading colorBlendMode keeps the authored mode for rendering")
     func imageOverlayBlendModeUsesProgrammablePath() throws {
         let payload: [String: Any] = [
@@ -1312,65 +1291,16 @@ struct WPESceneDocumentParserTests {
         #expect(document.textObjects.first?.originScript?.script == script)
     }
 
-    @Test("Image numeric colorBlendMode 7 maps to layer screen blend")
-    func imageNumericColorBlendModeSevenMapsToScreenBlend() throws {
-        let payload: [String: Any] = [
-            "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
-            "objects": [[
-                "id": "471",
-                "name": "atmosphere overlay",
-                "type": "image",
-                "image": "models/workshop/2079971872/atmosphere.json",
-                "colorBlendMode": 7
-            ]]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
-
-        let document = try WPESceneDocumentParser.parse(data: data)
-
-        let layer = try #require(document.imageObjects.first)
-        #expect(layer.blendMode == .screen)
-    }
-
-    @Test("Image origin script using cursorWorldPosition is preserved for runtime")
-    func cursorOriginScriptIsPreservedForRuntime() throws {
-        let script = """
+    @Test("Image origin scripts preserve authored values for runtime", arguments: [
+        ("154", "苍月草1/Nemophila1", "models/nemophila.json", """
         'use strict';
         export function update(value) {
             value.x = input.cursorWorldPosition.x;
             value.y = input.cursorWorldPosition.y;
             return value;
         }
-        """
-        let payload: [String: Any] = [
-            "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
-            "objects": [[
-                "id": "154",
-                "name": "苍月草1/Nemophila1",
-                "type": "image",
-                "image": "models/nemophila.json",
-                "origin": [
-                    "script": script,
-                    "value": "860.29364 133.27734 0"
-                ],
-                "size": "360 248 0"
-            ]]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload)
-
-        let document = try WPESceneDocumentParser.parse(data: data)
-        let layer = try #require(document.imageObjects.first)
-
-        #expect(layer.origin == SIMD3<Double>(860.29364, 133.27734, 0))
-        #expect(layer.originScript?.script == script)
-        #expect(layer.originScript?.seed == SIMD3<Double>(860.29364, 133.27734, 0))
-    }
-
-    @Test("Image origin script reading shared state is preserved for runtime")
-    func sharedOriginScriptIsPreservedForRuntime() throws {
-        let script = """
+        """, "860.29364 133.27734 0", "360 248 0", SIMD3<Double>(860.29364, 133.27734, 0)),
+        ("188", "Star1 model1", "models/star.json", """
         'use strict';
         export function update(value) {
             value.x = shared.xx1;
@@ -1378,53 +1308,29 @@ struct WPESceneDocumentParserTests {
             value.z = shared.zz1;
             return value;
         }
-        """
-        let payload: [String: Any] = [
-            "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
-            "objects": [[
-                "id": "188",
-                "name": "Star1 model1",
-                "type": "image",
-                "image": "models/star.json",
-                "origin": [
-                    "script": script,
-                    "value": "0 1 0"
-                ],
-                "size": "100 100 0"
-            ]]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload)
-
-        let document = try WPESceneDocumentParser.parse(data: data)
-        let layer = try #require(document.imageObjects.first)
-
-        #expect(layer.origin == SIMD3<Double>(0, 1, 0))
-        #expect(layer.originScript?.script == script)
-        #expect(layer.originScript?.seed == SIMD3<Double>(0, 1, 0))
-    }
-
-    @Test("Image origin script reading engine runtime is preserved for runtime")
-    func runtimeOriginScriptIsPreservedForRuntime() throws {
-        let script = """
+        """, "0 1 0", "100 100 0", SIMD3<Double>(0, 1, 0)),
+        ("189", "RuntimeMover", "models/star.json", """
         export function update(value) {
             value.x = engine.runtime;
             return value;
         }
-        """
+        """, "0 1 0", "100 100 0", SIMD3<Double>(0, 1, 0)),
+    ])
+    func imageOriginScriptsArePreservedForRuntime(id: String, name: String, image: String, script: String,
+                                                  value: String, size: String, expected: SIMD3<Double>) throws {
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
             "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
             "objects": [[
-                "id": "189",
-                "name": "RuntimeMover",
+                "id": id,
+                "name": name,
                 "type": "image",
-                "image": "models/star.json",
+                "image": image,
                 "origin": [
                     "script": script,
-                    "value": "0 1 0"
+                    "value": value,
                 ],
-                "size": "100 100 0"
+                "size": size,
             ]]
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
@@ -1432,9 +1338,9 @@ struct WPESceneDocumentParserTests {
         let document = try WPESceneDocumentParser.parse(data: data)
         let layer = try #require(document.imageObjects.first)
 
-        #expect(layer.origin == SIMD3<Double>(0, 1, 0))
+        #expect(layer.origin == expected)
         #expect(layer.originScript?.script == script)
-        #expect(layer.originScript?.seed == SIMD3<Double>(0, 1, 0))
+        #expect(layer.originScript?.seed == expected)
     }
 
     @Test("Image scale and angles scripts reading shared state are preserved for runtime")

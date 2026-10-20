@@ -85,10 +85,6 @@
             handle?.cancel()
         }
 
-        func tearDown() {
-            cancelUpdate()
-        }
-
         private func finishUpdate(_ ticket: UpdateTicket) {
             guard updateHandle?.ticket == ticket else { return }
             updateHandle = nil

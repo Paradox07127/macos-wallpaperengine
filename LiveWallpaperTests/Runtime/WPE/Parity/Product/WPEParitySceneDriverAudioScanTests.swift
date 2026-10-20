@@ -13,7 +13,7 @@ extension WPEParitySceneDriverTests {
             let (document, assets) = try sceneInputs(sceneID: id)
             let plan = try WPEParityFramePlan(
                 document: document, assets: assets,
-                settings: WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true),
+                settings: WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaaSampleCount: 2),
                 width: 1920, height: 1080
             )
             let expected = Self.stringSearchReadsAudio(plan)

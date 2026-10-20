@@ -12,7 +12,7 @@ import XCTest
 final class WPEParityScriptWiringTests: XCTestCase {
     private static let width = 1920
     private static let height = 1080
-    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true)
+    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaaSampleCount: 2)
     private static let counter = "let n = 0;\nexport function update(value) {\n  n += 1;\n  return %@;\n}"
 
     private var scratch: URL!

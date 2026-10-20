@@ -11,7 +11,7 @@ import XCTest
 final class WPEParitySceneDriverTests: XCTestCase {
     private static let size = CGSize(width: 1920, height: 1080)
     /// The capture machine's settings, as in `WPEParityRealSceneTests`.
-    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true)
+    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaaSampleCount: 2)
 
     var scratch: URL!
     private var timestamp: CFTimeInterval = 100

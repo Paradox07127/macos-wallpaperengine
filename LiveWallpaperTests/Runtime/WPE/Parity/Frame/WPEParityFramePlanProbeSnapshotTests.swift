@@ -71,7 +71,7 @@ final class WPEParityFramePlanProbeSnapshotTests: XCTestCase {
         let assets = WPEParityProgramAssets(sceneDirectory: directory,
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
         let plan = try WPEParityFramePlan(document: document, assets: assets,
-                                          settings: WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true),
+                                          settings: WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaaSampleCount: 2),
                                           width: 1920, height: 1080)
         let scratch = FileManager.default.temporaryDirectory.appending(path: "probe-snapshot-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: scratch) }

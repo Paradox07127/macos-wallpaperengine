@@ -90,17 +90,6 @@ final class ParityProgramSettingsTests: XCTestCase {
         }
     }
 
-    func testLegacyMSAASwitchMutatesTheStoredSampleCount() {
-        var settings = WPEParityProgramSettings(msaaSampleCount: 8)
-        settings.msaa = false
-        XCTAssertEqual(settings.msaaSampleCount, 1)
-        settings.msaa = true
-        XCTAssertEqual(settings.msaaSampleCount, 2)
-        settings.msaaSampleCount = 4
-        settings.msaa = true
-        XCTAssertEqual(settings.msaaSampleCount, 4)
-    }
-
     private func assertSampleRoute(_ scene: WPEParityProgramScene, expected: Int,
                                    file: StaticString = #filePath, line: UInt = #line) throws {
         XCTAssertEqual(scene.engineFlags.backbufferMSAA, expected > 1, file: file, line: line)

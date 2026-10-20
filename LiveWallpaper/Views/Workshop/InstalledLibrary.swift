@@ -117,7 +117,7 @@ final class InstalledLibraryModel {
         appearanceGeneration &+= 1
         updateLaunchTask?.cancel()
         updateLaunchTask = nil
-        lifecycleOwner.tearDown()
+        lifecycleOwner.cancelUpdate()
     }
 
     func historyDidChange() {

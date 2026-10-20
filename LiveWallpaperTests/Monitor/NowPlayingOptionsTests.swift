@@ -45,7 +45,7 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertTrue(Options().applied(to: [:]).isEmpty)
     }
 
-    func testEveryFieldDropsItsKeyWhenReturnedToDefault() {
+    func testEveryFieldPersistsRoundTripsAndDropsAtDefault() {
         var options = Options()
         options.style = .vinyl
         options.accentSource = .custom
@@ -76,46 +76,24 @@ final class NowPlayingOptionsTests: XCTestCase {
         options.effectRipple = true
         options.beatSensitivity = 2.2
 
-        let written = options.applied(to: [:])
-        XCTAssertEqual(written.count, 28, "a field stopped persisting: \(written.keys.sorted())")
+        var alternate = options
+        alternate.style = .aurora
+        alternate.customAccentHex = "#FF8800"
+        alternate.opacity = 0.35
+        alternate.textBrightness = 0.75
+        alternate.titleScale = 1.25
+        alternate.artworkShape = .square
+        alternate.artworkShadow = 0.8
+        alternate.artworkScale = 0.75
+        alternate.audioIntensity = 0.45
+        alternate.beatSensitivity = 0.9
 
-        XCTAssertTrue(Options().applied(to: written).isEmpty)
-    }
-
-    // MARK: Round trip
-
-    func testEveryFieldRoundTrips() {
-        var options = Options()
-        options.style = .aurora
-        options.accentSource = .custom
-        options.customAccentHex = "#FF8800"
-        options.opacity = 0.35
-        options.textBrightness = 0.75
-        options.titleFont = .monospaced
-        options.alignment = .trailing
-        options.titleScale = 1.25
-        options.marquee = true
-        options.showArtwork = false
-        options.showArtist = false
-        options.showAlbum = false
-        options.showProgress = false
-        options.showLyrics = true
-        options.lyricsLines = 1
-        options.showControls = false
-        options.seekOnProgressDrag = false
-        options.artworkShape = .square
-        options.artworkShadow = 0.8
-        options.artworkScale = 0.75
-        options.audioReactive = false
-        options.audioIntensity = 0.45
-        options.effectPulse = false
-        options.effectChromatic = true
-        options.effectShake = true
-        options.effectParticles = false
-        options.effectRipple = true
-        options.beatSensitivity = 0.9
-
-        XCTAssertEqual(Options(options.applied(to: [:])), options)
+        for variant in [options, alternate] {
+            let written = variant.applied(to: [:])
+            XCTAssertEqual(written.count, 28, "a field stopped persisting: \(written.keys.sorted())")
+            XCTAssertEqual(Options(written), variant)
+            XCTAssertTrue(Options().applied(to: written).isEmpty)
+        }
     }
 
     func testAudioFieldsClampAndFallBack() {

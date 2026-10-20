@@ -40,36 +40,17 @@ struct ConfigurationFingerprintMigrationTests {
         }
     }
 
-    @Test("ID miss + fingerprint miss returns nil")
-    func bothMissReturnsNil() {
+    @Test("A missing, unknown or unmatched fingerprint leaves the stored display alone", arguments: [
+        "OTHER:M:S", "unknown:Display 1", nil
+    ] as [String?])
+    func unmatchedFingerprintDoesNotMigrate(fingerprint: String?) {
         let fakePersistence = InMemoryConfigPersistence()
         let store = WallpaperConfigurationStore(persistence: fakePersistence)
 
         store.save(makeVideoConfig(screenID: 42, fingerprint: "V:M:S"))
-        let resolved = store.get(for: 999, fingerprint: "OTHER:M:S")
+        let resolved = store.get(for: 999, fingerprint: fingerprint)
         #expect(resolved == nil)
         #expect(fakePersistence.allConfigs[42]?.screenID == 42)
-    }
-
-    @Test("Unknown fingerprint never triggers scan")
-    func unknownFingerprintSkipsScan() {
-        let fakePersistence = InMemoryConfigPersistence()
-        let store = WallpaperConfigurationStore(persistence: fakePersistence)
-
-        store.save(makeVideoConfig(screenID: 42, fingerprint: "V:M:S"))
-        let resolved = store.get(for: 999, fingerprint: "unknown:Display 1")
-        #expect(resolved == nil)
-        #expect(fakePersistence.allConfigs[42]?.screenID == 42)
-    }
-
-    @Test("Nil fingerprint skips scan (preserves nil-fallback safety)")
-    func nilFingerprintSkipsScan() {
-        let fakePersistence = InMemoryConfigPersistence()
-        let store = WallpaperConfigurationStore(persistence: fakePersistence)
-
-        store.save(makeVideoConfig(screenID: 42, fingerprint: "V:M:S"))
-        let resolved = store.get(for: 999, fingerprint: nil)
-        #expect(resolved == nil)
     }
 
     @Test("Fingerprint conflict parks the displaced config instead of dropping it")

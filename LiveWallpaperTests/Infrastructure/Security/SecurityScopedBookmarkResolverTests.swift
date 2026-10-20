@@ -24,66 +24,28 @@ struct SecurityScopedBookmarkResolverTests {
         }
     }
 
-    @Test("Fresh bookmark resolves without refresh and never invokes save")
-    func freshBookmark() {
+    @Test("Fresh, refreshed and failed-refresh bookmarks preserve their data and save semantics", arguments: [
+        (false, false, false), (true, false, true), (true, true, false)
+    ])
+    func bookmarkRefresh(isStale: Bool, refreshFails: Bool, expectedRefresh: Bool) throws {
         let capture = SaveCapture()
         let resolver = SecurityScopedBookmarkResolver(
-            resolveData: { _ in (Self.fixtureURL, false) },
-            refreshData: { _ in Self.refreshedData }
+            resolveData: { _ in (Self.fixtureURL, isStale) },
+            refreshData: { _ in
+                if refreshFails {
+                    throw FakeError.refreshFailed
+                }
+                return Self.refreshedData
+            }
         )
         let target = SecurityScopedBookmarkResolver.Target(label: "test", save: capture.save)
 
-        let result = resolver.resolve(Self.originalData, target: target)
+        let resolved = try resolver.resolve(Self.originalData, target: target).get()
 
-        guard case .success(let resolved) = result else {
-            Issue.record("Expected .success, got \(result)")
-            return
-        }
         #expect(resolved.url == Self.fixtureURL)
-        #expect(resolved.bookmarkData == Self.originalData)
-        #expect(resolved.didRefresh == false)
-        #expect(capture.snapshot.isEmpty, "save must not be invoked when bookmark is fresh")
-    }
-
-    @Test("Stale bookmark refreshes and invokes the target's save closure")
-    func staleBookmarkRefreshes() {
-        let capture = SaveCapture()
-        let resolver = SecurityScopedBookmarkResolver(
-            resolveData: { _ in (Self.fixtureURL, true) },
-            refreshData: { _ in Self.refreshedData }
-        )
-        let target = SecurityScopedBookmarkResolver.Target(label: "test", save: capture.save)
-
-        let result = resolver.resolve(Self.originalData, target: target)
-
-        guard case .success(let resolved) = result else {
-            Issue.record("Expected .success on stale resolve, got \(result)")
-            return
-        }
-        #expect(resolved.didRefresh == true)
-        #expect(resolved.bookmarkData == Self.refreshedData, "must return refreshed data to in-process callers")
-        #expect(capture.snapshot == [Self.refreshedData])
-    }
-
-    @Test("Stale + refresh failure preserves grace-use semantics")
-    func staleRefreshFailure() {
-        let capture = SaveCapture()
-        let resolver = SecurityScopedBookmarkResolver(
-            resolveData: { _ in (Self.fixtureURL, true) },
-            refreshData: { _ in throw FakeError.refreshFailed }
-        )
-        let target = SecurityScopedBookmarkResolver.Target(label: "test", save: capture.save)
-
-        let result = resolver.resolve(Self.originalData, target: target)
-
-        guard case .success(let resolved) = result else {
-            Issue.record("Expected .success even when refresh fails, got \(result)")
-            return
-        }
-        #expect(resolved.url == Self.fixtureURL)
-        #expect(resolved.bookmarkData == Self.originalData, "must return current data for grace use")
-        #expect(resolved.didRefresh == false, "refresh that threw must not flip didRefresh")
-        #expect(capture.snapshot.isEmpty, "failed refresh must not invoke save")
+        #expect(resolved.bookmarkData == (expectedRefresh ? Self.refreshedData : Self.originalData))
+        #expect(resolved.didRefresh == expectedRefresh)
+        #expect(capture.snapshot == (expectedRefresh ? [Self.refreshedData] : []))
     }
 
     @Test("Resolution throw propagates as .resolutionFailed")

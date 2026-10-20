@@ -1224,8 +1224,8 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.status == .inUse(itemTitle: "Aurora"))
     }
 
-    @Test("A fresh beat from a stale appex does not read as in-use")
-    func statusIgnoresForeignProvider() async throws {
+    @Test("A fresh healthy beat reports in-use only for the installed appex", arguments: [("41", false), ("42", true)])
+    func healthyHeartbeatRequiresInstalledProvider(build: String, expectedInUse: Bool) async throws {
         let installed = SystemWallpaperProviderIdentity(
             build: "42",
             bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
@@ -1239,42 +1239,18 @@ struct WallpaperExportServiceTests {
             timestamp: Self.referenceNow.addingTimeInterval(-60),
             activeChoiceID: bookmark.id.uuidString,
             provider: SystemWallpaperProviderIdentity(
-                build: "41",
+                build: build,
                 bundlePath: installed.bundlePath,
                 pid: 999
             )
         ))
         rig.service.refresh()
-        #expect(rig.service.status == .publishedNotSelected)
-        #expect(!rig.service.isItemInUse(bookmark.id.uuidString))
+        #expect(rig.service.status == (expectedInUse ? .inUse(itemTitle: "Aurora") : .publishedNotSelected))
+        #expect(rig.service.isItemInUse(bookmark.id.uuidString) == expectedInUse)
     }
 
-    @Test("A fresh beat from the installed appex still reads as in-use")
-    func statusAcceptsMatchingProvider() async throws {
-        let installed = SystemWallpaperProviderIdentity(
-            build: "42",
-            bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
-            pid: 0
-        )
-        let rig = try makeRig(expectedProvider: installed)
-        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
-        let bookmark = try rig.makeVideoBookmark(label: "Aurora")
-        try await rig.service.publish(bookmark: bookmark)
-        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
-            timestamp: Self.referenceNow.addingTimeInterval(-60),
-            activeChoiceID: bookmark.id.uuidString,
-            provider: SystemWallpaperProviderIdentity(
-                build: installed.build,
-                bundlePath: installed.bundlePath,
-                pid: 999
-            )
-        ))
-        rig.service.refresh()
-        #expect(rig.service.status == .inUse(itemTitle: "Aurora"))
-    }
-
-    @Test("An unhealthy verdict from a stale appex does not bar publishing")
-    func statusIgnoresForeignUnhealthyVerdict() async throws {
+    @Test("An unhealthy verdict bars publishing only for the installed appex", arguments: [("41", false), ("42", true)])
+    func unhealthyHeartbeatRequiresInstalledProvider(build: String, expectedIncompatible: Bool) async throws {
         let installed = SystemWallpaperProviderIdentity(
             build: "42",
             bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
@@ -1289,39 +1265,13 @@ struct WallpaperExportServiceTests {
             activeChoiceID: nil,
             runtimeHealthy: false,
             provider: SystemWallpaperProviderIdentity(
-                build: "41",
+                build: build,
                 bundlePath: installed.bundlePath,
                 pid: 999
             )
         ))
         rig.service.refresh()
-        #expect(rig.service.status != .systemIncompatible)
-    }
-
-    /// Control for the test above: same beat, only the stamp differs.
-    @Test("An unhealthy verdict from the installed appex still bars publishing")
-    func statusHonoursOwnUnhealthyVerdict() async throws {
-        let installed = SystemWallpaperProviderIdentity(
-            build: "42",
-            bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
-            pid: 0
-        )
-        let rig = try makeRig(expectedProvider: installed)
-        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
-        let bookmark = try rig.makeVideoBookmark(label: "Aurora")
-        try await rig.service.publish(bookmark: bookmark)
-        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
-            timestamp: Self.referenceNow.addingTimeInterval(-60),
-            activeChoiceID: nil,
-            runtimeHealthy: false,
-            provider: SystemWallpaperProviderIdentity(
-                build: installed.build,
-                bundlePath: installed.bundlePath,
-                pid: 999
-            )
-        ))
-        rig.service.refresh()
-        #expect(rig.service.status == .systemIncompatible)
+        #expect((rig.service.status == .systemIncompatible) == expectedIncompatible)
     }
 
     @Test("A failed operation surfaces as failed until dismissed")

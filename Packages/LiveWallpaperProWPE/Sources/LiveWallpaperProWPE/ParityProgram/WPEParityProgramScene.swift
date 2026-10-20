@@ -12,12 +12,6 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     /// Native `general.reflection` controls Main+0x128 bit7 and refreshes requested scene snapshots.
     /// The product resolves its preference/default once; actual shader slots independently own the request.
     public var mipMappedFrameBufferEnabled: Bool
-    /// Compatibility for callers that only selected on/off. There is one stored sample count.
-    public var msaa: Bool {
-        get { msaaSampleCount > 1 }
-        set { msaaSampleCount = newValue ? max(2, msaaSampleCount) : 1 }
-    }
-
     /// The wallpaper's raw `wec_*` / `wcc_*` preset settings.
     public var colorCorrection: WPEParityColorCorrection
     /// Postprocessing "displayhdr" on an HDR output (Main+0x128 bit14).
@@ -31,8 +25,8 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
     /// Pooled render targets a frame provably overwrites before reading may share memory with other targets.
     public var renderTargetAliasing: Bool
 
-    public init(bloom: Bool = true, hdrPostProcessing: Bool = false, msaa: Bool = false,
-                msaaSampleCount: Int? = nil, mipMappedFrameBufferEnabled: Bool = false,
+    public init(bloom: Bool = true, hdrPostProcessing: Bool = false,
+                msaaSampleCount: Int = 1, mipMappedFrameBufferEnabled: Bool = false,
                 colorCorrection: WPEParityColorCorrection = WPEParityColorCorrection(),
                 displayHDR: Bool = false, maximumPotentialEDR: Float = 1,
                 shadowQuality: Int32 = WPEEngineComboFlags().shadowQuality, offscreenScaleTier: Int = 0,
@@ -44,7 +38,7 @@ public struct WPEParityProgramSettings: Sendable, Equatable {
         self.hdrPostProcessing = hdrPostProcessing
         self.displayHDR = displayHDR
         self.maximumPotentialEDR = maximumPotentialEDR
-        self.msaaSampleCount = msaaSampleCount ?? (msaa ? 2 : 1)
+        self.msaaSampleCount = msaaSampleCount
         self.mipMappedFrameBufferEnabled = mipMappedFrameBufferEnabled
         self.colorCorrection = colorCorrection
     }

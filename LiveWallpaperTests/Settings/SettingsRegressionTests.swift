@@ -38,32 +38,6 @@ struct GeneralSettingsRegressionTests {
         }
     }
 
-    @Test("The legacy bug pattern (rebuild GlobalSettings without recentWPEImports) wipes history")
-    func legacyRebuildPatternWipesHistory() throws {
-        withIsolatedGlobalSettings {
-            let manager = SettingsManager.shared
-            let entry = WPEHistoryEntry(
-                origin: WPEOrigin(
-                    workshopID: "regression-canary",
-                    title: "Will be wiped",
-                    originalType: .video,
-                    sourceFolderBookmark: Data([0xBB]),
-                    cacheRelativePath: "wpe-cache/regression-canary",
-                    previewFileName: nil
-                ),
-                importedAt: Date(),
-                lastUsedAt: nil
-            )
-            manager.recordWPEImport(entry)
-            #expect(manager.loadGlobalSettings().recentWPEImports.count == 1)
-
-            let buggy = GlobalSettings(globalPauseOnBattery: true)
-            manager.saveGlobalSettings(buggy)
-            #expect(manager.loadGlobalSettings().recentWPEImports.isEmpty,
-                    "regression canary: rebuilding GlobalSettings without preserving recentWPEImports must reproduce the wipe")
-        }
-    }
-
     private func withIsolatedGlobalSettings(_ body: () throws -> Void) rethrows {
         let defaults = UserDefaults.standard
         let keys = [

@@ -24,7 +24,6 @@ final class WPEParityProductSettingsTests: XCTestCase {
         ])
         let initial = try WPEParityProductSettings.make(descriptor: descriptor, device: device, defaults: suite.defaults)
         XCTAssertEqual(initial.msaaSampleCount, 1, "Off is the Mac resource default")
-        XCTAssertFalse(initial.msaa)
         XCTAssertTrue(initial.hdrPostProcessing)
         XCTAssertTrue(initial.bloom)
         XCTAssertEqual(initial.colorCorrection.params[0], 0.25, accuracy: 1e-6)

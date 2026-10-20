@@ -973,7 +973,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
         let plan = try WPEParityFramePlan(document: document, assets: assets,
                                           settings: WPEParityProgramSettings(bloom: true, hdrPostProcessing: true,
-                                                                             msaa: true, renderTargetAliasing: aliasing),
+                                                                             msaaSampleCount: 2, renderTargetAliasing: aliasing),
                                           width: 1920, height: 1080)
         let cache = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: cache) }

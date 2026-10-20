@@ -2736,33 +2736,14 @@ struct PlaylistPolicyTests {
 
     // MARK: - resolveCursor (used by WallpaperAutomationOrchestrator.replacePlaylist after reorder)
 
-    @Test("resolveCursor: active bookmark found at its new index")
-    func resolveCursorFound() {
-        let primary = Data([0x01])
-        let extra1 = Data([0x02])
-        let extra2 = Data([0x03])
-        let combined = [extra1, primary, extra2]
-        #expect(PlaylistPolicy.resolveCursor(activeBookmark: primary, in: combined) == 1)
-    }
-
-    @Test("resolveCursor: active bookmark removed from list → falls back to 0")
-    func resolveCursorRemovedFallsBackToPrimary() {
-        let primary = Data([0x01])
-        let extra = Data([0x02])
-        let removed = Data([0x99])
-        let combined = [primary, extra]
-        #expect(PlaylistPolicy.resolveCursor(activeBookmark: removed, in: combined) == 0)
-    }
-
-    @Test("resolveCursor: nil active → 0")
-    func resolveCursorNilActive() {
-        let combined = [Data([0x01]), Data([0x02])]
-        #expect(PlaylistPolicy.resolveCursor(activeBookmark: nil, in: combined) == 0)
-    }
-
-    @Test("resolveCursor: empty combined → 0")
-    func resolveCursorEmptyCombined() {
-        #expect(PlaylistPolicy.resolveCursor(activeBookmark: Data([0x01]), in: []) == 0)
+    @Test("resolveCursor preserves the active bookmark or falls back to zero", arguments: [
+        (Data([0x01]), [Data([0x02]), Data([0x01]), Data([0x03])], 1),
+        (Data([0x99]), [Data([0x01]), Data([0x02])], 0),
+        (nil, [Data([0x01]), Data([0x02])], 0),
+        (Data([0x01]), [], 0),
+    ] as [(Data?, [Data], Int)])
+    func resolveCursor(active: Data?, combined: [Data], expected: Int) {
+        #expect(PlaylistPolicy.resolveCursor(activeBookmark: active, in: combined) == expected)
     }
 }
 
@@ -3071,54 +3052,30 @@ struct SchedulePolicyTests {
 
     // MARK: - hourRanges
 
-    @Test("hourRanges: normal slot produces a single range")
-    func hourRangesNormal() {
-        let slot = ScheduleSlot(startHour: 6, endHour: 12, label: "Morning")
-        let ranges = SchedulePolicy.hourRanges(for: slot)
-        #expect(ranges == [6..<12])
-    }
-
-    @Test("hourRanges: midnight wrap produces two ranges")
-    func hourRangesMidnightWrap() {
-        let slot = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
-        let ranges = SchedulePolicy.hourRanges(for: slot)
-        #expect(ranges == [22..<24, 0..<6])
-    }
-
-    @Test("hourRanges: zero-length slot returns empty")
-    func hourRangesZeroLength() {
-        let slot = ScheduleSlot(startHour: 8, endHour: 8, label: "Empty")
-        #expect(SchedulePolicy.hourRanges(for: slot).isEmpty)
+    @Test("hourRanges handles normal, midnight-wrap and empty slots", arguments: [
+        (6, 12, "Morning", [6 ..< 12]),
+        (22, 6, "Night", [22 ..< 24, 0 ..< 6]),
+        (8, 8, "Empty", []),
+    ] as [(Int, Int, String, [Range<Int>])])
+    func hourRanges(start: Int, end: Int, label: String, expected: [Range<Int>]) {
+        let slot = ScheduleSlot(startHour: start, endHour: end, label: label)
+        #expect(SchedulePolicy.hourRanges(for: slot) == expected)
     }
 
     // MARK: - conflicts
 
-    @Test("conflicts: overlapping normal slots are detected")
-    func conflictsOverlap() {
-        let slotA = ScheduleSlot(startHour: 6, endHour: 12, label: "Morning")
-        let slotB = ScheduleSlot(startHour: 10, endHour: 14, label: "Late Morning")
-        #expect(SchedulePolicy.conflicts(slot: slotA, against: [slotB]) == Set([slotB.id]))
-    }
-
-    @Test("conflicts: adjacent slots do not conflict")
-    func conflictsAdjacent() {
-        let slotA = ScheduleSlot(startHour: 6, endHour: 12, label: "A")
-        let slotB = ScheduleSlot(startHour: 12, endHour: 18, label: "B")
-        #expect(SchedulePolicy.conflicts(slot: slotA, against: [slotB]).isEmpty)
-    }
-
-    @Test("conflicts: midnight-wrap slot overlaps an early-morning slot")
-    func conflictsMidnightWrap() {
-        let night = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
-        let morning = ScheduleSlot(startHour: 4, endHour: 9, label: "Morning")
-        #expect(SchedulePolicy.conflicts(slot: night, against: [morning]) == Set([morning.id]))
-    }
-
-    @Test("conflicts: empty slot conflicts with nobody")
-    func conflictsEmptySlot() {
-        let empty = ScheduleSlot(startHour: 8, endHour: 8, label: "Empty")
-        let other = ScheduleSlot(startHour: 0, endHour: 24, label: "Wrap-disguise")
-        #expect(SchedulePolicy.conflicts(slot: empty, against: [other]).isEmpty)
+    @Test("conflicts returns the overlapping slot IDs across hour boundaries", arguments: [
+        (6, 12, "Morning", 10, 14, "Late Morning", true),
+        (6, 12, "A", 12, 18, "B", false),
+        (22, 6, "Night", 4, 9, "Morning", true),
+        (8, 8, "Empty", 0, 24, "Wrap-disguise", false),
+    ])
+    func conflicts(start: Int, end: Int, label: String,
+                   otherStart: Int, otherEnd: Int, otherLabel: String, overlaps: Bool) {
+        let slot = ScheduleSlot(startHour: start, endHour: end, label: label)
+        let other = ScheduleSlot(startHour: otherStart, endHour: otherEnd, label: otherLabel)
+        let expected: Set<UUID> = overlaps ? [other.id] : []
+        #expect(SchedulePolicy.conflicts(slot: slot, against: [other]) == expected)
     }
 
     @Test("The first slot problem names its slots: an overlap names both, a zero-length slot names itself")

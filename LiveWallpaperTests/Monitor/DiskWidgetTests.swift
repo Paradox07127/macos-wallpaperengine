@@ -40,22 +40,6 @@ struct DiskWidgetTests {
         #expect(empty.windowed(empty.diskRead, seconds: 20) == [1, 2, 3])
     }
 
-    @Test("absent/invalid historyWindow falls back to the caller's default")
-    func historyWindowFallsBackWhenAbsent() {
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 120) == 120)
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 0, fallbackSeconds: 120) == 120)
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: -30, fallbackSeconds: 120) == 120)
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: .nan, fallbackSeconds: 120) == 120)
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: .infinity, fallbackSeconds: 120) == 120)
-    }
-
-    @Test("a valid historyWindow override rounds to the nearest sample, floored at 2")
-    func historyWindowUsesValidOverride() {
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 60, fallbackSeconds: 120) == 60)
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 59.6, fallbackSeconds: 120) == 60)
-        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 0.4, fallbackSeconds: 120) == 2)
-    }
-
     @Test("only the literal 'compact' collapses the split legend")
     func breakdownCompactOnlyOnLiteral() {
         #expect(DiskWidgetView.breakdownIsCompact("compact"))

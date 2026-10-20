@@ -95,6 +95,17 @@ struct MonitorChartContinuityTests {
 @Suite("Monitor history sample admission")
 @MainActor
 struct MonitorHistoryAdmissionTests {
+    @Test("History windows preserve caller defaults and round valid overrides with a two-second floor", arguments: [
+        (nil, 60, 60), (nil, 120, 120),
+        (30, 60, 30), (90.6, 120, 91),
+        (0, 60, 60), (-5, 60, 60), (.nan, 60, 60), (.infinity, 60, 60), (0.4, 60, 2),
+        (0, 120, 120), (-30, 120, 120), (.nan, 120, 120), (.infinity, 120, 120),
+        (60, 120, 60), (59.6, 120, 60), (0.4, 120, 2),
+    ] as [(Double?, Int, Int)])
+    func historyWindowResolution(option: Double?, fallback: Int, expected: Int) {
+        #expect(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: option, fallbackSeconds: fallback) == expected)
+    }
+
     private static func snapshot(
         publishedAt: Double, sampledAt: Double? = nil, cpuTotal: Double = 0.3
     ) -> MonitorSnapshot {

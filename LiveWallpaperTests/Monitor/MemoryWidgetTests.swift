@@ -75,27 +75,6 @@ final class MemoryWidgetTests: XCTestCase {
         XCTAssertTrue(safe.allSatisfy { $0.fraction.isFinite })
     }
 
-    func testHistoryWindowSamplesFallsBackWhenOptionAbsent() {
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 120), 120)
-    }
-
-    func testHistoryWindowSamplesHonoursOverride() {
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 30, fallbackSeconds: 60), 30)
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 90.6, fallbackSeconds: 120), 91)
-    }
-
-    func testHistoryWindowSamplesRejectsInvalidOverrides() {
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 0, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: -5, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: .nan, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: .infinity, fallbackSeconds: 60), 60)
-    }
-
-    func testHistoryWindowSamplesFloorsAtTwo() {
-        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 0.4, fallbackSeconds: 60), 2)
-    }
-
     func testShowsTopProcessesDefaultsToTrue() {
         XCTAssertTrue(MemoryWidgetView.showsTopProcesses(nil))
     }

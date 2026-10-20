@@ -2140,7 +2140,7 @@ final class WPEParityTextDrawTests: XCTestCase {
                                             assetRoots: [root.appending(path: "wpeassets"), wpeAssets])
         let plan = try WPEParityFramePlan(document: document, assets: assets,
                                           settings: WPEParityProgramSettings(bloom: true, hdrPostProcessing: true,
-                                                                             msaa: true),
+                                                                             msaaSampleCount: 2),
                                           width: 1920, height: 1080)
         let geometryCompiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
         let store = try WPEParityShaderStore(

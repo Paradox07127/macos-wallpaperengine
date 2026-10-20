@@ -13,7 +13,7 @@ final class WPEParityRealSceneTests: XCTestCase {
     private static let width = 1920
     private static let height = 1080
     /// The capture machine's settings, so programs carry the combos the captured shaders were compiled with.
-    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaa: true)
+    private static let settings = WPEParityProgramSettings(bloom: true, hdrPostProcessing: true, msaaSampleCount: 2)
 
     func testScene3815666789RendersThreeFrames() async throws {
         try await render("3815666789")
