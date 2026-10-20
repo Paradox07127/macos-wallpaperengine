@@ -104,7 +104,7 @@ WPE_METAL_SUITES := WPEParityMetalStateMappingTests WPEParityShaderStoreTests \
     SystemWallpaperPreparationTests WPEParityTextureLoaderTests WPETexTexturePayloadTests WPEMetalRenderScaleTests \
     WPEMetalFXUpscalerTests WPEMetalUpscalePlanTests WPEDisplayHDROutputTests WPEMetalFrameSubmissionTests \
     WPEVideoNV12ConversionTests WPEVideoHDRAndLegacyOutputTests WPEVideoSamplingFailureTests \
-    WPEVideoFrameConversionSchedulingTests WPEVideoOutputCapTests WPEVideoTextureSourceTeardownTests \
+    WPEVideoFrameConversionSchedulingTests WPEVideoTextureSourcePacingTests WPEVideoTextureSourceTeardownTests \
     WPEMetalTextureSnapshotterFormatTests \
     WPESceneSpanPresenterTests WPESceneSpanFramesTests WPEDisplayedFrameCaptureTests \
     WallpaperVideoPlayerDisplayedFrameCaptureTests WPERenderThreadTests WPERenderThreadDrainRuntimeTests \

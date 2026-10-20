@@ -89,7 +89,7 @@ struct WPESceneDocumentParserTests {
             newValues: ["xme": .bool(false)]
         )
         #expect(!patch.requiresReload)
-        #expect(patch.incrementalBindings == [visibleBinding])
+        #expect(patch.changedBindings == [visibleBinding])
 
         let shownDefault = try WPESceneDocumentParser.parse(data: data, userValues: [:])
         #expect(shownDefault.imageObjects.first?.visible == true)
@@ -401,7 +401,6 @@ struct WPESceneDocumentParserTests {
 
         let directional = try #require(document.lightObjects.first { $0.id == "259" })
         #expect(directional.type == .directional)
-        #expect(directional.type.knownShaderArrayValue == 3)
         #expect(directional.angles == SIMD3<Double>(7, 8, 9))
         #expect(directional.cascadeDistances == SIMD3<Double>(0.3, 0.4, 8))
         #expect(!directional.visible)
@@ -418,7 +417,6 @@ struct WPESceneDocumentParserTests {
 
     private func expectPointLightMetadata(_ point: WPESceneLightObject) {
         #expect(point.type == .point)
-        #expect(point.type.knownShaderArrayValue == 0)
         #expect(point.authoredType == "lpoint")
         #expect(point.origin == SIMD3<Double>(10, 20, 30))
         #expect(point.color == SIMD3<Double>(0.25, 0.5, 0.75))
@@ -464,7 +462,6 @@ struct WPESceneDocumentParserTests {
         let light = try #require(document.lightObjects.first)
 
         #expect(light.type == .unknown("larea"))
-        #expect(light.type.knownShaderArrayValue == nil)
         #expect(light.authoredType == "larea")
     }
 
@@ -873,7 +870,7 @@ struct WPESceneDocumentParserTests {
         #expect(layer.blendMode == .additive)
     }
 
-    @Test("Destination-reading colorBlendMode routes to the programmable path, not opaque normal")
+    @Test("Destination-reading colorBlendMode keeps the authored mode for rendering")
     func imageOverlayBlendModeUsesProgrammablePath() throws {
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
@@ -893,10 +890,9 @@ struct WPESceneDocumentParserTests {
 
         let layer = try #require(document.imageObjects.first)
         #expect(layer.colorBlendMode == 11)
-        #expect(layer.usesProgrammableBlend)
     }
 
-    @Test("Fixed-function colorBlendModes stay on the cheap blend-state path")
+    @Test("Fixed-function colorBlendModes map to the corresponding typed blend mode")
     func imageFixedFunctionBlendModesStayFixedFunction() throws {
         for (raw, expected) in [(0, WPESceneBlendMode.normal), (2, .multiply), (7, .screen), (9, .additive), (31, .additive)] {
             let payload: [String: Any] = [
@@ -910,7 +906,6 @@ struct WPESceneDocumentParserTests {
             let data = try JSONSerialization.data(withJSONObject: payload, options: [])
             let layer = try #require(try WPESceneDocumentParser.parse(data: data).imageObjects.first)
             #expect(layer.blendMode == expected, "colorBlendMode \(raw)")
-            #expect(!layer.usesProgrammableBlend, "colorBlendMode \(raw) must not pay for a scene snapshot")
         }
     }
 
@@ -1689,23 +1684,7 @@ struct WPESceneDocumentParserTests {
 
     @Test("Property-bound visibility {user,value:false} hides the layer (style-combo selection)")
     func propertyBoundVisibilityHidesLayer() throws {
-        let payload: [String: Any] = [
-            "camera": ["center": "0 0 0"],
-            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
-            "objects": [
-                [
-                    "id": 269, "name": "斜", "image": "models/util/solidlayer.json",
-                    "origin": "100 100 0",
-                    "visible": ["user": ["condition": "1", "name": "newproperty14"], "value": true]
-                ],
-                [
-                    "id": 488, "name": "底", "image": "models/util/solidlayer.json",
-                    "origin": "100 100 0",
-                    "visible": ["user": ["condition": "2", "name": "newproperty14"], "value": false]
-                ]
-            ]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let data = try styleSelectorSceneData()
         let document = try WPESceneDocumentParser.parse(data: data)
         let byID = Dictionary(uniqueKeysWithValues: document.imageObjects.map { ($0.id, $0) })
         #expect(byID["269"]?.visible == true)
@@ -1891,7 +1870,7 @@ struct WPESceneDocumentParserTests {
         #expect(byID["488"]?.visible == false)
     }
 
-    @Test("Condition-form visibility records an incremental binding carrying the condition")
+    @Test("Condition-form visibility records conditioned bindings and switches through an incremental patch")
     func styleSelectorBindingIsIncrementalWithCondition() throws {
         let data = try styleSelectorSceneData()
         let document = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(1)])
@@ -1905,20 +1884,13 @@ struct WPESceneDocumentParserTests {
         }
         #expect(bindings.contains { $0.target == .imageObject(id: "269") && $0.condition == "1" })
         #expect(bindings.contains { $0.target == .imageObject(id: "488") && $0.condition == "2" })
-    }
-
-    @Test("Switching a style selector is an incremental patch, not a reload")
-    func styleSelectorPatchIsIncremental() throws {
-        let data = try styleSelectorSceneData()
-        let document = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(1)])
-
         let patch = WPEScenePropertyPatch(
             bindingsByProperty: document.propertyBindings,
             oldValues: ["newproperty14": .number(1)],
             newValues: ["newproperty14": .number(2)]
         )
         #expect(!patch.requiresReload)
-        #expect(patch.incrementalBindings.count == 2)
+        #expect(patch.changedBindings.count == 2)
     }
 
     @Test("Nested user property without a condition behaves like a simple binding")
@@ -1935,16 +1907,6 @@ struct WPESceneDocumentParserTests {
         let hidden = try WPESceneDocumentParser.parse(data: data, userValues: ["toggle": .bool(false)])
         #expect(hidden.imageObjects.first?.visible == false)
         #expect(hidden.propertyBindings["toggle"]?.first?.target == .imageObject(id: "7"))
-    }
-
-    @Test("sceneConditionMatches maps live combo values to a condition literal")
-    func sceneConditionMatchesCoversTypes() {
-        typealias Schema = WallpaperEngineProjectPropertySchema
-        #expect(Schema.sceneConditionMatches(value: .number(2), condition: "2"))
-        #expect(Schema.sceneConditionMatches(value: .string("2"), condition: "2"))
-        #expect(!Schema.sceneConditionMatches(value: .number(1), condition: "2"))
-        #expect(!Schema.sceneConditionMatches(value: .number(2), condition: "1"))
-        #expect(!Schema.sceneConditionMatches(value: nil, condition: "2"))
     }
 
     @Test("Child image object adds parent-local Y in scene-up coordinates")

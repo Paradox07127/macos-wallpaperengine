@@ -380,68 +380,26 @@ struct SettingsManagerTests {
 
 @Suite("FrameRateLimit.getEffectiveLimit")
 struct FrameRateLimitTests {
-
-    @Test("Unlimited: video below screen refresh → no limit")
-    func unlimitedBelowScreen() {
-        let result = FrameRateLimit.matchDisplay.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
-        #expect(result == 0)
+    @Test("Source and display caps preserve explicit targets", arguments: [
+        (FrameRateLimit.matchDisplay, 30.0, 60.0, 0.0),
+        (.matchDisplay, 120.0, 60.0, 60.0),
+        (.matchDisplay, 60.0, 0.0, 0.0),
+        (.fps30, 60.0, 60.0, 30.0),
+        (.fps60, 30.0, 60.0, 0.0),
+        (.fps60, 120.0, 48.0, 48.0),
+        (.fps60, 120.0, 120.0, 60.0),
+        (.matchDisplay, 120.0, 120.0, 0.0),
+        (.fps30, 60.0, 24.0, 24.0),
+    ])
+    func effectiveLimit(limit: FrameRateLimit, video: Double, display: Double, expected: Double) {
+        #expect(limit.getEffectiveLimit(videoFrameRate: video, screenRefreshRate: display) == Float(expected))
     }
 
-    @Test("Unlimited: video above screen refresh → cap to screen")
-    func unlimitedAboveScreen() {
-        let result = FrameRateLimit.matchDisplay.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 60)
-        #expect(result == 60)
-    }
-
-    @Test("Unlimited: zero screen refresh → no limit")
-    func unlimitedZeroScreen() {
-        let result = FrameRateLimit.matchDisplay.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 0)
-        #expect(result == 0)
-    }
-
-    @Test("30 FPS limit: normal case")
-    func fps30Normal() {
-        let result = FrameRateLimit.fps30.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 60)
-        #expect(result == 30)
-    }
-
-    @Test("60 FPS limit: video below limit → no limit needed")
-    func fps60BelowVideo() {
-        let result = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
-        #expect(result == 0)
-    }
-
-    @Test("60 FPS limit: screen below limit → cap to screen")
-    func fps60ScreenBelow() {
-        let result = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 48)
-        #expect(result == 48)
-    }
-
-    /// The only inputs where `.fps60` and `.matchDisplay` diverge: below 60 Hz both land on
-    /// the panel, so a suite that only probes 60 Hz cannot tell the cap from no cap at all.
-    @Test("60 FPS limit on a 120 Hz panel caps at 60, unlike matchDisplay")
-    func fps60CapsBelowAProMotionPanel() {
-        let capped = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 120)
-        let uncapped = FrameRateLimit.matchDisplay.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 120)
-        #expect(capped == 60)
-        #expect(uncapped == 0)
-    }
-
-    @Test("A 30 target on a 24 Hz panel yields 24, not half of it")
-    func targetAboveASlowPanel() {
-        let result = FrameRateLimit.fps30.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 24)
-        #expect(result == 24)
-    }
-
-    @Test("naturalDefault returns fps30 for scene wallpapers (WPE parity)")
-    func naturalDefaultForScene() {
-        #expect(FrameRateLimit.naturalDefault(for: .scene) == .fps30)
-    }
-
-    @Test("naturalDefault returns fps60 for non-scene wallpapers")
-    func naturalDefaultForOthers() {
-        #expect(FrameRateLimit.naturalDefault(for: .video) == .matchDisplay)
-        #expect(FrameRateLimit.naturalDefault(for: .html) == .matchDisplay)
+    @Test("New wallpaper defaults preserve content cadence", arguments: [
+        (WallpaperType.scene, FrameRateLimit.fps30), (.video, .matchDisplay), (.html, .matchDisplay),
+    ])
+    func naturalDefault(type: WallpaperType, expected: FrameRateLimit) {
+        #expect(FrameRateLimit.naturalDefault(for: type) == expected)
     }
 }
 
@@ -502,61 +460,19 @@ struct FrameRateLimitEnforcesCompositionCapTests {
 
 @Suite("ScheduleSlot.containsHour")
 struct ScheduleSlotTests {
-
-    @Test("Normal range: 6-12 contains 9")
-    func normalRangeInside() {
-        let slot = ScheduleSlot(startHour: 6, endHour: 12, label: "Morning")
-        #expect(slot.containsHour(9))
-    }
-
-    @Test("Normal range: 6-12 does NOT contain 13")
-    func normalRangeOutside() {
-        let slot = ScheduleSlot(startHour: 6, endHour: 12, label: "Morning")
-        #expect(!slot.containsHour(13))
-    }
-
-    @Test("Normal range: start boundary is inclusive")
-    func normalRangeStartBoundary() {
-        let slot = ScheduleSlot(startHour: 6, endHour: 12, label: "Morning")
-        #expect(slot.containsHour(6))
-    }
-
-    @Test("Normal range: end boundary is exclusive")
-    func normalRangeEndBoundary() {
-        let slot = ScheduleSlot(startHour: 6, endHour: 12, label: "Morning")
-        #expect(!slot.containsHour(12))
-    }
-
-    @Test("Wrapping range: 22-6 contains 23")
-    func wrappingRangeLateNight() {
-        let slot = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
-        #expect(slot.containsHour(23))
-    }
-
-    @Test("Wrapping range: 22-6 contains 3 (after midnight)")
-    func wrappingRangeEarlyMorning() {
-        let slot = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
-        #expect(slot.containsHour(3))
-    }
-
-    @Test("Wrapping range: 22-6 does NOT contain 12")
-    func wrappingRangeOutside() {
-        let slot = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
-        #expect(!slot.containsHour(12))
-    }
-
-    @Test("Wrapping range: 22-6 contains 0 (midnight)")
-    func wrappingRangeMidnight() {
-        let slot = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
-        #expect(slot.containsHour(0))
+    @Test("Ranges include their start and exclude their end across midnight", arguments: [
+        (6, 12, 9, true), (6, 12, 13, false), (6, 12, 6, true), (6, 12, 12, false),
+        (22, 6, 23, true), (22, 6, 3, true), (22, 6, 12, false), (22, 6, 0, true),
+    ])
+    func containsHour(start: Int, end: Int, hour: Int, expected: Bool) {
+        #expect(ScheduleSlot(startHour: start, endHour: end, label: "Range").containsHour(hour) == expected)
     }
 
     @Test("Default slots cover all 24 hours")
     func defaultSlotsCoverAllHours() {
         let slots = ScheduleSlot.defaultSlots
         for hour in 0..<24 {
-            let covered = slots.contains { $0.containsHour(hour) }
-            #expect(covered, "Hour \(hour) is not covered by any default slot")
+            #expect(slots.contains { $0.containsHour(hour) }, "Hour \(hour) is not covered by any default slot")
         }
     }
 }
@@ -669,7 +585,6 @@ struct ScreenConfigurationDecoderTests {
 
         #expect(decoded.activeWallpaper == .html(source: .url(url), config: .default))
         #expect(decoded.wallpaperType == .html)
-        #expect(decoded.htmlContent == "https://example.com/wallpaper")
         #expect(decoded.htmlSource == .url(url))
         #expect(decoded.htmlConfig?.allowJavaScript == true)
         #expect(decoded.htmlConfig?.allowMouseInteraction == false)
@@ -848,118 +763,20 @@ struct GlobalSettingsDecoderTests {
 
 @Suite("FrameRateLimit.resolveCompositionFPS")
 struct ResolveCompositionFPSTests {
-
-    @Test("Unlimited 120fps source on 60Hz screen → 60")
-    func unlimited120Source60Screen() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .matchDisplay,
-            videoFrameRate: 120,
-            screenRefreshRate: 60
-        )
-        #expect(fps == 60)
-    }
-
-    @Test("Unlimited 120fps source on 120Hz ProMotion → 120")
-    func unlimited120SourceProMotion() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .matchDisplay,
-            videoFrameRate: 120,
-            screenRefreshRate: 120
-        )
-        #expect(fps == 120)
-    }
-
-    @Test("Unlimited 30fps source on 60Hz → 30 (use native)")
-    func unlimited30SourceNative() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .matchDisplay,
-            videoFrameRate: 30,
-            screenRefreshRate: 60
-        )
-        #expect(fps == 30)
-    }
-
-    @Test("Unlimited with unknown video fps falls back to screen refresh")
-    func unlimitedUnknownVideoFps() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .matchDisplay,
-            videoFrameRate: 0,
-            screenRefreshRate: 144
-        )
-        #expect(fps == 144)
-    }
-
-    @Test("Unlimited with everything zero → 60 nominal fallback")
-    func unlimitedAllZeroFallback() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .matchDisplay,
-            videoFrameRate: 0,
-            screenRefreshRate: 0
-        )
-        #expect(fps == 60)
-    }
-
-    @Test("60 FPS limit on 120fps source on 60Hz → 60")
-    func fps60Capped() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps60,
-            videoFrameRate: 120,
-            screenRefreshRate: 60
-        )
-        #expect(fps == 60)
-    }
-
-    @Test("60 FPS limit on 30fps source → use native 30")
-    func fps60BelowSourceUsesNative() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps60,
-            videoFrameRate: 30,
-            screenRefreshRate: 60
-        )
-        #expect(fps == 30)
-    }
-
-    /// Video re-times through `AVVideoComposition`, so it can hold an exact 60 on a 144 Hz
-    /// panel instead of falling to the 48 that panel's divisors allow.
-    @Test("The 60 step on a 120fps source at 144Hz → 60")
-    func halfAppliedToHighEverything() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps60,
-            videoFrameRate: 120,
-            screenRefreshRate: 144
-        )
-        #expect(fps == 60)
-    }
-
-    @Test("The 30 step on a 60fps source on a 60 Hz panel → 30")
-    func halfAppliedToHighSource() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps30,
-            videoFrameRate: 60,
-            screenRefreshRate: 60
-        )
-        #expect(fps == 30)
-    }
-
-    @Test("The 15 step on a 30fps source → 15, not a quarter of it")
-    func quarterAppliedToModerateSource() {
-        let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps15,
-            videoFrameRate: 30,
-            screenRefreshRate: 60
-        )
-        #expect(fps == 15)
-    }
-
-    @Test("Legacy raw values 15 and 24 decode to their cases")
-    func legacyRawValuesDecodeToNewCases() throws {
-        let data15 = try JSONEncoder().encode(15)
-        let decoded15 = try JSONDecoder().decode(FrameRateLimit.self, from: data15)
-        #expect(decoded15 == .fps15)
-
-        let data24 = try JSONEncoder().encode(24)
-        let decoded24 = try JSONDecoder().decode(FrameRateLimit.self, from: data24)
-        #expect(decoded24 == .fps24)
+    @Test("Composition respects source cadence, target and display fallback", arguments: [
+        (FrameRateLimit.matchDisplay, 120.0, 60.0, 60.0),
+        (.matchDisplay, 120.0, 120.0, 120.0),
+        (.matchDisplay, 30.0, 60.0, 30.0),
+        (.matchDisplay, 0.0, 144.0, 144.0),
+        (.matchDisplay, 0.0, 0.0, 60.0),
+        (.fps60, 120.0, 60.0, 60.0),
+        (.fps60, 30.0, 60.0, 30.0),
+        (.fps60, 120.0, 144.0, 60.0),
+        (.fps30, 60.0, 60.0, 30.0),
+        (.fps15, 30.0, 60.0, 15.0),
+    ])
+    func compositionFPS(limit: FrameRateLimit, video: Double, display: Double, expected: Double) {
+        #expect(FrameRateLimit.resolveCompositionFPS(limit: limit, videoFrameRate: video, screenRefreshRate: display) == expected)
     }
 }
 

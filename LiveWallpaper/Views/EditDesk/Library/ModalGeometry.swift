@@ -72,10 +72,6 @@ enum ModalGeometry {
         var primary: ModalDisplayTarget?
         var secondary: [ModalDisplayTarget]
         var overflow: [ModalDisplayTarget]
-
-        var overflowCount: Int {
-            overflow.count
-        }
     }
 
     /// A preview as drawn: `size` in points; `isLowResolution` when fitting the box would enlarge it past the cap.

@@ -93,32 +93,21 @@ struct WPEVideoSamplingFailureTests {
 
     // MARK: - Harness
 
-    /// Zero-ticket admission plus an empty file keep `init` on the still-frame branch: nothing publishes until a test ingests.
+    /// The buffer-only source runs the real upload paths without opening an AVPlayer.
     private struct Harness {
         let device: MTLDevice
         let queue: MTLCommandQueue
         let source: WPEVideoTextureSource
-        let fileURL: URL
 
         static func make() throws -> Harness {
             let device = try #require(MTLCreateSystemDefaultDevice())
             let queue = try #require(device.makeCommandQueue())
-            let fileURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("wpe-sampling-failure-\(UUID().uuidString).mp4")
-            try Data().write(to: fileURL)
-            let source = try WPEVideoTextureSource(
-                device: device,
-                videoURL: fileURL,
-                commandQueue: queue,
-                decoderAdmission: WPEVideoDecoderAdmission(limit: 0)
-            )
-            #expect(!source.isLiveDecoder, "harness must not spin up an AVPlayer")
-            return Harness(device: device, queue: queue, source: source, fileURL: fileURL)
+            let source = try WPEVideoTextureSource(device: device, commandQueue: queue)
+            return Harness(device: device, queue: queue, source: source)
         }
 
         func tearDown() {
             source.invalidate()
-            try? FileManager.default.removeItem(at: fileURL)
         }
 
         /// Red channel sampled through the shared linear presentation fragment into a float target.

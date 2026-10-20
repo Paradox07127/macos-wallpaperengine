@@ -21,32 +21,6 @@ public struct WPERenderUserTextureBindings: Equatable, Sendable {
     }
 }
 
-public struct WPERenderEffectPassIdentity: Equatable, Sendable {
-    public let stableEffectID: String
-    public let stablePassID: String
-    public let objectID: String
-    public let authoredEffectID: String
-    public let authoredEffectPath: String
-    public let effectPassIndex: Int
-    public let authoredOverrideID: Int?
-
-    public init(
-        objectID: String,
-        authoredEffectID: String,
-        authoredEffectPath: String,
-        effectPassIndex: Int,
-        authoredOverrideID: Int?
-    ) {
-        self.objectID = objectID
-        self.authoredEffectID = authoredEffectID
-        self.authoredEffectPath = authoredEffectPath
-        self.effectPassIndex = effectPassIndex
-        self.authoredOverrideID = authoredOverrideID
-        stableEffectID = "\(objectID):effect:\(authoredEffectID)"
-        stablePassID = "\(objectID):effect:\(authoredEffectID):pass:\(effectPassIndex)"
-    }
-}
-
 public enum WPESceneAliasName {
     public static let fullFrameBuffer = "_rt_FullFrameBuffer"
 }

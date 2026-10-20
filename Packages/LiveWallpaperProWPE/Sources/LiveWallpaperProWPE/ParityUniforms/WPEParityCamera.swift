@@ -326,11 +326,6 @@ public struct WPEParityCamera: Sendable, Equatable {
         get throws { try pushPerspective(view: view, projection: projection).projection }
     }
 
-    /// Replacement V for a top-level `perspective` object.
-    public var perspectiveView: simd_float4x4 {
-        get throws { try pushPerspective(view: view, projection: projection).view }
-    }
-
     /// FUN_1401e5b60 on the V and P in force, including a parent composite's current Pyy.
     /// The selected camera value freezes the angle inputs before tick; no scene-wide distance is cached.
     public func pushPerspective(view: simd_float4x4, projection: simd_float4x4)

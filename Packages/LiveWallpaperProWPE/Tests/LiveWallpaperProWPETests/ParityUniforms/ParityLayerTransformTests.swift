@@ -233,7 +233,8 @@ final class ParityLayerTransformTests: XCTestCase {
         var flagged = layer("a")
         flagged.perspective = true
         let layers = set([flagged])
-        try assertEqual(layers.projection("a"), layers.camera.perspectiveProjection)
-        try assertEqual(layers.view("a", parallax: .zero), layers.camera.perspectiveView)
+        let expected = try layers.camera.pushPerspective(view: layers.camera.view, projection: layers.camera.projection)
+        try assertEqual(layers.projection("a"), expected.projection)
+        try assertEqual(layers.view("a", parallax: .zero), expected.view)
     }
 }

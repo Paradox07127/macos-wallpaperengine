@@ -56,8 +56,6 @@ final class ParityLightsTests: XCTestCase {
           {"id":4,"light":"ldirectional"}]}
         """)
         XCTAssertEqual(document.lightObjects[0].type, .tube)
-        XCTAssertEqual(document.lightObjects[0].type.knownShaderArrayValue, 2)
-        XCTAssertEqual(document.lightObjects[3].type.knownShaderArrayValue, 3)
         var transforms = WPEParityLayerTransformSet(document: document, renderTargetSize: SIMD2(200, 100))
         var state = WPEParitySceneState(document: document, hdr: false)
         var lights = WPEParityUniformLights(document: document, transforms: transforms, state: state)

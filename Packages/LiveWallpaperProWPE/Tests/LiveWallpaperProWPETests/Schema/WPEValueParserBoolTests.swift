@@ -5,41 +5,24 @@ import Testing
 @Suite("WPEValueParser boolean handling")
 struct WPEValueParserBoolTests {
 
-    /// Booleans exactly as JSONSerialization produces them (`__NSCFBoolean`), which is
-    /// the path real scene data takes — the most faithful reproduction of the bug.
-    private func jsonBool(_ value: Bool) -> Any {
-        let json = "{\"v\": \(value)}".data(using: .utf8) ?? Data()
-        guard let object = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
-              let val = object["v"] else {
-            fatalError("Failed to parse mock JSON bool")
+    private func jsonValue(_ literal: String) throws -> Any {
+        let object = try #require(JSONSerialization.jsonObject(with: Data("{\"v\": \(literal)}".utf8)) as? [String: Any])
+        return try #require(object["v"])
+    }
+
+    /// Keep JSONSerialization's `__NSCFBoolean` distinct from numeric NSNumber inputs.
+    @Test("Booleans require explicit numeric admission", arguments: [(false, 0), (true, 1)])
+    func booleanAdmission(value: Bool, expected: Int) throws {
+        for input in try [jsonValue(String(value)), value] {
+            #expect(WPEValueParser.double(input) == nil)
+            #expect(WPEValueParser.int(input) == nil)
+            #expect(WPEValueParser.double(input, boolAsNumber: true) == Double(expected))
+            #expect(WPEValueParser.int(input, boolAsNumber: true) == expected)
         }
-        return val
-    }
-
-    // MARK: - double
-
-    @Test("double: JSON booleans parse as nil with the default flag")
-    func doubleRejectsJSONBoolByDefault() {
-        #expect(WPEValueParser.double(jsonBool(false)) == nil)
-        #expect(WPEValueParser.double(jsonBool(true)) == nil)
-    }
-
-    @Test("double: Swift Bool literals parse as nil with the default flag")
-    func doubleRejectsSwiftBoolByDefault() {
-        #expect(WPEValueParser.double(false) == nil)
-        #expect(WPEValueParser.double(true) == nil)
-    }
-
-    @Test("double: booleans parse as 1/0 when boolAsNumber is true")
-    func doubleKeepsBoolAsNumber() {
-        #expect(WPEValueParser.double(jsonBool(true), boolAsNumber: true) == 1)
-        #expect(WPEValueParser.double(jsonBool(false), boolAsNumber: true) == 0)
-        #expect(WPEValueParser.double(true, boolAsNumber: true) == 1)
-        #expect(WPEValueParser.double(false, boolAsNumber: true) == 0)
     }
 
     @Test("double: genuine numbers and numeric strings still parse under both flags")
-    func doublePreservesNumbers() {
+    func doublePreservesNumbers() throws {
         #expect(WPEValueParser.double(2.5) == 2.5)
         #expect(WPEValueParser.double(0) == 0)
         #expect(WPEValueParser.double(1) == 1)
@@ -47,33 +30,14 @@ struct WPEValueParserBoolTests {
         #expect(WPEValueParser.double(1, boolAsNumber: true) == 1)
         #expect(WPEValueParser.double("3.5") == 3.5)
         // Numbers decoded from JSON (NSNumber-backed) are unaffected by the bool guard.
-        #expect(WPEValueParser.double(jsonNumber("0")) == 0)
-        #expect(WPEValueParser.double(jsonNumber("42")) == 42)
+        #expect(try WPEValueParser.double(jsonValue("0")) == 0)
+        #expect(try WPEValueParser.double(jsonValue("42")) == 42)
     }
 
-    // MARK: - int
-
-    @Test("int: JSON booleans parse as nil with the default flag")
-    func intRejectsJSONBoolByDefault() {
-        #expect(WPEValueParser.int(jsonBool(false)) == nil)
-        #expect(WPEValueParser.int(jsonBool(true)) == nil)
-    }
-
-    @Test("int: booleans parse as 1/0 when boolAsNumber is true; numbers preserved")
-    func intKeepsBoolAsNumberAndNumbers() {
-        #expect(WPEValueParser.int(true, boolAsNumber: true) == 1)
-        #expect(WPEValueParser.int(false, boolAsNumber: true) == 0)
+    @Test("int: genuine numbers are preserved")
+    func intPreservesNumbers() throws {
         #expect(WPEValueParser.int(0) == 0)
         #expect(WPEValueParser.int(7) == 7)
-        #expect(WPEValueParser.int(jsonNumber("0")) == 0)
-    }
-
-    private func jsonNumber(_ literal: String) -> Any {
-        let json = "{\"v\": \(literal)}".data(using: .utf8) ?? Data()
-        guard let object = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
-              let val = object["v"] else {
-            fatalError("Failed to parse mock JSON number")
-        }
-        return val
+        #expect(try WPEValueParser.int(jsonValue("0")) == 0)
     }
 }

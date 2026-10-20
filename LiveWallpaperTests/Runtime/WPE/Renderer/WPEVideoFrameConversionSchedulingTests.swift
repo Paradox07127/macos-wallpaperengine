@@ -237,16 +237,13 @@ struct WPEVideoFrameConversionSchedulingTests {
         #expect(harness.source.pendingRetirementCountForTesting == 0)
     }
 
-    // MARK: - Source-order pins
-
     // MARK: - Harness
 
-    /// Zero-ticket admission plus a zero-byte file keep `init` on the still-frame branch, so nothing publishes until a test ingests.
+    /// The buffer-only source runs the real conversion and retirement paths without opening an AVPlayer.
     private struct Harness {
         let device: MTLDevice
         let queue: MTLCommandQueue
         let source: WPEVideoTextureSource
-        let fileURL: URL
 
         static func make(
             device explicitDevice: MTLDevice? = nil,
@@ -264,22 +261,12 @@ struct WPEVideoFrameConversionSchedulingTests {
             } else {
                 queue = try #require(device.makeCommandQueue())
             }
-            let fileURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("wpe-e2-\(UUID().uuidString).mp4")
-            try Data().write(to: fileURL)
-            let source = try WPEVideoTextureSource(
-                device: device,
-                videoURL: fileURL,
-                commandQueue: queue,
-                decoderAdmission: WPEVideoDecoderAdmission(limit: 0)
-            )
-            #expect(!source.isLiveDecoder, "harness must not spin up an AVPlayer")
-            return Harness(device: device, queue: queue, source: source, fileURL: fileURL)
+            let source = try WPEVideoTextureSource(device: device, commandQueue: queue)
+            return Harness(device: device, queue: queue, source: source)
         }
 
         func tearDown() {
             source.invalidate()
-            try? FileManager.default.removeItem(at: fileURL)
         }
 
         /// Pixel (0,0) as BGRA. Runs on the source's own queue, so it is ordered

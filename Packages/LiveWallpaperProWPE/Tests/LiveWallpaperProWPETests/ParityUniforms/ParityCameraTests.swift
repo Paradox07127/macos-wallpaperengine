@@ -209,8 +209,7 @@ final class ParityCameraTests: XCTestCase {
         // Original CPU 16 paired calls: input 3f543b67 -> Tan return 3f8bafff. This is not a native D golden.
         let nativeTangent = Float(bitPattern: 0x3F8B_AFFF)
         XCTAssertEqual(distance * nativeTangent * camera.projection.columns.1.y, 1, accuracy: 1e-6)
-        let projection = try camera.perspectiveProjection
-        let view = try camera.perspectiveView
+        let (view, projection) = try camera.pushPerspective(view: camera.view, projection: camera.projection)
         let clip = { (point: SIMD4<Float>) -> SIMD3<Float> in
             let value = projection * view * point
             return SIMD3(value.x, value.y, value.z) / value.w
@@ -222,7 +221,7 @@ final class ParityCameraTests: XCTestCase {
         XCTAssertEqual(view.columns.3.z, -distance)
         var unsupported = camera
         unsupported.perspectiveFOV = .infinity
-        XCTAssertThrowsError(try unsupported.perspectiveView) {
+        XCTAssertThrowsError(try unsupported.pushPerspective(view: unsupported.view, projection: unsupported.projection)) {
             XCTAssertEqual($0 as? WPEParityCamera.PerspectiveMathError,
                            .unsupportedFieldOfView(inputBits: Float.infinity.bitPattern))
         }

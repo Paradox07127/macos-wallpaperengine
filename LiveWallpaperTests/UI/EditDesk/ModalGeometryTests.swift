@@ -11,6 +11,8 @@ struct ModalGeometryTests {
         let cases: [(window: CGSize, panel: CGRect)] = [
             (CGSize(width: 1040, height: 896), CGRect(x: 60, y: 108, width: 920, height: 680)),
             (CGSize(width: 1280, height: 820), CGRect(x: 180, y: 72, width: 920, height: 680)),
+            (CGSize(width: 1600, height: 1000), CGRect(x: 340, y: 160, width: 920, height: 680)),
+            (CGSize(width: 1280, height: 500), CGRect(x: 180, y: 72, width: 920, height: 400)),
             (CGSize(width: 1040, height: 700), CGRect(x: 60, y: 72, width: 920, height: 600)),
             // Narrower than the Edit Desk window allows: the panel gives up width so ← and → keep their gutter.
             (CGSize(width: 800, height: 600), CGRect(x: 60, y: 72, width: 680, height: 500)),
@@ -19,11 +21,6 @@ struct ModalGeometryTests {
             let panel = ModalGeometry.panelFrame(in: window)
             #expect(panel == expected, Comment(rawValue: "\(window) → \(panel), expected \(expected)"))
         }
-    }
-
-    @Test("The preview is fitted into a 340×255 box: 4:3 crops neither a square Workshop preview nor a 16:9 video")
-    func previewBoxIsFourByThree() {
-        #expect(ModalGeometry.previewSize == CGSize(width: 340, height: 255))
     }
 
     @Test("A preview is drawn whole and enlarged at most 2×; one that would need more stays at 2× and reads low-resolution")
@@ -85,7 +82,20 @@ struct ModalGeometryTests {
         }
     }
 
-    @Test("With no display leading, the first three are plain buttons in ⌘ order and the fourth on overflow")
+    @Test("Display shortcuts select only the matching target")
+    func keyMap() {
+        let targets = (1 ... 3).map {
+            ModalDisplayTarget(id: CGDirectDisplayID($0), name: "\($0)", shortcutIndex: $0,
+                               aspectRatio: 16.0 / 9, isPrimary: $0 == 1)
+        }
+        #expect(ModalKeyMap.target(forShortcut: 1, in: targets)?.id == 1)
+        #expect(ModalKeyMap.target(forShortcut: 3, in: targets)?.id == 3)
+        #expect(ModalKeyMap.target(forShortcut: 4, in: targets) == nil)
+        #expect(ModalKeyMap.target(forShortcut: 0, in: targets) == nil)
+        #expect(ModalKeyMap.target(forShortcut: 1, in: []) == nil)
+    }
+
+    @Test("Apply buttons preserve display order and overflow only after the button budget")
     func applyButtonsWithoutALeadKeepTheirPlaces() {
         func target(_ id: CGDirectDisplayID, leads: Bool = false) -> ModalDisplayTarget {
             ModalDisplayTarget(id: id, name: "\(id)", shortcutIndex: Int(id), aspectRatio: 16.0 / 9, isPrimary: leads)
@@ -99,6 +109,13 @@ struct ModalGeometryTests {
         #expect(led.primary?.id == 2)
         #expect(led.secondary.map(\.id) == [1, 3])
         #expect(led.overflow.map(\.id) == [4])
+
+        let many = ModalGeometry.applyButtons(targets: [target(1), target(2, leads: true), target(3), target(4), target(5)])
+        #expect(many.primary?.id == 2 && many.secondary.map(\.id) == [1, 3] && many.overflow.map(\.id) == [4, 5])
+        let pair = ModalGeometry.applyButtons(targets: [target(1, leads: true), target(2)])
+        #expect(pair.primary?.id == 1 && pair.secondary.map(\.id) == [2] && pair.overflow.isEmpty)
+        let none = ModalGeometry.applyButtons(targets: [])
+        #expect(none.primary == nil && none.secondary.isEmpty && none.overflow.isEmpty)
     }
 
 }

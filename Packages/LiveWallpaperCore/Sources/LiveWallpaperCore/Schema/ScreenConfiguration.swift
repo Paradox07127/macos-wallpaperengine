@@ -212,15 +212,6 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         activeWallpaper.htmlConfig
     }
 
-    public var htmlContent: String? {
-        guard let source = activeWallpaper.htmlSource else { return nil }
-        switch source {
-        case let .url(url): return url.absoluteString
-        case let .inline(raw): return raw
-        case .file, .folder: return nil
-        }
-    }
-
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         screenID = try c.decode(UInt32.self, forKey: .screenID)

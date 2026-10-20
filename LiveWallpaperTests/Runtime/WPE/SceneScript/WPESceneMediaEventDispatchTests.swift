@@ -42,32 +42,6 @@ final class FakeNowPlayingSource: WPENowPlayingEventSource {
 @Suite("WPE shared media events", .serialized)
 @MainActor
 struct WPESceneMediaEventDispatchTests {
-    #if DEBUG
-    @Test("Oracle media rejects waiting, stale empty, unbounded and nonfinite snapshots")
-    func oracleFrozenMediaValidation() throws {
-        let invalid: [MonitorNowPlayingState] = [
-            .init(phase: .awaitingFirstEvent, title: ""),
-            .init(phase: .noPlayer, title: "stale"),
-            .init(phase: .noPlayer, title: "", artwork: Data([1])),
-            .init(phase: .playing, title: ""),
-            .init(phase: .playing, title: String(repeating: "x", count: 4097)),
-            .init(phase: .playing, title: "t", duration: .infinity, position: 1),
-            .init(phase: .playing, title: "t", duration: 10, position: -1),
-            .init(phase: .playing, title: "t", duration: 10, position: 11),
-            .init(phase: .playing, title: "t", position: 1),
-            .init(phase: .playing, title: "t", positionSampledAt: 1),
-            .init(phase: .playing, title: "t", duration: 10, position: 1, positionSampledAt: .nan),
-        ]
-        for input in invalid {
-            #expect(throws: WPEOracleMediaSnapshotError.invalidSnapshot) {
-                try WPEOracleFrozenNowPlayingSource.validate(input)
-            }
-        }
-        try WPEOracleFrozenNowPlayingSource.validate(.init(phase: .noPlayer, title: ""))
-        try WPEOracleFrozenNowPlayingSource.validate(.init(phase: .paused, title: "fixed"))
-    }
-    #endif
-
     @Test("An unchanged snapshot delivered twice calls each handler once")
     func unchangedSnapshotIsNotRedelivered() {
         var gate = WPESceneMediaDiffGate()

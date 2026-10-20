@@ -290,10 +290,6 @@ public struct WPEScenePropertyPatch: Equatable, Sendable {
         }
         return false
     }
-
-    public var incrementalBindings: [WPEScenePropertyBinding] {
-        changedBindings.filter { $0.action == .incremental }
-    }
 }
 
 public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
@@ -345,16 +341,6 @@ public enum WPESceneLightType: Equatable, Sendable {
     case tube
     case directional
     case unknown(String)
-
-    public var knownShaderArrayValue: Int? {
-        switch self {
-        case .point: 0
-        case .spot: 1
-        case .tube: 2
-        case .directional: 3
-        case .unknown: nil
-        }
-    }
 }
 
 /// `general.lightconfig` declares the authored maximum counts by light/shadow
@@ -1165,10 +1151,6 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     /// Keyframed color track; `color` remains the authored static seed.
     public let colorAnimation: WPESceneAnimatedValue?
     public let brightness: Double
-    /// A blend that reads the destination cannot ride a Metal blend descriptor. `blendMode` is `.normal` for these — drawing with it paints an opaque rectangle over the scene.
-    public var usesProgrammableBlend: Bool {
-        WPESceneBlendMode.fixedFunction(forWPEBlendMode: colorBlendMode) == nil
-    }
     public let blendMode: WPESceneBlendMode
     /// Raw `common_blending.h` BLENDMODE index. `blendMode` is only the fixed-function subset; modes 11 Overlay, 12 Soft Light, … must run programmable `ApplyBlending` keyed on this number.
     public let colorBlendMode: Int

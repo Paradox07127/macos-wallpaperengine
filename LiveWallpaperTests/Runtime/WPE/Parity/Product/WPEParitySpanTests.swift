@@ -503,7 +503,7 @@ final class WPEParitySpanTests: XCTestCase {
         if staticMedia {
             let artwork = try mediaArtwork()
             inputs.media = await MainActor.run {
-                WPESceneMediaEventDispatcher(source: WPEOracleFrozenNowPlayingSource(
+                WPESceneMediaEventDispatcher(source: SpanNowPlayingSource(
                     state: .init(phase: .playing, title: "Actor replan artwork", artwork: artwork)
                 ))
             }
@@ -615,5 +615,20 @@ private final class ActivityRecorder: Sendable {
     func record(_ activity: WPESceneRuntimeActivity) {
         self.activity.withLock { $0 = activity }
     }
+}
+
+@MainActor
+private final class SpanNowPlayingSource: WPENowPlayingEventSource {
+    private let state: MonitorNowPlayingState
+
+    init(state: MonitorNowPlayingState) {
+        self.state = state
+    }
+
+    func subscribe(id _: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void) {
+        handler(1, state)
+    }
+
+    func unsubscribe(id _: UUID) {}
 }
 #endif

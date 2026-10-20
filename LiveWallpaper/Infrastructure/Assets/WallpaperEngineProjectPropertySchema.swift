@@ -511,15 +511,6 @@ private struct Localization: Equatable {
     }
 }
 
-extension WallpaperEngineProjectPropertySchema {
-    static func sceneConditionMatches(
-        value: WallpaperEngineProjectPropertyValue?,
-        condition: String
-    ) -> Bool {
-        ConditionEvaluator.matchesLiteral(value: value, condition: condition)
-    }
-}
-
 private enum ConditionEvaluator {
     private static let maximumBytes = 16 * 1024
     private static let maximumParts = 512
@@ -532,13 +523,6 @@ private enum ConditionEvaluator {
         guard condition.utf8.prefix(maximumBytes + 1).count <= maximumBytes else { return false }
         var clauses = maximumParts
         return evaluateBoolean(condition, values: values, depth: 0, clauses: &clauses) ?? false
-    }
-
-    static func matchesLiteral(
-        value: WallpaperEngineProjectPropertyValue?,
-        condition: String
-    ) -> Bool {
-        value.matches(.conditionLiteral(condition))
     }
 
     private static let maximumNesting = 64
