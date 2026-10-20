@@ -185,10 +185,6 @@ struct WPEMappedPackageWriteFenceTests {
         "LiveWallpaper/Infrastructure/Platform/DesktopPictureFrameExtractor.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Persistence/WallpaperCoverStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Persistence/WallpaperNameTranslationCache.swift": [".write(to": 1],
-        "LiveWallpaper/Infrastructure/Assets/WallpaperEnginePackage.swift": [
-            "createFile(": 1,
-            "FileHandle(forWritingTo": 1,
-        ],
         "LiveWallpaper/Infrastructure/Assets/WPEPackageSceneAssetProvider.swift": [
             "createFile(": 1,
             "FileHandle(forWritingTo": 1,
