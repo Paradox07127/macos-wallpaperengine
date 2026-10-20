@@ -29,6 +29,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
 
     func testFailedSceneWorkCannotBecomeReadyThroughASuccessfulPresent() {
         let state = WPEParityPresentState()
+        state.enableCadenceDiagnostics()
         state.reset(generation: 3)
         state.recordGPUFailure(generation: 3, reason: "scene GPU failure")
         state.record(generation: 3, succeeded: true)
@@ -41,6 +42,72 @@ final class WPEParitySceneDriverTests: XCTestCase {
         state.record(generation: 4, succeeded: true)
         XCTAssertEqual(state.completedGeneration, 4)
         XCTAssertEqual(state.gpuErrors.count, 0)
+        state.recordCadenceScene(generation: 3, succeeded: true)
+        state.recordCadenceScene(generation: 4, succeeded: true)
+        state.record(generation: 3, succeeded: true, cadencePresent: true)
+        state.record(generation: 4, succeeded: false, cadencePresent: true)
+        XCTAssertEqual(state.cadenceCounts?.staleCompletions, 2)
+        XCTAssertEqual(state.cadenceCounts?.sceneCompleted, 1)
+        XCTAssertEqual(state.cadenceCounts?.presentCompleted, 0)
+        XCTAssertEqual(state.cadenceCounts?.presentFailed, 1)
+        XCTAssertEqual(state.completedGeneration, 4, "Instrumentation must not revoke the existing visible readiness contract")
+    }
+
+    func testCadenceDiagnosticsCountRealSubmissionsAndDrawableMissWithoutChangingPixels() async throws {
+        let (document, assets) = try sceneInputs()
+        let compiler = try makeCompiler()
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let size = CGSize(width: 128, height: 72)
+        var reference: [UInt8]?
+        for enabled in [false, true] {
+            let driver = try WPEParitySceneDriver(device: device)
+            defer { driver.cleanup() }
+            if enabled {
+                driver.enableCadenceDiagnostics()
+            }
+            try await driver.load(document: document, assets: assets, settings: Self.settings, drawableSize: size,
+                                  pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
+                                  diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+            let layer = RecordingLayer()
+            layer.device = device
+            layer.pixelFormat = .rgba8Unorm_srgb
+            layer.drawableSize = size
+            layer.framebufferOnly = false
+            for frame in 0 ..< 2 {
+                let command = try XCTUnwrap(driver.renderAndPresentFrame(
+                    layer: layer, timestamp: 100 + Double(frame) / 60, pointer: SIMD2(0.5, 0.5),
+                    date: Date(timeIntervalSince1970: 1_700_000_000)
+                ))
+                try await settle(driver, label: "cadence frame")
+                XCTAssertEqual(command.status, .completed)
+            }
+            let pixels = try readBack(XCTUnwrap(layer.lastTexture), device: device)
+            if let reference {
+                XCTAssertEqual(pixels, reference)
+            } else {
+                reference = pixels
+            }
+            driver.executor.remainingForcedDrawableMissesForTesting = 1
+            XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: 100.1, pointer: SIMD2(0.5, 0.5),
+                                                      date: Date(timeIntervalSince1970: 1_700_000_000)))
+            try await settle(driver, label: "cadence drawable miss")
+            if enabled {
+                let submitted = try XCTUnwrap(driver.cadenceSubmissions)
+                let completed = try XCTUnwrap(driver.cadenceCompletions)
+                XCTAssertEqual(submitted.attempts, 3)
+                XCTAssertEqual(submitted.sceneCommitted, 3)
+                XCTAssertEqual(submitted.presentCommitted, 3, "The original drawable-miss path still commits its empty terminal buffer")
+                XCTAssertEqual(submitted.presentScheduled, 2)
+                XCTAssertEqual(submitted.drawableMisses, 1)
+                XCTAssertEqual(submitted.sceneErrors + submitted.presentErrors, 0)
+                XCTAssertEqual(completed.sceneCompleted, 3)
+                XCTAssertEqual(completed.presentCompleted, 2, "GPU completion is not an on-glass measurement")
+                XCTAssertEqual(completed.sceneFailed + completed.presentFailed, 0)
+            } else {
+                XCTAssertNil(driver.cadenceSubmissions)
+                XCTAssertNil(driver.cadenceCompletions)
+            }
+        }
     }
 
     func testLoadPresentPauseAndCleanup() async throws {
@@ -139,8 +206,9 @@ final class WPEParitySceneDriverTests: XCTestCase {
         defer { driver.cleanup() }
         try await driver.load(document: document, assets: assets, settings: Self.settings, drawableSize: Self.size,
                               pixelFormat: .rgba8Unorm_srgb, compiler: compiler,
-                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
+                              diskCache: WPEParityShaderDiskCache(cachesURL: scratch), reuseDirectTextExtentLayouts: false)
         XCTAssertTrue(driver.didLoad)
+        XCTAssertFalse(try XCTUnwrap(driver.renderer).reusesDirectTextExtentLayouts)
         XCTAssertNil(driver.loadDiagnostics)
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
 
@@ -173,6 +241,8 @@ final class WPEParitySceneDriverTests: XCTestCase {
         let replanned = await driver.replan()
         XCTAssertTrue(replanned)
         XCTAssertFalse(driver.needsReplan)
+        XCTAssertFalse(try XCTUnwrap(driver.renderer).reusesDirectTextExtentLayouts,
+                       "A real resize must retain the explicit reference path chosen at load")
         XCTAssertNotEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer)), rendererAID)
         XCTAssertNotEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer).backbuffer), backbufferAID)
         XCTAssertEqual(try XCTUnwrap(driver.renderer).backbuffer.width, 1280)
@@ -516,6 +586,5 @@ final class WPEParitySceneDriverTests: XCTestCase {
             return drawable
         }
     }
-
 }
 #endif

@@ -15,7 +15,7 @@ final class WPEParityVideoTextures {
         var bytes: Data
     }
 
-    private let videos: [(source: WPEVideoTextureSource, texture: MTLTexture)]
+    private var videos: [(source: WPEVideoTextureSource, texture: MTLTexture)]
     private let scaler: MPSImageBilinearScale
     /// Indices of the sources whose staged frame went into the current frame's command buffer.
     private var encoded: Set<Int> = []
@@ -30,6 +30,33 @@ final class WPEParityVideoTextures {
 
     var textures: [MTLTexture] {
         videos.map(\.texture)
+    }
+
+    /// The actual decoder owners, including live user-video replacements.
+    var sourceCount: Int {
+        videos.count + userVideos.count
+    }
+
+    func contains(_ texture: MTLTexture) -> Bool {
+        videos.contains { $0.texture === texture }
+    }
+
+    /// Transfers only newly prepared players. The temporary owner's deinit must not stop adopted players.
+    func adopt(_ prepared: WPEParityVideoTextures) {
+        guard prepared !== self else { return }
+        precondition(prepared.userVideos.isEmpty, "Only a newly prepared authored-stream batch may transfer players")
+        let added = prepared.videos
+        prepared.videos.removeAll()
+        for video in added {
+            guard !contains(video.texture) else {
+                video.source.invalidate()
+                continue
+            }
+            video.source.applyPerformanceProfile(profile)
+            videos.append(video)
+            lastSampledFrame.append(submittedFrames)
+            reportedLoops.append(video.source.completedLoopCount)
+        }
     }
 
     /// Slot zero keeps the planner's existing shared-asset identity: owners of the same texture share one player.
@@ -197,10 +224,20 @@ final class WPEParityVideoTextures {
     nonisolated(nonsending) init(streams: [Stream], workshopID: String, device: MTLDevice,
                                  queue: MTLCommandQueue) async throws {
         var videos: [(source: WPEVideoTextureSource, texture: MTLTexture)] = []
+        var accepted = false
+        defer {
+            if !accepted {
+                for video in videos {
+                    video.source.invalidate()
+                }
+            }
+        }
         for stream in streams {
+            try Task.checkCancellation()
             let url = try await WPEVideoTextureDiskCache.shared.store(stream.bytes, workshopID: workshopID)
             let source: WPEVideoTextureSource
             do {
+                try Task.checkCancellation()
                 source = try WPEVideoTextureSource(device: device, videoURL: url, commandQueue: queue,
                                                    onInvalidate: { url in
                                                        Task.detached(priority: .utility) {
@@ -214,12 +251,14 @@ final class WPEParityVideoTextures {
             source.applyPerformanceProfile(.quality)
             videos.append((source, stream.texture))
         }
+        try Task.checkCancellation()
         self.videos = videos
         lastSampledFrame = Array(repeating: 0, count: videos.count)
         reportedLoops = videos.map(\.source.completedLoopCount)
         scaler = Self.scaler(device: device)
         self.device = device
         self.queue = queue
+        accepted = true
     }
 
     /// A video file the user bound to a scene texture: muted, looping and wall-clock paced like a video .tex.
@@ -294,6 +333,10 @@ final class WPEParityVideoTextures {
     }
 
     #if DEBUG
+    var authoredSourcesForTesting: [WPEVideoTextureSource] {
+        videos.map(\.source)
+    }
+
     func userVideoSourceForTesting(_ key: String) -> WPEVideoTextureSource? {
         userVideos[key]?.source
     }

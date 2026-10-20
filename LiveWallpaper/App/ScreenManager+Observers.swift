@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import LiveWallpaperCore
 import Observation
+import QuartzCore
 
 extension ScreenManager {
     func setupPowerMonitoring() {
@@ -348,14 +349,9 @@ extension ScreenManager {
         applicationRuleActive: Bool,
         frontmostExcluded: Bool
     ) -> WallpaperPerformanceProfile {
-        let decision = WallpaperPolicyEngine.decision(
-            inputs: policyInputs(
-                for: screen,
-                applicationRuleActive: applicationRuleActive,
-                frontmostExcluded: frontmostExcluded
-            ),
-            settings: settings
-        )
+        let inputs = policyInputs(for: screen, applicationRuleActive: applicationRuleActive,
+                                  frontmostExcluded: frontmostExcluded)
+        let decision = WallpaperPolicyEngine.decision(inputs: inputs, settings: settings)
         let profile = decision.profile
         // Feed the screen's machine — the same instance the installed session adopted as its intent source — and take the reasons from its outputs, so the UI's explanation cannot drift from what sessions act on.
         suspendReasonsByScreen[screen.id] = playbackStateMachine(for: screen.id)
@@ -366,6 +362,9 @@ extension ScreenManager {
             effectsCoordinator.setEnvironmentOverlaySuspended(profile == .suspended, for: screen)
         }
         applyAdaptiveFrameRate(to: screen, settings: settings, throttleReasons: decision.throttleReasons)
+        #if !LITE_BUILD
+        recordCadencePolicy(screen: screen, inputs: inputs, decision: decision, settings: settings)
+        #endif
         // Deep hibernate is reserved for absence-like suspensions; an app-rule or battery pause stays a warm suspend for fast resume.
         // Coverage inputs are only usable while the detector is actually rescanning.
         let coverageIsLive = fullScreenDetector.isFallbackPollingEnabled
@@ -391,6 +390,33 @@ extension ScreenManager {
             )
         return profile
     }
+
+    #if !LITE_BUILD
+    private static let diagnosesCadence = WPEParitySceneDriver.resolveCadenceDiagnostics()
+    private static var cadencePolicyContexts: [String: String] = [:]
+
+    /// Reuses the existing FIFO config channel; no policy re-evaluation, system sampling or new render task.
+    private func recordCadencePolicy(screen: Screen, inputs: WallpaperPolicyInputs,
+                                     decision: WallpaperPolicyDecision, settings: GlobalSettings) {
+        guard Self.diagnosesCadence, let session = screen.runtimeSession as? SceneWallpaperSession,
+              let owner = session.spanRenderActor.cadenceOwnerID else { return }
+        let suspended = decision.suspendReasons.map(\.rawValue).sorted().joined(separator: ",")
+        let throttled = decision.throttleReasons.map(\.rawValue).sorted().joined(separator: ",")
+        let context = "screen=\(screen.id) policy=\(decision.profile) thermal=\(inputs.thermalState.rawValue) "
+            + "pressure=\(inputs.memoryPressureLevel.rawValue) suspendReasons=\(suspended) throttleReasons=\(throttled) "
+            + "adaptiveEnabled=\(settings.adaptiveFrameRateEnabled) userAbsent=\(inputs.isUserAbsent) "
+            + "appRule=\(inputs.isApplicationRuleActive) lowPower=\(inputs.isLowPowerMode) "
+            + "hidden=\(inputs.isHiddenByFullScreen) occluded=\(inputs.isWindowOccluding) "
+            + "intent=\(screen.playbackController?.userIntendsToPlay ?? true)"
+        guard Self.cadencePolicyContexts[owner] != context else { return }
+        let liveOwners = Set(screens.compactMap {
+            ($0.runtimeSession as? SceneWallpaperSession)?.spanRenderActor.cadenceOwnerID
+        })
+        Self.cadencePolicyContexts = Self.cadencePolicyContexts.filter { liveOwners.contains($0.key) }
+        Self.cadencePolicyContexts[owner] = context
+        session.spanRenderActor.submitConfig(.cadencePolicy("policyMono=\(CACurrentMediaTime()) \(context)"))
+    }
+    #endif
 
     /// Layers the adaptive background frame-rate throttle on top of the binary play/pause profile.
     private func applyAdaptiveFrameRate(

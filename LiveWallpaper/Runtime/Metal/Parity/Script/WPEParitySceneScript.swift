@@ -49,6 +49,8 @@ final class WPEParitySceneScript {
         var modelData: WPEParityScriptModelDataProvider?
         /// nil = JS Date reads the wall clock; see `WPEParityScriptEngine.Configuration.dateEpochMillis`.
         var dateEpochMillis: Double?
+        /// Explicit deterministic replay; normal product hosts leave JavaScriptCore randomness unchanged.
+        var randomSeed: UInt32?
     }
 
     /// A layer the cursor pass may test, in scene order.
@@ -116,7 +118,7 @@ final class WPEParitySceneScript {
                     Logger.warning("SceneScript: \(message)", category: .wpeRender)
                 }
             },
-            openUserShortcut: host.openUserShortcut, dateEpochMillis: host.dateEpochMillis
+            openUserShortcut: host.openUserShortcut, dateEpochMillis: host.dateEpochMillis, randomSeed: host.randomSeed
         ))
         let bits = engine.bindings.reduce(0) { $0 | $1.exportBits }
         handlesCursor = bits & WPEParityScriptEvent.cursorBits != 0

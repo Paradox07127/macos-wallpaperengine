@@ -889,6 +889,67 @@ struct WPEDisplayRenderActorTests {
         #expect(!reopened)
     }
 
+    @Test("Opt-in cadence observes actual callback gates without changing them")
+    func cadenceDiagnosticsObserveGates() async {
+        for enabled in [false, true] {
+            let actor = WPEDisplayRenderActor(label: "test.cadence", backing: .renderThread,
+                                              cadenceDiagnosticsEnabled: enabled)
+            await actor.run { iso in
+                iso.setLinkPreferredFPS(60)
+                iso.setLinkPaused(false)
+                iso.renderDisplayLinkFrame(at: 100)
+                if enabled {
+                    #expect(iso.cadenceWindow?.lastArrival != nil)
+                    #expect(iso.cadenceWindow?.lastTarget == 100)
+                    #expect(iso.cadenceWindow?.maximumArrivalGap == 0)
+                    #expect(iso.cadenceWindow?.maximumTargetGap == 0)
+                }
+                iso.renderDisplayLinkFrame(at: 100.001)
+                if enabled, let window = iso.cadenceWindow {
+                    #expect(window.maximumArrivalGap > 0)
+                    #expect(abs(window.maximumTargetGap - 0.001) < 1e-9)
+                    #expect(window.lastTarget == 100.001)
+                }
+                iso.renderDisplayLinkFrame(at: 100.020)
+                if enabled {
+                    #expect(iso.cadenceWindow?.callbacks == 3)
+                    #expect(iso.cadenceWindow?.selected == 2)
+                    #expect(iso.cadenceWindow?.cadenceRejected == 1)
+                    #expect(iso.cadenceWindow?.renderCalls == 2)
+                    if let window = iso.cadenceWindow {
+                        #expect(window.maximumArrivalGap > 0)
+                        #expect(abs(window.maximumTargetGap - 0.019) < 1e-9)
+                        #expect(window.lastArrival != nil)
+                        #expect(window.lastTarget == 100.020)
+                    }
+                } else {
+                    #expect(iso.cadenceWindow == nil)
+                    #expect(iso.cadenceOwnerID == nil)
+                }
+                #expect(iso.linkPreferredFPSForTesting == 60)
+                iso.setLinkPaused(true)
+                iso.renderDisplayLinkFrame(at: 100.04)
+                if enabled {
+                    #expect(iso.cadenceWindow?.pausedCallbacks == 1)
+                    #expect(iso.cadenceWindow?.selected == 0)
+                }
+            }
+            let stopped = await actor.shutdown()
+            #expect(stopped)
+        }
+        for value in ["1", "true", "TRUE"] {
+            #expect(WPEParitySceneDriver.resolveCadenceDiagnostics(environment: [
+                WPEParitySceneDriver.cadenceDiagnosticsEnvironmentKey: value,
+            ]))
+        }
+        for value in ["0", "false", "yes", "2", " true ", ""] {
+            #expect(!WPEParitySceneDriver.resolveCadenceDiagnostics(environment: [
+                WPEParitySceneDriver.cadenceDiagnosticsEnvironmentKey: value,
+            ]))
+        }
+        #expect(!WPEParitySceneDriver.resolveCadenceDiagnostics(environment: [:]))
+    }
+
     @Test("effectiveFPS maps to a fixed-cadence frame-rate range (min == max == preferred)")
     func fpsMapsToFrameRateRange() {
         let range = WPEDisplayRenderActor.frameRateRange(forPreferredFPS: 30)

@@ -14,7 +14,7 @@ AVFoundation、WKWebView、Metal 分别承载三类壁纸运行路径。没有�
 | `Packages/LiveWallpaperCore` | 共享 schema、能力目录、播放状态机、持久化工具和 SwiftUI 设计系统 |
 | `Packages/LiveWallpaperProWPE` | WPE 包、场景、模型解析与类型化 schema；依赖 Core |
 | `SteamConnector` | Pro 的 XPC 服务；在宿主沙盒外负责 SteamCMD 查找、验证、登录和库操作 |
-| `SystemWallpaperProvider` | macOS 壁纸扩展；独立于应用播放已发布的视频 |
+| `SystemWallpaperProvider` | macOS 壁纸扩展；独立于应用播放已发布的视频与 Pro 实时场景 |
 
 Core 同时包含共享 UI 和数据/运行时契约，不是纯领域模型包。WPE Metal 渲染器位于
 应用 target 的 `Runtime/Metal`，不在 ProWPE 包中。当前没有独立的 SharedUI 或 VideoWeb 包。
@@ -82,22 +82,27 @@ flowchart TD
 ```mermaid
 flowchart LR
     Input[项目 / 包 / 资源] --> Parser[ProWPE 解析器与类型化文档]
-    Parser --> Graph[WPERenderGraphBuilder]
-    Graph --> Prepared[WPERenderPipelineBuilder]
-    Prepared --> Renderer[WPEMetalSceneRenderer]
-    Renderer --> Executor[WPEMetalRenderExecutor]
-    Executor --> Present[Metal surface / present]
+    Parser --> Driver[WPEParitySceneDriver]
+    Driver --> Plan[WPEParityFramePlan]
+    Plan --> Renderer[WPEParityFrameRenderer]
+    Renderer --> Executor[WPEParityGraphExecutor]
+    Compiler[WPERenderGraphCompiler] --> Executor
+    Executor --> Present[WPEMetalPresenter / Metal surface]
 ```
 
-应用在文件授权范围内解析主项目、依赖和引擎资源根。graph/pipeline 构建验证并准备场景；
-shader 预处理、转译和编译具有缓存身份。逐帧路径综合脚本状态、音频、指针、动态纹理、
-文字与粒子，再执行已准备的 pass。
+应用在文件授权范围内解析主项目、依赖和引擎资源根。`Runtime/Metal/Parity/` 负责场景准备、
+shader 绑定、资源加载与逐帧执行；ProWPE 提供场景、脚本、文字、粒子、HLSL 和渲染图契约。
+主应用的 `wpe-shaderc` helper 使用 DXC 与 Metal Shader Converter 生成带缓存身份的 shader 产物。
+逐帧路径综合脚本状态、音频、指针、动态纹理、文字与粒子，再执行已编译的 pass。
+
+这是唯一的 WPE 场景渲染器。旧渲染器、选择开关和旧回退模式已退役。替换加载失败时，
+可用的上一张壁纸会保留，并明确报告失败，不再构造旧后端。呈现、MetalFX、捕获、音视频
+解码与资源授权基础设施继续共用。
 
 `Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift` 在串行隔离域内持有 renderer，
 支持独立渲染线程 executor 或主 executor。配置命令通过 FIFO stream 传递，
 frame readiness 与 generation 保护加载、重载和销毁边界。
-`WPEFrameInputs`、prepared pass、frame state、uniform plan、纹理/target cache 都是
-已有契约，不是可互换的渲染后端。
+逐帧输入、准备好的场景数据、资源绑定与纹理/target cache 属于这条管线及其共享呈现基础设施。
 
 兼容性测试与本地 Metal trace 验证具体路径，不证明完整 Windows parity。
 修改 shader、混合、粒子和 attachment 语义需要参考实现/Windows 证据，不能只从当前
@@ -146,6 +151,9 @@ provider 使用的私有壁纸/XPC 桥接被限制在 `SystemWallpaperProvider/`
 变化的平台边界，不是公开的通用壁纸 SDK。它不运行 HTML runtime 或应用叠加窗口。
 桌面动画暂停时，实时场景仍以每秒一帧更新日期和时间；隐藏或睡眠中的场景可休眠。
 provider 不兼容时可以关闭自身路径，不替换应用原有壁纸架构。
+
+主应用发布场景胶囊时准备 shader 产物，并冻结编译器身份与渲染设置。扩展消费预编译缓存，
+不携带 shader 编译器。产物缺失或不兼容会明确失败，并可保留海报静帧，不回退到旧渲染器。
 
 所选项目与各显示器的目标保存在已有 provider manifest 中。发布的媒体、场景资源包
 及显示器目标属于本机，不随 `.lwconfig` 导出：目标 Mac 必须重新准备媒体并选择

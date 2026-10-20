@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import Foundation
 import LiveWallpaperProWPE
 import Metal
 
@@ -18,6 +19,26 @@ typealias WPEParityResourceBindings = [WPEResourceBindingScope: [WPEResourceID: 
 /// Owns the frame-transient textures (`.aliased` in one untracked placement heap, `.memoryless` in
 /// tile memory); every other resource is supplied by the caller per frame.
 final class WPEParityGraphExecutor {
+    private static let tracePassLabelsEnabled: Bool = {
+        let key = "WPETracePassLabels"
+        for defaults in [UserDefaults.appSuite, UserDefaults.appScoped()] where defaults.object(forKey: key) != nil {
+            return defaults.bool(forKey: key)
+        }
+        return false
+    }()
+
+    private struct TraceLabels {
+        let commandBuffer: String
+        let steps: [String]
+    }
+
+    /// Nil while disabled: labels are constructed once, only for opt-in diagnostics.
+    private let traceLabels: TraceLabels?
+    /// Copies in the last arena-admitted frame, including a committed prefix when later encoding throws.
+    /// An arena-busy request leaves these unchanged. Resolves and mip generation are not copies.
+    private(set) var copyEncoded = 0
+    private(set) var totalCopyEncoded = 0
+
     enum Submission {
         case committed(MTLCommandBuffer)
         /// Every arena slot was in flight; nothing was encoded or committed.
@@ -53,7 +74,7 @@ final class WPEParityGraphExecutor {
 
     init(graph: WPECompiledRenderGraph, device: MTLDevice, drawEncoder: WPEParityDrawEncoder,
          arena: WPEParityFrameArena, pixelFormats: [String: MTLPixelFormat],
-         resourceBindings: WPEParityResourceBindings = [:]) throws {
+         resourceBindings: WPEParityResourceBindings = [:], tracePassLabels: Bool? = nil) throws {
         func descriptor(_ resource: WPELogicalResource, _ storage: MTLStorageMode) throws -> MTLTextureDescriptor {
             guard let format = pixelFormats[resource.format] else {
                 throw WPEParityGraphExecutionError.unsupportedFormat(resource.format)
@@ -122,6 +143,7 @@ final class WPEParityGraphExecutor {
             fences[producer] = fence
         }
 
+        traceLabels = (tracePassLabels ?? Self.tracePassLabelsEnabled) ? Self.makeTraceLabels(graph) : nil
         self.graph = graph
         transientTextures = textures
         self.drawEncoder = drawEncoder
@@ -130,6 +152,28 @@ final class WPEParityGraphExecutor {
         self.waits = waits
         self.fences = fences
         self.resourceBindings = resourceBindings
+    }
+
+    private static func makeTraceLabels(_ graph: WPECompiledRenderGraph) -> TraceLabels {
+        func view(_ value: WPESubresource) -> String {
+            "\(value.resource.rawValue)@\(value.mip)"
+        }
+        let labels = graph.steps.enumerated().map { index, step in
+            let kind = switch step.kind {
+            case .render: "render"
+            case let .copy(source, destination): "copy \(source.rawValue)->\(destination.rawValue)"
+            case let .resolve(source, destination): "resolve \(source.rawValue)->\(destination.rawValue)"
+            case let .generateMips(resource): "mips \(resource.rawValue)"
+            case .resourceScope: "scope"
+            case let .swapResources(first, second): "swap \(first.rawValue)<->\(second.rawValue)"
+            }
+            let operations = step.operations.map { "\($0):\(graph.operations[$0].pass.rawValue)" }.joined(separator: ",")
+            let reads = step.reads.map { view($0.subresource) }.joined(separator: ",")
+            let writes = step.writes.map { view($0.subresource) }.joined(separator: ",")
+            return String("Parity step=\(index) \(kind) ops=[\(operations)] read=[\(reads)] write=[\(writes)]".prefix(2048))
+        }
+        let firstPass = graph.operations.first?.pass.rawValue ?? "empty"
+        return TraceLabels(commandBuffer: String("Parity graph \(firstPass) steps=\(graph.steps.count)".prefix(2048)), steps: labels)
     }
 
     /// Shared color-only clear primitive for script commands and allocation initialization. Textures remain
@@ -205,7 +249,11 @@ final class WPEParityGraphExecutor {
         guard let commandBuffer = queue.makeCommandBuffer() else {
             throw WPEParityGraphExecutionError.encoderUnavailable
         }
+        if let traceLabels {
+            commandBuffer.label = traceLabels.commandBuffer
+        }
         guard let frame = arena.beginFrame(for: commandBuffer) else { return .skipped }
+        copyEncoded = 0
         frameCount += 1
         if let heapEvent {
             commandBuffer.encodeWaitForEvent(heapEvent, value: frameCount - 1)
@@ -302,9 +350,12 @@ final class WPEParityGraphExecutor {
             guard let texture = textures[id] else { throw WPEParityGraphExecutionError.missingTexture(id) }
             return texture
         }
-        func blit(_ body: (MTLBlitCommandEncoder) -> Void) throws {
+        func blit(fenceOnly: Bool = false, _ body: (MTLBlitCommandEncoder) -> Void) throws {
             guard let encoder = commandBuffer.makeBlitCommandEncoder() else {
                 throw WPEParityGraphExecutionError.encoderUnavailable
+            }
+            if let traceLabels {
+                encoder.label = traceLabels.steps[index] + (fenceOnly ? " [fence-only]" : "")
             }
             for waitFence in waitFences {
                 encoder.waitForFence(waitFence)
@@ -322,7 +373,7 @@ final class WPEParityGraphExecutor {
             if let operation = step.operations.first, !shouldTransfer(operation) {
                 // Consumers still need the graph's fence hand-over when this frame preserves old history.
                 if !waitFences.isEmpty || fence != nil {
-                    try blit { _ in }
+                    try blit(fenceOnly: true) { _ in }
                 }
                 return
             }
@@ -349,6 +400,8 @@ final class WPEParityGraphExecutor {
                 $0.copy(from: from, sourceSlice: 0, sourceLevel: 0, to: to, destinationSlice: 0, destinationLevel: 0,
                         sliceCount: 1, levelCount: from.mipmapLevelCount)
             }
+            copyEncoded += 1
+            totalCopyEncoded += 1
             return
         case let .generateMips(id):
             let mipmapped = try texture(id)
@@ -389,6 +442,9 @@ final class WPEParityGraphExecutor {
 
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             throw WPEParityGraphExecutionError.encoderUnavailable
+        }
+        if let traceLabels {
+            encoder.label = traceLabels.steps[index]
         }
         defer { encoder.endEncoding() }
         for waitFence in waitFences {

@@ -162,6 +162,8 @@ public final class WPEParityScriptEngine {
         /// Unix ms that JS `Date.now()` and argument-less `Date()` read at engine.runtime 0; nil = JS Date reads the
         /// wall clock.
         public var dateEpochMillis: Double?
+        /// Explicit replay only. nil preserves JavaScriptCore's native Math.random; zero is a valid seed.
+        public var randomSeed: UInt32?
 
         public init(assets: WPEParityProgramAssets, canvasSize: SIMD2<Float>, screenResolution: SIMD2<Float>,
                     userPropertiesJSON: String = "{}", angleConstants: Set<ConstantKey> = [],
@@ -178,6 +180,7 @@ public final class WPEParityScriptEngine {
                     executeMaterialFunction: ((WPEParitySceneState.EffectKey, String) -> Void)? = nil,
                     log: @escaping (Int, String) -> Void = { _, _ in },
                     openUserShortcut: @escaping (String) -> Bool = { _ in false }, dateEpochMillis: Double? = nil,
+                    randomSeed: UInt32? = nil,
                     executionLimits: ExecutionLimits = .init()) {
             self.assets = assets
             self.executionLimits = executionLimits
@@ -200,6 +203,7 @@ public final class WPEParityScriptEngine {
             self.log = log
             self.openUserShortcut = openUserShortcut
             self.dateEpochMillis = dateEpochMillis
+            self.randomSeed = randomSeed
         }
     }
 
@@ -482,6 +486,11 @@ public final class WPEParityScriptEngine {
             }
         }
         withExecutionBudget(.setup) {
+            if let seed = configuration.randomSeed {
+                _ = callJavaScript(evaluateScript(Self.randomShim, withSourceURL: URL(string: "parity-random.js")),
+                                   withArguments: [Double(seed)])
+            }
+            guard !executionLimiter.didTimeOut else { return }
             evaluateScript(String(bytes: baseClasses, encoding: .utf8) ?? "",
                            withSourceURL: URL(string: "scripts/jsclasses/baseclasses.js"))
             guard !executionLimiter.didTimeOut else { return }
@@ -497,6 +506,19 @@ public final class WPEParityScriptEngine {
             throw executionFailure
         }
     }
+
+    /// One stream per context, installed before module globals and init callbacks. Nothing is added to globalThis.
+    /// UInt32 LCG arithmetic also advances from seed zero; the divisor keeps every result in [0, 1).
+    private static let randomShim = #"""
+    (function (seed) {
+    'use strict';
+    let state = seed >>> 0;
+    Math.random = function random() {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state / 4294967296;
+    };
+    })
+    """#
 
     /// G[1] is engine.runtime; each read adds 1 µs so busy-wait loops on Date.now() still advance.
     private static let dateShim = #"""
@@ -702,12 +724,12 @@ public final class WPEParityScriptEngine {
                 }
                 guard !vars.isEmpty, let data = try? JSONSerialization.data(withJSONObject: vars) else { continue }
                 invokeHost("applyScriptProperties",
-                                  withArguments: [binding.script, String(bytes: data, encoding: .utf8) ?? "{}"])
+                           withArguments: [binding.script, String(bytes: data, encoding: .utf8) ?? "{}"])
             }
             guard !executionLimiter.didTimeOut else { return }
             count(.applyUserProperties)
             invokeHost("dispatch", withArguments: [WPEParityScriptEvent.applyUserProperties.rawValue, -1,
-                                                          eventJSON])
+                                                   eventJSON])
         }
     }
 
@@ -1360,9 +1382,9 @@ public final class WPEParityScriptEngine {
         (floats, integers, dirtyFlags, dirty, capacity) = (newFloats, newIntegers, newFlags, newDirty, newCapacity)
         guard host != nil else { return }
         invokeHost("rebind", withArguments: [typedArray(.float32, floats, newCapacity * 16),
-                                                    typedArray(.int32, integers, newCapacity * 4),
-                                                    typedArray(.uint8, dirtyFlags, newCapacity),
-                                                    typedArray(.int32, dirty, (newCapacity + 1) * 4)])
+                                             typedArray(.int32, integers, newCapacity * 4),
+                                             typedArray(.uint8, dirtyFlags, newCapacity),
+                                             typedArray(.int32, dirty, (newCapacity + 1) * 4)])
     }
 
     private enum ArrayType {
@@ -1514,7 +1536,7 @@ public final class WPEParityScriptEngine {
         let load: @convention(block) (String) -> JSValue? = { [weak self] path in
             guard let self, let data = configuration.assets.data(path) else { return nil }
             return evaluateScript(WPEParityScriptModule.lower(String(bytes: data, encoding: .utf8) ?? ""),
-                                          withSourceURL: URL(string: path))
+                                  withSourceURL: URL(string: path))
         }
         let error: @convention(block) (String, String) -> Void = { [weak self] name, message in
             self?.record(name.isEmpty ? message : "\(name): \(message)")
@@ -1906,7 +1928,7 @@ public final class WPEParityScriptEngine {
         .sorted { $0.pass < $1.pass }.map(materialInfo)
         let animationLayers = (animationLayerBases[index] ?? []).enumerated().map { ["index": $0.offset, "base": $0.element] }
         invokeHost("addLayer", withArguments: [index, layer.kind.rawValue, layer.base, parent, effects, baseMaterials,
-                                                      layer.hasVideo, animationLayers])
+                                               layer.hasVideo, animationLayers])
     }
 
     private func materialInfo(_ key: WPEParityMaterialPassKey) -> [String: Any] {
@@ -2153,7 +2175,7 @@ public final class WPEParityScriptEngine {
                                 exportBits: 0, bindingIndex: bindingIndex, script: -1, userKeys: userKeys))
         let before = exceptionCount
         let function = evaluateScript(WPEParityScriptModule.lower(script),
-                                              withSourceURL: URL(string: "scripts/\(name).js"))
+                                      withSourceURL: URL(string: "scripts/\(name).js"))
         var bits = -1
         var handle = -1
         if !executionLimiter.didTimeOut, exceptionCount == before, let function, function.isObject {

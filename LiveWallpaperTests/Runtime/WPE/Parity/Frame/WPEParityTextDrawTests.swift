@@ -1081,6 +1081,274 @@ final class WPEParityTextDrawTests: XCTestCase {
         }
     }
 
+    func testDirectTextExtentReuseMatchesFullLayoutAndRollsBackWithTransformParents() async throws {
+        let fixedInput = WPEParityFrameInput(cursor: SIMD2(Float(Self.width) * 0.5, Float(Self.height) * 0.5),
+                                             date: Date(timeIntervalSince1970: 1_700_000_000))
+        let flag = WPEParityFrameRenderer.directTextExtentReuseEnvironmentKey
+        XCTAssertTrue(WPEParityFrameRenderer.resolveDirectTextExtentReuse(environment: [:]))
+        XCTAssertTrue(WPEParityFrameRenderer.resolveDirectTextExtentReuse(environment: [flag: "YES"]))
+        XCTAssertFalse(WPEParityFrameRenderer.resolveDirectTextExtentReuse(explicit: false, environment: [flag: "1"]))
+        XCTAssertTrue(WPEParityFrameRenderer.resolveDirectTextExtentReuse(explicit: true, environment: [flag: "false"]))
+        XCTAssertTrue(WPEParityFrameRenderer.resolveDirectTextExtentReuse(environment: [flag: "true"]))
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        try XCTSkipUnless(device.supportsTextureSampleCount(4), "This paired resolve guard requires actual 4x MSAA support")
+        func assertSamplesAndResolve(_ fixture: Fixture, samples: Int) throws {
+            let renderer = fixture.renderer
+            XCTAssertTrue(fixture.device.supportsTextureSampleCount(samples))
+            XCTAssertEqual(renderer.backbuffer.sampleCount, 1, "The pixel oracle must read the resolved output")
+            for frame in renderer.frames {
+                let multisampled = frame.resources.filter { $0.sampleCount > 1 }
+                XCTAssertEqual(multisampled.isEmpty, samples == 1, "The frame must exercise the requested sample count")
+                for resource in multisampled {
+                    XCTAssertEqual(resource.sampleCount, samples)
+                    let target = try XCTUnwrap(renderer.renderTarget(resource.id))
+                    XCTAssertEqual(target.sampleCount, samples, "Actual MSAA attachment for \(resource.id)")
+                    XCTAssertEqual(target.textureType, .type2DMultisample)
+                }
+                let resolves = frame.operations.compactMap { operation -> (WPEResourceID, WPEResourceID)? in
+                    if case let .resolve(source, destination) = operation.kind {
+                        return (source, destination)
+                    }
+                    return nil
+                }
+                XCTAssertEqual(resolves.count, samples > 1 ? 1 : 0, "Direct text must resolve its scene attachment")
+                for (source, destination) in resolves {
+                    let sourceTexture = try XCTUnwrap(renderer.renderTarget(source))
+                    let resolvedTexture = try XCTUnwrap(renderer.renderTarget(destination))
+                    XCTAssertEqual(sourceTexture.sampleCount, samples)
+                    XCTAssertEqual(resolvedTexture.sampleCount, 1)
+                    XCTAssertTrue(resolvedTexture === renderer.backbuffer, "Compare the actual resolve destination pixels")
+                }
+            }
+        }
+        for (samples, parented) in [(1, false), (1, true), (4, false), (4, true)] {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.syntheticScene(effect: false)) as? [String: Any])
+            var objects = try XCTUnwrap(json["objects"] as? [[String: Any]])
+            if samples > 1 {
+                // The product enables scene MSAA only when a real MDL model is present. Draw a blue quad
+                // away from the white text, preserving the independent red-channel glyph bounds oracle.
+                try writeDirectTextMSAAModel()
+                objects.append(["id": 9, "name": "MSAA model", "image": "models/text-msaa.mdl",
+                                "origin": "32 32 0"])
+            }
+            if parented {
+                objects[0]["parent"] = 2
+                objects[0]["origin"] = "420 230 0"
+                objects.append(["id": 2, "origin": "40 10 0", "angles": "0 0 0.07", "scale": "0.9 0.9 1"])
+            }
+            json["objects"] = objects
+            let scene = try JSONSerialization.data(withJSONObject: json)
+            let settings = WPEParityProgramSettings(msaaSampleCount: samples)
+            let slow = try await makeSyntheticRenderer(effect: false, scene: scene, settings: settings,
+                                                       reuseDirectTextExtents: false)
+            let fast = try await makeSyntheticRenderer(effect: false, scene: scene, settings: settings,
+                                                       reuseDirectTextExtents: true)
+            XCTAssertFalse(slow.renderer.reusesDirectTextExtentLayouts)
+            XCTAssertTrue(fast.renderer.reusesDirectTextExtentLayouts)
+            for fixture in [slow, fast] {
+                try await encode(fixture.renderer, label: "direct extent initial", input: fixedInput)
+                try assertSamplesAndResolve(fixture, samples: samples)
+                try assertFullTextReference(fixture)
+                if samples > 1 {
+                    XCTAssertEqual(fixture.plan.scene.models["9"]?.meshes.count, 1, "A real MDL must enable MSAA")
+                    let modelOperation = try XCTUnwrap(fixture.renderer.frames[0].draws.first { _, draw in
+                        guard case let .scene(draw) = draw else { return false }
+                        return draw.objectID == "9" && draw.geometry == .modelMesh
+                    }?.key)
+                    XCTAssertTrue(fixture.renderer.lastFrameDraws.contains { $0.operation == modelOperation },
+                                  "The model must actually draw, rather than only toggle the MSAA flag")
+                    let pixels = try readBack(fixture.renderer.backbuffer, fixture)
+                    XCTAssertTrue(stride(from: 0, to: pixels.count, by: 4).contains { pixels[$0 + 2] > pixels[$0] },
+                                  "The resolved pixels must include the blue model")
+                }
+                fixture.renderer.startTextReplanDiagnostics()
+            }
+            let initial = try readBack(fast.renderer.backbuffer, fast)
+            XCTAssertEqual(initial, try readBack(slow.renderer.backbuffer, slow))
+            XCTAssertTrue(stride(from: 0, to: initial.count, by: 4).contains { initial[$0] > 0 })
+            for caption in ["Hello", "WWW", "Hi"] {
+                let previous = try XCTUnwrap(fast.renderer.texts[Self.textID]).layout.fboSize
+                let reused = try XCTUnwrap(fast.renderer.textReplanDiagnostics).directExtentLayoutReuseCohorts
+                for fixture in [slow, fast] {
+                    fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string(caption), invalidating: .textLayout)
+                    try await encode(fixture.renderer, label: "direct extent \(caption)", input: fixedInput)
+                    try assertFullTextReference(fixture)
+                    try assertSamplesAndResolve(fixture, samples: samples)
+                }
+                let text = try XCTUnwrap(fast.renderer.texts[Self.textID])
+                XCTAssertNotEqual(text.layout.fboSize, previous, "Must exercise an actual extent change")
+                XCTAssertEqual(fast.renderer.textReplanDiagnostics?.directExtentLayoutReuseCohorts, reused + 1)
+                XCTAssertEqual(slow.renderer.textReplanDiagnostics?.directExtentLayoutReuseCohorts, 0)
+                XCTAssertEqual(try readBack(fast.renderer.backbuffer, fast), try readBack(slow.renderer.backbuffer, slow))
+                let operation = try XCTUnwrap(fast.renderer.frames[0].draws.first { _, draw in
+                    guard case let .scene(draw) = draw else { return false }
+                    return draw.objectID == Self.textID && draw.geometry == .textGlyphs(.mono)
+                }?.key)
+                let actual = try XCTUnwrap(fast.renderer.uniforms(operation))
+                let reference = try XCTUnwrap(slow.renderer.uniforms(operation))
+                XCTAssertEqual(actual.effectPass?.size, SIMD2(Float(text.layout.fboSize.x), Float(text.layout.fboSize.y)))
+                XCTAssertEqual(actual.matrices.model, reference.matrices.model)
+                XCTAssertEqual(actual.matrices.view, reference.matrices.view)
+                XCTAssertEqual(actual.matrices.projection, reference.matrices.projection)
+                XCTAssertEqual(actual.effectPass?.effectTextureProjection, reference.effectPass?.effectTextureProjection)
+                let emitted = try textDraw(fast.renderer, geometry: .textGlyphs(.mono))
+                let expected = try textDraw(slow.renderer, geometry: .textGlyphs(.mono))
+                for stage in [WPEHLSLStage.vertex, .fragment] {
+                    assertTextBufferValues(emitted.values(for: stage), expected.values(for: stage))
+                }
+                let atlas = try XCTUnwrap(emitted.textures["g_Texture0"])
+                let textureUniform = try XCTUnwrap(actual.textures.first ?? nil)
+                XCTAssertEqual(textureUniform.textureWidth, UInt32(atlas.width))
+                XCTAssertEqual(textureUniform.textureHeight, UInt32(atlas.height))
+                let mesh = try XCTUnwrap(text.layout.mesh)
+                let points = mesh.mono.vertices.map { vertex -> SIMD2<Float> in
+                    let clip = actual.matrices.modelViewProjection * SIMD4(vertex.x, vertex.y, vertex.z, 1)
+                    let ndc = SIMD2(clip.x, clip.y) / clip.w
+                    return SIMD2((ndc.x + 1) * 0.5 * Float(Self.width), (1 - ndc.y) * 0.5 * Float(Self.height))
+                }
+                _ = try assertTextInk(in: fast.renderer.backbuffer, points: points, fixture: fast)
+            }
+            XCTAssertEqual(try readBack(fast.renderer.backbuffer, fast), initial, "Returning to Hi restores exact pixels")
+
+            enum Injected: Error { case beforeAccept }
+            let before = fast.renderer.textPreparationState
+            let beforePixels = try readBack(fast.renderer.backbuffer, fast)
+            let accepted = try XCTUnwrap(fast.renderer.textReplanDiagnostics).acceptedCohorts
+            fast.renderer.textPreparationCheckpoint = { _ in throw Injected.beforeAccept }
+            for fixture in [slow, fast] {
+                fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string("MMMM"), invalidating: .textLayout)
+            }
+            XCTAssertThrowsError(try fast.renderer.encodeFrame(elapsed: 1.0 / 60, input: fixedInput)) { XCTAssertTrue($0 is Injected) }
+            let rejected = fast.renderer.textPreparationState
+            XCTAssertEqual(rejected.texts, before.texts)
+            XCTAssertEqual(rejected.frames, before.frames)
+            XCTAssertEqual(rejected.layers.layers, before.layers.layers)
+            XCTAssertEqual(rejected.targets.mapValues(ObjectIdentifier.init), before.targets.mapValues(ObjectIdentifier.init))
+            XCTAssertEqual(rejected.atlases.textures.mapValues(ObjectIdentifier.init), before.atlases.textures.mapValues(ObjectIdentifier.init))
+            XCTAssertEqual(textGeometryIdentities(rejected), textGeometryIdentities(before))
+            XCTAssertEqual(try readBack(fast.renderer.backbuffer, fast), beforePixels)
+            XCTAssertEqual(fast.renderer.textReplanDiagnostics?.acceptedCohorts, accepted)
+            XCTAssertEqual(fast.renderer.textReplanDiagnostics?.failedCohorts, 1)
+            fast.renderer.textPreparationCheckpoint = nil
+            try await encode(slow.renderer, label: "reference after failed candidate", input: fixedInput)
+            try await encode(fast.renderer, label: "retry direct extent", input: fixedInput)
+            XCTAssertEqual(fast.renderer.textReplanDiagnostics?.acceptedCohorts, accepted + 1)
+            XCTAssertEqual(fast.renderer.textPreparationState.pendingRequests, 0)
+            XCTAssertEqual(try readBack(fast.renderer.backbuffer, fast), try readBack(slow.renderer.backbuffer, slow))
+            try assertFullTextReference(fast)
+            try assertSamplesAndResolve(fast, samples: samples)
+            try assertSamplesAndResolve(slow, samples: samples)
+            if parented {
+                let reused = try XCTUnwrap(fast.renderer.textReplanDiagnostics).directExtentLayoutReuseCohorts
+                for fixture in [slow, fast] {
+                    XCTAssertTrue(fixture.renderer.state.setParent(Self.textID, to: nil))
+                    fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string("Hello"), invalidating: .textLayout)
+                    try await encode(fixture.renderer, label: "pending parent generation slow control", input: fixedInput)
+                    try assertFullTextReference(fixture)
+                    try assertSamplesAndResolve(fixture, samples: samples)
+                }
+                XCTAssertEqual(fast.renderer.textReplanDiagnostics?.directExtentLayoutReuseCohorts, reused)
+                XCTAssertEqual(try readBack(fast.renderer.backbuffer, fast), try readBack(slow.renderer.backbuffer, slow))
+            }
+        }
+    }
+
+    func testDirectExtentReuseFallsBackForEffectsEmptyGlyphsAndParentComposites() async throws {
+        let fixedInput = WPEParityFrameInput(cursor: SIMD2(Float(Self.width) * 0.5, Float(Self.height) * 0.5),
+                                             date: Date(timeIntervalSince1970: 1_700_000_000))
+        for composite in [false, true] {
+            let slow: Fixture, fast: Fixture
+            if composite {
+                slow = try await makeCompositeTextRenderer(effect: false, reuseDirectTextExtents: false)
+                fast = try await makeCompositeTextRenderer(effect: false, reuseDirectTextExtents: true)
+            } else {
+                slow = try await makeSyntheticRenderer(effect: true, reuseDirectTextExtents: false)
+                fast = try await makeSyntheticRenderer(effect: true, reuseDirectTextExtents: true)
+            }
+            for fixture in [slow, fast] {
+                try await encode(fixture.renderer, label: "extent fallback initial", input: fixedInput)
+                fixture.renderer.startTextReplanDiagnostics()
+            }
+            for caption in ["Hello", "", "Hi"] {
+                for fixture in [slow, fast] {
+                    fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string(caption), invalidating: .textLayout)
+                    try await encode(fixture.renderer, label: "extent fallback \(caption.debugDescription)", input: fixedInput)
+                    try assertFullTextReference(fixture)
+                }
+                XCTAssertEqual(fast.renderer.textReplanDiagnostics?.directExtentLayoutReuseCohorts, 0)
+                XCTAssertEqual(try readBack(fast.renderer.backbuffer, fast), try readBack(slow.renderer.backbuffer, slow))
+                XCTAssertTrue(fast.renderer.skipped.isEmpty)
+            }
+            XCTAssertGreaterThan(try XCTUnwrap(fast.renderer.textReplanDiagnostics).fullLayoutCohorts, 0)
+        }
+        let direct = try await makeSyntheticRenderer(effect: false, reuseDirectTextExtents: true)
+        try await encode(direct.renderer, label: "empty direct initial", input: fixedInput)
+        direct.renderer.startTextReplanDiagnostics()
+        direct.renderer.state.setScriptField("text", of: Self.textID, to: .string(""), invalidating: .textLayout)
+        try await encode(direct.renderer, label: "empty direct slow control", input: fixedInput)
+        XCTAssertEqual(direct.renderer.textReplanDiagnostics?.directExtentLayoutReuseCohorts, 0)
+        XCTAssertEqual(direct.renderer.textReplanDiagnostics?.frameRebuildCohorts, 1)
+        try assertFullTextReference(direct)
+    }
+
+    /// Full CPU composition is an independent oracle used only by tests, never by eligibility on the hot path.
+    private func assertFullTextReference(_ fixture: Fixture) throws {
+        let renderer = fixture.renderer
+        let expected = try fixture.plan.layout(effects: renderer.state, texts: renderer.texts)
+        let actual = renderer.textFrameLayoutForTesting
+        XCTAssertEqual(actual.frames, expected.frames)
+        XCTAssertEqual(actual.programs.mapValues(\.hlsl), expected.programs.mapValues(\.hlsl))
+        XCTAssertEqual(actual.bindings.count, expected.bindings.count)
+        for (variant, bindings) in expected.bindings.enumerated() {
+            XCTAssertEqual(Set(actual.bindings[variant].keys), Set(bindings.keys))
+            for (index, binding) in bindings {
+                let kept = try XCTUnwrap(actual.bindings[variant][index])
+                XCTAssertEqual(Set(kept.constants.keys), Set(binding.constants.keys))
+                for (stage, values) in binding.constants {
+                    assertTextBufferValues(kept.constants[stage] ?? [:], values)
+                }
+                XCTAssertEqual(kept.textures, binding.textures)
+                XCTAssertEqual(kept.cullsBackFaces, binding.cullsBackFaces)
+                XCTAssertEqual(kept.depthTest, binding.depthTest)
+                XCTAssertEqual(kept.depthWrite, binding.depthWrite)
+            }
+        }
+        for frame in expected.frames {
+            for resource in frame.resources {
+                guard let texture = renderer.textPreparationState.targets[resource.id] else { continue }
+                XCTAssertEqual(texture.width, resource.width)
+                XCTAssertEqual(texture.height, resource.height)
+                XCTAssertEqual(texture.sampleCount, resource.sampleCount)
+            }
+        }
+    }
+
+    private func assertTextBufferValues(_ actual: [String: WPECBufferValue], _ expected: [String: WPECBufferValue],
+                                        file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(Set(actual.keys), Set(expected.keys), file: file, line: line)
+        for (name, expected) in expected {
+            guard let actual = actual[name] else { continue }
+            XCTAssertTrue(sameTextBufferValue(actual, expected), "Different cbuffer value for \(name)", file: file, line: line)
+        }
+    }
+
+    private func sameTextBufferValue(_ actual: WPECBufferValue, _ expected: WPECBufferValue) -> Bool {
+        switch (actual, expected) {
+        case let (.float(a), .float(b)): a.bitPattern == b.bitPattern
+        case let (.int(a), .int(b)): a == b
+        case let (.uint(a), .uint(b)): a == b
+        case let (.bool(a), .bool(b)): a == b
+        case let (.vector(a), .vector(b)): a.map(\.bitPattern) == b.map(\.bitPattern)
+        case let (.intVector(a), .intVector(b)): a == b
+        case let (.uintVector(a), .uintVector(b)): a == b
+        case let (.matrix(a), .matrix(b)):
+            a.columns.map { $0.map(\.bitPattern) } == b.columns.map { $0.map(\.bitPattern) }
+        case let (.array(a), .array(b)):
+            a.count == b.count && zip(a, b).allSatisfy { sameTextBufferValue($0.0, $0.1) }
+        default: false
+        }
+    }
+
     func testTextUserPropertyRelaysTheLayerWithoutReloading() async throws {
         let wpeAssets = try wpeAssets()
         let scene = try Self.syntheticScene(effect: false, text: ["user": "caption", "value": "Hi"])
@@ -1697,7 +1965,42 @@ final class WPEParityTextDrawTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: scene)
     }
 
-    private func makeCompositeTextRenderer(effect: Bool) async throws -> Fixture {
+    /// A real static MDLV0016 quad, with the same 0x0F position/normal/tangent/UV layout as the shadow guard.
+    private func writeDirectTextMSAAModel() throws {
+        for directory in ["models", "materials"] {
+            try FileManager.default.createDirectory(at: scratch.appending(path: directory), withIntermediateDirectories: true)
+        }
+        let material: [String: Any] = ["passes": [[
+            "shader": "generic4", "blending": "normal", "textures": ["util/white"],
+            "combos": ["LIGHTING": 0, "FOG": 0, "REFLECTION": 0],
+            "constantshadervalues": ["color": "0 0 1"],
+        ]]]
+        try JSONSerialization.data(withJSONObject: material).write(to: scratch.appending(path: "materials/text-msaa.json"))
+        var data = Data("MDLV0016".utf8)
+        func append(_ words: [UInt32]) {
+            for word in words {
+                withUnsafeBytes(of: word.littleEndian) { data.append(contentsOf: $0) }
+            }
+        }
+        append([0x0F00])
+        data.append(0)
+        append([1, 1])
+        data.append(contentsOf: Array("materials/text-msaa.json".utf8) + [0])
+        append([0, 0x0F])
+        let corners: [(Float, Float, Float, Float)] = [(-4, -4, 0, 1), (4, -4, 1, 1), (-4, 4, 0, 0), (4, 4, 1, 0)]
+        append([UInt32(corners.count * 12 * 4)])
+        for (x, y, u, v) in corners {
+            append([x, y, 0, 0, 0, 1, 1, 0, 0, 1, u, v].map(\.bitPattern))
+        }
+        let indices: [UInt16] = [0, 1, 2, 2, 1, 3]
+        append([UInt32(indices.count * 2)])
+        for index in indices {
+            withUnsafeBytes(of: index.littleEndian) { data.append(contentsOf: $0) }
+        }
+        try data.write(to: scratch.appending(path: "models/text-msaa.mdl"))
+    }
+
+    private func makeCompositeTextRenderer(effect: Bool, reuseDirectTextExtents: Bool? = nil) async throws -> Fixture {
         let scene = try Self.syntheticScene(effect: effect)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: scene) as? [String: Any])
         var general = try XCTUnwrap(json["general"] as? [String: Any])
@@ -1715,7 +2018,8 @@ final class WPEParityTextDrawTests: XCTestCase {
                           "passes": [["constantshadervalues": ["alpha": 0]]]]]],
         ]
         json["objects"] = objects
-        return try await makeSyntheticRenderer(effect: effect, scene: JSONSerialization.data(withJSONObject: json))
+        return try await makeSyntheticRenderer(effect: effect, scene: JSONSerialization.data(withJSONObject: json),
+                                               reuseDirectTextExtents: reuseDirectTextExtents)
     }
 
     /// Keep the parent world's nontrivial chain while diagnosing the actual final publication, after its child drew.
@@ -1786,7 +2090,8 @@ final class WPEParityTextDrawTests: XCTestCase {
 
     private func makeSyntheticRenderer(effect: Bool, scene: Data? = nil,
                                        settings: WPEParityProgramSettings = .init(), scripted: Bool = false,
-                                       alignment: WPEParityCameraAlignment = .noCrop) async throws -> Fixture {
+                                       alignment: WPEParityCameraAlignment = .noCrop,
+                                       reuseDirectTextExtents: Bool? = nil) async throws -> Fixture {
         let wpeAssets = try wpeAssets()
         let document = try Self.parse(scene ?? Self.syntheticScene(effect: effect))
         // The tint effect keeps its material and shaders in its own folder.
@@ -1805,7 +2110,7 @@ final class WPEParityTextDrawTests: XCTestCase {
             plan: plan, device: device, queue: queue,
             shaders: WPEParityFrameShaderSource(store: store, compilerIdentity: compiler.compilerIdentity,
                                                 bindingABIVersion: 1),
-            particleSeed: 1
+            particleSeed: 1, reuseDirectTextExtentLayouts: reuseDirectTextExtents
         )
         if scripted {
             try renderer.attachScript(WPEParitySceneScript(
@@ -1883,8 +2188,8 @@ final class WPEParityTextDrawTests: XCTestCase {
         return result
     }
 
-    private func encode(_ renderer: WPEParityFrameRenderer, label: String) async throws {
-        guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60) else {
+    private func encode(_ renderer: WPEParityFrameRenderer, label: String, input: WPEParityFrameInput? = nil) async throws {
+        guard case let .committed(commandBuffer) = try renderer.encodeFrame(elapsed: 1.0 / 60, input: input ?? .init()) else {
             return XCTFail("\(label): frame skipped")
         }
         await commandBuffer.completed()

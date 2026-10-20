@@ -10,6 +10,14 @@ import QuartzCore
 
 /// Present readiness, written by command-buffer completion handlers on Metal's callback threads.
 final class WPEParityPresentState: Sendable {
+    struct CadenceCounts: Sendable {
+        var sceneCompleted = 0
+        var sceneFailed = 0
+        var presentCompleted = 0
+        var presentFailed = 0
+        var staleCompletions = 0
+    }
+
     private struct Readiness {
         var generation = 0
         var completed: Int?
@@ -18,6 +26,7 @@ final class WPEParityPresentState: Sendable {
         var sceneFailed = false
         var gpuErrorCount = 0
         var gpuErrorLast: String?
+        var cadence: CadenceCounts?
     }
 
     private let readiness = OSAllocatedUnfairLock(initialState: Readiness())
@@ -52,7 +61,33 @@ final class WPEParityPresentState: Sendable {
     }
 
     func reset(generation: Int) {
-        readiness.withLock { $0 = Readiness(generation: generation, inFlight: $0.inFlight) }
+        readiness.withLock { state in
+            state = Readiness(generation: generation, inFlight: state.inFlight, cadence: state.cadence)
+        }
+    }
+
+    func enableCadenceDiagnostics() {
+        readiness.withLock { $0.cadence = .init() }
+    }
+
+    var cadenceCounts: CadenceCounts? {
+        readiness.withLock(\.cadence)
+    }
+
+    /// Reuses the existing scene completion callback; contains no command buffer or renderer ownership.
+    func recordCadenceScene(generation: Int, succeeded: Bool) {
+        readiness.withLock { state in
+            guard state.cadence != nil else { return }
+            guard state.generation == generation else {
+                state.cadence?.staleCompletions += 1
+                return
+            }
+            if succeeded {
+                state.cadence?.sceneCompleted += 1
+            } else {
+                state.cadence?.sceneFailed += 1
+            }
+        }
     }
 
     func begin() {
@@ -64,9 +99,21 @@ final class WPEParityPresentState: Sendable {
     }
 
     /// A completion from an earlier load is dropped; a later failure never revokes a ready generation.
-    func record(generation: Int, succeeded: Bool) {
+    func record(generation: Int, succeeded: Bool, cadencePresent: Bool = false) {
         readiness.withLock { state in
-            guard state.generation == generation else { return }
+            guard state.generation == generation else {
+                if cadencePresent {
+                    state.cadence?.staleCompletions += 1
+                }
+                return
+            }
+            if cadencePresent {
+                if succeeded, !state.sceneFailed {
+                    state.cadence?.presentCompleted += 1
+                } else {
+                    state.cadence?.presentFailed += 1
+                }
+            }
             if succeeded, !state.sceneFailed {
                 state.completed = generation
                 state.failed = nil
@@ -144,6 +191,61 @@ final class WPEParitySceneDriver {
     private var planSource: PlanSource?
     /// A live property commit supersedes candidate plans without replacing the load generation.
     private var planRevision = 0
+    private var preparingVideoID: UUID?
+
+    var pendingVideoAdmissionID: UUID? {
+        renderer?.pendingVideoAdmission?.id
+    }
+
+    #if DEBUG
+    enum VideoAdmissionCheckpoint { case beforePreparation, beforeCommit }
+    var videoAdmissionCheckpoint: ((VideoAdmissionCheckpoint) async throws -> Void)?
+    var videoAdmissionPreparedForTesting: ((WPEParityVideoTextures) -> Void)?
+    #endif
+
+    /// Called between frames on this driver's owning actor. A stale temporary owner retires only its new players.
+    nonisolated(nonsending) func preparePendingVideos() async throws -> Bool {
+        guard let renderer, let request = renderer.pendingVideoAdmission,
+              preparingVideoID != request.id else { return false }
+        let generation = loadGeneration
+        let revision = planRevision
+        preparingVideoID = request.id
+        defer {
+            if preparingVideoID == request.id {
+                preparingVideoID = nil
+            }
+        }
+        do {
+            try Task.checkCancellation()
+            #if DEBUG
+            try await videoAdmissionCheckpoint?(.beforePreparation)
+            #endif
+            let prepared = try await renderer.prepareVideos(request)
+            #if DEBUG
+            videoAdmissionPreparedForTesting?(prepared)
+            try await videoAdmissionCheckpoint?(.beforeCommit)
+            #endif
+            try Task.checkCancellation()
+            guard self.renderer === renderer, loadGeneration == generation, planRevision == revision,
+                  renderer.pendingVideoAdmission?.id == request.id else { return false }
+            return try renderer.acceptVideos(prepared, for: request)
+        } catch {
+            if error is CancellationError || Task.isCancelled {
+                if self.renderer === renderer, renderer.pendingVideoAdmission?.id == request.id {
+                    renderer.cancelVideoAdmission()
+                }
+                throw CancellationError()
+            }
+            guard self.renderer === renderer, loadGeneration == generation, planRevision == revision,
+                  renderer.pendingVideoAdmission?.id == request.id else { return false }
+            renderer.cancelVideoAdmission()
+            runtimeFailure = "WPE video admission failed: \(error.localizedDescription)"
+            soundRuntime?.stop()
+            logFrameFailure(error)
+            throw error
+        }
+    }
+
     let reusesPreparedScene: Bool
     private var plannedTarget: RenderTarget?
     /// The target the last re-plan of this load failed to build; not retried until the target changes.
@@ -177,6 +279,39 @@ final class WPEParitySceneDriver {
     private var spanFrameSequence: UInt64 = 0
     private let device: MTLDevice
     private let presentState = WPEParityPresentState()
+
+    struct CadenceSubmissions: Sendable {
+        var rendererRevision = 0
+        var attempts = 0
+        var sceneCommitted = 0
+        var sceneSkipped = 0
+        var sceneErrors = 0
+        var presentCommitted = 0
+        var presentScheduled = 0
+        var drawableMisses = 0
+        var presentErrors = 0
+    }
+
+    static let cadenceDiagnosticsEnvironmentKey = "LOOMSCREEN_PARITY_CADENCE_DIAGNOSTICS"
+
+    static func resolveCadenceDiagnostics(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        switch environment[cadenceDiagnosticsEnvironmentKey]?.lowercased() {
+        case "1", "true": true
+        default: false
+        }
+    }
+
+    private(set) var cadenceSubmissions: CadenceSubmissions?
+
+    func enableCadenceDiagnostics() {
+        cadenceSubmissions = .init()
+        presentState.enableCadenceDiagnostics()
+    }
+
+    var cadenceCompletions: WPEParityPresentState.CadenceCounts? {
+        cadenceSubmissions == nil ? nil : presentState.cadenceCounts
+    }
+
     private var paused = false
     /// The left button as the edges handed to the renderer left it; also the frame's button state.
     private var edgeButtonDown = false
@@ -318,7 +453,8 @@ final class WPEParitySceneDriver {
         soundResolver: WPEMultiRootResourceResolver? = nil, audioPreset: WPEEngineAudioSettings? = nil,
         workshopID: String? = nil, scriptHost: WPEParitySceneScript.Host = .init(),
         userShortcutIcons: WPEUserShortcutIconStore? = nil,
-        particleSeed: UInt32 = WPEParityParticleScene.productSeed()
+        particleSeed: UInt32 = WPEParityParticleScene.productSeed(),
+        reuseDirectTextExtentLayouts: Bool? = nil
     ) async throws {
         #if DEBUG
         if Self.remainingForcedLoadFailuresForTesting > 0 {
@@ -335,6 +471,7 @@ final class WPEParitySceneDriver {
         runtimeFailure = nil
         spanFrames?.reset(generation: generation)
         renderer?.destroyScript()
+        renderer?.cancelVideoAdmission()
         renderer = nil
         deliveredScriptLanguage = nil
         executor.lastPresentPass = nil
@@ -380,7 +517,7 @@ final class WPEParitySceneDriver {
             let renderer = try await WPEParityFrameRenderer(
                 plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: shaders,
                 particleSeed: particleSeed, workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON,
-                textureCompression: textureCompression
+                textureCompression: textureCompression, reuseDirectTextExtentLayouts: reuseDirectTextExtentLayouts
             )
             guard generation == loadGeneration else { throw CancellationError() }
             renderer.state.excludedObjectIDs = excludedObjectIDs
@@ -392,7 +529,7 @@ final class WPEParitySceneDriver {
             _ = try executor.renderPipeline(
                 vertexName: "wpe_present_vertex",
                 fragmentName: WPEMetalPresenter.presentFragment(source: renderer.backbuffer.pixelFormat,
-                                                                     colorTransfer: renderer.colorTransfer),
+                                                                colorTransfer: renderer.colorTransfer),
                 colorPixelFormat: pixelFormat
             )
             if let soundResolver, !document.soundObjects.isEmpty {
@@ -499,6 +636,7 @@ final class WPEParitySceneDriver {
                 }
             }
             self.renderer = renderer
+            cadenceSubmissions?.rendererRevision += 1
             lastTimestamp = nil
         } catch {
             if let preparedSound {
@@ -546,7 +684,8 @@ final class WPEParitySceneDriver {
                 let renderer = try await WPEParityFrameRenderer(
                     plan: plan, device: device, queue: executor.textureSourceCommandQueue, shaders: planSource.shaders,
                     workshopID: planSource.workshopID, continuing: previous,
-                    userPropertiesJSON: scriptUserProperties, textureCompression: planSource.textureCompression
+                    userPropertiesJSON: scriptUserProperties, textureCompression: planSource.textureCompression,
+                    reuseDirectTextExtentLayouts: previous.reusesDirectTextExtentLayouts
                 )
                 guard generation == loadGeneration, revision == planRevision, self.renderer === previous else { return false }
                 // A present may decline scaling or discover a new drawable while this candidate is building.
@@ -557,6 +696,7 @@ final class WPEParitySceneDriver {
                     try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
                 }
                 self.renderer = renderer
+                cadenceSubmissions?.rendererRevision += 1
                 if reusesPreparedScene {
                     self.planSource?.preparedScene = plan.scene
                 }
@@ -620,6 +760,7 @@ final class WPEParitySceneDriver {
         }
         scriptUserProperties = merged
         planRevision &+= 1
+        renderer.cancelVideoAdmission()
         self.planSource = PlanSource(document: pending.document, scene: planSource.scene, preparedScene: nil,
                                      assets: planSource.assets,
                                      settings: planSource.settings, shaders: planSource.shaders,
@@ -698,6 +839,7 @@ final class WPEParitySceneDriver {
     func renderAndPresentFrame(layer: CAMetalLayer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                                buttonDown: Bool = false, audio: AudioSpectrumFrame? = nil,
                                date: Date = Date()) -> MTLCommandBuffer? {
+        cadenceSubmissions?.attempts += 1
         guard let renderer, let plannedTarget,
               encodeFrame(renderer, timestamp: timestamp, pointer: pointer, buttonDown: buttonDown, audio: audio,
                           date: date) else { return nil }
@@ -712,6 +854,7 @@ final class WPEParitySceneDriver {
             // Registered after the present's own handler, so readiness is recorded before the count drops.
             commandBuffer.addCompletedHandler { _ in state.end() }
             commandBuffer.commit()
+            cadenceSubmissions?.presentCommitted += 1
             if executor.takePresentSideDemotion() {
                 executor.releaseRenderScaleDependentResources()
             }
@@ -725,16 +868,21 @@ final class WPEParitySceneDriver {
                     if present.status == .error {
                         state.recordGPUFailure(generation: generation, reason: present.error?.localizedDescription ?? "Present command buffer failed")
                     }
-                    state.record(generation: generation, succeeded: present.status == .completed && sceneBuffer.succeeded)
+                    state.record(generation: generation, succeeded: present.status == .completed && sceneBuffer.succeeded,
+                                 cadencePresent: true)
                 },
                 into: commandBuffer
             )
             didLogFrameFailure = false
             if presented {
+                cadenceSubmissions?.presentScheduled += 1
                 updateSurfaceGeometry(drawableSize: executor.lastPresentedDrawableSize)
+            } else {
+                cadenceSubmissions?.drawableMisses += 1
             }
             return presented ? commandBuffer : nil
         } catch {
+            cadenceSubmissions?.presentErrors += 1
             logFrameFailure(error)
             return nil
         }
@@ -791,8 +939,16 @@ final class WPEParitySceneDriver {
                                                   timestamp: CFTimeInterval) async throws {
         try Task.checkCancellation()
         guard let renderer, let plannedTarget else { throw WPEMetalRenderError.noRenderablePasses }
-        guard encodeFrame(renderer, timestamp: timestamp, pointer: SIMD2(0.5, 0.5), buttonDown: false,
-                          audio: nil, date: Date(), forceExternalFrame: true) else {
+        var encoded = encodeFrame(renderer, timestamp: timestamp, pointer: SIMD2(0.5, 0.5), buttonDown: false,
+                                  audio: nil, date: Date(), forceExternalFrame: true)
+        if !encoded, pendingVideoAdmissionID != nil {
+            guard try await preparePendingVideos() else { throw CancellationError() }
+            try Task.checkCancellation()
+            guard self.renderer === renderer else { throw CancellationError() }
+            encoded = encodeFrame(renderer, timestamp: timestamp, pointer: SIMD2(0.5, 0.5), buttonDown: false,
+                                  audio: nil, date: Date(), forceExternalFrame: true, resumingVideoFrame: true)
+        }
+        guard encoded else {
             if let runtimeFailure {
                 throw WPEParityFrameRenderError.requiredShaderUnavailable(runtimeFailure)
             }
@@ -842,13 +998,15 @@ final class WPEParitySceneDriver {
     /// Steps the scene clock and commits one frame into the backbuffer; false when nothing was committed.
     private func encodeFrame(_ renderer: WPEParityFrameRenderer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                              buttonDown: Bool, audio: AudioSpectrumFrame?, date: Date,
-                             forceExternalFrame: Bool = false) -> Bool {
+                             forceExternalFrame: Bool = false, resumingVideoFrame: Bool = false) -> Bool {
         submittedSceneBuffer = nil
         guard runtimeFailure == nil else { return false }
         // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
         let elapsed = lastTimestamp.map { max(timestamp - $0, 0) } ?? 0
-        lastTimestamp = timestamp
-        soundRuntime?.advance(by: elapsed)
+        if !resumingVideoFrame {
+            lastTimestamp = timestamp
+            soundRuntime?.advance(by: elapsed)
+        }
         let backbuffer = renderer.backbuffer
         let pixels = SIMD2(Double(backbuffer.width), Double(backbuffer.height))
         let input = WPEParityFrameInput(cursor: SIMD2<Float>(pointer * pixels),
@@ -858,13 +1016,22 @@ final class WPEParitySceneDriver {
             let start = CACurrentMediaTime()
             let state = presentState
             let generation = loadGeneration
+            let countsCadence = cadenceSubmissions != nil
+            let completion: @Sendable (MTLCommandBuffer) -> Void = { buffer in
+                if countsCadence {
+                    state.recordCadenceScene(generation: generation, succeeded: buffer.status == .completed)
+                }
+                if buffer.status == .error {
+                    state.recordGPUFailure(generation: generation, reason: buffer.error?.localizedDescription ?? "Scene command buffer failed")
+                }
+            }
             let submission = try withScriptSound(renderer.script?.engine) {
-                try renderer.encodeFrame(elapsed: elapsed, paused: paused, forceExternalFrame: forceExternalFrame,
-                                         input: input, completion: { buffer in
-                                             if buffer.status == .error {
-                                                 state.recordGPUFailure(generation: generation, reason: buffer.error?.localizedDescription ?? "Scene command buffer failed")
-                                             }
-                                         })
+                if resumingVideoFrame {
+                    try renderer.resumeVideoFrame(completion: completion)
+                } else {
+                    try renderer.encodeFrame(elapsed: elapsed, paused: paused, forceExternalFrame: forceExternalFrame,
+                                             input: input, completion: completion)
+                }
             }
             encodeSeconds += CACurrentMediaTime() - start
             encodeCount += 1
@@ -877,10 +1044,15 @@ final class WPEParitySceneDriver {
                 }
                 renderer.takeSoundVisibility { id, visible in soundRuntime.setVisible(visible, forSoundID: id) }
             }
-            guard case let .committed(commandBuffer) = submission else { return false }
+            guard case let .committed(commandBuffer) = submission else {
+                cadenceSubmissions?.sceneSkipped += 1
+                return false
+            }
+            cadenceSubmissions?.sceneCommitted += 1
             submittedSceneBuffer = commandBuffer
             return true
         } catch {
+            cadenceSubmissions?.sceneErrors += 1
             if error is WPEParityScriptEngine.Failure {
                 recordScriptFailure(error)
             }
@@ -1146,6 +1318,7 @@ final class WPEParitySceneDriver {
         presentState.reset(generation: loadGeneration)
         spanFrames?.reset(generation: loadGeneration)
         renderer?.destroyScript()
+        renderer?.cancelVideoAdmission()
         renderer = nil
         planSource = nil
         plannedTarget = nil

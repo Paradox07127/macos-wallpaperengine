@@ -959,6 +959,46 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testReplayRandomSeedCoversModuleInitAndSharedUpdateStreamIncludingZero() throws {
+        func replay(_ seed: UInt32?) throws -> [Float] {
+            var scene = try Self.scene([
+                Self.layer(1, "A", ["alpha": Self.scripted(0, """
+                const moduleValue = Math.random();
+                export function init(value) { shared.replayValue = Math.random(); return moduleValue; }
+                export function update(value) { return Math.random(); }
+                """)]),
+                Self.layer(2, "B", ["alpha": Self.scripted(0, """
+                const moduleValue = Math.random();
+                export function init(value) { return shared.replayValue + moduleValue; }
+                export function update(value) { return shared.replayValue + Math.random(); }
+                """)]),
+                Self.layer(3, "native", ["alpha": Self.scripted(0, """
+                export function init(value) {
+                  return Function.prototype.toString.call(Math.random).includes('[native code]') ? 1 : 0;
+                }
+                """)]),
+            ], assets: Self.fixedAssets(), configure: { $0.randomSeed = seed })
+            try scene.engine.start(state: &scene.state)
+            XCTAssertEqual(scene.state.object("3")?.alpha, seed == nil ? 1 : 0,
+                           "A normal host must leave the native random function unchanged")
+            var values = try [XCTUnwrap(scene.state.object("1")?.alpha), XCTUnwrap(scene.state.object("2")?.alpha)]
+            for _ in 0 ..< 2 {
+                scene.engine.tick(dt: 1 / 60, state: &scene.state)
+                values += try [XCTUnwrap(scene.state.object("1")?.alpha), XCTUnwrap(scene.state.object("2")?.alpha)]
+            }
+            XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+            XCTAssertTrue(values.allSatisfy(\.isFinite))
+            return values
+        }
+        let zero = try replay(0)
+        XCTAssertEqual(zero, try replay(0), "Each context must restart the complete module/init/update stream")
+        XCTAssertNotEqual(zero, try replay(1), "Changing the explicit replay seed must change the stream")
+        // Seed zero's first global read and B's init (third shared read + second global read).
+        XCTAssertEqual(zero[0], 0.23606797, accuracy: 1e-7)
+        XCTAssertEqual(zero[1], 1.0981007, accuracy: 1e-7)
+        _ = try replay(nil)
+    }
+
     func testDateEpochMakesDateNowFollowEngineRuntime() throws {
         var scene = try Self.scene([
             Self.layer(1, "A", ["alpha": Self.scripted(0, """

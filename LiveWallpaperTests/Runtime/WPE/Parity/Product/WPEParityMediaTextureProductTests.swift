@@ -577,6 +577,373 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         XCTAssertNotEqual(after, before, "The video texture held one frame until the deadline")
     }
 
+    func testFirstActivationOfAnEffectOnlyVideoStartsOneDecoderAndPresentsChangingFrames() async throws {
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()), hiddenVideoEffect: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let dispatcher = WPESceneMediaEventDispatcher(source: MediaInputSource())
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertEqual(renderer.videoSourceCount, 0, "An effect that never ran must not open a decoder")
+        let initial = try await present(driver, layer: layer)
+        let offset = (16 * 80 + 16) * 4
+        XCTAssertEqual(Array(initial[offset ..< offset + 3]), [0, 0, 0])
+        XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
+
+        var decodedGrayValues: Set<UInt8> = []
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, decodedGrayValues.count < 2 {
+            if let command = driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)) {
+                try await waitUntil("Effect-video frame did not complete") { command.status == .completed || command.status == .error }
+                try requireCompleted(command)
+                if renderer.videoSourceCount == 1 {
+                    let pixel = try Array(readBack(XCTUnwrap(layer.lastTexture))[offset ..< offset + 3])
+                    if pixel[1] > 10, pixel[1] < 250, abs(Int(pixel[0]) - Int(pixel[1])) <= 2,
+                       abs(Int(pixel[2]) - Int(pixel[1])) <= 2 {
+                        decodedGrayValues.insert(pixel[1])
+                    }
+                }
+            }
+            if driver.pendingVideoAdmissionID != nil {
+                _ = try await driver.preparePendingVideos()
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(renderer.videoSourceCount, 1, "The first enabled effect must admit its video decoder")
+        XCTAssertGreaterThan(decodedGrayValues.count, 1, "Decoded changing video pixels must reach the presented effect")
+        let video = try XCTUnwrap(renderer.videoTextures.first)
+        XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: false))
+        _ = try await present(driver, layer: layer)
+        XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
+        _ = try await present(driver, layer: layer)
+        XCTAssertEqual(renderer.videoSourceCount, 1)
+        XCTAssertTrue(try XCTUnwrap(renderer.videoTextures.first) === video, "Re-enabling an admitted effect must reuse its decoder texture")
+        XCTAssertNil(driver.runtimeFailure)
+    }
+
+    func testSameFrameEffectVideoAndTextExtentChangesAdmitBeforePublishingTheCohort() async throws {
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()),
+                                            hiddenVideoEffect: true, textExtentWitness: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        // Independent owners cover both the always-full path and the actual default-on product setting.
+        for reuse in [Bool?.some(false), nil] {
+            let dispatcher = WPESceneMediaEventDispatcher(source: MediaInputSource())
+            let driver = try WPEParitySceneDriver(device: fixture.device)
+            defer { dispatcher.stop(); driver.cleanup() }
+            let layer = makeLayer(device: fixture.device)
+            try await driver.load(document: fixture.document, assets: fixture.assets, settings: Self.settings,
+                                  drawableSize: Self.size, pixelFormat: .bgra8Unorm_srgb,
+                                  compiler: fixture.compiler, diskCache: fixture.cache,
+                                  scriptHost: .init(media: dispatcher.mailbox), reuseDirectTextExtentLayouts: reuse)
+            let renderer = try XCTUnwrap(driver.renderer)
+            XCTAssertEqual(renderer.reusesDirectTextExtentLayouts, reuse ?? true)
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            XCTAssertTrue(renderer.fallbackTextures.isEmpty, "\(renderer.fallbackTextures)")
+            let initial = try await present(driver, layer: layer)
+            let before = try XCTUnwrap(renderer.texts["4"])
+            XCTAssertEqual(before.object.text, "I")
+            let initialInk = textWitnessColumns(initial)
+            XCTAssertFalse(initialInk.isEmpty, "The original font must actually draw before activation")
+            XCTAssertEqual(renderer.videoSourceCount, 0)
+            renderer.startTextReplanDiagnostics()
+
+            // Both canonical mutations reach applyScriptText/selectGraphs in the very same render tick.
+            XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
+            renderer.state.setScriptField("text", of: "4", to: .string("MMMM"), invalidating: .textLayout)
+            XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)))
+            XCTAssertNil(driver.runtimeFailure)
+            _ = try XCTUnwrap(driver.pendingVideoAdmissionID, "The text cohort must not block first video admission")
+            XCTAssertEqual(renderer.videoSourceCount, 0, "Preparation must remain lazy")
+            XCTAssertEqual(try XCTUnwrap(renderer.texts["4"]), before,
+                           "An unprepared video must not publish a partial text/atlas cohort")
+            XCTAssertEqual(try readBack(XCTUnwrap(layer.lastTexture)), initial, "Admission keeps the committed frame")
+            let accepted = try await driver.preparePendingVideos()
+            XCTAssertTrue(accepted)
+            XCTAssertNil(driver.runtimeFailure)
+            XCTAssertEqual(renderer.videoSourceCount, 1)
+
+            var decodedGrayValues: Set<UInt8> = []
+            let offset: Int = (16 * 80 + 16) * 4
+            let deadline = Date().addingTimeInterval(6)
+            while Date() < deadline, decodedGrayValues.count < 2 {
+                let pixels = try await present(driver, layer: layer)
+                let text = try XCTUnwrap(renderer.texts["4"])
+                XCTAssertEqual(text.object.text, "MMMM")
+                XCTAssertNotEqual(text.layout.fboSize, before.layout.fboSize, "The witness must really change extent")
+                XCTAssertGreaterThan(textWitnessColumns(pixels).count, initialInk.count,
+                                     "The presented frame must contain the wider glyphs, not just updated CPU fields")
+                try assertTextWitnessDraw(renderer)
+                let pixel = Array(pixels[offset ..< offset + 3])
+                if pixel[1] > 10, pixel[1] < 250, abs(Int(pixel[0]) - Int(pixel[1])) <= 2,
+                   abs(Int(pixel[2]) - Int(pixel[1])) <= 2 {
+                    decodedGrayValues.insert(pixel[1])
+                }
+                XCTAssertNil(driver.runtimeFailure)
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertGreaterThan(decodedGrayValues.count, 1, "Real admitted H264 frames must change at the effect pixel")
+            XCTAssertEqual(renderer.videoSourceCount, 1, "The same stream must not create duplicate owners")
+            if reuse == false {
+                XCTAssertGreaterThan(try XCTUnwrap(renderer.textReplanDiagnostics).fullLayoutCohorts, 0,
+                                     "The explicit-off arm must exercise a genuine full-layout cohort")
+            }
+            XCTAssertNil(driver.runtimeFailure)
+        }
+    }
+
+    func testLateEffectVideoAdmissionDropsOnlyNewPlayersOnHideCancellationAndCleanup() async throws {
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()),
+                                            hiddenVideoEffect: true, existingVideo: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        for interruption in 0 ..< 3 {
+            let dispatcher = WPESceneMediaEventDispatcher(source: MediaInputSource())
+            let driver = try WPEParitySceneDriver(device: fixture.device)
+            defer { dispatcher.stop(); driver.cleanup() }
+            let layer = makeLayer(device: fixture.device)
+            try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+            let renderer = try XCTUnwrap(driver.renderer)
+            let oldTexture = try XCTUnwrap(renderer.videoTextures.first)
+            XCTAssertEqual(renderer.videoSourceCount, 1)
+            XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
+            XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)))
+            XCTAssertNotNil(driver.pendingVideoAdmissionID)
+            var resume: CheckedContinuation<Void, Never>?
+            weak var unpublishedSource: WPEVideoTextureSource?
+            driver.videoAdmissionPreparedForTesting = { prepared in
+                unpublishedSource = prepared.authoredSourcesForTesting.first
+            }
+            driver.videoAdmissionCheckpoint = { point in
+                guard case .beforeCommit = point else { return }
+                await withCheckedContinuation { resume = $0 }
+            }
+            let preparation = Task { try await driver.preparePendingVideos() }
+            defer { preparation.cancel(); resume?.resume(); resume = nil }
+            try await waitUntil("A real second decoder never reached the unpublished checkpoint") { resume != nil }
+            XCTAssertNotNil(try XCTUnwrap(unpublishedSource).playerForTesting)
+            XCTAssertEqual(renderer.videoSourceCount, 1, "A prepared decoder must not mutate the committed pool")
+            if interruption == 0 {
+                renderer.state.setEffect("10", of: "1", visible: false)
+                XCTAssertNil(driver.pendingVideoAdmissionID)
+            } else if interruption == 1 {
+                preparation.cancel()
+            } else {
+                driver.cleanup()
+            }
+            resume?.resume()
+            resume = nil
+            do {
+                let accepted = try await preparation.value
+                XCTAssertFalse(accepted)
+                XCTAssertNotEqual(interruption, 1, "An explicitly cancelled admission must throw CancellationError")
+            } catch is CancellationError {
+                XCTAssertEqual(interruption, 1)
+            }
+            driver.videoAdmissionCheckpoint = nil
+            driver.videoAdmissionPreparedForTesting = nil
+            XCTAssertNil(driver.pendingVideoAdmissionID)
+            XCTAssertNil(unpublishedSource, "The unpublished decoder must release its actual player owner")
+            XCTAssertEqual(renderer.videoSourceCount, 1)
+            XCTAssertTrue(try XCTUnwrap(renderer.videoTextures.first) === oldTexture)
+            XCTAssertEqual(renderer.scriptVideoCommand("3", .isPlaying, 0), 1,
+                           "Destroying the temporary pool must not invalidate the old shared player")
+            XCTAssertNil(driver.runtimeFailure)
+        }
+    }
+
+    func testActorAutomaticallyAdmitsAnEffectVideoAndKeepsProducingFrames() async throws {
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()), hiddenVideoEffect: true)
+        let layer = makeLayer(device: fixture.device)
+        let surface = MediaPacingRecorder()
+        let inputs = WPEParitySceneInputs(
+            descriptor: SceneDescriptor(workshopID: "effect-video-guard", cacheRelativePath: "effect-video-guard",
+                                        entryFile: "scene.json", capabilityTier: .degraded),
+            entryResolver: SceneResourceResolver(cacheRootURL: fixture.root), projectRoot: fixture.root,
+            assets: fixture.assets, settings: Self.settings, compiler: fixture.compiler, device: fixture.device,
+            presentLayer: WPEPresentLayer(layer: layer), mailbox: WPEPointerMailbox(), surfaceControl: surface,
+            drawableSize: Self.size, pixelFormat: layer.pixelFormat
+        )
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let fixtureRoot = fixture.root
+        addTeardownBlock {
+            await actor.teardownRenderer()
+            await actor.shutdown()
+            await MainActor.run { try? FileManager.default.removeItem(at: fixtureRoot) }
+        }
+        try await actor.adoptParity(inputs)
+        try await actor.load()
+        try await actorFrame(actor)
+        let initial = await actor.run { $0.parityDriverForTesting?.renderer?.videoSourceCount }
+        XCTAssertEqual(initial, 0)
+        let changed = await actor.run { actor in
+            let changed = actor.parityDriverForTesting?.renderer?.state.setEffect("10", of: "1", visible: true)
+            actor.forceContentRerender()
+            return changed
+        }
+        XCTAssertEqual(changed, true)
+        var values: Set<UInt8> = []
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, values.count < 2 {
+            try await actorFrame(actor)
+            let count = await actor.run { $0.parityDriverForTesting?.renderer?.videoSourceCount }
+            if count == 1, let texture = layer.lastTexture {
+                let pixels = try readBack(texture)
+                let offset: Int = (16 * 80 + 16) * 4 + 1
+                let pixel = pixels[offset]
+                if pixel > 10, pixel < 250 {
+                    values.insert(pixel)
+                }
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let continuous = await actor.run { $0.parityDriverForTesting?.needsContinuousFrames }
+        XCTAssertEqual(continuous, true, "The newly opened video changes the original static pacing decision")
+        XCTAssertEqual(surface.lastIsPaused, false, "The surface must stay awake after the first admitted frame")
+        XCTAssertGreaterThan(values.count, 1, "Actor-triggered admission must present changing video frames without manual preparation")
+    }
+
+    func testModelDataVideoMaterialAddedDuringAdmissionRequeuesTheLatestStreamSet() async throws {
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()),
+                                            hiddenVideoEffect: true, modelDataVideoRace: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let dispatcher = WPESceneMediaEventDispatcher(source: MediaInputSource())
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        let renderer = try XCTUnwrap(driver.renderer)
+        let admit = renderer.scriptModelDataAdmission
+        var shape = WPEParityModelDataShapePatch()
+        let vertices: [Float] = [-8, -8, 0, 0, 0, 8, -8, 0, 1, 0, 0, 8, 0, 0.5, 1]
+        shape.vertices = vertices.withUnsafeBytes { Data($0) }
+        shape.vertexFormat = 1 | 8 // The shipped IModelData POSITION | UV mask.
+        shape.material = Data("materials/model-white.json".utf8)
+        let token = try renderer.state.createModelData(.init(shapes: [shape], bounds: nil), admitShape: admit)
+        try renderer.state.appendModelDataLayer(.init(
+            id: "700001", name: "late video material", modelDataToken: token, parentObjectID: nil,
+            origin: SIMD3(56, 16, 0), scale: .one, angles: .zero,
+            localOrigin: SIMD3(56, 16, 0), localScale: .one, localAngles: .zero,
+            visible: true, parallaxDepth: .zero, usesPerspectiveProjection: false, attachment: nil
+        ))
+        _ = try await present(driver, layer: layer)
+        XCTAssertEqual(renderer.videoSourceCount, 0)
+        renderer.state.setEffect("10", of: "1", visible: true)
+        XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)))
+        let firstRequest = try XCTUnwrap(driver.pendingVideoAdmissionID)
+        var resume: CheckedContinuation<Void, Never>?
+        driver.videoAdmissionCheckpoint = { point in
+            guard case .beforeCommit = point else { return }
+            await withCheckedContinuation { resume = $0 }
+        }
+        let preparation = Task { try await driver.preparePendingVideos() }
+        defer { preparation.cancel(); resume?.resume(); resume = nil }
+        try await waitUntil("The first stream never reached its real decoder checkpoint") { resume != nil }
+        let membership = renderer.state.membershipGeneration
+        var replacement = WPEParityModelDataShapePatch()
+        replacement.material = Data("materials/model-video.json".utf8)
+        try renderer.state.updateModelData(token, patch: .init(shapes: [replacement], bounds: nil),
+                                           replacing: true, admitShape: admit)
+        XCTAssertEqual(renderer.state.membershipGeneration, membership)
+        resume?.resume()
+        resume = nil
+        let firstAccepted = try await preparation.value
+        XCTAssertFalse(firstAccepted)
+        XCTAssertNil(driver.runtimeFailure, "A legal material change requires another admission, not a terminal failure")
+        let latestRequest = try XCTUnwrap(driver.pendingVideoAdmissionID)
+        XCTAssertNotEqual(latestRequest, firstRequest)
+        driver.videoAdmissionCheckpoint = nil
+        let latestAccepted = try await driver.preparePendingVideos()
+        XCTAssertTrue(latestAccepted)
+        XCTAssertEqual(renderer.videoSourceCount, 2)
+        var values: Set<UInt8> = []
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, values.count < 2 {
+            let pixels = try await present(driver, layer: layer)
+            let offset: Int = (16 * 80 + 56) * 4 + 1
+            let pixel = pixels[offset]
+            if pixel > 10, pixel < 250 {
+                values.insert(pixel)
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(values.count, 1, "The latest ModelData material must actually sample changing video pixels")
+    }
+
+    func testMovieEffectVideoAdmissionUpdatesOnceAndSupersedeLeavesDestinationUntouched() async throws {
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()),
+                                            hiddenVideoEffect: true, countWitnessUpdates: true, textExtentWitness: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        for supersede in [false, true] {
+            let dispatcher = WPESceneMediaEventDispatcher(source: MediaInputSource())
+            let driver = try WPEParitySceneDriver(device: fixture.device)
+            defer { dispatcher.stop(); driver.cleanup() }
+            try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+            let renderer = try XCTUnwrap(driver.renderer)
+            let beforeText = try XCTUnwrap(renderer.texts["4"])
+            XCTAssertEqual(beforeText.object.text, "I")
+            renderer.state.setEffect("10", of: "1", visible: true)
+            renderer.state.setScriptField("text", of: "4", to: .string("MMMM"), invalidating: .textLayout)
+            if supersede {
+                driver.videoAdmissionCheckpoint = { point in
+                    guard case .beforeCommit = point else { return }
+                    renderer.state.setEffect("10", of: "1", visible: false)
+                }
+            }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb,
+                                                                      width: 80, height: 32, mipmapped: false)
+            descriptor.storageMode = .shared
+            descriptor.usage = [.renderTarget, .shaderRead]
+            let destination = try XCTUnwrap(fixture.device.makeTexture(descriptor: descriptor))
+            let sentinel = [UInt8](repeating: 37, count: 80 * 32 * 4)
+            destination.replace(region: MTLRegionMake2D(0, 0, 80, 32), mipmapLevel: 0,
+                                withBytes: sentinel, bytesPerRow: 80 * 4)
+            if supersede {
+                do {
+                    try await driver.renderMovieFrame(into: .init(texture: destination), timestamp: 100)
+                    XCTFail("A superseded admission must not export its stale deferred frame")
+                } catch is CancellationError {}
+                XCTAssertEqual(try readBack(destination), sentinel)
+                XCTAssertEqual(renderer.videoSourceCount, 0)
+                XCTAssertEqual(try XCTUnwrap(renderer.texts["4"]), beforeText,
+                               "A superseded movie must not accept its unsubmitted text cohort")
+            } else {
+                try await driver.renderMovieFrame(into: .init(texture: destination), timestamp: 100)
+                let pixels = try readBack(destination)
+                XCTAssertNotEqual(pixels, sentinel)
+                XCTAssertEqual(renderer.videoSourceCount, 1)
+                let text = try XCTUnwrap(renderer.texts["4"])
+                XCTAssertEqual(text.object.text, "MMMM", "The very same movie timestamp must accept the queued text")
+                XCTAssertNotEqual(text.layout.fboSize, beforeText.layout.fboSize)
+                try assertTextWitnessDraw(renderer)
+                XCTAssertGreaterThan(textWitnessColumns(pixels).count, 3,
+                                     "The exported frame must draw the wider caption before returning")
+            }
+            XCTAssertEqual(try XCTUnwrap(renderer.state.object("3")).color.x, 1.0 / 8, accuracy: 0.00001,
+                           "One movie timestamp dispatches update exactly once, even when admission suspends")
+            XCTAssertNil(driver.pendingVideoAdmissionID)
+            XCTAssertNil(driver.runtimeFailure)
+        }
+    }
+
+    private func textWitnessColumns(_ pixels: [UInt8]) -> Set<Int> {
+        // The original witness layer behind the text is red, so only real white glyphs have G and B here.
+        Set((64 ..< 80).filter { x in
+            (0 ..< 32).contains { y in
+                let offset = (y * 80 + x) * 4
+                return pixels[offset] > 32 && pixels[offset + 1] > 32
+            }
+        })
+    }
+
+    private func assertTextWitnessDraw(_ renderer: WPEParityFrameRenderer) throws {
+        let operation = try XCTUnwrap(renderer.frames[0].draws.first { _, draw in
+            guard case let .scene(draw) = draw else { return false }
+            return draw.objectID == "4" && draw.geometry == .textGlyphs(.mono)
+        }?.key)
+        XCTAssertTrue(renderer.lastFrameDraws.contains { $0.operation == operation }, "The real font glyph draw must encode")
+    }
+
     private struct Fixture {
         let root: URL
         let device: any MTLDevice
@@ -612,8 +979,11 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
 
     private func makeFixture(scripted: Bool, mediaProvider: String = "system", mergeUserTextures: Bool = false,
                              shortcutIcons: Bool = false, sceneTextures: Bool = false,
-                             currentSlotWidth: UInt32 = 2, video: Data? = nil, keepAspect: Bool = false) throws -> Fixture {
-        let qualifiedInput = mergeUserTextures || shortcutIcons || sceneTextures
+                             currentSlotWidth: UInt32 = 2, video: Data? = nil, keepAspect: Bool = false,
+                             hiddenVideoEffect: Bool = false, existingVideo: Bool = false,
+                             modelDataVideoRace: Bool = false, countWitnessUpdates: Bool = false,
+                             textExtentWitness: Bool = false) throws -> Fixture {
+        let qualifiedInput = mergeUserTextures || shortcutIcons || sceneTextures || hiddenVideoEffect
         let root = FileManager.default.temporaryDirectory.appending(path: "parity-media-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let environment = ProcessInfo.processInfo.environment
@@ -707,6 +1077,17 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         }
         if let video {
             try write("materials/input/video.tex", video)
+            if hiddenVideoEffect {
+                try write("materials/input/effect-video.tex", video)
+            }
+            if modelDataVideoRace {
+                try write("materials/input/model-video.tex", video)
+                for (name, texture) in [("model-white", "input/white"), ("model-video", "input/model-video")] {
+                    try json("materials/\(name).json", ["passes": [["shader": "genericimage2", "textures": [texture],
+                                                                    "blending": "normal", "cullmode": "nocull",
+                                                                    "depthtest": "disabled", "depthwrite": "disabled"]]])
+                }
+            }
         }
         // Select the original g_Color4 branch explicitly so the witness observes live thisLayer.color.
         for name in ["black", "white"] + (video == nil ? [] : ["video"]) {
@@ -734,8 +1115,9 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
                     "type": shortcutIcons ? "usershortcut" : mediaProvider, "keepaspect": keepAspect],
             ]
             try json("materials/\(name)-effect.json", ["passes": [[
-                "shader": "combine", "textures": ["previous", "input/\(name)"],
-                "usertextures": sceneTextures ? [NSNull(), "texture-\(name)"] : baseDeclarations,
+                "shader": "combine", "textures": ["previous", hiddenVideoEffect && name == "current" ? "input/effect-video" : "input/\(name)"],
+                "usertextures": hiddenVideoEffect && name == "current" ? []
+                    : sceneTextures ? [NSNull(), "texture-\(name)"] : baseDeclarations,
                 "blending": "normal", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled",
             ]]])
             try json("materials/\(name)-compose.json", ["passes": [[
@@ -744,13 +1126,21 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             ]]])
         }
         var witness: [String: Any] = ["id": 3, "name": "ordering-witness",
-                                      "image": video == nil ? "models/white.json" : "models/video.json",
+                                      "image": video == nil || (hiddenVideoEffect && !existingVideo) ? "models/white.json" : "models/video.json",
                                       "size": "16 32", "origin": "72 16 0"]
-        if scripted {
+        if textExtentWitness {
+            witness["color"] = "1 0 0"
+        }
+        if countWitnessUpdates {
+            witness["visible"] = ["value": true, "script": "let calls = 0; export function update(value) { thisLayer.color = new Vec3(++calls / 8, 0, 0); return value; }"]
+        } else if scripted {
             witness["visible"] = ["value": true, "script": Self.orderingScript]
         }
         func effect(_ id: Int, _ name: String) -> [String: Any] {
             var effect: [String: Any] = ["id": id, "file": "effects/\(name).json"]
+            if hiddenVideoEffect, name == "current" {
+                effect["visible"] = false
+            }
             if mergeUserTextures {
                 let declarations: [Any] = name == "current"
                     ? [NSNull(), ["name": "$mediaThumbnail", "type": NSNull()]]
@@ -759,17 +1149,26 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             }
             return effect
         }
+        var general: [String: Any] = ["orthogonalprojection": ["width": 80, "height": 32], "clearcolor": "0 0 0",
+                                      "clearenabled": true, "bloom": false, "hdr": false, "camerafade": false]
+        if modelDataVideoRace {
+            general["precache"] = ["materials/model-white.json", "materials/model-video.json"]
+        }
+        var objects: [[String: Any]] = [
+            ["id": 1, "name": "current", "image": "models/black.json", "size": "32 32", "origin": "16 16 0",
+             "effects": [effect(10, "current")]],
+            ["id": 2, "name": "previous", "image": "models/black.json", "size": "32 32", "origin": "48 16 0",
+             "effects": [effect(20, "previous")]],
+            witness,
+        ]
+        if textExtentWitness {
+            objects.append(["id": 4, "name": "text-extent-witness", "text": "I", "font": "fonts/NotoSans-Regular.ttf",
+                            "pointsize": 8, "color": "1 1 1", "origin": "72 8 0"])
+        }
         let scene: [String: Any] = [
             "camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"],
-            "general": ["orthogonalprojection": ["width": 80, "height": 32], "clearcolor": "0 0 0",
-                        "clearenabled": true, "bloom": false, "hdr": false, "camerafade": false],
-            "objects": [
-                ["id": 1, "name": "current", "image": "models/black.json", "size": "32 32", "origin": "16 16 0",
-                 "effects": [effect(10, "current")]],
-                ["id": 2, "name": "previous", "image": "models/black.json", "size": "32 32", "origin": "48 16 0",
-                 "effects": [effect(20, "previous")]],
-                witness,
-            ],
+            "general": general,
+            "objects": objects,
         ]
         let data = try JSONSerialization.data(withJSONObject: scene, options: [.sortedKeys])
         try write("scene.json", data)

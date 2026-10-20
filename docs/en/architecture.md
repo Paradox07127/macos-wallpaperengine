@@ -15,7 +15,7 @@ Optional network clients serve Workshop, weather, artwork/lyrics and updates.
 | `Packages/LiveWallpaperCore` | Shared schemas, capability catalog, playback state machine, persistence utilities and SwiftUI design system |
 | `Packages/LiveWallpaperProWPE` | WPE package/scene/model parsing and typed schema; depends on Core |
 | `SteamConnector` | Pro's XPC service; SteamCMD discovery, verification, sign-in and library operations outside the host app sandbox |
-| `SystemWallpaperProvider` | macOS wallpaper extension; serves published videos separately from the running app |
+| `SystemWallpaperProvider` | macOS wallpaper extension; serves published videos and Pro live scenes independently of the app |
 
 Core contains shared UI as well as data/runtime contracts; it is not a UI-free
 domain package. The WPE Metal renderer is in the app target's `Runtime/Metal`,
@@ -102,25 +102,34 @@ All remain parts of the same app-lifetime owner; the split adds no runtime state
 ```mermaid
 flowchart LR
     Input[Project / package / assets] --> Parser[ProWPE parser + typed document]
-    Parser --> Graph[WPERenderGraphBuilder]
-    Graph --> Prepared[WPERenderPipelineBuilder]
-    Prepared --> Renderer[WPEMetalSceneRenderer]
-    Renderer --> Executor[WPEMetalRenderExecutor]
-    Executor --> Present[Metal surface / present]
+    Parser --> Driver[WPEParitySceneDriver]
+    Driver --> Plan[WPEParityFramePlan]
+    Plan --> Renderer[WPEParityFrameRenderer]
+    Renderer --> Executor[WPEParityGraphExecutor]
+    Compiler[WPERenderGraphCompiler] --> Executor
+    Executor --> Present[WPEMetalPresenter / Metal surface]
 ```
 
 The app resolves primary, dependency and engine-asset roots under their file
-access grants. Graph/pipeline construction validates and prepares the scene;
-shader preprocessing, translation and compilation have cache identities.
+access grants. `Runtime/Metal/Parity/` owns scene preparation, shader binding,
+resource loading and frame execution. ProWPE supplies the typed scene, script,
+text, particle, HLSL and render-graph contracts. The app's `wpe-shaderc` helper
+uses DXC and Metal Shader Converter to build cached shader artifacts.
 The frame path combines script state, audio, pointer input, dynamic textures,
-text and particles before executing the prepared passes.
+text and particles before executing the compiled passes.
+
+This is the sole WPE scene renderer. The previous renderer and its selection
+and fallback modes have been retired. A failed replacement load keeps the
+previous wallpaper where available and reports the failure; it does not
+instantiate an older rendering backend. Presentation, MetalFX, capture,
+audio/video decoding and resource-access infrastructure remain shared.
 
 `Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift` owns its renderer in a
 serial isolation domain. It supports a dedicated render-thread executor and a
 main-executor backing. Configuration commands pass through a FIFO stream;
 frame readiness and generations guard load/reload/teardown boundaries.
-`WPEFrameInputs`, prepared passes, frame state, uniform plans and texture/target
-caches are existing contracts, not interchangeable rendering backends.
+Frame inputs, prepared scene data, resource bindings and texture/target caches
+belong to this pipeline and its shared presentation infrastructure.
 
 Compatibility tests and local Metal traces validate specific paths. They do
 not establish full Windows parity. Shader, blend, particle and attachment
@@ -171,7 +180,7 @@ Details: [Security](../SECURITY.md).
 
 On macOS 26+, `WallpaperExportService` copies videos, records scene/web loops,
 and stages self-contained live scene bundles for `SystemWallpaperProvider`.
-Scene recording and live playback share the existing Metal renderer and a
+Scene recording and live playback share the parity renderer and a
 bounded IOSurface buffer pool; web recording uses ScreenCaptureKit's window
 capture rather than WebKit snapshots. The extension renders independently
 of the app, publishes a heartbeat, and performs compatibility checks. macOS
@@ -185,6 +194,11 @@ with the extension; it does not host live HTML or the app's overlay windows.
 Live scene time/date updates remain active at one frame per second when desktop
 animation is paused. Hidden/sleeping scenes can hibernate. An incompatible provider can disable its
 own path without replacing the normal app wallpaper architecture.
+
+The app prepares shader artifacts and freezes the compiler identity and render
+settings in the published scene capsule. The extension consumes that prebuilt
+cache without shipping the shader compiler. A missing or incompatible artifact
+fails explicitly and can retain the poster; there is no legacy-renderer fallback.
 
 The selected item and per-display targets use the existing provider manifest.
 Published media, scene bundles and display targets are installation-local and

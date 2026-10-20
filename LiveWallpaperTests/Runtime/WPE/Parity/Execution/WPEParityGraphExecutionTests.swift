@@ -23,6 +23,41 @@ final class WPEParityGraphExecutionTests: XCTestCase {
 
     // MARK: Tests
 
+    func testCopiesPreserveEveryMipAcrossFramesAndExposeOptInLabelsAndCounts() throws {
+        let harness = try makeHarness()
+        let a = WPEParitySceneResource.backbuffer
+        let b = WPEParitySceneResource.fullFrameBuffer
+        let graph = try WPERenderGraphCompiler.compile(
+            resources: [a, b, "C", "O"].map { resource($0, .persistent, mips: 3) },
+            operations: [op(.copy(source: a, destination: b)), op(.copy(source: a, destination: "C")),
+                         op(.copy(source: a, destination: b)), op(.copy(source: b, destination: "O"))]
+        )
+        let seed = try WPERenderGraphCompiler.compile(resources: [resource("I", .imported, mips: 3), resource(a, .persistent, mips: 3)],
+                                                      operations: [op(.copy(source: "I", destination: a))])
+        for enabled in [false, true] {
+            let targets = try Dictionary(uniqueKeysWithValues: [a, b, "C", "O"].map { (id: WPEResourceID) in
+                try (id, makeTexture(harness, mips: 3))
+            })
+            let executor = try WPEParityGraphExecutor(graph: graph, device: harness.device, drawEncoder: harness.encoder,
+                                                      arena: harness.arena, pixelFormats: Self.formats,
+                                                      tracePassLabels: enabled)
+            for frame in 0 ..< 2 {
+                let input = try makeSnapshotInput(harness, inverted: frame == 1)
+                try execute(harness, seed, external: ["I": input, a: XCTUnwrap(targets[a])], draws: [:])
+                let buffer = try submitSnapshot(executor, harness: harness, textures: targets)
+                XCTAssertEqual(buffer.label != nil, enabled)
+                for id: WPEResourceID in [b, "C", "O"] {
+                    for level in 0 ..< 3 {
+                        let expected = try readBack(harness, input, level: level)
+                        try assertPixels(readBack(harness, XCTUnwrap(targets[id]), level: level), equal: expected)
+                    }
+                }
+                XCTAssertEqual(executor.copyEncoded, 4)
+                XCTAssertEqual(executor.totalCopyEncoded, (frame + 1) * 4)
+            }
+        }
+    }
+
     func testRendererRejectsTargetsAboveTheDeviceLimitAndStillLoadsNormalTargets() async throws {
         let harness = try makeHarness()
         let limit = WPEMetalTextureLimits.maximum2DTextureDimension(for: harness.device)
@@ -1070,6 +1105,33 @@ final class WPEParityGraphExecutionTests: XCTestCase {
     private static let texels: [UInt8] = (0 ..< side * side).flatMap { index -> [UInt8] in
         let (x, y) = (index % side, index / side)
         return [UInt8(x * 60 + 10), UInt8(y * 60 + 20), UInt8((x + y) * 30 + 5), UInt8(255 - (x * 4 + y) * 10)]
+    }
+
+    private func submitSnapshot(_ executor: WPEParityGraphExecutor, harness: Harness,
+                                textures: [WPEResourceID: MTLTexture], shouldTransfer: (Int) -> Bool = { _ in true }) throws -> MTLCommandBuffer {
+        guard case let .committed(buffer) = try executor.encodeFrame(on: harness.queue, textures: textures,
+                                                                     shouldTransfer: shouldTransfer, visit: { _, _, _, _ in }) else {
+            return try XCTUnwrap(MTLCommandBuffer?.none, "frame skipped")
+        }
+        buffer.waitUntilCompleted()
+        XCTAssertNil(buffer.error)
+        return buffer
+    }
+
+    private func makeSnapshotInput(_ harness: Harness, inverted: Bool) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: Self.side, height: Self.side, mipmapped: true)
+        descriptor.storageMode = .shared
+        descriptor.usage = .shaderRead
+        let texture = try XCTUnwrap(harness.device.makeTexture(descriptor: descriptor))
+        for level in 0 ..< 3 {
+            let side = max(1, Self.side >> level)
+            var bytes = level == 0 ? Self.texels : Array(repeating: [UInt8(30 + level), 80, 150, 200], count: side * side).flatMap(\.self)
+            if inverted {
+                bytes = bytes.map { 255 - $0 }
+            }
+            texture.replace(region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: level, withBytes: bytes, bytesPerRow: side * 4)
+        }
+        return texture
     }
 
     private func makeHarness() throws -> Harness {

@@ -44,6 +44,26 @@ actor WPEDisplayRenderActor {
     private var languageObservation: WPESceneLanguageObservation?
     private var progressHandler: (@Sendable (String) -> Void)?
     private var parityReplanning = false
+
+    struct CadenceWindow: Sendable {
+        var startedAt: Double
+        var callbacks = 0
+        var selected = 0
+        var pausedCallbacks = 0
+        var cadenceRejected = 0
+        var renderCalls = 0
+        var maximumArrivalGap = 0.0
+        var maximumTargetGap = 0.0
+        var lastArrival: Double?
+        var lastTarget: Double?
+    }
+
+    nonisolated let cadenceOwnerID: String?
+    private(set) var cadenceWindow: CadenceWindow?
+    private var cadencePolicyContext = "policy=unreported"
+    private var cadenceDriverSequence = 0
+    private var parityVideoAdmissionTask: Task<Void, Never>?
+    private var parityVideoAdmissionID: UUID?
     /// A static parity scene runs the link until one frame after a change presents, then parks it.
     private var parityFramePending = false
     /// The current `.suspended` profile keeps the link running until the parity pause ramp holds scene time.
@@ -61,7 +81,13 @@ actor WPEDisplayRenderActor {
     private var configConsumerTask: Task<Void, Never>?
     #endif
 
-    init(label: String = "com.livewallpaper.render", backing: Backing = .renderThread) {
+    init(label: String = "com.livewallpaper.render", backing: Backing = .renderThread,
+         cadenceDiagnosticsEnabled: Bool? = nil) {
+        #if !LITE_BUILD
+        let diagnosesCadence = cadenceDiagnosticsEnabled ?? WPEParitySceneDriver.resolveCadenceDiagnostics()
+        cadenceOwnerID = diagnosesCadence ? UUID().uuidString : nil
+        cadenceWindow = diagnosesCadence ? CadenceWindow(startedAt: CACurrentMediaTime()) : nil
+        #endif
         switch backing {
         case .renderThread:
             let thread = WPERenderThread(label: label)
@@ -160,6 +186,11 @@ actor WPEDisplayRenderActor {
         case let .clickCaptureEnabled(enabled): setClickCaptureEnabled(enabled)
         case let .presentFitMode(mode): setPresentFitMode(mode)
         case let .surfaceGeometry(size): updateSurfaceGeometry(drawableSize: size)
+        case let .cadencePolicy(context):
+            guard cadenceWindow != nil, context != cadencePolicyContext else { return }
+            emitCadence(reason: "before-policy", force: true)
+            cadencePolicyContext = context
+            emitCadence(reason: "policy", force: true)
         case let .sceneScriptLanguage(language):
             if let parityDriver {
                 parityDriver.setSceneScriptLanguage(language)
@@ -176,7 +207,12 @@ actor WPEDisplayRenderActor {
     /// The driver is built here because it is not Sendable and must live on this actor.
     func adoptParity(_ inputs: WPEParitySceneInputs) throws {
         scenePropertyRendererGeneration &+= 1
+        emitCadence(reason: "replace-driver", force: true)
         let driver = try WPEParitySceneDriver(device: inputs.device)
+        if cadenceWindow != nil {
+            cadenceDriverSequence += 1
+            driver.enableCadenceDiagnostics()
+        }
         driver.setSceneScriptLanguage(inputs.sceneScriptLanguage ?? WPESceneLanguageObservation.currentLanguage())
         languageObservation = WPESceneLanguageObservation { [weak self] language in
             self?.submitConfig(.sceneScriptLanguage(language))
@@ -219,6 +255,8 @@ actor WPEDisplayRenderActor {
     }
 
     func renderFrame() {
+        cadenceWindow?.renderCalls += 1
+        defer { emitCadence(reason: "window") }
         if let spanPresenter {
             spanPresenter.present()
             return
@@ -239,6 +277,7 @@ actor WPEDisplayRenderActor {
                                                    audio: audio)
             }
             parityInputs.mailbox.publishInteractiveZones(parityDriver.interactiveZones())
+            reconcileParityVideoAdmission()
             thread?.noteFrameDuration(CACurrentMediaTime() - start,
                                       drawableWait: parityDriver.drawableAcquisitionSeconds - acquisitionStart)
             if parityFramePending, presented != nil {
@@ -262,9 +301,65 @@ actor WPEDisplayRenderActor {
     }
 
     func renderDisplayLinkFrame(at timestamp: Double) {
-        guard !linkPaused,
-              frameCadence.shouldRender(at: timestamp, framesPerSecond: linkPreferredFPS) else { return }
+        if var window = cadenceWindow {
+            let now = CACurrentMediaTime()
+            window.callbacks += 1
+            if let last = window.lastArrival {
+                window.maximumArrivalGap = max(window.maximumArrivalGap, now - last)
+            }
+            if let last = window.lastTarget, timestamp.isFinite, last.isFinite {
+                window.maximumTargetGap = max(window.maximumTargetGap, timestamp - last)
+            }
+            window.lastArrival = now
+            window.lastTarget = timestamp
+            cadenceWindow = window
+        }
+        guard !linkPaused else {
+            cadenceWindow?.pausedCallbacks += 1
+            emitCadence(reason: "window")
+            return
+        }
+        guard frameCadence.shouldRender(at: timestamp, framesPerSecond: linkPreferredFPS) else {
+            cadenceWindow?.cadenceRejected += 1
+            emitCadence(reason: "window")
+            return
+        }
+        cadenceWindow?.selected += 1
         renderFrame()
+    }
+
+    /// Frame-driven aggregation only: no timer, new completion handler, GPU wait or parked-scene wakeup.
+    private func emitCadence(reason: String, force: Bool = false) {
+        guard let window = cadenceWindow, let owner = cadenceOwnerID else { return }
+        let now = CACurrentMediaTime()
+        let elapsed = now - window.startedAt
+        guard force || elapsed >= 15 else { return }
+        let submitted = parityDriver?.cadenceSubmissions
+        let completed = parityDriver?.cadenceCompletions
+        let scene = parityInputs?.descriptor.workshopID ?? "none"
+        Logger.notice(
+            "ParityCadence v=1 pid=\(ProcessInfo.processInfo.processIdentifier) owner=\(owner) scene=\(scene) "
+                + "driver=\(cadenceDriverSequence) renderer=\(submitted?.rendererRevision ?? 0) "
+                + "loadgen=\(parityDriver?.loadGeneration ?? 0) mono=\(now) event=\(reason) elapsed=\(elapsed) "
+                + "callbacks=\(window.callbacks) selected=\(window.selected) pausedCallbacks=\(window.pausedCallbacks) "
+                + "cadenceRejected=\(window.cadenceRejected) renderCalls=\(window.renderCalls) "
+                + "arrivalGapMax=\(window.maximumArrivalGap) targetGapMax=\(window.maximumTargetGap) "
+                + "requested=\(parityDriver?.userPreferredFPS ?? 0) effective=\(parityDriver?.effectiveFPS ?? 0) "
+                + "throttle=\(parityDriver?.adaptiveThrottleActive ?? false) driverPaused=\(parityDriver?.isPaused ?? true) "
+                + "linkPaused=\(linkPaused) linkFPS=\(linkPreferredFPS) displayFPS=\(linkDisplayFPS) "
+                + "continuous=\(parityDriver?.needsContinuousFrames ?? false) framePending=\(parityFramePending) "
+                + "loaded=\(parityDriver?.didLoad ?? false) gpuReadyGen=\(parityDriver?.completedPresentGeneration ?? -1) "
+                + "presentInFlight=\(parityDriver?.inFlightCount ?? 0) "
+                + "attemptsTotal=\(submitted?.attempts ?? 0) sceneCommittedTotal=\(submitted?.sceneCommitted ?? 0) "
+                + "sceneSkippedTotal=\(submitted?.sceneSkipped ?? 0) sceneErrorsTotal=\(submitted?.sceneErrors ?? 0) "
+                + "presentCommittedTotal=\(submitted?.presentCommitted ?? 0) presentScheduledTotal=\(submitted?.presentScheduled ?? 0) "
+                + "drawableMissesTotal=\(submitted?.drawableMisses ?? 0) presentErrorsTotal=\(submitted?.presentErrors ?? 0) "
+                + "sceneCompletedTotal=\(completed?.sceneCompleted ?? 0) sceneFailedTotal=\(completed?.sceneFailed ?? 0) "
+                + "presentCompletedTotal=\(completed?.presentCompleted ?? 0) presentFailedTotal=\(completed?.presentFailed ?? 0) "
+                + "staleCompletionsTotal=\(completed?.staleCompletions ?? 0) \(cadencePolicyContext)",
+            category: .wpeRender
+        )
+        cadenceWindow = CadenceWindow(startedAt: now, lastArrival: window.lastArrival, lastTarget: window.lastTarget)
     }
 
     // MARK: - CADisplayLink Frame Driver
@@ -295,6 +390,7 @@ actor WPEDisplayRenderActor {
         frameCadence.reset()
         applyLinkPacing()
         add(link)
+        emitCadence(reason: "link-replaced", force: true)
     }
 
     func stopDisplayLinkDriver(generation: UInt64) {
@@ -305,15 +401,20 @@ actor WPEDisplayRenderActor {
     }
 
     func setLinkPaused(_ paused: Bool) {
-        if linkPaused != paused {
+        let changed = linkPaused != paused
+        if changed {
             frameCadence.reset()
         }
         linkPaused = paused
         applyLinkPacing()
+        if changed {
+            emitCadence(reason: "link-pause", force: true)
+        }
     }
 
     func setLinkPreferredFPS(_ fps: Int) {
-        if linkPreferredFPS != fps {
+        let changed = linkPreferredFPS != fps
+        if changed {
             frameCadence.reset()
         }
         linkPreferredFPS = fps
@@ -321,6 +422,9 @@ actor WPEDisplayRenderActor {
         // against a 60fps frame budget. Runs on the render thread (this actor).
         thread?.setFrameBudget(seconds: 1.0 / Double(max(fps, 1)))
         applyLinkPacing()
+        if changed {
+            emitCadence(reason: "link-rate", force: true)
+        }
     }
 
     private func applyLinkPacing() {
@@ -370,6 +474,43 @@ actor WPEDisplayRenderActor {
         Task { await self.replanParity() }
     }
 
+    /// As with resize preparation, only this actor owns the task and the driver it resumes.
+    private func reconcileParityVideoAdmission() {
+        let next = parityDriver?.pendingVideoAdmissionID
+        guard next != parityVideoAdmissionID else { return }
+        _ = cancelParityVideoAdmission()
+        guard let next else { return }
+        parityVideoAdmissionID = next
+        parityVideoAdmissionTask = Task { [weak self] in await self?.prepareParityVideos(next) }
+    }
+
+    private func prepareParityVideos(_ id: UUID) async {
+        guard parityVideoAdmissionID == id, let driver = parityDriver else { return }
+        defer {
+            if parityVideoAdmissionID == id {
+                parityVideoAdmissionID = nil
+                parityVideoAdmissionTask = nil
+                if parityDriver === driver {
+                    requestParityFrame()
+                }
+            }
+        }
+        do {
+            _ = try await driver.preparePendingVideos()
+        } catch {
+            // Cancellation retires the candidate; a genuine admission failure is already in driver diagnostics.
+        }
+    }
+
+    @discardableResult
+    private func cancelParityVideoAdmission() -> Task<Void, Never>? {
+        let task = parityVideoAdmissionTask
+        parityVideoAdmissionTask = nil
+        parityVideoAdmissionID = nil
+        task?.cancel()
+        return task
+    }
+
     private func replanParity() async {
         defer { parityReplanning = false }
         while let parityDriver, parityDriver.needsReplan, await parityDriver.replan() {
@@ -398,6 +539,9 @@ actor WPEDisplayRenderActor {
     }
 
     private func loadParity() async throws {
+        if let task = cancelParityVideoAdmission() {
+            await task.value
+        }
         guard let parityDriver, let inputs = parityInputs else { return }
         progressHandler?(String(localized: "Reading scene", bundle: .appLanguage, comment: "Scene load progress: parsing the scene package."))
         let (document, assets, userProperties) = try await CancellableBackgroundWork.run {
@@ -486,6 +630,9 @@ actor WPEDisplayRenderActor {
             guard parityDriver.didLoad else { return false }
             scenePropertyRendererGeneration &+= 1
             parityDriver.cleanup()
+            if let task = cancelParityVideoAdmission() {
+                await task.value
+            }
             parityInputs?.mailbox.publishInteractiveZones([])
             applyParityPacing()
             return true
@@ -494,6 +641,8 @@ actor WPEDisplayRenderActor {
     }
 
     func teardownRenderer() async {
+        emitCadence(reason: "teardown", force: true)
+        let videoPreparation = cancelParityVideoAdmission()
         scenePropertyRendererGeneration &+= 1
         spanPresenter = nil
         parityDriver?.cleanup()
@@ -502,6 +651,7 @@ actor WPEDisplayRenderActor {
         let retiringInputs = parityInputs
         retiringInputs?.mailbox.publishInteractiveZones([])
         (parityDriver, parityInputs) = (nil, nil)
+        await videoPreparation?.value
         retiringInputs?.userShortcutIcons?.onChange = nil
         retiringInputs?.userShortcuts?.setChangeHandler(nil)
         if let media = retiringInputs?.media {
@@ -513,10 +663,17 @@ actor WPEDisplayRenderActor {
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile, rampDown: Bool = false) {
         if let parityDriver {
+            let changed = parityDriver.isPaused != (profile == .suspended)
+            if changed {
+                emitCadence(reason: "before-profile", force: true)
+            }
             parityDriver.applyPerformanceProfile(profile)
             parityPauseRampDown = profile == .suspended && rampDown
             parityFramePending = parityFramePending || profile != .suspended
             applyParityPacing()
+            if changed {
+                emitCadence(reason: "profile", force: true)
+            }
             return
         }
         if spanPresenter != nil {
@@ -526,8 +683,15 @@ actor WPEDisplayRenderActor {
 
     func setFrameRateCeiling(_ framesPerSecond: Int) {
         if let parityDriver {
+            let changed = parityDriver.userPreferredFPS != max(1, framesPerSecond)
+            if changed {
+                emitCadence(reason: "before-cap", force: true)
+            }
             parityDriver.setFrameRateCeiling(framesPerSecond)
             applyParityPacing()
+            if changed {
+                emitCadence(reason: "cap", force: true)
+            }
             return
         }
         if spanPresenter != nil {
@@ -537,8 +701,15 @@ actor WPEDisplayRenderActor {
 
     func setAdaptiveFrameRateThrottle(_ active: Bool) {
         if let parityDriver {
+            let changed = parityDriver.adaptiveThrottleActive != active
+            if changed {
+                emitCadence(reason: "before-throttle", force: true)
+            }
             parityDriver.setAdaptiveFrameRateThrottle(active)
             applyParityPacing()
+            if changed {
+                emitCadence(reason: "throttle", force: true)
+            }
             return
         }
     }
@@ -638,6 +809,7 @@ actor WPEDisplayRenderActor {
         }
         if let parityDriver {
             guard parityDriver.commitUserProperties(prepared.patch) else { return false }
+            reconcileParityVideoAdmission()
             // A later reload parses with the committed values.
             parityInputs?.descriptor = updatedDescriptor
             requestParityFrame()
@@ -678,6 +850,10 @@ actor WPEDisplayRenderActor {
 
     /// Export uses the normal frame and terminal colour pass, without acquiring a window drawable.
     func renderMovieFrame(into destination: WPEMetalPresenter.PresentCompletionTexture) async throws {
+        try Task.checkCancellation()
+        if let preparation = parityVideoAdmissionTask {
+            await preparation.value
+        }
         try Task.checkCancellation()
         if let parityDriver {
             if parityDriver.needsReplan {
@@ -727,6 +903,8 @@ enum WPERendererConfigCommand: Sendable {
     /// `rampDown`: a parity scene keeps drawing a `.suspended` profile until its pause ramp holds scene time.
     case performanceProfile(WallpaperPerformanceProfile, rampDown: Bool = false)
     case frameRateCeiling(Int)
+    /// Diagnostic-only context follows the policy's ordinary commands on the existing FIFO channel.
+    case cadencePolicy(String)
     case adaptiveFrameRateThrottle(Bool)
     case audioMuted(Bool)
     case audioVolume(Double)

@@ -52,6 +52,50 @@ final class ParityTextPlannerTests: XCTestCase {
         XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.isDirty, false)
     }
 
+    /// CPU glyph caches deliberately survive a font-size switch. GPU eviction must not discard this cache
+    /// or change another reader's UVs; these logical pixel bytes are not a process-memory measurement.
+    func testPointSizeCycleKeepsColdCPUAtlasCacheAndSharedReader() throws {
+        let planner = try Self.makePlanner()
+        let original = Self.textObject(text: "H")
+        let first = try planner.plan(original, effectCount: 0)
+        let shared = try planner.plan(Self.textObject("U", text: "H"), effectCount: 0)
+        let glyph = try XCTUnwrap(first.layout.mesh?.mono.glyphKeys.first)
+        let initialPixels = try XCTUnwrap(planner.atlases[first.atlasKey]).mono.pixels
+        var keys: Set<String> = [first.atlasKey]
+        var observations: [[String: Int]] = []
+        for size: Float in [40, 48, 56, 64, 72, 80, 88, 96] {
+            var changed = original
+            changed.pointSize = size
+            let planned = try planner.plan(changed, effectCount: 0)
+            keys.insert(planned.atlasKey)
+            XCTAssertEqual(Set(planner.atlases.keys), keys)
+            XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: glyph)?.references, 1)
+            XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.pixels, initialPixels)
+            for key in keys.subtracting([first.atlasKey, planned.atlasKey]) {
+                XCTAssertEqual(planner.atlases[key]?.mono.entry(forKey: glyph)?.references, 0)
+            }
+            let bytes = planner.atlases.values.reduce(0) { total, instance in
+                total + instance.mono.pixels.count + (instance.mono.companionPixels?.count ?? 0)
+                    + instance.colorGroups.values.reduce(0) { $0 + $1.pixels.count + ($1.companionPixels?.count ?? 0) }
+            }
+            observations.append(["pointSize": Int(size), "cpuAtlasGroups": keys.count, "logicalCPUPixelBytes": bytes])
+        }
+        let restored = try planner.plan(original, effectCount: 0)
+        XCTAssertEqual(restored.layout, first.layout)
+        XCTAssertEqual(restored.atlasKey, shared.atlasKey)
+        XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: glyph)?.references, 2)
+        XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.pixels, initialPixels)
+        var rejected = original
+        rejected.pointSize = 104
+        let candidate = try planner.prepare(rejected, effectCount: 0)
+        XCTAssertNotNil(candidate.atlases[candidate.atlasKey])
+        XCTAssertNil(planner.atlases[candidate.atlasKey], "Unaccepted preparation must not enter the active cache")
+        XCTAssertEqual(planner.atlases[first.atlasKey]?.mono.entry(forKey: glyph)?.references, 2)
+        let receipt = try JSONSerialization.data(withJSONObject: observations, options: [.sortedKeys])
+        let receiptText = try XCTUnwrap(String(bytes: receipt, encoding: .utf8))
+        print("text atlas CPU-cache baseline: \(receiptText)")
+    }
+
     func testReplanningSameAtlasReleasesOldGlyphsIncludingEmptyText() throws {
         let planner = try Self.makePlanner()
         var known: Set<UInt32> = []

@@ -224,6 +224,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
         defer { driver.cleanup() }
         var scriptHost = inputs.scriptHost(userPropertiesJSON: inputs.scriptUserProperties())
         scriptHost.dateEpochMillis = (replay.epoch ?? Date().timeIntervalSince1970) * 1000
+        scriptHost.randomSeed = seed
         record["shadowQuality"] = settings.shadowQuality
         record["programSettings"] = String(describing: settings)
         try await driver.load(document: inputs.makeDocument(), assets: inputs.assets, settings: inputs.settings,
@@ -235,6 +236,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
         record["skippedPrograms"] = driver.shaderErrorSummary.entries.map { ["shader": $0.shader, "reason": $0.reason] }
         record["loadDiagnostics"] = driver.loadDiagnostics.map { String(describing: $0) as Any } ?? NSNull()
         let renderer = try XCTUnwrap(driver.renderer)
+        record["reusesDirectTextExtentLayouts"] = renderer.reusesDirectTextExtentLayouts
         // The driver steps the first frame by zero; warm-up frames carry the clock to replay.time in `step`s.
         let warmup = Int((replay.time / step).rounded(.up))
         let timestamps = (0 ..< warmup).map { Double($0) * step } + (0 ..< frames).map { replay.time + Double($0) * step }
