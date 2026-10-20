@@ -35,33 +35,26 @@
       <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.9/Loomscreen-0.8.9.dmg" type="application/octet-stream" sparkle:edSignature="BPq2OIZkd6i60teCJZkfZtiWHf/CRaVIbhh0hhYGtTHjA0wRz2RQTEdg8Ds+YPNwG77+oxUJ+vzUemCS2DJfCw==" length="12516131" />
     </item>
     <item>
-      <title>Version 0.9.0b1</title>
+      <title>Version 0.9.0b2</title>
       <sparkle:channel>beta</sparkle:channel>
-      <pubDate>Mon, 19 Oct 2026 16:08:50 +0000</pubDate>
-      <sparkle:version>0.9.0b1</sparkle:version>
-      <sparkle:shortVersionString>0.9.0b1</sparkle:shortVersionString>
+      <pubDate>Tue, 20 Oct 2026 21:54:45 +0000</pubDate>
+      <sparkle:version>0.9.0b2</sparkle:version>
+      <sparkle:shortVersionString>0.9.0b2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>What's New</strong></p>
-<ul>
-<li>Pro: Wallpaper Engine scenes now use the new renderer throughout, including scene recording and live macOS wallpapers</li>
-<li>Pro: expanded scene support for scripted layers, model data, puppet animation, text and particles</li>
-</ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Pro: scene shaders compile in a separate helper, and repeated loads share shader work</li>
-<li>Pro: clearer scene-load and GPU errors; an unsuccessful switch keeps the current wallpaper</li>
+<li>Pro: reuse scene preparation and compatible dynamic-text layouts to reduce repeated render planning</li>
+<li>Pro: update the Metal shader converter to 4.0.3</li>
+<li>Remove unused runtime layers and simplify shared code</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Pro: remove the old renderer and its crash-prone particle loading path</li>
-<li>Pro: bound scene scripts and reject malformed shader or texture cache data before use</li>
-<li>Pro: safely reject oversized text and render targets before they can crash layout or Metal allocation</li>
-<li>Pro: reload upgraded system-wallpaper capsules even when their library ID and date are unchanged</li>
+<li>Pro: admit video textures when a script first enables an effect, including textures used only by effects</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0b1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0b1">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0b2">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0b2">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.0b1/Loomscreen-0.9.0b1.dmg" type="application/octet-stream" sparkle:edSignature="MgYmE6TR54gRZ+c8jmpmatufgN1gHAPvHKP47aQ+AkgDv3qTfdomhqZ3hPUZtj9k45nwgo9Q/NNWoxWQWqDqAA==" length="12552242" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.0b2/Loomscreen-0.9.0b2.dmg" type="application/octet-stream" sparkle:edSignature="VN+ia7eqdOD17XPRyQIh+zWvH8MWWe+euu6Y4JzS1MIK+v0KN+kbBn3ZNFrxd6QdXCYXfAu4g5VQTgmAMBRWBA==" length="12540442" />
     </item>
   </channel>
 </rss>
