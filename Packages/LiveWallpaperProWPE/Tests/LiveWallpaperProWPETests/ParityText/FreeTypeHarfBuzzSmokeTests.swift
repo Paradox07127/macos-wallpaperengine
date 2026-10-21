@@ -4,8 +4,13 @@ import Foundation
 import XCTest
 
 final class FreeTypeHarfBuzzSmokeTests: XCTestCase {
-    private static let fontPath =
-        "/Users/example/Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets/fonts/NotoSans-Regular.ttf"
+    private static let fontPath: String = {
+        let assets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets"
+            )
+        return assets.appendingPathComponent("fonts/NotoSans-Regular.ttf").path
+    }()
 
     func testVendoredVersions() throws {
         var library: FT_Library?

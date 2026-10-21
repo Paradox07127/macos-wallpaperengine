@@ -111,101 +111,101 @@ Strokes: `quietStroke` .28 · `strongStroke` .55 ·
 `dimmedIcon` .70. Chart segments: `fadedSegment` .35 (another segment hovered) ·
 `restingSegment` .80 (nothing hovered). New state-dependent opacities use these — never a fresh
 literal. Decorative one-off opacities (shadows, gradient stops, scrims) stay
-literal by design; see the W2-B5 ledger for the adjudication.
+literal by design.
 
 ## Edit Desk (`DesignTokens.EditDesk`)
 
-Tokens for the Edit Desk rebuild (`<private-notes>`). Values are literal px/hex, not the Dynamic Type scale above. Chrome colors follow the appearance and the table gives their dark value; colors drawn over wallpaper artwork are fixed. Five color tokens carry an Increase Contrast tier: `textSecondary`, `strokeRegular` and `strokeShell` (GAP_ANALYSIS.md §6), `strokeEmptyShell` and `cardRimRing`.
+Tokens for Edit Desk. Values are literal px/hex, not the Dynamic Type scale above. Chrome colors follow the appearance and the table gives their dark value; colors drawn over wallpaper artwork are fixed. Five color tokens carry an Increase Contrast tier: `textSecondary`, `strokeRegular` and `strokeShell`, `strokeEmptyShell` and `cardRimRing`.
 
-| Token | Value | Source |
-| --- | --- | --- |
-| `Colors.background` | `DesignTokens.Colors.pageBackground` (system `windowBackgroundColor`) | README Tokens #1 |
-| `Colors.panel` | `rgba(28,28,34,.95)` | README Tokens #1 |
-| `Colors.console` | `rgba(18,18,22,.92)` | README Tokens #1 |
-| `Colors.textPrimary` | `#e8e8ec` | README Tokens #2 |
-| `Colors.textSecondary` | `#9a9aa3`; Increase Contrast → `#c8c8c8` | README Tokens #2; GAP_ANALYSIS §6 |
-| `Colors.textTertiary` | `#8a8a93` | README Tokens #2 |
-| `Colors.textCapsule` | `#c8c8c8` | SCREENS S1 (方案胶囊 / status text) |
-| `Colors.success` | `#4ade80` | README Tokens #3 |
-| `Colors.warning` | `#f5b544` | README Tokens #3 |
-| `Colors.sceneGroupLayers/Colors` | `#60a5fa` / `#f5b544` | S6 scene sections; adaptive light `#2563eb` / `#b0760c` |
-| `Colors.danger` | `#ff8080` | README Tokens #3 |
-| `Colors.link` | `#9ab4ff` | README Tokens #3 |
-| `Colors.strokeRegular` | white `.08`; Increase Contrast → `.35` | README Tokens #4; GAP_ANALYSIS §6 |
-| `Colors.strokeShell` | white `.25`; Increase Contrast → `.65` | README Tokens #4; GAP_ANALYSIS §6 |
-| `Colors.strokeEmptyShell` / `strokeEmptyShellIncreased` | white `.40`; Increase Contrast → `.80` | SCREENS S9 (empty display dashed outline); Increase Contrast: `code` |
-| `Colors.strokePanel` | white `.12` | README Tokens #4 |
-| `Colors.strokeBadge` | white `.25` | SCREENS S1 (type badge border) |
-| `Colors.strokeDashedCard` | white `.30` | SCREENS S9 (dashed onboarding card) |
-| `Colors.strokeHotShell` | white `.80` | SCREENS S2 / MOTION (hovered shelf card outline) |
-| `Colors.fillShell` | white `.02` | SCREENS S1 (display shell background) |
-| `Colors.fillNavPill` | white `.05` | SCREENS S1 (nav pill / import capsule) |
-| `Colors.fillSelectedChip` | white `.14` | SCREENS S6 (selected console chip fill) |
-| `Colors.fillSelectedNavItem` | white `.16` | SCREENS S1 (selected nav item) |
-| `Colors.dropHighlight` | `rgba(74,222,128,.22)` | SCREENS S1/S5 (drop target overlay) |
-| `Colors.dropHighlightGlow` | `rgba(74,222,128,.45)` | SCREENS S5 (drop target glow) |
-| `Colors.gradientStageBottom` | black `.7` | SCREENS S1 (screen content bottom gradient) |
-| `Colors.gradientCardBottom` | black `.5` | SCREENS S2 (shelf card bottom gradient) |
-| `Colors.cardRimRing` / `cardRimRingIncreased` | white `.10`; Increase Contrast → `.35` (fixed) | shelf-lab v3 `.q-refined` (1px inner ring of the shelf card and the library grid tile) |
-| `Colors.cardRimHighlight` | white `.30` (fixed) | shelf-lab v3 `.q-refined` (1px top edge, same two cards) |
-| `Colors.cardRimShade` | black `.35` (fixed) | shelf-lab v3 `.q-refined` (1px bottom edge, same two cards) |
-| `Colors.nowPlayingGlyph` | `#4ade80` (fixed) | shelf-lab v3 `.b-glass` (now-playing capsule: the shelf card's wave bars, the grid and Workshop cards' waveform) |
-| `Colors.shelfScrim` | black `.35`; light `.10` | SCREENS S2 (shelf area bottom gradient) |
-| `Colors.dotGrid` | `rgba(255,255,255,.06)` | README Tokens; SCREENS S1 (stage dot grid) |
-| `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
-| `Colors.mediaChipFill` | black `.6` (fixed) | SCREENS S4/S5 (preview chips, ⌘n badges) |
-| `Colors.gradientWorkshopCardBottom` | black `.85` (fixed) | SCREENS S8 (Workshop grid card info band) |
-| `Colors.inLibraryBadgeFill` | `rgba(74,222,128,.9)` (fixed) | SCREENS S8 (in-library ✓ disc) |
-| `Colors.inLibraryBadgeGlyph` | black (fixed) | SCREENS S8 (in-library ✓ glyph) |
-| `Colors.fillEmptyScreen` | white `.03` | SCREENS S9 (empty display content layer) |
-| `Colors.emptyScreenPlaceholder` | white `.10` | `code` (empty display placeholder glyph) |
-| `Corner.content` | 3 | README Tokens #5 |
-| `Corner.badge` | 3 | SCREENS S1 (type badge) |
-| `Corner.shelfCard` | 6 | README Tokens #5 |
-| `Corner.gridCard` | 8 | README Tokens #5 |
-| `Corner.shell` | 8 | README Tokens #5 |
-| `Corner.shellBuiltinTop` | 9 | SCREENS S1 (MacBook shell top) |
-| `Corner.shellBuiltinBottom` | 3 | SCREENS S1 (MacBook shell bottom) |
-| `Corner.notch` | 5 | SCREENS S1 (MacBook notch bottom corners) |
-| `Corner.panel` | 10 | README Tokens #5 |
-| `Corner.panelLarge` | 12 | README Tokens #5 |
-| `Corner.statusExpanded` | 14 | SCREENS S1 (status capsule, expanded) |
-| `Corner.modal` | 18 | README Tokens #5 |
-| `Corner.floatPanel` | 16 | SCREENS S5 |
-| `Corner.chip` | 5 | SCREENS S4/S5 (preview chips, float thumbnails) |
-| `Shadow.shell` | `0 5px 28px rgba(0,0,0,.22)`; radius = blur ÷ 2 | README Tokens #6 |
-| `Shadow.modal` | `0 10px 48px rgba(0,0,0,.38)`, light `.16`; radius = blur ÷ 2 | README Tokens #6 |
-| `Shadow.hoverCard` | `0 6px 24px rgba(0,0,0,.32)`, light `.16`; radius = blur ÷ 2 | README Tokens #6 |
-| `Shadow.shelfCard` | `0 8px 18px rgba(0,0,0,.26)`; radius = blur ÷ 2 | shelf-lab v3 `.q-refined` (shelf card spread shadow) |
-| `Shadow.shelfCardHover` | `0 14px 28px rgba(0,0,0,.32)`, light `.36`; radius = blur ÷ 2 | shelf-lab v3 `.q-refined` (hovered shelf card) |
-| `Shadow.shelfCardEdge` | `0 1px 2px rgba(0,0,0,.38)`; radius = blur ÷ 2 | shelf-lab v3 `.q-refined` (shelf card contact shadow) |
-| `Shadow.floatPanel` | `0 8px 36px rgba(0,0,0,.32)`, light `.14`; radius = blur ÷ 2 | SCREENS S5 |
-| `Shadow.workshopCard` | `0 3px 16px rgba(0,0,0,.24)`, light `.10`; radius = blur ÷ 2 | SCREENS S8 (Workshop grid card drop shadow, detail hero); 2026-09-21 device review V05 |
-| `Shadow.workshopCardRing` | `0 0 2px rgba(0,0,0,.12)`, light `.06`; radius = blur ÷ 2 | SCREENS S8 (Workshop grid card 1px ring); 2026-09-21 device review V05 |
-| `Spacing.s8` | 8 | README Tokens #7 |
-| `Spacing.s12` | 12 | README Tokens #7 |
-| `Spacing.s14` | 14 | README Tokens #7 |
-| `Spacing.gutter` | 24 | README Tokens #7 |
-| `Spacing.topBar` | 56 | README Tokens #7 |
-| `Spacing.navPillHeight` | 32 | the top bar's page pill (`GlassSegmentedPicker` `.editDesk`: 26pt items, 3pt padding) |
-| `Spacing.filterRowInset` | `Spacing.xs` (4) | top bar's lower edge to a page's filter row (library, Workshop) |
-| `Spacing.filterRowToCards` | `Spacing.sm` + `LibraryGrid.verticalPadding` (22) | filter row's lower edge to the first row of cards (library, Workshop) |
-| `Spacing.workshopCardBandTop` | 24 | SCREENS S8 (Workshop grid card info band, `padding 24 10 10`) |
-| `Spacing.workshopCardBandInset` | 10 | SCREENS S8 (same band's sides and bottom) |
-| `Typography.badgeMono` | 11pt monospaced | README Tokens #2/#8 |
-| `Typography.metaMono` | 11pt monospaced | README Tokens #2/#8 |
-| `Typography.chip` | 12pt | README Tokens #8 |
-| `Typography.body` | 13pt | README Tokens #8 |
-| `Typography.cardTitle` | 12pt semibold | README Tokens #8 |
-| `Typography.stageTitle` | 15pt semibold | README Tokens #8 |
-| `Typography.modalTitle` | alias of `DesignTokens.Typography.modalTitle` (22pt semibold) | user title hierarchy 2026-09-30 |
-| `Typography.navItem` | 13pt | SCREENS S1 (nav pill item) |
-| `Typography.floatName` | 11pt semibold | SCREENS S5 (thumbnail name) |
-| `Typography.dropLabel` | 12pt bold | SCREENS S5 (「松手替换」) |
-| `Typography.footnote` | 11pt | SCREENS S9 (onboarding card footnote) |
-| `Typography.workshopCardTitle` | 13pt semibold | SCREENS S8 (Workshop grid card title) |
+| Token | Value |
+| --- | --- |
+| `Colors.background` | `DesignTokens.Colors.pageBackground` (system `windowBackgroundColor`) |
+| `Colors.panel` | `rgba(28,28,34,.95)` |
+| `Colors.console` | `rgba(18,18,22,.92)` |
+| `Colors.textPrimary` | `#e8e8ec` |
+| `Colors.textSecondary` | `#9a9aa3`; Increase Contrast → `#c8c8c8` |
+| `Colors.textTertiary` | `#8a8a93` |
+| `Colors.textCapsule` | `#c8c8c8` |
+| `Colors.success` | `#4ade80` |
+| `Colors.warning` | `#f5b544` |
+| `Colors.sceneGroupLayers/Colors` | `#60a5fa` / `#f5b544`; light `#2563eb` / `#b0760c` |
+| `Colors.danger` | `#ff8080` |
+| `Colors.link` | `#9ab4ff` |
+| `Colors.strokeRegular` | white `.08`; Increase Contrast → `.35` |
+| `Colors.strokeShell` | white `.25`; Increase Contrast → `.65` |
+| `Colors.strokeEmptyShell` / `strokeEmptyShellIncreased` | white `.40`; Increase Contrast → `.80` |
+| `Colors.strokePanel` | white `.12` |
+| `Colors.strokeBadge` | white `.25` |
+| `Colors.strokeDashedCard` | white `.30` |
+| `Colors.strokeHotShell` | white `.80` |
+| `Colors.fillShell` | white `.02` |
+| `Colors.fillNavPill` | white `.05` |
+| `Colors.fillSelectedChip` | white `.14` |
+| `Colors.fillSelectedNavItem` | white `.16` |
+| `Colors.dropHighlight` | `rgba(74,222,128,.22)` |
+| `Colors.dropHighlightGlow` | `rgba(74,222,128,.45)` |
+| `Colors.gradientStageBottom` | black `.7` |
+| `Colors.gradientCardBottom` | black `.5` |
+| `Colors.cardRimRing` / `cardRimRingIncreased` | white `.10`; Increase Contrast → `.35` (fixed) |
+| `Colors.cardRimHighlight` | white `.30` (fixed) |
+| `Colors.cardRimShade` | black `.35` (fixed) |
+| `Colors.nowPlayingGlyph` | `#4ade80` (fixed) |
+| `Colors.shelfScrim` | black `.35`; light `.10` |
+| `Colors.dotGrid` | `rgba(255,255,255,.06)` |
+| `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black |
+| `Colors.mediaChipFill` | black `.6` (fixed) |
+| `Colors.gradientWorkshopCardBottom` | black `.85` (fixed) |
+| `Colors.inLibraryBadgeFill` | `rgba(74,222,128,.9)` (fixed) |
+| `Colors.inLibraryBadgeGlyph` | black (fixed) |
+| `Colors.fillEmptyScreen` | white `.03` |
+| `Colors.emptyScreenPlaceholder` | white `.10` |
+| `Corner.content` | 3 |
+| `Corner.badge` | 3 |
+| `Corner.shelfCard` | 6 |
+| `Corner.gridCard` | 8 |
+| `Corner.shell` | 8 |
+| `Corner.shellBuiltinTop` | 9 |
+| `Corner.shellBuiltinBottom` | 3 |
+| `Corner.notch` | 5 |
+| `Corner.panel` | 10 |
+| `Corner.panelLarge` | 12 |
+| `Corner.statusExpanded` | 14 |
+| `Corner.modal` | 18 |
+| `Corner.floatPanel` | 16 |
+| `Corner.chip` | 5 |
+| `Shadow.shell` | `0 5px 28px rgba(0,0,0,.22)`; radius = blur ÷ 2 |
+| `Shadow.modal` | `0 10px 48px rgba(0,0,0,.38)`, light `.16`; radius = blur ÷ 2 |
+| `Shadow.hoverCard` | `0 6px 24px rgba(0,0,0,.32)`, light `.16`; radius = blur ÷ 2 |
+| `Shadow.shelfCard` | `0 8px 18px rgba(0,0,0,.26)`; radius = blur ÷ 2 |
+| `Shadow.shelfCardHover` | `0 14px 28px rgba(0,0,0,.32)`, light `.36`; radius = blur ÷ 2 |
+| `Shadow.shelfCardEdge` | `0 1px 2px rgba(0,0,0,.38)`; radius = blur ÷ 2 |
+| `Shadow.floatPanel` | `0 8px 36px rgba(0,0,0,.32)`, light `.14`; radius = blur ÷ 2 |
+| `Shadow.workshopCard` | `0 3px 16px rgba(0,0,0,.24)`, light `.10`; radius = blur ÷ 2 |
+| `Shadow.workshopCardRing` | `0 0 2px rgba(0,0,0,.12)`, light `.06`; radius = blur ÷ 2 |
+| `Spacing.s8` | 8 |
+| `Spacing.s12` | 12 |
+| `Spacing.s14` | 14 |
+| `Spacing.gutter` | 24 |
+| `Spacing.topBar` | 56 |
+| `Spacing.navPillHeight` | 32 |
+| `Spacing.filterRowInset` | `Spacing.xs` (4) |
+| `Spacing.filterRowToCards` | `Spacing.sm` + `LibraryGrid.verticalPadding` (22) |
+| `Spacing.workshopCardBandTop` | 24 |
+| `Spacing.workshopCardBandInset` | 10 |
+| `Typography.badgeMono` | 11pt monospaced |
+| `Typography.metaMono` | 11pt monospaced |
+| `Typography.chip` | 12pt |
+| `Typography.body` | 13pt |
+| `Typography.cardTitle` | 12pt semibold |
+| `Typography.stageTitle` | 15pt semibold |
+| `Typography.modalTitle` | alias of `DesignTokens.Typography.modalTitle` (22pt semibold) |
+| `Typography.navItem` | 13pt |
+| `Typography.floatName` | 11pt semibold |
+| `Typography.dropLabel` | 12pt bold |
+| `Typography.footnote` | 11pt |
+| `Typography.workshopCardTitle` | 13pt semibold |
 
-Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters for views this work package does not implement, not reusable design-system steps.
+Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters rather than reusable design-system steps.
 
 ## Hard rules
 
@@ -216,11 +216,11 @@ Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geomet
 5. **Align to the grid.** Paddings/offsets come from `Spacing.*`, radii from `Corner.*` — no stray numbers.
 6. **No color-only status.** A `Status.*` color must always be paired with text or a distinct glyph — never carry meaning by hue alone (WCAG 1.4.1).
 7. **Glass contrast.** Don't put light text directly on a raw high-luminance `Status.*` fill; let `thumbnailBadgeGlass` / `AdaptiveGlass` manage the tint so text stays ≥4.5:1.
-8. **Button styles follow the decision tree** (`<private-notes>` §1). Short form: custom hit areas (cards/rows/segments) → `.plain` with a visible press state and ≥28x28pt hit region; icon-only actions → `.borderless`, never bare `.plain`; view primary action → `.borderedProminent` (max 1–2 per view, never destructive); secondary → `.bordered` (+ `role: .destructive` for danger); external links → `.link` (never destructive); hero CTAs → `CapsuleButtonStyle`; toolbar icon groups → `GlassToolbarItem`, which carries its own states. Row-repeated actions never take prominent.
+8. **Button styles follow this decision tree:** custom hit areas (cards/rows/segments) → `.plain` with a visible press state and ≥28x28pt hit region; icon-only actions → `.borderless`, never bare `.plain`; view primary action → `.borderedProminent` (max 1–2 per view, never destructive); secondary → `.bordered` (+ `role: .destructive` for danger); external links → `.link` (never destructive); hero CTAs → `CapsuleButtonStyle`; toolbar icon groups → `GlassToolbarItem`, which carries its own states. Row-repeated actions never take prominent.
 9. **Expensive sliders coalesce.** A `Slider` whose binding persists config, rebuilds filters/overlays, or touches a render session must be `CoalescedSlider` (or an explicit release-only commit). `step:` detents stay under 1000 (`PropertyValueLogic`). Wide ranges pair the slider with an editable value field.
-10. **Pages use a skeleton template** (contracts §3.1): settings form → `Form` + `.settingsFormChrome()` (bounded at `DesignTokens.Settings.maxContentWidth` and centered); library pages → `LibraryToolbarRow` (search, filters, sort, actions) + `LibraryGalleryGrid` + `LibraryStatusBar`; sheets → shared header + `SheetFooterBar`; input popovers → `.settingsPopoverChrome`; option lists → native `Menu` / `Picker` (system hover, keyboard navigation, separators only between sections); `NativeMenuButton` uses a plain SwiftUI trigger to preserve custom labels over artwork; empty states → `IllustratedEmptyState`. New pages that fit none: ask before inventing a skeleton.
-11. **Glass placement is version-tiered by position** (contracts §4): chrome/badges/toasts go through `AdaptiveGlass`; Form content areas and inspectors never take glass (HIG: no Liquid Glass in the content layer); the appex (deploys at 26.0) writes the 26+ path unconditionally. Enforced by `glass_outside_wrapper` / `material_outside_wrapper` / `appex_tautological_availability` lint rules.
-12. **One component per role — with one named exemption.** `ShelfCard` (Edit Desk stage/shelf) is a deliberate second card implementation beside `GalleryTileChrome`: the shelf animates 14 tilted cards in a CALayer tree, where SwiftUI views can't hit the frame budget. It must build its colors from `DesignTokens.EditDesk` values converted to `CGColor`, never a fresh literal. No other CALayer card may be added without extending this exemption (GAP_ANALYSIS.md D7).
+10. **Pages use a skeleton template**: settings form → `Form` + `.settingsFormChrome()` (bounded at `DesignTokens.Settings.maxContentWidth` and centered); library pages → `LibraryToolbarRow` (search, filters, sort, actions) + `LibraryGalleryGrid` + `LibraryStatusBar`; sheets → shared header + `SheetFooterBar`; input popovers → `.settingsPopoverChrome`; option lists → native `Menu` / `Picker` (system hover, keyboard navigation, separators only between sections); `NativeMenuButton` uses a plain SwiftUI trigger to preserve custom labels over artwork; empty states → `IllustratedEmptyState`. New pages that fit none: ask before inventing a skeleton.
+11. **Glass placement is version-tiered by position**: chrome/badges/toasts go through `AdaptiveGlass`; Form content areas and inspectors never take glass (HIG: no Liquid Glass in the content layer); the appex (deploys at 26.0) writes the 26+ path unconditionally. Enforced by `glass_outside_wrapper` / `material_outside_wrapper` / `appex_tautological_availability` lint rules.
+12. **One component per role — with one named exemption.** `ShelfCard` (Edit Desk stage/shelf) is a deliberate second card implementation beside `GalleryTileChrome`: the shelf animates 14 tilted cards in a CALayer tree, where SwiftUI views can't hit the frame budget. It must build its colors from `DesignTokens.EditDesk` values converted to `CGColor`, never a fresh literal. No other CALayer card may be added without extending this exemption.
 
 The font and corner lint rules run through `scripts/lint_changed_lines.py`:
 existing untouched violations do not block a new change. `token_bypass_bare_font`

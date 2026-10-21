@@ -67,6 +67,19 @@ Update English and Simplified Chinese documentation together.
 - Review notes and experimental plans stay out of public user docs. PRs should
   state the final behavior, validation and remaining limitations.
 
+## Local files and publication
+
+Use `.gitignore` for shared exclusions such as build output and generated caches.
+Put machine-specific tools, agent configuration and private working notes in
+`.git/info/exclude` (`git rev-parse --git-path info/exclude` locates it).
+These local rules are not copied to other clones. Neither ignore mechanism
+removes files already tracked by Git; use `git rm --cached` to keep a local copy
+while removing it from the next commit.
+
+Before publishing, review `git diff --cached` for private notes, logs, credentials
+and machine-specific paths. Use placeholders or configurable paths in public
+examples. Removing a file in a new commit leaves earlier versions in Git history.
+
 ## Reporting bugs
 
 Use **Settings → About → Report a Bug** for a pre-filled report, review the

@@ -1,5 +1,4 @@
 #if !LITE_BUILD
-import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
@@ -8,18 +7,6 @@ struct SteamCMDSetupSheet: View {
     var isRecovery = false
 
     @Environment(\.dismiss) private var dismiss
-    @State private var route: Route = .managed
-    @State private var didCopy = false
-
-    private enum Route: String, CaseIterable, Identifiable {
-        case managed
-        case homebrew
-
-        var id: String { rawValue }
-    }
-
-    private static let brewCommand = "brew install --cask steamcmd"
-    private var effectiveRoute: Route { isRecovery ? .managed : route }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,18 +21,18 @@ struct SteamCMDSetupSheet: View {
                         .font(DesignTokens.Typography.body)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Picker("How to install", selection: $route) {
-                        Text("Install with Loomscreen").tag(Route.managed)
-                        Text("Install with Homebrew").tag(Route.homebrew)
-                    }
-                    .pickerStyle(.radioGroup)
-                    .labelsHidden()
-                    .accessibilityLabel(Text("How to install SteamCMD"))
+                    Text("Loomscreen downloads SteamCMD directly from Valve, with native support for Apple Silicon. No Rosetta is needed.")
+                        .font(DesignTokens.Typography.body)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                switch effectiveRoute {
-                case .managed: managedDetail
-                case .homebrew: homebrewDetail
+                managedDetail
+
+                DisclosureGroup("Already installed with Homebrew?") {
+                    Text("Loomscreen can use existing Homebrew installations. On Apple Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually run steamcmd +quit in Terminal to let SteamCMD update itself, then choose Locate automatically.")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(DesignTokens.Spacing.xl)
@@ -57,10 +44,10 @@ struct SteamCMDSetupSheet: View {
 
     private var footer: some View {
         SheetFooterBar(
-            primaryTitle: effectiveRoute == .managed ? "Download and install" : "Done",
+            primaryTitle: "Download and install",
             primaryAction: {
                 dismiss()
-                if effectiveRoute == .managed { onConfirmManagedInstall() }
+                onConfirmManagedInstall()
             },
             primaryDisabled: false,
             cancelTitle: "Cancel",
@@ -127,37 +114,6 @@ struct SteamCMDSetupSheet: View {
 
     private func formatted(_ bytes: Int) -> String {
         Int64(bytes).formatted(.byteCount(style: .file))
-    }
-
-    // MARK: - Homebrew
-
-    private var homebrewDetail: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            Text("Homebrew must already be installed; otherwise choose Install with Loomscreen. Run this command in Terminal, then open Settings › Workshop › Steam connection and choose Locate automatically.")
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Text(verbatim: Self.brewCommand)
-                    .font(DesignTokens.Typography.code)
-                    .textSelection(.enabled)
-                Spacer(minLength: 0)
-                Button(didCopy ? "Copied" : "Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(Self.brewCommand, forType: .string)
-                    didCopy = true
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(DesignTokens.Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

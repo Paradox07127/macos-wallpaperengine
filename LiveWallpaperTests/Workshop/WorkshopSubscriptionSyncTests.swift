@@ -8,6 +8,31 @@ import Testing
 struct WorkshopSubscriptionSyncTests {
     private let itemID: UInt64 = 42
 
+    @Test("First subscription sync submits five missing items through three slots and imports every item")
+    func firstBatchUsesThreeSlotsAndImportsAll() async throws {
+        let fixture = try SyncFixture()
+        try await TestScratch.withCleanup { await fixture.discard() } operation: {
+            let ids: [UInt64] = [101, 102, 103, 104, 105]
+            let batch = try SubscriptionBatchDownloader(root: fixture.root.appendingPathComponent("batch"), ids: ids)
+            fixture.listing.ids = ids
+            await fixture.sync.refresh(using: fixture.doctor)
+            #expect(fixture.sync.downloadableSelection() == ids)
+            fixture.sync.downloadSelected(using: batch)
+            #expect(await waitUntil { batch.started.count == 3 })
+            #expect(Set(batch.started) == Set(ids.prefix(3)))
+            batch.release(ids[1])
+            #expect(await waitUntil { batch.started.count == 4 })
+            #expect(batch.started.last == ids[3])
+            batch.release(ids[0])
+            #expect(await waitUntil { batch.started.count == 5 })
+            for id in ids {
+                batch.release(id)
+            }
+            #expect(await waitUntil { ids.allSatisfy { fixture.downloads.phase(for: $0) == .succeeded && !fixture.downloads.isBusy($0) } })
+            #expect(Set(fixture.settings.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID)) == Set(ids.map(String.init)))
+        }
+    }
+
     @Test("An item downloaded earlier in this run, then deleted, is offered again by the next check")
     func downloadedThenDeletedIsOfferedAgain() async throws {
         let fixture = try SyncFixture()
@@ -137,6 +162,33 @@ struct WorkshopSubscriptionSyncTests {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
+    }
+}
+
+@MainActor
+private final class SubscriptionBatchDownloader: WorkshopItemDownloading {
+    let root: URL
+    private(set) var started: [UInt64] = []
+    private var gates: [UInt64: CheckedContinuation<Void, Never>] = [:]
+
+    init(root: URL, ids: [UInt64]) throws {
+        self.root = root
+        for id in ids {
+            let folder = root.appendingPathComponent(String(id))
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(#"{"workshopid":"\#(id)","title":"Item \#(id)","type":"video","file":"video.mp4"}"#.utf8).write(to: folder.appendingPathComponent("project.json"))
+            try Data([0x00]).write(to: folder.appendingPathComponent("video.mp4"))
+        }
+    }
+
+    func downloadWorkshopItem<Imported: Sendable>(_ itemID: UInt64, onProgress _: SteamCMDDoctorService.SteamCMDProgressHandler?, onContentReady: @MainActor @Sendable (URL) async -> Imported) async -> WorkshopItemDownloadResult<Imported> {
+        started.append(itemID)
+        await withCheckedContinuation { gates[itemID] = $0 }
+        return await .imported(onContentReady(root.appendingPathComponent(String(itemID))))
+    }
+
+    func release(_ itemID: UInt64) {
+        gates.removeValue(forKey: itemID)?.resume()
     }
 }
 

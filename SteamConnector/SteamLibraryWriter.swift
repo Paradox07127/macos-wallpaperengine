@@ -6,9 +6,10 @@ import Foundation
 /// tried; one process, one place to audit. Guards ported from the app's
 /// retired `WPEEngineAssetsFilesystemOwner`, with the containment anchor
 /// moved from "our sandbox container" to "the Steam root we were pointed
-/// at". Two subtrees are writable and nothing else:
+/// at". Content writes are limited to these subtrees:
 ///   `steamapps/workshop/content/431960/<id>/`
 ///   `steamapps/common/wallpaper_engine/`
+/// Publication alone may merge one item into `appworkshop_431960.acf` and hold its lock.
 enum SteamLibraryWriter {
         enum WriteError: Error {
         case outsideAllowedSubtree
@@ -81,9 +82,7 @@ enum SteamLibraryWriter {
             try adoptTargetOnlyEntries(old: old, new: target)
             discardDisplacedTree = true
         }
-        // Keep one content repository. Only the engine-assets install still
-        // stages into a profile and publishes from it; Workshop items are
-        // written straight into the library by SteamCMD.
+        // The worker is temporary; the shared library remains the single content repository.
         if let sourceParent = try? openDirectory(root: sourceRoot, components: Array(components.dropLast())) {
             defer { close(sourceParent) }
             var current = stat()
@@ -95,9 +94,256 @@ enum SteamLibraryWriter {
         return destination
     }
 
-    private static func copyTree(source: Int32, target: Int32, depth: Int = 0) throws {
+    /// A directory lease survives every child restart. Reap only unleased workspaces,
+    /// including credentials left by a connector crash, before creating the next job.
+    static func prepareDownloadWorkspace(id: UUID, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> (root: URL, fd: Int32) {
+        let root = try SteamCMDProfile.prepareDownloadWorker(id: id, realHome: realHome)
+        let parent = try openDirectory(root: SteamCMDProfile.root(realHome: realHome), components: ["DownloadWorkers"])
+        defer { close(parent) }
+        let poolLock = try privateLock(parent: parent, name: ".pool.lock")
+        defer { close(poolLock) }
+        guard flock(poolLock, LOCK_EX) == 0 else { throw WriteError.unexpectedLayout }
+        let directory = try openDirectory(root: root, components: [])
+        defer { close(directory) }
+        let lease = try privateLock(parent: directory, name: ".worker.lock")
+        var keepsLease = false
+        defer {
+            if !keepsLease {
+                close(lease)
+            }
+        }
+        guard flock(lease, LOCK_EX | LOCK_NB) == 0 else { throw WriteError.unexpectedLayout }
+        for name in try listDirectory(fd: parent) where UUID(uuidString: name) != nil && name != id.uuidString {
+            let old = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            guard old >= 0 else { continue }
+            defer { close(old) }
+            // A workspace without a lease can still be between mkdir and lock in another process.
+            // Only old unleased directories are safe to reap; leased directories need no age guess.
+            let fd = openat(old, ".worker.lock", O_RDWR | O_NOFOLLOW | O_NONBLOCK)
+            if fd >= 0 {
+                defer { close(fd) }
+                if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+                    try? removeTree(parent: parent, name: name)
+                }
+            } else {
+                var info = stat()
+                if errno == ENOENT, fstat(old, &info) == 0, Date().timeIntervalSince1970 - Double(info.st_mtimespec.tv_sec) > 3600 {
+                    try? removeTree(parent: parent, name: name)
+                }
+            }
+        }
+        keepsLease = true
+        return (root, lease)
+    }
+
+    private static func privateLock(parent: Int32, name: String) throws -> Int32 {
+        let fd = openat(parent, name, O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw WriteError.symbolicLinkRejected }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_nlink == 1, info.st_uid == getuid() else { close(fd); throw WriteError.symbolicLinkRejected }
+        return fd
+    }
+
+    /// Snapshot only Loomscreen's private login config, under its account lock.
+    /// Neither shared Steam credentials nor old subscriptions/library mappings are copied.
+    static func snapshotDownloadAccount(accountName: String, to workerRoot: URL, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws {
+        let lease = try SteamCMDProfile.acquire(accountName: accountName, realHome: realHome)
+        defer { close(lease.fd) }
+        let sourceRoot = try SteamCMDProfile.steamRoot(accountName: accountName, realHome: realHome)
+        let targetLease = try SteamCMDProfile.acquire(accountName: accountName, realHome: workerRoot.path)
+        defer { close(targetLease.fd) }
+        let targetRoot = try SteamCMDProfile.steamRoot(accountName: accountName, realHome: workerRoot.path)
+        let input = try openDirectory(root: sourceRoot, components: ["config"])
+        let output = try openDirectory(root: targetRoot, components: ["config"])
+        defer { close(input); close(output) }
+        try copyTree(source: input, target: output, excluding: [".loomscreen.lock", "libraryfolders.vdf", "libraryfolder.vdf"])
+    }
+
+    /// Copy a known runtime, never a whole arbitrary executable parent directory.
+    /// Every worker self-updates its own copy; the master's binary stays stable.
+    static func snapshotDownloadRuntime(binary: URL, to workerRoot: URL) throws -> URL {
+        let source = binary.deletingLastPathComponent().resolvingSymlinksInPath()
+        let runtime = workerRoot.appendingPathComponent("MacOS", isDirectory: true)
+        try FileManager.default.createDirectory(at: runtime, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let entries = [binary.lastPathComponent, "steamcmd.sh", "steamclient.dylib", "steamconsole.dylib",
+                       "libtier0_s.dylib", "libvstdlib_s.dylib", "crashhandler.dylib", "libaudio.dylib",
+                       "libsteaminput.dylib", "Frameworks", "public", "package"]
+        for name in Set(entries) {
+            let item = source.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: item.path) else { continue }
+            try validateRuntimeTree(item, under: source)
+            try FileManager.default.copyItem(at: item, to: runtime.appendingPathComponent(name))
+        }
+        return runtime.appendingPathComponent(binary.lastPathComponent)
+    }
+
+    private static func validateRuntimeTree(_ item: URL, under root: URL, depth: Int = 0) throws {
         guard depth < maxTreeDepth else { throw WriteError.unexpectedLayout }
-        for name in try listDirectory(fd: source) {
+        let resolved = item.resolvingSymlinksInPath()
+        guard resolved.pathComponents.starts(with: root.pathComponents),
+              resolved.pathComponents.count > root.pathComponents.count else { throw WriteError.symbolicLinkRejected }
+        let values = try item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey])
+        if values.isSymbolicLink == true {
+            guard try !FileManager.default.destinationOfSymbolicLink(atPath: item.path).hasPrefix("/") else { throw WriteError.symbolicLinkRejected }
+            return
+        } // Internal framework links retain their relative targets.
+        if values.isDirectory == true {
+            for child in try FileManager.default.contentsOfDirectory(at: item, includingPropertiesForKeys: nil) {
+                try validateRuntimeTree(child, under: root, depth: depth + 1)
+            }
+        } else if values.isRegularFile != true {
+            throw WriteError.unexpectedLayout
+        }
+    }
+
+    /// One publication transaction at a time, including across service processes.
+    /// Only this item's installed/detail records are merged into Steam's ledger.
+    static func publishWorkshopItem(workshopID: String, from sourceRoot: URL, to steamRoot: URL, isCancelled: () -> Bool = { false }) throws -> URL {
+        guard SteamLibraryPaths.isSafeWorkshopID(workshopID) else { throw WriteError.outsideAllowedSubtree }
+        let parent = try openDirectory(root: steamRoot, components: ["steamapps", "workshop"], create: true)
+        defer { close(parent) }
+        let lock = openat(parent, ".loomscreen-publication.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
+        guard lock >= 0 else { throw WriteError.symbolicLinkRejected }
+        defer { close(lock) }
+        var info = stat()
+        guard fstat(lock, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_nlink == 1, info.st_uid == getuid() else { throw WriteError.symbolicLinkRejected }
+        while flock(lock, LOCK_EX | LOCK_NB) != 0 {
+            guard errno == EWOULDBLOCK, !isCancelled() else { throw CancellationError() }
+            usleep(50000)
+        }
+        guard !isCancelled() else { throw CancellationError() }
+        let source = try openDirectory(root: sourceRoot, components: ["steamapps", "workshop"])
+        defer { close(source) }
+        let filename = "appworkshop_431960.acf"
+        guard let worker = try readManifest(parent: source, name: filename) else { throw WriteError.unexpectedLayout }
+        let existing = try readManifest(parent: parent, name: filename)
+        let merged = try mergedWorkshopManifest(existing: existing, worker: worker, workshopID: workshopID)
+        // Prepare metadata before touching existing content. A cancelled job never starts a commit.
+        let temporary = ".loomscreen-manifest-\(UUID().uuidString)"
+        let output = openat(parent, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard output >= 0 else { throw WriteError.unexpectedLayout }
+        defer { close(output); unlinkat(parent, temporary, 0) }
+        let bytes = Array(merged.utf8)
+        var offset = 0
+        while offset < bytes.count {
+            let count = bytes.withUnsafeBytes { Darwin.write(output, $0.baseAddress!.advanced(by: offset), bytes.count - offset) }
+            guard count > 0 else { throw WriteError.unexpectedLayout }
+            offset += count
+        }
+        guard fsync(output) == 0 else { throw WriteError.unexpectedLayout }
+        guard !isCancelled() else { throw CancellationError() }
+        let destination = try publishContent(components: SteamLibraryPaths.workshopContentComponents + [workshopID], from: sourceRoot, to: steamRoot)
+        guard renameat(parent, temporary, parent, filename) == 0 else { throw WriteError.unexpectedLayout }
+        return destination
+    }
+
+    private static func readManifest(parent: Int32, name: String) throws -> String? {
+        let fd = openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        if fd < 0, errno == ENOENT {
+            return nil
+        }
+        guard fd >= 0 else { throw WriteError.symbolicLinkRejected }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_size >= 0, info.st_size <= 16 * 1024 * 1024 else { throw WriteError.unexpectedLayout }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        guard let data = try handle.read(upToCount: Int(info.st_size) + 1),
+              let text = String(data: data, encoding: .utf8) else { throw WriteError.unexpectedLayout }
+        return text
+    }
+
+    /// Keep raw values and unknown fields, editing only the two per-item blocks and total size.
+    private static func mergedWorkshopManifest(existing: String?, worker: String, workshopID: String) throws -> String {
+        typealias Fields = [(key: String, raw: String)]
+        func fields(_ text: Substring) throws -> Fields {
+            var cursor = text.startIndex
+            var result: Fields = []
+            func skip() {
+                while cursor < text.endIndex {
+                    if text[cursor].isWhitespace {
+                        cursor = text.index(after: cursor)
+                    } else if text[cursor...].hasPrefix("//") {
+                        cursor = text[cursor...].firstIndex(where: \.isNewline) ?? text.endIndex
+                    } else {
+                        break
+                    }
+                }
+            }
+            while true {
+                skip()
+                if cursor == text.endIndex {
+                    return result
+                }
+                guard text[cursor] == "\"", let key = SteamAccountsFile.nextQuoted(in: text, from: &cursor),
+                      !result.contains(where: { $0.key == key }) else { throw WriteError.unexpectedLayout }
+                skip()
+                guard cursor < text.endIndex else { throw WriteError.unexpectedLayout }
+                let start = cursor
+                if text[cursor] == "{" {
+                    guard SteamAccountsFile.nextBraceBlock(in: text, from: &cursor) != nil else { throw WriteError.unexpectedLayout }
+                } else {
+                    guard text[cursor] == "\"", SteamAccountsFile.nextQuoted(in: text, from: &cursor) != nil else { throw WriteError.unexpectedLayout }
+                }
+                result.append((key, String(text[start ..< cursor])))
+            }
+        }
+        func body(_ raw: String) throws -> Fields {
+            guard raw.first == "{" else { throw WriteError.unexpectedLayout }
+            var cursor = raw.startIndex
+            guard let block = SteamAccountsFile.nextBraceBlock(in: raw[...], from: &cursor), cursor == raw.endIndex else { throw WriteError.unexpectedLayout }
+            return try fields(block)
+        }
+        func root(_ text: String) throws -> Fields {
+            let top = try fields(text[...])
+            guard top.count == 1, top[0].key == "AppWorkshop" else { throw WriteError.unexpectedLayout }
+            let values = try body(top[0].raw)
+            guard values.first(where: { $0.key == "appid" })?.raw == "\"431960\"" else { throw WriteError.unexpectedLayout }
+            return values
+        }
+        func escaped(_ text: String) -> String {
+            text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        }
+        func render(_ fields: Fields) -> String {
+            "{\n" + fields.map { "\"\(escaped($0.key))\"\t\($0.raw)" }.joined(separator: "\n") + "\n}"
+        }
+        func set(_ key: String, _ raw: String, in values: inout Fields) {
+            if let index = values.firstIndex(where: { $0.key == key }) {
+                values[index].raw = raw
+            } else {
+                values.append((key, raw))
+            }
+        }
+        let incoming = try root(worker)
+        var merged = try existing.map(root) ?? incoming.filter { !["WorkshopItemsInstalled", "WorkshopItemDetails"].contains($0.key) }
+        for key in ["WorkshopItemsInstalled", "WorkshopItemDetails"] {
+            let workerItems = try incoming.first(where: { $0.key == key }).map { try body($0.raw) } ?? []
+            let item = workerItems.first { $0.key == workshopID }
+            if key == "WorkshopItemsInstalled", item == nil {
+                throw WriteError.unexpectedLayout
+            }
+            guard let item else { continue }
+            var items = try merged.first(where: { $0.key == key }).map { try body($0.raw) } ?? []
+            set(workshopID, item.raw, in: &items)
+            set(key, render(items), in: &merged)
+        }
+        if let installed = merged.first(where: { $0.key == "WorkshopItemsInstalled" }) {
+            var total: UInt64 = 0
+            for item in try body(installed.raw) {
+                let size = try body(item.raw).first { $0.key == "size" }?.raw.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                guard let size, let bytes = UInt64(size), !total.addingReportingOverflow(bytes).overflow else { throw WriteError.unexpectedLayout }
+                total += bytes
+            }
+            set("SizeOnDisk", "\"\(total)\"", in: &merged)
+        }
+        return "\"AppWorkshop\"\n" + render(merged) + "\n"
+    }
+
+    private static func copyTree(source: Int32, target: Int32, depth: Int = 0, excluding: Set<String> = []) throws {
+        guard depth < maxTreeDepth else { throw WriteError.unexpectedLayout }
+        for name in try listDirectory(fd: source) where !excluding.contains(name) {
             var info = stat()
             guard fstatat(source, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { throw WriteError.unexpectedLayout }
             switch info.st_mode & S_IFMT {
@@ -114,7 +360,7 @@ enum SteamLibraryWriter {
                     }
                 }
                 guard input >= 0, output >= 0 else { throw WriteError.symbolicLinkRejected }
-                try copyTree(source: input, target: output, depth: depth + 1)
+                try copyTree(source: input, target: output, depth: depth + 1, excluding: excluding)
             case S_IFREG:
                 let input = openat(source, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
                 let output = openat(target, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)

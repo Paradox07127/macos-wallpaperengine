@@ -4,377 +4,6 @@
     "" : {
 
     },
-    "3D anti-aliasing" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3D anti-aliasing"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suavizado 3D"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3D アンチエイリアス"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3D 抗锯齿"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3D 反鋸齒"
-          }
-        }
-      }
-    },
-    "Choose Image or Video" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Image or Video"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir imagen o vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画像または動画を選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择图片或视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇圖片或影片"
-          }
-        }
-      }
-    },
-    "Compressed Texture Cache" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Caché de texturas comprimidas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "圧縮テクスチャキャッシュ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "压缩纹理缓存"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壓縮材質快取"
-          }
-        }
-      }
-    },
-    "Couldn't save the chosen image." : {
-      "comment" : "Shown under a scene image row when choosing or clearing the image couldn't be saved.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't save the chosen image."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo guardar la imagen elegida."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択した画像を保存できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法保存所选图片。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法儲存所選圖片。"
-          }
-        }
-      }
-    },
-    "error.texture.decode.unsupported_dimension" : {
-      "comment" : "Error shown when a Wallpaper Engine volume texture cannot be uploaded.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ".tex volume textures (depth %lld) are not yet supported."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las texturas de volumen .tex (profundidad %lld) aún no son compatibles."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ".tex のボリュームテクスチャ（深さ %lld）はまだサポートされていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚不支持 .tex 体积纹理（深度 %lld）。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚不支援 .tex 體積紋理（深度 %lld）。"
-          }
-        }
-      }
-    },
-    "New scene pipeline only. Changes reload wallpapers." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New scene pipeline only. Changes reload wallpapers."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo para el nuevo sistema de renderizado de escenas. Los cambios recargan los fondos de pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新しいシーン描画方式のみ。変更すると壁紙が再読み込みされます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅适用于新场景渲染管线。更改后将重新加载壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅適用於新場景算繪管線。更改後將重新載入桌布。"
-          }
-        }
-      }
-    },
-    "Replaces this image in the wallpaper. Clear it to show the author's image again." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replaces this image in the wallpaper. Clear it to show the author's image again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sustituye esta imagen en el fondo de pantalla. Bórrala para volver a mostrar la imagen del autor."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙内のこの画像を置き換えます。クリアすると作者の画像に戻ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "替换壁纸中的这张图片。清除后将恢复作者的图片。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取代桌布中的這張圖片。清除後將恢復作者的圖片。"
-          }
-        }
-      }
-    },
-    "Scene textures recompressed to ASTC for lower memory. Up to 512 MB; scenes recompress them when needed." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Texturas de escenas recomprimidas en ASTC para usar menos memoria. Hasta 512 MB; las escenas las recomprimen cuando las necesitan."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メモリ使用量を抑えるため ASTC に再圧縮したシーンテクスチャ。上限 512 MB。必要なときに再圧縮します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为降低内存占用而重新压缩为 ASTC 的场景纹理，上限 512 MB；场景需要时重新压缩。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "為降低記憶體用量而重新壓縮為 ASTC 的場景材質，上限 512 MB；場景需要時重新壓縮。"
-          }
-        }
-      }
-    },
-    "The image can't be found. Choose it again." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The image can't be found. Choose it again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se encuentra la imagen. Vuelve a elegirla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画像が見つかりません。もう一度選択してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "找不到该图片，请重新选择。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "找不到該圖片，請重新選擇。"
-          }
-        }
-      }
-    },
-    "This video can't be opened. The author's image is shown instead." : {
-      "comment" : "Shown under a scene image row when the chosen video file is damaged or unreadable.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This video can't be opened. The author's image is shown instead."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se puede abrir este vídeo. Se muestra la imagen del autor."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この動画を開けません。代わりに作者の画像が表示されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法打开此视频，将显示作者的图片。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法開啟此影片，將顯示作者的圖片。"
-          }
-        }
-      }
-    },
-    "This video format can't play on Mac. The author's image is shown instead." : {
-      "comment" : "Shown under a scene image row when the chosen video's format (WebM, MKV, AVI or WMV) can't play on macOS.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This video format can't play on Mac. The author's image is shown instead."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este formato de vídeo no se puede reproducir en Mac. Se muestra la imagen del autor."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この動画形式は Mac で再生できません。代わりに作者の画像が表示されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mac 无法播放此视频格式，将显示作者的图片。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mac 無法播放此影片格式，將顯示作者的圖片。"
-          }
-        }
-      }
-    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -4384,6 +4013,41 @@
         }
       }
     },
+    "3D anti-aliasing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D anti-aliasing"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suavizado 3D"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D アンチエイリアス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D 抗锯齿"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D 反鋸齒"
+          }
+        }
+      }
+    },
     "4K" : {
       "comment" : "Workshop resolution filter.",
       "localizations" : {
@@ -5177,6 +4841,7 @@
     },
     "A texture or image file is corrupted and cannot be decoded." : {
       "comment" : "Wallpaper Engine fallback diagnostic when a texture decode fails because the file is corrupt.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5409,6 +5074,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關於受限制帳戶"
+          }
+        }
+      }
+    },
+    "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acerca de muestra la versión, enlaces de ayuda y el recorrido de bienvenida. Puedes repetir este recorrido aquí cuando quieras."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアプリについてには、バージョン、サポートへのリンク、ウェルカムツアーがあります。いつでもここからツアーを再開できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关于页面显示应用版本、支持链接和欢迎导览，你可随时在此重新开始导览。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關於頁面顯示 App 版本、支援連結和歡迎導覽，你可隨時在此重新開始導覽。"
           }
         }
       }
@@ -6885,6 +6585,41 @@
         }
       }
     },
+    "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avanzado ofrece diagnósticos y restablecimiento. Revisa cada confirmación antes de restablecer ajustes o eliminar contenido."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細設定には診断とリセット機能があります。設定のリセットやコンテンツの削除前に、確認内容を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级设置提供诊断与重置功能。重置设置或删除内容前请仔细阅读确认提示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進階設定提供診斷與重設功能。重設設定或刪除內容前請仔細閱讀確認提示。"
+          }
+        }
+      }
+    },
     "Aerial" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8173,6 +7908,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "API key 為選填項目"
+          }
+        }
+      }
+    },
+    "API Key Settings (Optional)" : {
+      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key Settings (Optional)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes de clave API (opcional)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API キー設定（任意）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥设置（可选）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 金鑰設定（選用）"
           }
         }
       }
@@ -11088,6 +10858,41 @@
         }
       }
     },
+    "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia y restauración guarda ajustes sin los archivos de los fondos. Revisa la confirmación antes de importar una copia."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バックアップと復元では、壁紙ファイルを含めずに設定を保存します。バックアップの読み込み前に確認内容を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备份与恢复仅保存设置，不包含壁纸文件。导入备份前请仔细阅读确认提示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "備份與還原僅儲存設定，不包含桌布檔案。匯入備份前請仔細閱讀確認提示。"
+          }
+        }
+      }
+    },
     "Bad payload" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12128,6 +11933,7 @@
     },
     "Building render graph" : {
       "comment" : "Scene load progress: building the render graph.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14559,6 +14365,40 @@
         }
       }
     },
+    "Choose Image or Video" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Image or Video"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir imagen o vídeo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像または動画を選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择图片或视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇圖片或影片"
+          }
+        }
+      }
+    },
     "Choose Local File" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16760,6 +16600,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已壓縮"
+          }
+        }
+      }
+    },
+    "Compressed Texture Cache" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caché de texturas comprimidas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圧縮テクスチャキャッシュ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压缩纹理缓存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壓縮材質快取"
           }
         }
       }
@@ -20191,6 +20060,41 @@
         }
       }
     },
+    "Couldn't save the chosen image." : {
+      "comment" : "Shown under a scene image row when choosing or clearing the image couldn't be saved.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save the chosen image."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar la imagen elegida."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択した画像を保存できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存所选图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存所選圖片。"
+          }
+        }
+      }
+    },
     "Couldn't save your bookmarks. Your existing bookmarks have been kept." : {
       "localizations" : {
         "en" : {
@@ -21505,6 +21409,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "預設音量"
+          }
+        }
+      }
+    },
+    "Defaults for new wallpapers" : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defaults for new wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valores para nuevos fondos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい壁紙のデフォルト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新壁纸默认设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新桌布的預設值"
           }
         }
       }
@@ -23234,6 +23173,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示器預設值"
+          }
+        }
+      }
+    },
+    "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los valores de pantalla se aplican al configurar su primer fondo. Ajusta un fondo existente en la capa de configuración de esa pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイのデフォルトは、そのディスプレイに初めて壁紙を設定するときに使われます。既存の壁紙は、そのディスプレイの設定レイヤーで調整してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器默认值用于首次为显示器设置壁纸。已有壁纸的选项请在该显示器的配置层中调整。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示器預設值用於首次為顯示器設定桌布。現有桌布的選項請在該顯示器的設定層中調整。"
           }
         }
       }
@@ -26456,6 +26430,41 @@
         }
       }
     },
+    "Enjoy your wallpapers!" : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enjoy your wallpapers!"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¡Disfruta de tus fondos!"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙をお楽しみください！"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尽享桌面时光！"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "盡享桌面時光！"
+          }
+        }
+      }
+    },
     "Enter 1–%lld FPS or Max" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27161,6 +27170,7 @@
     },
     "error.render.executor.missing_texture" : {
       "comment" : "Error shown when the Metal renderer cannot find a required texture.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27301,6 +27311,7 @@
     },
     "error.render.executor.render_target_dimensions_exceed_device_limit" : {
       "comment" : "Error shown when a Wallpaper Engine render target is larger than Metal allows on the current GPU.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27372,6 +27383,7 @@
     },
     "error.render.executor.shader_translator_unavailable" : {
       "comment" : "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27407,6 +27419,7 @@
     },
     "error.render.executor.unsupported_shader" : {
       "comment" : "Error shown when the Metal renderer does not support a shader.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27658,6 +27671,7 @@
     },
     "error.render.pipeline.include_cycle" : {
       "comment" : "Error shown when a Wallpaper Engine shader include cycle is detected.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27693,6 +27707,7 @@
     },
     "error.render.pipeline.include_missing" : {
       "comment" : "Error shown when a Wallpaper Engine shader include file is missing.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27728,6 +27743,7 @@
     },
     "error.render.pipeline.invalid_source_encoding" : {
       "comment" : "Error shown when a Wallpaper Engine shader source file is not UTF-8.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27763,6 +27779,7 @@
     },
     "error.render.pipeline.shader_missing" : {
       "comment" : "Error shown when a Wallpaper Engine shader source file is missing.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -28692,6 +28709,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法辨識 .tex 容器「%@」。"
+          }
+        }
+      }
+    },
+    "error.texture.decode.unsupported_dimension" : {
+      "comment" : "Error shown when a Wallpaper Engine volume texture cannot be uploaded.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ".tex volume textures (depth %lld) are not yet supported."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las texturas de volumen .tex (profundidad %lld) aún no son compatibles."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ".tex のボリュームテクスチャ（深さ %lld）はまだサポートされていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支持 .tex 体积纹理（深度 %lld）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支援 .tex 體積紋理（深度 %lld）。"
           }
         }
       }
@@ -31949,6 +32002,41 @@
         }
       }
     },
+    "General controls language, login startup, the Dock, and the wallpaper transition and opening animation." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General controls language, login startup, the Dock, and the wallpaper transition and opening animation."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General permite configurar el idioma, el inicio de sesión, el Dock y las transiciones y animaciones de apertura del fondo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般設定では、言語、ログイン時の起動、Dock への表示、壁紙のトランジションと開始アニメーションを設定できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通用设置管理语言、登录时启动、程序坞显示，以及壁纸切换过渡和开场动画。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般設定管理語言、登入時啟動、Dock 顯示，以及桌布的轉場和開場動畫。"
+          }
+        }
+      }
+    },
     "general.orthogonalprojection is null — using perspective camera with 1920×1080 render size" : {
       "comment" : "Wallpaper Engine scene diagnostic when perspective projection is used.",
       "extractionState" : "manual",
@@ -33138,41 +33226,6 @@
         }
       }
     },
-    "Homebrew must already be installed; otherwise choose Install with Loomscreen. Run this command in Terminal, then open Settings › Workshop › Steam connection and choose Locate automatically." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Homebrew must already be installed; otherwise choose Install with Loomscreen. Run this command in Terminal, then open Settings › Workshop › Steam connection and choose Locate automatically."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Homebrew debe estar instalado; si no lo tienes, elige Instalar con Loomscreen. Ejecuta este comando en Terminal, abre Ajustes › Workshop › Conexión de Steam y elige Localizar automáticamente."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Homebrew がインストール済みである必要があります。未導入なら Loomscreen によるインストールを選んでください。このコマンドをターミナルで実行し、設定 › ワークショップ › Steam 接続から自動検出を選びます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此方式要求已安装 Homebrew；否则请选择“通过 Loomscreen 安装”。在终端运行此命令，然后打开设置 › 创意工坊 › Steam 连接，选择“自动查找”。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此方式需要已安裝 Homebrew；否則請選擇「透過 Loomscreen 安裝」。在終端機執行此指令，然後開啟設定 › 工作坊 › Steam 連線，選擇「自動尋找」。"
-          }
-        }
-      }
-    },
     "Hot" : {
       "comment" : "Menu bar THERM status: thermal pressure serious. Keep short — ideally ≤4 Latin characters or equivalent width.",
       "localizations" : {
@@ -33240,66 +33293,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將指標停留在疊加層上以顯示播放控制項。"
-          }
-        }
-      }
-    },
-    "How to install" : {
-      "comment" : "Label for the SteamCMD install-route picker.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cómo instalar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インストール方法"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安装方式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安裝方式"
-          }
-        }
-      }
-    },
-    "How to install SteamCMD" : {
-      "comment" : "Accessibility label for the SteamCMD install-route picker.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cómo instalar SteamCMD"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD のインストール方法"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 的安装方式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 的安裝方式"
           }
         }
       }
@@ -34708,77 +34701,6 @@
         }
       }
     },
-    "Install with Homebrew" : {
-      "comment" : "Homebrew instructions sheet title.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Install with Homebrew"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Instalar con Homebrew"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Homebrew でインストール"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用 Homebrew 安装"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用 Homebrew 安裝"
-          }
-        }
-      }
-    },
-    "Install with Loomscreen" : {
-      "comment" : "SteamCMD installation method, paired with Install with Homebrew.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Install with Loomscreen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Instalar con Loomscreen"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreenでインストール"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通过 Loomscreen 安装"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "透過 Loomscreen 安裝"
-          }
-        }
-      }
-    },
     "Installed" : {
       "comment" : "Workshop pane tab for the locally installed library.",
       "localizations" : {
@@ -34974,6 +34896,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統聯動"
+          }
+        }
+      }
+    },
+    "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integraciones controla la ubicación del tiempo y la respuesta de audio compatible. Activa solo los permisos necesarios para las funciones que uses."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連携では、天気の位置情報や対応する音声反応を設定できます。使う機能に必要な権限だけを許可してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "集成设置管理天气位置和受支持的音频响应。请按所用功能的需要授予权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整合設定管理天氣位置和支援的音訊回應。請依所用功能的需要授予權限。"
           }
         }
       }
@@ -37639,6 +37596,7 @@
     },
     "Loading particle systems" : {
       "comment" : "Scene load progress: building particle systems.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37744,6 +37702,7 @@
     },
     "Loading text pipeline" : {
       "comment" : "Scene load progress: building the text rendering pipeline.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37779,6 +37738,7 @@
     },
     "Loading textures" : {
       "comment" : "Scene load progress: uploading textures.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -38689,6 +38649,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 絕不會讀取你的 Steam 密碼——只讀取此金鑰，並且只儲存在這台 Mac 上。"
+          }
+        }
+      }
+    },
+    "Loomscreen will download and prepare SteamCMD for this Mac. Your existing installation stays in place. No Terminal commands are needed." : {
+      "comment" : "SteamCMD first-run preparation and in-app recovery.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen will download and prepare SteamCMD for this Mac. Your existing installation stays in place. No Terminal commands are needed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen descargará y preparará SteamCMD para este Mac. Tu instalación actual se conservará. No necesitas usar comandos de Terminal."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen がこの Mac 用の SteamCMD をダウンロードして準備します。既存のインストールはそのまま残ります。ターミナルでの操作は不要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 将为本机下载并准备 SteamCMD，保留现有安装，无需执行终端命令。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 將為這台 Mac 下載並準備 SteamCMD，保留現有安裝，無需執行終端機指令。"
           }
         }
       }
@@ -42828,6 +42823,41 @@
         }
       }
     },
+    "New scene pipeline only. Changes reload wallpapers." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New scene pipeline only. Changes reload wallpapers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo para el nuevo sistema de renderizado de escenas. Los cambios recargan los fondos de pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいシーン描画方式のみ。変更すると壁紙が再読み込みされます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅适用于新场景渲染管线。更改后将重新加载壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅適用於新場景算繪管線。更改後將重新載入桌布。"
+          }
+        }
+      }
+    },
     "New Scheme" : {
       "comment" : "Picker option: save the capture as a brand new scheme rather than overwriting one.",
       "localizations" : {
@@ -46755,41 +46785,6 @@
         }
       }
     },
-    "Open Settings › Workshop › Steam connection. Set up SteamCMD offers Install with Loomscreen, with download size and location shown before installing. Already installed it? Use Locate automatically or Choose SteamCMD." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Settings › Workshop › Steam connection. Set up SteamCMD offers Install with Loomscreen, with download size and location shown before installing. Already installed it? Use Locate automatically or Choose SteamCMD."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre Ajustes › Workshop › Conexión de Steam. Configurar SteamCMD permite instalar con Loomscreen y muestra el tamaño y la ubicación antes de instalar. Si ya lo tienes, usa Localizar automáticamente o Elegir SteamCMD."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定 › ワークショップ › Steam 接続を開きます。SteamCMD の設定で Loomscreen によるインストールを選ぶと、実行前にダウンロード容量と保存先を確認できます。インストール済みなら自動検出または SteamCMD の選択を使います。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开设置 › 创意工坊 › Steam 连接。在“设置 SteamCMD”中选择“通过 Loomscreen 安装”，安装前会显示下载体积和位置。已经安装？选择“自动查找”或“选择 SteamCMD”。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟設定 › 工作坊 › Steam 連線。在「設定 SteamCMD」中選擇「透過 Loomscreen 安裝」，安裝前會顯示下載大小和位置。已經安裝？選擇「自動尋找」或「選擇 SteamCMD」。"
-          }
-        }
-      }
-    },
     "Open settings category" : {
       "localizations" : {
         "en" : {
@@ -48128,6 +48123,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "疊加層在桌布上方加入獨立的時鐘、天氣、音樂和小工具。桌布按鈕可切回設定層，顯示器標籤選擇要編輯的顯示器。"
+          }
+        }
+      }
+    },
+    "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Superposiciones cambia la apariencia y las unidades compartidas de los widgets. Organiza cada widget en el editor de superposiciones de su pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーバーレイでは、ウィジェット共通の外観や単位を設定できます。個別の配置は各ディスプレイのオーバーレイエディタで調整してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "叠加层设置管理小组件的共用外观和单位。单个小组件的位置请在各显示器的叠加层编辑器中调整。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "疊加層設定管理小工具的共用外觀和單位。個別小工具的位置請在各顯示器的疊加層編輯器中調整。"
           }
         }
       }
@@ -49979,6 +50009,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "效能與電池"
+          }
+        }
+      }
+    },
+    "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendimiento controla la pausa automática, la frecuencia de fotogramas adaptativa y el uso de memoria. Ajusta estas opciones a tu Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パフォーマンスでは、自動一時停止、適応フレームレート、メモリ使用量を設定できます。お使いの Mac に合わせて調整してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能设置管理自动暂停、自适应帧率和内存使用，可根据你的 Mac 调整这些选项。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "效能設定管理自動暫停、適應性影格率和記憶體使用量，可依照你的 Mac 調整這些選項。"
           }
         }
       }
@@ -56471,6 +56536,40 @@
         }
       }
     },
+    "Replaces this image in the wallpaper. Clear it to show the author's image again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replaces this image in the wallpaper. Clear it to show the author's image again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituye esta imagen en el fondo de pantalla. Bórrala para volver a mostrar la imagen del autor."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙内のこの画像を置き換えます。クリアすると作者の画像に戻ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换壁纸中的这张图片。清除后将恢复作者的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取代桌布中的這張圖片。清除後將恢復作者的圖片。"
+          }
+        }
+      }
+    },
     "Replaces:" : {
       "comment" : "Import confirmation header over the parts of the current configuration the file replaces.",
       "localizations" : {
@@ -60848,6 +60947,35 @@
         }
       }
     },
+    "Scene textures recompressed to ASTC for lower memory. Up to 512 MB; scenes recompress them when needed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texturas de escenas recomprimidas en ASTC para usar menos memoria. Hasta 512 MB; las escenas las recomprimen cuando las necesitan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ使用量を抑えるため ASTC に再圧縮したシーンテクスチャ。上限 512 MB。必要なときに再圧縮します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为降低内存占用而重新压缩为 ASTC 的场景纹理，上限 512 MB；场景需要时重新压缩。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為降低記憶體用量而重新壓縮為 ASTC 的場景材質，上限 512 MB；場景需要時重新壓縮。"
+          }
+        }
+      }
+    },
     "Scene Video Texture Cache" : {
       "comment" : "Storage settings tile title: the cache of video files extracted from scene wallpapers. Translations leave out “texture”.",
       "localizations" : {
@@ -63429,6 +63557,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "快速鍵"
+          }
+        }
+      }
+    },
+    "Shortcuts configures keyboard actions for playback, wallpapers and the app window." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts configures keyboard actions for playback, wallpapers and the app window."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atajos permite configurar acciones de teclado para la reproducción, los fondos y la ventana de la app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ショートカットでは、再生、壁紙、アプリのウインドウを操作するキーを設定できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷键设置用于配置播放、壁纸和应用窗口的键盘操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速鍵設定用於設定播放、桌布和 App 視窗的鍵盤操作。"
           }
         }
       }
@@ -66472,6 +66635,41 @@
         }
       }
     },
+    "Startup and transitions" : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup and transitions"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio y transiciones"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起動とトランジション"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动与过渡"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動與轉場"
+          }
+        }
+      }
+    },
     "Stats" : {
       "comment" : "Wallpaper detail row: Workshop subscribers, favorites and views.",
       "localizations" : {
@@ -68718,6 +68916,41 @@
         }
       }
     },
+    "SteamCMD has no quarantine attribute. Its launch check has not completed." : {
+      "comment" : "SteamCMD first-run preparation and in-app recovery.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD has no quarantine attribute. Its launch check has not completed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD no tiene atributo de cuarentena. La comprobación de inicio aún no ha finalizado."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD に隔離属性はありません。起動の確認はまだ完了していません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 未带隔离属性，但尚未完成启动检查。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 未帶隔離屬性，但尚未完成啟動檢查。"
+          }
+        }
+      }
+    },
     "SteamCMD has the Gatekeeper quarantine attribute. macOS may block it on launch." : {
       "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
       "localizations" : {
@@ -68982,6 +69215,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SteamCMD 由未經驗證的團隊簽章（TeamIdentifier=%@）。"
+          }
+        }
+      }
+    },
+    "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry." : {
+      "comment" : "First-run SteamCMD timeout recovery inside the app.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD sigue preparándose o no pudo conectar con Steam. Comprueba la conexión y elige Localizar automáticamente para reintentarlo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD は準備中か、Steam に接続できませんでした。接続を確認し、「自動検出」を選んで再試行してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 仍在准备中，或暂时无法连接 Steam。请检查网络连接，然后点按“自动查找”重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 仍在準備中，或暫時無法連線至 Steam。請檢查網路連線，然後按一下「自動尋找」重試。"
           }
         }
       }
@@ -69291,6 +69559,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SteamCMD 已自我更新（SHA-256 已變化）——這是正常現象。"
+          }
+        }
+      }
+    },
+    "SteamCMD was found but needs setup on this Mac. Loomscreen can download and prepare a verified copy automatically." : {
+      "comment" : "Recovery after Locate automatically finds a SteamCMD copy that cannot be used.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD was found but needs setup on this Mac. Loomscreen can download and prepare a verified copy automatically."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se encontró SteamCMD, pero necesita prepararse en este Mac. Loomscreen puede descargar y preparar automáticamente una copia verificada."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD は見つかりましたが、この Mac で使うには準備が必要です。Loomscreen が検証済みのコピーを自動でダウンロードして準備できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已找到 SteamCMD，但需要先完成设置。Loomscreen 可自动下载并准备经过验证的副本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已找到 SteamCMD，但需要先完成設定。Loomscreen 可自動下載並準備經過驗證的副本。"
           }
         }
       }
@@ -71429,6 +71732,41 @@
         }
       }
     },
+    "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab." : {
+      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¡Gracias por descargar Loomscreen! Loomscreen se ejecuta en la barra de menús. Los fondos siguen funcionando al cerrar esta ventana. Haz clic en su icono y elige Gestionar para volver. Activa Mostrar en el Dock en los ajustes generales para acceder también desde el Dock y con Command-Tab."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen をダウンロードしていただき、ありがとうございます！Loomscreen はメニューバーに常駐します。このウインドウを閉じても壁紙は動き続けます。メニューバーアイコンから「管理」を選ぶと、この画面に戻れます。「一般」設定で「Dock に表示」を有効にすると、Dock や Command-Tab からもアプリを開けます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感谢下载 Loomscreen！Loomscreen 常驻菜单栏，关闭此窗口后壁纸仍会继续播放。点按菜单栏图标并选择“管理”即可返回。在“通用”设置中启用“在程序坞中显示”，还可通过程序坞或 Command-Tab 切换到本应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感謝下載 Loomscreen！Loomscreen 常駐選單列，關閉此視窗後桌布仍會繼續播放。按一下選單列圖示並選擇「管理」即可返回。在「一般」設定中啟用「在 Dock 中顯示」，也可透過 Dock 或 Command-Tab 切換至本 App。"
+          }
+        }
+      }
+    },
     "That binary is quarantined. Open it once in Finder, or remove the quarantine flag." : {
       "comment" : "Workshop setup error when the chosen SteamCMD still carries the quarantine flag.",
       "extractionState" : "manual",
@@ -72288,6 +72626,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SteamCMD 首次執行逾時。"
+          }
+        }
+      }
+    },
+    "The image can't be found. Choose it again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image can't be found. Choose it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encuentra la imagen. Vuelve a elegirla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像が見つかりません。もう一度選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到该图片，请重新选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到該圖片，請重新選擇。"
           }
         }
       }
@@ -75883,6 +76255,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目前 macOS 版本與桌布延伸功能不相容。"
+          }
+        }
+      }
+    },
+    "This video can't be opened. The author's image is shown instead." : {
+      "comment" : "Shown under a scene image row when the chosen video file is damaged or unreadable.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This video can't be opened. The author's image is shown instead."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede abrir este vídeo. Se muestra la imagen del autor."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この動画を開けません。代わりに作者の画像が表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开此视频，将显示作者的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法開啟此影片，將顯示作者的圖片。"
+          }
+        }
+      }
+    },
+    "This video format can't play on Mac. The author's image is shown instead." : {
+      "comment" : "Shown under a scene image row when the chosen video's format (WebM, MKV, AVI or WMV) can't play on macOS.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This video format can't play on Mac. The author's image is shown instead."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este formato de vídeo no se puede reproducir en Mac. Se muestra la imagen del autor."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この動画形式は Mac で再生できません。代わりに作者の画像が表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 无法播放此视频格式，将显示作者的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 無法播放此影片格式，將顯示作者的圖片。"
           }
         }
       }
@@ -83421,6 +83863,41 @@
         }
       }
     },
+    "Welcome to Loomscreen" : {
+      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to Loomscreen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te damos la bienvenida a Loomscreen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen へようこそ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎使用 Loomscreen"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歡迎使用 Loomscreen"
+          }
+        }
+      }
+    },
     "Welcome Tour" : {
       "comment" : "Accessibility label for the welcome tour button.",
       "isCommentAutoGenerated" : true,
@@ -84867,6 +85344,41 @@
         }
       }
     },
+    "You're all set. Thanks for using Loomscreen—enjoy your desktop! You can replay this tour anytime from Settings › About." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're all set. Thanks for using Loomscreen—enjoy your desktop! You can replay this tour anytime from Settings › About."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo listo. ¡Gracias por usar Loomscreen y disfruta de tu escritorio! Puedes repetir este recorrido desde Ajustes › Acerca de."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備ができました。Loomscreen をご利用いただき、ありがとうございます。デスクトップをお楽しみください！このツアーは「設定 › このアプリについて」からいつでも再開できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一切就绪。感谢使用 Loomscreen，愿你尽享桌面时光！你可随时从“设置 › 关于”重新开始此导览。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一切就緒。感謝使用 Loomscreen，願你盡享桌面時光！你可隨時從「設定 › 關於」重新開始此導覽。"
+          }
+        }
+      }
+    },
     "Your latest changes aren't saved yet. Keep Loomscreen open and retry." : {
       "comment" : "Persistent settings write failure notice and recovery action in Edit Desk.",
       "extractionState" : "manual",
@@ -85107,702 +85619,142 @@
         }
       }
     },
-    "API Key Settings (Optional)" : {
-      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
+    "Loomscreen downloads SteamCMD directly from Valve, with native support for Apple Silicon. No Rosetta is needed." : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "API Key Settings (Optional)"
+            "value" : "Loomscreen downloads SteamCMD directly from Valve, with native support for Apple Silicon. No Rosetta is needed."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ajustes de clave API (opcional)"
+            "value" : "Loomscreen descarga SteamCMD directamente de Valve, con soporte nativo para Apple Silicon. No se necesita Rosetta."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "API キー設定（任意）"
+            "value" : "Loomscreen は Apple Silicon にネイティブ対応した SteamCMD を Valve から直接ダウンロードします。Rosetta は不要です。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "API 密钥设置（可选）"
+            "value" : "Loomscreen 直接从 Valve 下载原生支持 Apple Silicon 的 SteamCMD，无需 Rosetta 转译。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "API 金鑰設定（選用）"
+            "value" : "Loomscreen 直接從 Valve 下載原生支援 Apple Silicon 的 SteamCMD，無需 Rosetta 轉譯。"
           }
         }
       }
     },
-    "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
+    "Already installed with Homebrew?" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime."
+            "value" : "Already installed with Homebrew?"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acerca de muestra la versión, enlaces de ayuda y el recorrido de bienvenida. Puedes repetir este recorrido aquí cuando quieras."
+            "value" : "¿Ya lo instalaste con Homebrew?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このアプリについてには、バージョン、サポートへのリンク、ウェルカムツアーがあります。いつでもここからツアーを再開できます。"
+            "value" : "Homebrew でインストール済みの場合"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关于页面显示应用版本、支持链接和欢迎导览，你可随时在此重新开始导览。"
+            "value" : "已通过 Homebrew 安装？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關於頁面顯示 App 版本、支援連結和歡迎導覽，你可隨時在此重新開始導覽。"
+            "value" : "已透過 Homebrew 安裝？"
           }
         }
       }
     },
-    "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
+    "Loomscreen can use existing Homebrew installations. On Apple Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually run steamcmd +quit in Terminal to let SteamCMD update itself, then choose Locate automatically." : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content."
+            "value" : "Loomscreen can use existing Homebrew installations. On Apple Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually run steamcmd +quit in Terminal to let SteamCMD update itself, then choose Locate automatically."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avanzado ofrece diagnósticos y restablecimiento. Revisa cada confirmación antes de restablecer ajustes o eliminar contenido."
+            "value" : "Loomscreen puede usar instalaciones existentes de Homebrew. En Apple Silicon, la descarga inicial de SteamCMD de Homebrew requiere Rosetta: ejecuta manualmente steamcmd +quit en Terminal para que SteamCMD se actualice y después elige Localizar automáticamente."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "詳細設定には診断とリセット機能があります。設定のリセットやコンテンツの削除前に、確認内容を確認してください。"
+            "value" : "Loomscreen は Homebrew でインストール済みの SteamCMD も利用できます。Apple Silicon では Homebrew の初期ダウンロード版に Rosetta が必要です。ターミナルで steamcmd +quit を手動実行して SteamCMD の自己更新を完了させてから、自動検出を選んでください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "高级设置提供诊断与重置功能。重置设置或删除内容前请仔细阅读确认提示。"
+            "value" : "Loomscreen 也支持识别已有的 Homebrew 安装。在 Apple Silicon 上，Homebrew 初次下载的 SteamCMD 需要 Rosetta 转译：请在终端手动运行 steamcmd +quit，让 SteamCMD 完成自更新，再选择“自动查找”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "進階設定提供診斷與重設功能。重設設定或刪除內容前請仔細閱讀確認提示。"
+            "value" : "Loomscreen 也支援辨識已有的 Homebrew 安裝。在 Apple Silicon 上，Homebrew 初次下載的 SteamCMD 需要 Rosetta 轉譯：請在終端機手動執行 steamcmd +quit，讓 SteamCMD 完成自我更新，再選擇「自動尋找」。"
           }
         }
       }
     },
-    "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
+    "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD." : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup."
+            "value" : "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copia y restauración guarda ajustes sin los archivos de los fondos. Revisa la confirmación antes de importar una copia."
+            "value" : "Abre Ajustes › Workshop › Conexión de Steam y elige Configurar SteamCMD. Loomscreen muestra el tamaño de la descarga y la ubicación antes de instalar. Si ya lo tienes, usa Localizar automáticamente o Elegir SteamCMD."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "バックアップと復元では、壁紙ファイルを含めずに設定を保存します。バックアップの読み込み前に確認内容を確認してください。"
+            "value" : "設定 › ワークショップ › Steam 接続を開き、SteamCMD の設定を選びます。Loomscreen はインストール前にダウンロード容量と保存先を表示します。インストール済みなら自動検出または SteamCMD の選択を使います。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "备份与恢复仅保存设置，不包含壁纸文件。导入备份前请仔细阅读确认提示。"
+            "value" : "打开设置 › 创意工坊 › Steam 连接，选择“设置 SteamCMD”。Loomscreen 会在安装前显示下载体积和位置。已经安装？选择“自动查找”或“选择 SteamCMD”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "備份與還原僅儲存設定，不包含桌布檔案。匯入備份前請仔細閱讀確認提示。"
-          }
-        }
-      }
-    },
-    "Defaults for new wallpapers" : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Defaults for new wallpapers"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valores para nuevos fondos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新しい壁紙のデフォルト"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新壁纸默认设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新桌布的預設值"
-          }
-        }
-      }
-    },
-    "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los valores de pantalla se aplican al configurar su primer fondo. Ajusta un fondo existente en la capa de configuración de esa pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイのデフォルトは、そのディスプレイに初めて壁紙を設定するときに使われます。既存の壁紙は、そのディスプレイの設定レイヤーで調整してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示器默认值用于首次为显示器设置壁纸。已有壁纸的选项请在该显示器的配置层中调整。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示器預設值用於首次為顯示器設定桌布。現有桌布的選項請在該顯示器的設定層中調整。"
-          }
-        }
-      }
-    },
-    "Enjoy your wallpapers!" : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enjoy your wallpapers!"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¡Disfruta de tus fondos!"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙をお楽しみください！"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尽享桌面时光！"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "盡享桌面時光！"
-          }
-        }
-      }
-    },
-    "General controls language, login startup, the Dock, and the wallpaper transition and opening animation." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "General controls language, login startup, the Dock, and the wallpaper transition and opening animation."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "General permite configurar el idioma, el inicio de sesión, el Dock y las transiciones y animaciones de apertura del fondo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般設定では、言語、ログイン時の起動、Dock への表示、壁紙のトランジションと開始アニメーションを設定できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通用设置管理语言、登录时启动、程序坞显示，以及壁纸切换过渡和开场动画。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般設定管理語言、登入時啟動、Dock 顯示，以及桌布的轉場和開場動畫。"
-          }
-        }
-      }
-    },
-    "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Integraciones controla la ubicación del tiempo y la respuesta de audio compatible. Activa solo los permisos necesarios para las funciones que uses."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連携では、天気の位置情報や対応する音声反応を設定できます。使う機能に必要な権限だけを許可してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "集成设置管理天气位置和受支持的音频响应。请按所用功能的需要授予权限。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "整合設定管理天氣位置和支援的音訊回應。請依所用功能的需要授予權限。"
-          }
-        }
-      }
-    },
-    "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Superposiciones cambia la apariencia y las unidades compartidas de los widgets. Organiza cada widget en el editor de superposiciones de su pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オーバーレイでは、ウィジェット共通の外観や単位を設定できます。個別の配置は各ディスプレイのオーバーレイエディタで調整してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "叠加层设置管理小组件的共用外观和单位。单个小组件的位置请在各显示器的叠加层编辑器中调整。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "疊加層設定管理小工具的共用外觀和單位。個別小工具的位置請在各顯示器的疊加層編輯器中調整。"
-          }
-        }
-      }
-    },
-    "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rendimiento controla la pausa automática, la frecuencia de fotogramas adaptativa y el uso de memoria. Ajusta estas opciones a tu Mac."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "パフォーマンスでは、自動一時停止、適応フレームレート、メモリ使用量を設定できます。お使いの Mac に合わせて調整してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "性能设置管理自动暂停、自适应帧率和内存使用，可根据你的 Mac 调整这些选项。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "效能設定管理自動暫停、適應性影格率和記憶體使用量，可依照你的 Mac 調整這些選項。"
-          }
-        }
-      }
-    },
-    "Shortcuts configures keyboard actions for playback, wallpapers and the app window." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shortcuts configures keyboard actions for playback, wallpapers and the app window."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Atajos permite configurar acciones de teclado para la reproducción, los fondos y la ventana de la app."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ショートカットでは、再生、壁紙、アプリのウインドウを操作するキーを設定できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "快捷键设置用于配置播放、壁纸和应用窗口的键盘操作。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "快速鍵設定用於設定播放、桌布和 App 視窗的鍵盤操作。"
-          }
-        }
-      }
-    },
-    "Startup and transitions" : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Startup and transitions"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inicio y transiciones"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起動とトランジション"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动与过渡"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟動與轉場"
-          }
-        }
-      }
-    },
-    "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab." : {
-      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¡Gracias por descargar Loomscreen! Loomscreen se ejecuta en la barra de menús. Los fondos siguen funcionando al cerrar esta ventana. Haz clic en su icono y elige Gestionar para volver. Activa Mostrar en el Dock en los ajustes generales para acceder también desde el Dock y con Command-Tab."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen をダウンロードしていただき、ありがとうございます！Loomscreen はメニューバーに常駐します。このウインドウを閉じても壁紙は動き続けます。メニューバーアイコンから「管理」を選ぶと、この画面に戻れます。「一般」設定で「Dock に表示」を有効にすると、Dock や Command-Tab からもアプリを開けます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "感谢下载 Loomscreen！Loomscreen 常驻菜单栏，关闭此窗口后壁纸仍会继续播放。点按菜单栏图标并选择“管理”即可返回。在“通用”设置中启用“在程序坞中显示”，还可通过程序坞或 Command-Tab 切换到本应用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "感謝下載 Loomscreen！Loomscreen 常駐選單列，關閉此視窗後桌布仍會繼續播放。按一下選單列圖示並選擇「管理」即可返回。在「一般」設定中啟用「在 Dock 中顯示」，也可透過 Dock 或 Command-Tab 切換至本 App。"
-          }
-        }
-      }
-    },
-    "Welcome to Loomscreen" : {
-      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Welcome to Loomscreen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Te damos la bienvenida a Loomscreen"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen へようこそ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "欢迎使用 Loomscreen"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "歡迎使用 Loomscreen"
-          }
-        }
-      }
-    },
-    "You're all set. Thanks for using Loomscreen—enjoy your desktop! You can replay this tour anytime from Settings › About." : {
-      "comment" : "Welcome Tour settings walkthrough or completion.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You're all set. Thanks for using Loomscreen—enjoy your desktop! You can replay this tour anytime from Settings › About."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todo listo. ¡Gracias por usar Loomscreen y disfruta de tu escritorio! Puedes repetir este recorrido desde Ajustes › Acerca de."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "準備ができました。Loomscreen をご利用いただき、ありがとうございます。デスクトップをお楽しみください！このツアーは「設定 › このアプリについて」からいつでも再開できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一切就绪。感谢使用 Loomscreen，愿你尽享桌面时光！你可随时从“设置 › 关于”重新开始此导览。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一切就緒。感謝使用 Loomscreen，願你盡享桌面時光！你可隨時從「設定 › 關於」重新開始此導覽。"
-          }
-        }
-      }
-    },
-    "SteamCMD was found but needs setup on this Mac. Loomscreen can download and prepare a verified copy automatically." : {
-      "comment" : "SteamCMD first-run preparation and in-app recovery.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD was found but needs setup on this Mac. Loomscreen can download and prepare a verified copy automatically."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已找到 SteamCMD，但需要先完成设置。Loomscreen 可自动下载并准备经过验证的副本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已找到 SteamCMD，但需要先完成設定。Loomscreen 可自動下載並準備經過驗證的副本。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD は見つかりましたが、この Mac で使うには準備が必要です。Loomscreen が検証済みのコピーを自動でダウンロードして準備できます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se encontró SteamCMD, pero necesita prepararse en este Mac. Loomscreen puede descargar y preparar automáticamente una copia verificada."
-          }
-        }
-      }
-    },
-    "SteamCMD has no quarantine attribute. Its launch check has not completed." : {
-      "comment" : "SteamCMD first-run preparation and in-app recovery.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD has no quarantine attribute. Its launch check has not completed."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 未带隔离属性，但尚未完成启动检查。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 未帶隔離屬性，但尚未完成啟動檢查。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD に隔離属性はありません。起動の確認はまだ完了していません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD no tiene atributo de cuarentena. La comprobación de inicio aún no ha finalizado."
-          }
-        }
-      }
-    },
-    "Loomscreen will download and prepare SteamCMD for this Mac. Your existing installation stays in place. No Terminal commands are needed." : {
-      "comment" : "SteamCMD first-run preparation and in-app recovery.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen will download and prepare SteamCMD for this Mac. Your existing installation stays in place. No Terminal commands are needed."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 将为本机下载并准备 SteamCMD，保留现有安装，无需执行终端命令。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 將為這台 Mac 下載並準備 SteamCMD，保留現有安裝，無需執行終端機指令。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen がこの Mac 用の SteamCMD をダウンロードして準備します。既存のインストールはそのまま残ります。ターミナルでの操作は不要です。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen descargará y preparará SteamCMD para este Mac. Tu instalación actual se conservará. No necesitas usar comandos de Terminal."
-          }
-        }
-      }
-    },
-    "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry." : {
-      "comment" : "SteamCMD first-run preparation and in-app recovery.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 仍在准备中，或暂时无法连接 Steam。请检查网络连接，然后点按“自动查找”重试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 仍在準備中，或暫時無法連線至 Steam。請檢查網路連線，然後按一下「自動尋找」重試。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD は準備中か、Steam に接続できませんでした。接続を確認し、「自動検出」を選んで再試行してください。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD sigue preparándose o no pudo conectar con Steam. Comprueba la conexión y elige Localizar automáticamente para reintentarlo."
+            "value" : "開啟設定 › 工作坊 › Steam 連線，選擇「設定 SteamCMD」。Loomscreen 會在安裝前顯示下載大小和位置。已經安裝？選擇「自動尋找」或「選擇 SteamCMD」。"
           }
         }
       }

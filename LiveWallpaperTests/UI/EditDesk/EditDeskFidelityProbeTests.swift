@@ -7,10 +7,9 @@ import SwiftUI
 import Testing
 
 // Offscreen fidelity probe for WP 5.4 / 2.4 / 3.5 / 4.3-static. Renders the Edit Desk surfaces
-// through NSHostingView + cacheDisplay and measures the result off the bitmap, so the numbers in
-// `<private-notes>` come from a render, not from reading
-// the source. Glass (`glassEffect`, `NSVisualEffectView`) does not composite offscreen: anything
-// behind one is reported as 实机 in that table instead of measured here.
+// through NSHostingView + cacheDisplay and measures the resulting bitmap.
+// Glass (`glassEffect`, `NSVisualEffectView`) does not composite offscreen;
+// content behind glass requires on-device measurement.
 
 // MARK: - Harness
 
@@ -194,8 +193,7 @@ struct ProbeRun {
 
 @MainActor
 enum ProbeRenderer {
-    /// The test host is sandboxed, so PNGs land in its container temp directory; the harvesting
-    /// shell copies them into `<private-notes>`.
+    /// The test host is sandboxed, so PNGs land in its container temp directory.
     static var outputDirectory: URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("editdesk-fidelity-2026-09-20", isDirectory: true)

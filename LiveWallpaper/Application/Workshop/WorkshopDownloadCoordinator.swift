@@ -73,6 +73,8 @@ final class WorkshopDownloadCoordinator {
         }
     }
 
+    @ObservationIgnored private static let importGate = AsyncSemaphore(value: 1)
+
     private static let failedHistoryKey = "workshop.failedDownloadHistory"
     static let shared = WorkshopDownloadCoordinator(historyDefaults: .appScoped())
 
@@ -355,6 +357,9 @@ final class WorkshopDownloadCoordinator {
                         },
                         onContentReady: { [weak self] folderURL -> WallpaperEngineImportService.ImportResult? in
                             guard let self, isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
+                            do { try await Self.importGate.acquire() } catch { return nil }
+                            defer { Self.importGate.release() }
+                            guard isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
                             phases[itemID] = .importing
                             clearProgress(itemID)
                             let result: WallpaperEngineImportService.ImportResult
@@ -499,6 +504,8 @@ final class WorkshopDownloadCoordinator {
     private func finishImport(
         _ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String, attemptID: UUID, approved: WPEHistoryEntry?
     ) async -> WorkshopDownloadOutcome {
+        do { try await Self.importGate.acquire() } catch { return .cancelled }
+        defer { Self.importGate.release() }
         guard isCurrent(itemID: itemID, attemptID: attemptID) else { return .cancelled }
         guard let result else {
             let reason = String(localized: "Couldn't read the downloaded files.", bundle: .appLanguage, comment: "Workshop import failed: unreadable download.")
@@ -760,7 +767,7 @@ final class WorkshopDownloadCoordinator {
         }
     }
 
-    /// Re-read the root now that dependencies are on disk — SteamCMD no-ops on an item that is already current.
+    /// Re-read the root through the same verified download/import path once dependencies are on disk.
     @discardableResult
     private func reimportRoot(
         itemID: UInt64, attemptID: UUID, doctor: any WorkshopItemDownloading, approved: WPEHistoryEntry?
@@ -779,6 +786,9 @@ final class WorkshopDownloadCoordinator {
                     onProgress: nil,
                     onContentReady: { [weak self] folderURL -> WallpaperEngineImportService.ImportResult? in
                         guard let self, isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
+                        do { try await Self.importGate.acquire() } catch { return nil }
+                        defer { Self.importGate.release() }
+                        guard isCurrent(itemID: itemID, attemptID: attemptID) else { return nil }
                         return try? await importService.importProject(folder: folderURL)
                     }
                 )

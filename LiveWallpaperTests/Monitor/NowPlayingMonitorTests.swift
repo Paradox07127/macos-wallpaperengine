@@ -5,7 +5,7 @@ import os
 import Testing
 @testable import LiveWallpaper
 
-// MARK: - Fixtures (verbatim from <private-notes>)
+// MARK: - Playback notification fixtures
 
 private enum Fixture {
     static let spotifyName = "com.spotify.client.PlaybackStateChanged"

@@ -14,17 +14,20 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         var terminationSignal: Int32?
         var completedWorkshopItem = false
         var cancellationRequested = false
+        var subscriptionRefresh: SteamCMDSubscriptionRefresh.Completion?
     }
 
-    /// Every SteamCMD run in this process is serialized here. The app used
-    /// to hold one operation lease across all of them; once work moved
-    /// behind XPC, requests arrived independently, so an engine install and
-    /// a Workshop download could drive two SteamCMD processes against the same
-    /// account profile and one loses. It now also orders item deletion against
-    /// downloads, which write into the shared library directly. Serializing
-    /// here is the only place the guarantee survives an arbitrary number of
-    /// clients.
+    /// Orders account changes, master-runtime changes, snapshots and publication.
+    /// Only isolated download executions leave this queue.
     private static let steamCMDQueue = DispatchQueue(label: "com.loomscreen.pro.SteamConnector.steamcmd")
+    private static let downloadJobs = SteamCMDDownloadJobs()
+    private static let downloadQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.loomscreen.pro.SteamConnector.downloads"
+        queue.maxConcurrentOperationCount = SteamCMDDownloadLimits.maximumConcurrent
+        queue.qualityOfService = .utility
+        return queue
+    }()
 
     /// `spawn` records the current owned child, including replacement-signature
     /// helpers belonging to the same operation, so cancellation covers that phase.
@@ -113,6 +116,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         operationID: String? = nil,
         isCancelled: @escaping @Sendable () -> Bool = { false },
+        waitForSubscriptions: Bool = false,
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil
     ) -> SteamCMDRun {
         let deadline = SteamCMDRunDeadline(timeout: timeout)
@@ -157,7 +161,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     deadline: deadline.time,
                     profileHome: profile.home.path(percentEncoded: false),
                     activeOperationID: operationID,
-                    isCancelled: isCancelled
+                    isCancelled: isCancelled,
+                    subscriptionLogURL: waitForSubscriptions
+                        ? profile.home.appendingPathComponent("Library/Application Support/Steam/logs/workshop_log.txt") : nil
                 ) { line in
                     guard let onProgress, let progress = SteamCMDProgressLine.parse(line) else { return }
                     onProgress(progress)
@@ -191,7 +197,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         case let .deadlineExceeded(last):
             return SteamCMDRun(output: last?.output ?? "", timedOut: true, exitCode: last?.exitCode ?? -1)
         case .cancelled:
-            return SteamCMDRun(output: "", timedOut: false)
+            return SteamCMDRun(output: "", timedOut: false, cancellationRequested: true)
         case .gateFailed(let reason):
             // Reported as a failed spawn (exit -1), which is what a refused
             // binary already looks like to every caller.
@@ -204,9 +210,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
 
     /// The one place this process creates a child. SteamCMD and `codesign`
     /// share it: two spawn implementations would mean two places to forget
-    /// the scrubbed environment or process-group teardown. stdin is closed
-    /// so SteamCMD's `@NoPromptForPassword` can never be bypassed by an
-    /// interactive prompt.
+    /// the scrubbed environment or process-group teardown. Subscription refresh
+    /// alone keeps stdin open to send a fixed quit command after acknowledgement;
+    /// its @NoPromptForPassword gate remains enabled.
     private static func spawn(
         executable: String,
         arguments: [String],
@@ -214,6 +220,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         profileHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         activeOperationID: String? = nil,
         isCancelled: @escaping @Sendable () -> Bool = { false },
+        subscriptionLogURL: URL? = nil,
         onLine: (@Sendable (String) -> Void)? = nil
     ) -> SteamCMDRun {
         guard !isCancelled() else { return SteamCMDRun(output: "", timedOut: false) }
@@ -227,7 +234,20 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.environment = SteamCMDChildEnvironment.make(home: profileHome)
-        process.standardInput = FileHandle.nullDevice
+        // Take the log baseline before launch, including on every self-update
+        // restart. A previous execution's acknowledgement never counts.
+        let refresh = subscriptionLogURL.map { SteamCMDSubscriptionRefresh(logURL: $0) }
+        let quitInput = refresh == nil ? nil : Pipe()
+        if let quitInput {
+            process.standardInput = quitInput
+            _ = fcntl(quitInput.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+        } else {
+            process.standardInput = FileHandle.nullDevice
+        }
+        defer {
+            try? quitInput?.fileHandleForReading.close()
+            try? quitInput?.fileHandleForWriting.close()
+        }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -239,6 +259,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         do { try process.run() } catch {
             return SteamCMDRun(output: error.localizedDescription, timedOut: false)
         }
+        try? quitInput?.fileHandleForReading.close()
         let pid = process.processIdentifier
         // Give SteamCMD its own process group so the whole tree can be
         // signalled — its self-update helper outlives a plain terminate()
@@ -247,8 +268,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // nature (the child may already have exec'd), so the signalling
         // below falls back to the bare pid when the group was never created.
         let hasOwnGroup = setpgid(pid, pid) == 0 || getpgid(pid) == pid
-        // Unconditional: the queue is serial, and a child started without an id is exactly the one
-        // `terminateActiveForHostExit` has to find when the app quits.
+        // Track every owned child, including probes without an operation ID, for host exit.
         activeSteamCMD.register(
             pid: pid, hasOwnGroup: hasOwnGroup, operationID: activeOperationID,
             isCancelled: isCancelled
@@ -310,24 +330,48 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
 
         var streamComplete = false
         var processComplete = false
-        func awaitCompletion(until deadline: DispatchTime) -> Bool {
-            if !streamComplete {
-                streamComplete = done.wait(timeout: deadline) == .success
-            }
-            if !processComplete {
-                processComplete = processDone.wait(timeout: deadline) == .success
+        @Sendable func cancelled() -> Bool {
+            isCancelled() || activeSteamCMD.cancellationRequested(for: pid)
+        }
+        func awaitCompletion(until deadline: DispatchTime, interruptible: Bool = true) -> Bool {
+            while DispatchTime.now() < deadline {
+                if interruptible, cancelled() {
+                    return false
+                }
+                if !streamComplete {
+                    streamComplete = done.wait(timeout: min(deadline, .now() + 0.1)) == .success
+                }
+                if !processComplete {
+                    processComplete = processDone.wait(timeout: streamComplete ? min(deadline, .now() + 0.1) : .now()) == .success
+                }
+                if streamComplete, processComplete {
+                    return true
+                }
             }
             return streamComplete && processComplete
         }
 
         // EOF alone is not completion: a child can close both pipes and keep
         // running. Both producer lifetimes consume the same absolute deadline.
-        if !awaitCompletion(until: deadline) {
-            state.withLock { $0.timedOut = true }
+        if let refresh, let quitInput {
+            var sentQuit = false
+            while !processComplete, DispatchTime.now() < deadline, !isCancelled() {
+                refresh.poll()
+                if refresh.completion != nil, !sentQuit {
+                    try? quitInput.fileHandleForWriting.write(contentsOf: Data("quit\n".utf8))
+                    try? quitInput.fileHandleForWriting.close()
+                    sentQuit = true
+                }
+                processComplete = processDone.wait(timeout: min(deadline, .now() + 0.1)) == .success
+            }
+            refresh.poll()
+        }
+        if !awaitCompletion(until: isCancelled() ? .now() : deadline) {
+            state.withLock { $0.timedOut = !cancelled() }
             kill(hasOwnGroup ? -pid : pid, SIGTERM)
-            if !awaitCompletion(until: .now() + 10) {
+            if !awaitCompletion(until: .now() + 10, interruptible: false) {
                 kill(hasOwnGroup ? -pid : pid, SIGKILL)
-                _ = awaitCompletion(until: .now() + 5)
+                _ = awaitCompletion(until: .now() + 5, interruptible: false)
             }
         }
 
@@ -338,8 +382,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         handle.readabilityHandler = nil
         process.waitUntilExit()
         process.terminationHandler = nil
-        let cancellationRequested = activeSteamCMD.cancellationRequested
-        activeSteamCMD.clear()
+        let cancellationRequested = activeSteamCMD.cancellationRequested(for: pid) || isCancelled()
+        activeSteamCMD.clear(pid: pid)
         // Close deterministically rather than waiting for the Pipe to be
         // deallocated; a leaked descriptor per run adds up over a session.
         try? handle.close()
@@ -350,7 +394,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             timedOut: snapshot.timedOut,
             exitCode: process.terminationStatus,
             terminationSignal: process.terminationReason == .uncaughtSignal ? process.terminationStatus : nil,
-            cancellationRequested: cancellationRequested
+            cancellationRequested: cancellationRequested,
+            subscriptionRefresh: refresh?.completion
         )
     }
 
@@ -439,7 +484,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     ) {
         callerLiveness.own(operationID: operationID)
         let liveness = callerLiveness
-        @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil, exitCode: Int32? = nil, signal: Int32? = nil, detail: SteamWorkshopDownloadResult.FailureDetail? = nil) {
+        @Sendable func send(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil, exitCode: Int32? = nil, signal: Int32? = nil, detail: SteamWorkshopDownloadResult.FailureDetail? = nil) {
             liveness.disown(operationID: operationID)
             let result = SteamWorkshopDownloadResult(
                 outcome: outcome,
@@ -454,36 +499,78 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
         guard SteamLibraryPaths.isSafeWorkshopID(workshopID),
               SteamAccountsFile.isValidAccountName(accountName) else {
-            respond(.steamCMDUnavailable)
+            send(.steamCMDUnavailable)
             return
         }
         // Before the queue, not inside it: a library we would refuse must not
         // hold the serial queue behind a download that cannot happen.
         guard let libraryRoot = SteamLibraryPaths.validatedLibraryRoot(libraryPath) else {
-            respond(.steamCMDUnavailable, tail: "Refused Steam library path: \(libraryPath)")
+            send(.steamCMDUnavailable, tail: "Refused Steam library path: \(libraryPath)")
             return
         }
 
         let sink = progressSink
         let enqueuedAt = Date()
-        Self.steamCMDQueue.async {
-            guard liveness.isLive(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
-            // Same pre-spawn resolution as every other entry: after the queue
-            // wait, so a managed install that landed while this was queued is
-            // the one that runs.
-            guard let steamCMDPath = Self.resolvedExecutablePath() else {
-                respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
+        let job = SteamCMDDownloadJob(operationID: operationID, accountName: accountName, itemID: workshopID, libraryPath: libraryRoot.path)
+        Self.downloadJobs.insert(job)
+        Self.downloadQueue.addOperation {
+            let resultBox = OSAllocatedUnfairLock<SteamWorkshopDownloadResult?>(initialState: nil)
+            var cleanup: (root: URL, fd: Int32)?
+            @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil, exitCode: Int32? = nil, signal: Int32? = nil, detail: SteamWorkshopDownloadResult.FailureDetail? = nil) {
+                resultBox.withLock { $0 = SteamWorkshopDownloadResult(outcome: outcome, itemPath: path, diagnosticTail: String(tail.suffix(500)), executedBinaryPath: executed, exitCode: exitCode, terminationSignal: signal, failureDetail: detail) }
+            }
+            defer {
+                if let cleanup {
+                    do {
+                        try SteamLibraryWriter.removeDirectory(cleanup.root, under: SteamCMDProfile.root())
+                    } catch {
+                        NSLog("SteamConnector: isolated download cleanup failed for job \(job.id)")
+                    }
+                    close(cleanup.fd)
+                }
+                Self.downloadJobs.remove(job)
+                if let result = resultBox.withLock({ $0 }) {
+                    send(result.outcome, tail: result.diagnosticTail, path: result.itemPath, executed: result.executedBinaryPath, exitCode: result.exitCode, signal: result.terminationSignal, detail: result.failureDetail)
+                }
+            }
+            guard liveness.isLive(enqueuedAt: enqueuedAt), !job.isCancelled else { respond(.timedOut); return }
+            let workspace: URL
+            let steamCMDPath: String
+            let workspaceLease: Int32
+            do {
+                (workspace, workspaceLease, steamCMDPath) = try Self.steamCMDQueue.sync {
+                    guard liveness.isLive(enqueuedAt: enqueuedAt), !job.isCancelled else { throw CancellationError() }
+                    guard let original = Self.resolvedExecutablePath() else { throw SteamLibraryWriter.WriteError.unexpectedLayout }
+                    let lease = try SteamLibraryWriter.prepareDownloadWorkspace(id: job.id)
+                    let root = lease.root
+                    do {
+                        try SteamLibraryWriter.snapshotDownloadAccount(accountName: accountName, to: root)
+                        let binary = try SteamLibraryWriter.snapshotDownloadRuntime(binary: URL(fileURLWithPath: original), to: root)
+                        // Copying does not bypass trust gates, including after every exit-42 restart.
+                        guard case .success = SteamCMDManagedInstaller.verifySignature(binaryPath: binary.path, spawn: { path, args, timeout in
+                                  let run = Self.spawn(executable: path, arguments: args, deadline: .now() + timeout,
+                                                       activeOperationID: operationID, isCancelled: { !liveness.canContinue || job.isCancelled })
+                                  return (run.output, run.exitCode, run.timedOut)
+                              }),
+                              case .success = SteamCMDManagedInstaller.rejectIfQuarantined(binaryPath: binary.path) else {
+                            throw SteamLibraryWriter.WriteError.unexpectedLayout
+                        }
+                        return (root, lease.fd, binary.path)
+                    } catch {
+                        try? SteamLibraryWriter.removeDirectory(root, under: SteamCMDProfile.root())
+                        close(lease.fd)
+                        throw error
+                    }
+                }
+            } catch {
+                respond(.steamCMDUnavailable, tail: "Could not prepare isolated SteamCMD download: \(error)")
                 return
             }
-            // `force_install_dir` — before `+login`, the order Valve documents —
-            // sends the Workshop tree (content AND SteamCMD's ledger) to the
-            // shared library while the private profile keeps only credentials.
-            // The path carries no account name on purpose: every account
-            // downloads into the one library the app reads.
-            //
-            // No `validate`: the ledger now sits beside the content it
-            // describes, and validating would re-fetch everything the user
-            // subscribed to through the Steam client as well.
+            cleanup = (workspace, workspaceLease)
+            let workerLibrary = workspace.appendingPathComponent("Downloads", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: workerLibrary, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            } catch { respond(.steamCMDUnavailable, tail: "Could not prepare download directory"); return }
             let report: @Sendable (SteamOperationProgress) -> Void = { progress in
                 guard let data = try? JSONEncoder().encode(progress) else { return }
                 sink?.connectorDidReportProgress(data)
@@ -491,23 +578,24 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             // SteamCMD prints no progress lines when non-interactive, so the staged size is the only signal.
             let stopStagingPoll = Self.pollStagedBytes(
                 in: SteamLibraryPaths.workshopStagingDirectories(
-                    steamRoot: libraryRoot, appID: SteamLibraryPaths.wallpaperEngineAppID, itemID: workshopID
+                    steamRoot: workerLibrary, appID: SteamLibraryPaths.wallpaperEngineAppID, itemID: workshopID
                 ),
-                canContinue: { liveness.canContinue },
+                canContinue: { liveness.canContinue && !job.isCancelled },
                 report: report
             )
             let run = Self.runSteamCMD(
                 steamCMDPath: steamCMDPath,
                 arguments: [
                     "+@NoPromptForPassword", "1",
-                    "+force_install_dir", libraryRoot.path(percentEncoded: false),
+                    "+force_install_dir", workerLibrary.path(percentEncoded: false),
                     "+login", accountName,
                     "+workshop_download_item", SteamLibraryPaths.wallpaperEngineAppID, workshopID,
                     "+quit"
                 ],
                 timeout: 3600,
+                realHome: workspace.path,
                 operationID: operationID,
-                isCancelled: { !liveness.canContinue },
+                isCancelled: { !liveness.canContinue || job.isCancelled },
                 onProgress: report
             )
             stopStagingPoll()
@@ -515,7 +603,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             if run.timedOut {
                 respond(.timedOut, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
             }
-            guard liveness.canContinue else { respond(.unrecognized, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return }
+            guard liveness.canContinue, !job.isCancelled, !run.cancellationRequested else { respond(.unrecognized, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return }
             if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
                 respond(.loginRequired, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
             }
@@ -527,7 +615,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             }
             // Trust the tree, not the log line: SteamCMD prints the destination
             // it *intended*, and a partial run can leave that path absent.
-            let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: libraryRoot)
+            let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: workerLibrary)
                 .appendingPathComponent(workshopID, isDirectory: true)
             guard run.completedWorkshopItem else {
                 respond(.unrecognized, tail: out, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal); return
@@ -538,13 +626,13 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             // Normal success leaves detailed format validation to the importer. A rescued
             // receipt from before a restart additionally needs committed content now.
             let committed = finalRunCompleted
-                ? SteamLibraryPaths.isWritable(project, steamRoot: libraryRoot)
+                ? SteamLibraryPaths.isWritable(project, steamRoot: workerLibrary)
                 && FileManager.default.fileExists(atPath: project.path(percentEncoded: false))
-                : SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: libraryRoot)
+                : SteamWorkshopDownloadCompletion.validCommittedItem(at: folder, steamRoot: workerLibrary)
             guard committed else {
                 // Name the one way this can happen: a SteamCMD that ignored
                 // `force_install_dir` would leave the item in the profile.
-                let stray = (try? SteamCMDProfile.steamRoot(accountName: accountName))
+                let stray = (try? SteamCMDProfile.steamRoot(accountName: accountName, realHome: workspace.path))
                     .map { SteamLibraryPaths.workshopContentRoot(steamRoot: $0).appendingPathComponent(workshopID, isDirectory: true) }
                     .map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false
                 respond(
@@ -553,7 +641,15 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 )
                 return
             }
-            respond(.downloaded, tail: out, path: folder.path(percentEncoded: false), executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal)
+            do {
+                let published = try Self.steamCMDQueue.sync {
+                    try SteamLibraryWriter.publishWorkshopItem(workshopID: workshopID, from: workerLibrary, to: libraryRoot,
+                                                               isCancelled: { !liveness.canContinue || job.isCancelled })
+                }
+                respond(.downloaded, tail: out, path: published.path, executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal)
+            } catch {
+                respond(.unrecognized, tail: "Could not publish downloaded Workshop item: \(error)", executed: steamCMDPath, exitCode: run.exitCode, signal: run.terminationSignal)
+            }
         }
     }
 
@@ -595,12 +691,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     }
 
     func listSubscribedWorkshopItems(accountName: String, with reply: @escaping @Sendable (Data) -> Void) {
+        let operationID = UUID().uuidString
+        let liveness = callerLiveness
+        liveness.own(operationID: operationID)
         @Sendable func respond(
             _ outcome: SteamSubscribedItemsResult.Outcome,
             tail: String = "",
             ids: [String] = [],
             executed: String? = nil
         ) {
+            liveness.disown(operationID: operationID)
             let result = SteamSubscribedItemsResult(
                 outcome: outcome,
                 workshopIDs: ids,
@@ -614,7 +714,6 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return
         }
 
-        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard liveness.isLive(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
@@ -628,7 +727,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 return
             }
             let probe = Self.readSubscriptions(
-                accountName: accountName, steamCMDPath: steamCMDPath, probeID: probeID
+                accountName: accountName, steamCMDPath: steamCMDPath, probeID: probeID,
+                operationID: operationID, isCancelled: { !liveness.canContinue }
             )
             Self.discardSubscriptionProbe(scratch)
             respond(probe.outcome, tail: probe.tail, ids: probe.ids, executed: steamCMDPath)
@@ -637,13 +737,17 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
 
     /// Runs `workshop_status` against a fake Wallpaper Engine install in `scratch`,
     /// then reads the subscription list SteamCMD keeps in the account profile.
-    private static func readSubscriptions(
+    static func readSubscriptions(
         accountName: String,
         steamCMDPath: String,
-        probeID: UUID
+        probeID: UUID,
+        operationID: String? = nil,
+        isCancelled: @escaping @Sendable () -> Bool = { false },
+        realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
+        timeout: TimeInterval = 180
     ) -> (outcome: SteamSubscribedItemsResult.Outcome, tail: String, ids: [String]) {
         let appID = SteamLibraryPaths.wallpaperEngineAppID
-        guard let scratch = try? SteamCMDProfile.prepareSubscriptionProbe(accountName: accountName, id: probeID) else {
+        guard let scratch = try? SteamCMDProfile.prepareSubscriptionProbe(accountName: accountName, id: probeID, realHome: realHome) else {
             return (.unrecognized, "Could not prepare the subscription probe inside the private profile", [])
         }
         // `force_install_dir` must precede `+login` or the run reaches the shared library.
@@ -654,12 +758,15 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 "+force_install_dir", scratch.path(percentEncoded: false),
                 "+login", accountName,
                 "+workshop_status", appID,
-                "+quit",
             ],
-            timeout: 180
+            timeout: timeout,
+            realHome: realHome,
+            operationID: operationID,
+            isCancelled: isCancelled,
+            waitForSubscriptions: true
         )
         let out = run.output
-        if run.timedOut {
+        if run.timedOut || run.cancellationRequested {
             return (.timedOut, out, [])
         }
         if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
@@ -674,11 +781,14 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return (.unrecognized, "SteamCMD did not load app \(appID); subscriptions were not requested", [])
         }
         // A failed run can still leave the previous run's subscriptions file behind.
-        guard run.exitCode == 0 else {
+        guard run.exitCode == 0, run.terminationSignal == nil else {
             return (.unrecognized, "SteamCMD exited \(run.exitCode) after requesting subscriptions; the cached list may be stale", [])
         }
+        guard let refresh = run.subscriptionRefresh else {
+            return (.unrecognized, "SteamCMD did not confirm this subscription refresh; cached subscriptions were not used", [])
+        }
         guard let accountID = SteamCachedLoginParser.accountID(inLoginLine: out),
-              let file = try? SteamCMDProfile.subscriptionsFile(accountName: accountName, accountID: accountID) else {
+              let file = try? SteamCMDProfile.subscriptionsFile(accountName: accountName, accountID: accountID, realHome: realHome) else {
             return (.unrecognized, "SteamCMD output carried no account id; subscriptions file not located", [])
         }
         let fd = open(file.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW)
@@ -686,8 +796,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         guard fd >= 0,
               let data = try? FileHandle(fileDescriptor: fd, closeOnDealloc: true).readToEnd(),
               let text = String(data: data, encoding: .utf8),
-              let ids = SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: text) else {
-            return (.unrecognized, "SteamCMD left no readable \(appID)_subscriptions.vdf in the account profile", [])
+              let ids = refresh.subscriptions(in: text) else {
+            return (.unrecognized, "SteamCMD left no readable \(appID)_subscriptions.vdf matching this subscription refresh", [])
         }
         return (.listed, out, ids)
     }
@@ -712,10 +822,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             reply((try? JSONEncoder().encode(refused)) ?? Data())
             return
         }
-        // On the SteamCMD queue since downloads started landing in the shared
-        // library directly: an unlink walking the same item tree a running
-        // `workshop_download_item` is writing would leave a half-deleted item
-        // and a download that reports success over missing files.
+        // Order deletion against publication and revoke any isolated job for this item.
         let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
@@ -727,6 +834,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 )
                 return reply((try? JSONEncoder().encode(expired)) ?? Data())
             }
+            for id in Self.downloadJobs.cancel(itemID: workshopID, libraryPath: libraryRoot.path) {
+                _ = Self.activeSteamCMD.terminateActive(operationID: id)
+            }
             let result = SteamLibraryWriter.deleteWorkshopItem(workshopID: workshopID, steamRoot: libraryRoot)
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
@@ -737,7 +847,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// A SIGTERMed child exits with a non-42 status, which also stops the
     /// self-update restart loop in `runSteamCMD`.
     func cancelActiveSteamCMD(operationID: String, with reply: @escaping @Sendable (Data) -> Void) {
-        let killed = Self.activeSteamCMD.terminateActive(operationID: operationID)
+        let cancelledJobs = Self.downloadJobs.cancel(operationID: operationID)
+        let killed = Self.activeSteamCMD.terminateActive(operationID: operationID) || !cancelledJobs.isEmpty
         reply((try? JSONEncoder().encode(killed)) ?? Data())
     }
 
@@ -1288,7 +1399,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             pid: process.processIdentifier, hasOwnGroup: false, operationID: operationID,
             isCancelled: isCancelled
         )
-        defer { activeSteamCMD.clear() }
+        defer { activeSteamCMD.clear(pid: process.processIdentifier) }
 
         func write(secret: String) {
             var data = Data((secret + "\n").utf8)
@@ -1417,7 +1528,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
         process.waitUntilExit()
-        activeSteamCMD.clear()
+        activeSteamCMD.clear(pid: process.processIdentifier)
         guard !isCancelled(), outcome == .success, process.terminationStatus == 0 else {
             return .failed(outcome == .success ? .failed : outcome, reason: refusalReason)
         }
@@ -1473,14 +1584,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
         let liveness = callerLiveness
         let enqueuedAt = Date()
-        // On the SteamCMD queue so a removal cannot run while a login or
-        // download is using the same profile.
+        // Order removal against login/snapshot and revoke the account's isolated jobs.
         Self.steamCMDQueue.async {
             guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 return send(SteamAccountSessionRemovalResult(
                     outcome: .refused,
                     failureReason: "removal expired while queued behind another SteamCMD operation"
                 ))
+            }
+            for id in Self.downloadJobs.cancel(accountName: accountName) {
+                _ = Self.activeSteamCMD.terminateActive(operationID: id)
             }
             guard let directory = try? SteamCMDProfile.sessionDirectory(accountName: accountName) else {
                 return send(SteamAccountSessionRemovalResult(

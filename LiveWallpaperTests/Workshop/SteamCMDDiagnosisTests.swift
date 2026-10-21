@@ -140,7 +140,8 @@ struct SteamCMDDiagnosisRemedyTests {
         let advice = SteamCMDDiagnosis.notFound(
             resolutionFailure: "userPicked: notMachO", rejectedExisting: []
         ).remedy
-        #expect(advice?.contains("brew install --cask steamcmd") == true)
+        #expect(advice?.contains("Set up SteamCMD") == true)
+        #expect(advice?.contains("brew install") == false)
         #expect(advice?.contains("notMachO") == true)
     }
 
@@ -154,14 +155,14 @@ struct SteamCMDDiagnosisRemedyTests {
     }
 
     @Test("A bad signature explains both a refused launch and a failed spawn", arguments: [false, true])
-    func brokenSignatureAdvisesReinstall(launchAttempted: Bool) {
+    func brokenSignatureAdvisesManagedInstall(launchAttempted: Bool) {
         let advice = diagnosis(
             signature: SteamCMDSignatureVerdict(
                 isValid: false, teamIdentifier: nil, isHardenedRuntime: false
             ),
             launch: launchAttempted ? launch(.couldNotSpawn, exitCode: -1) : nil
         ).remedy
-        #expect(advice?.contains("reinstall") == true)
+        #expect(advice?.contains("Set up SteamCMD") == true)
         #expect(advice?.contains("xattr") == false)
     }
 
@@ -172,7 +173,7 @@ struct SteamCMDDiagnosisRemedyTests {
             quarantined: true, launch: nil
         ).remedy
         #expect(advice?.contains("Valve") == true)
-        #expect(advice?.contains("reinstall") == true)
+        #expect(advice?.contains("Set up SteamCMD") == true)
         #expect(advice?.contains("xattr") == false)
     }
 
@@ -470,14 +471,15 @@ struct SteamCMDHomebrewDiscoveryTests {
         let nothingOnDisk = SteamCMDDiagnosis.notFound(
             resolutionFailure: "not a Mach-O", rejectedExisting: []
         )
-        #expect(nothingOnDisk.remedy?.contains("brew install --cask steamcmd") == true)
+        #expect(nothingOnDisk.remedy?.contains("Set up SteamCMD") == true)
 
         let onDisk = SteamCMDDiagnosis.notFound(
             resolutionFailure: "not a Mach-O",
             rejectedExisting: ["/opt/homebrew/Caskroom/steamcmd/1779919584/MacOS/steamcmd"]
         )
         #expect(onDisk.remedy?.contains("/opt/homebrew/Caskroom/steamcmd/1779919584/MacOS/steamcmd") == true)
-        #expect(onDisk.remedy?.contains("brew reinstall") == true)
+        #expect(onDisk.remedy?.contains("Set up SteamCMD") == true)
+        #expect(onDisk.remedy?.contains("brew reinstall") == false)
         #expect(onDisk.remedy?.contains("brew install --cask steamcmd") == false)
     }
 
@@ -490,7 +492,7 @@ struct SteamCMDHomebrewDiscoveryTests {
             SteamCMDDiagnosis.self, from: Data(legacy.utf8)
         )
         #expect(decoded.rejectedExistingPaths.isEmpty)
-        #expect(decoded.remedy?.contains("brew install --cask steamcmd") == true)
+        #expect(decoded.remedy?.contains("Set up SteamCMD") == true)
     }
 
     @Test("The bin symlink is still tried before the Caskroom behind it")

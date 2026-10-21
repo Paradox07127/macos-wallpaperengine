@@ -2,8 +2,46 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-@Suite("SteamCMD active-process cancel registry")
+@Suite("SteamCMD active-process cancel registry", .serialized)
 struct SteamCMDCancelRegistryTests {
+    @Test("Cancel and reap one of three children without losing the other registrations")
+    func independentChildren() {
+        let registry = SteamCMDActiveProcessRegistry()
+        defer { SteamCMDActiveProcessRegistry.resetHostExitForTesting() }
+        for pid: pid_t in [701, 702, 703] {
+            registry.register(pid: pid, hasOwnGroup: true, operationID: String(pid), kill: { _, _ in 0 })
+        }
+        var signals: [pid_t] = []
+        #expect(registry.terminateActive(operationID: "702", kill: { pid, _ in signals.append(pid); return 0 }))
+        #expect(signals == [-702])
+        #expect(registry.cancellationRequested(for: 702))
+        #expect(!registry.cancellationRequested(for: 701))
+        registry.clear(pid: 702)
+        signals.removeAll()
+        #expect(registry.terminateActiveForHostExit(kill: { pid, _ in signals.append(pid); return 0 }))
+        #expect(Set(signals) == [-701, -703])
+    }
+
+    @Test("Queued cancellation and account removal invalidate only the matching jobs")
+    func queuedJobCancellation() {
+        let jobs = SteamCMDDownloadJobs()
+        _ = jobs.cancel(operationID: "cancel-before-arrival")
+        let first = SteamCMDDownloadJob(operationID: "cancel-before-arrival", accountName: "Alice", itemID: "1", libraryPath: "/a")
+        let second = SteamCMDDownloadJob(operationID: "b", accountName: "Bob", itemID: "2", libraryPath: "/a")
+        let third = SteamCMDDownloadJob(operationID: "c", accountName: "alice", itemID: "3", libraryPath: "/b")
+        [first, second, third].forEach(jobs.insert)
+        #expect(first.isCancelled)
+        #expect(!second.isCancelled)
+        #expect(!third.isCancelled)
+        #expect(Set(jobs.cancel(accountName: "ALICE")) == [first.operationID, third.operationID])
+        #expect(third.isCancelled)
+        #expect(!second.isCancelled)
+        jobs.remove(first)
+        jobs.remove(third)
+        #expect(jobs.cancel(itemID: "2", libraryPath: "/b").isEmpty)
+        #expect(!second.isCancelled)
+    }
+
     @Test("registered group is SIGTERMed as a group; cleared registry kills nothing")
     func terminateActiveGroupThenClear() {
         let registry = SteamCMDActiveProcessRegistry()
@@ -43,6 +81,7 @@ struct SteamCMDCancelRegistryTests {
 
     @Test("host exit signals the active child whatever operation it belongs to")
     func hostExitTerminatesRegardlessOfOperation() {
+        defer { SteamCMDActiveProcessRegistry.resetHostExitForTesting() }
         let registry = SteamCMDActiveProcessRegistry()
         registry.register(pid: 313, hasOwnGroup: true, operationID: UUID().uuidString)
         var signalled: [(pid: pid_t, signal: Int32)] = []
@@ -64,6 +103,7 @@ struct SteamCMDCancelRegistryTests {
 
     @Test("a child the app never named is reachable by host exit and by nothing else")
     func unnamedChildIsReachableOnlyByHostExit() {
+        defer { SteamCMDActiveProcessRegistry.resetHostExitForTesting() }
         let registry = SteamCMDActiveProcessRegistry()
         registry.register(pid: 414, hasOwnGroup: false, operationID: nil)
 

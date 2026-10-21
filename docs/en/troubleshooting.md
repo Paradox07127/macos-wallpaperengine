@@ -48,10 +48,15 @@
 
 ## Workshop (Pro)
 
+The automatic-discovery diagnosis and first-run recovery below are current-source
+updates made after the published 0.9.0b2 package.
+
 | Problem | Check | Fix |
 |---|---|---|
 | Downloads fail | SteamCMD state, Steam login | Open **Settings → Workshop** — the **Steam connection** section diagnoses the Steam library, SteamCMD, and your account, and can auto-configure. Expand **Diagnostics** in that section for the individual probes |
 | **Set up SteamCMD** (or **Install SteamCMD** in onboarding) fails | The failure message identifies manifest, download, checksum or signature validation | Retry; a mismatch can be an incomplete download or trust failure, not proof of a specific cause. Do not bypass verification; use a verified existing install if needed |
+| A fresh Homebrew SteamCMD installation cannot start on Apple Silicon | Homebrew's initial download is an Intel-only bootstrapper; SteamCMD's current update packages include ARM64 | Use **Set up SteamCMD → Download and install** for a native managed copy. To keep using the Homebrew copy, Rosetta must be available; manually run `steamcmd +quit` in Terminal to let SteamCMD update itself, then choose **Locate automatically** |
+| **Locate automatically** reports that SteamCMD was not launched | The exported Diagnostics report's `autoDetection` records signature, quarantine and whether this check attempted a launch; an unbound binary alone does not identify the cause | Accept the in-app **Download and install** recovery when offered, or retry after a busy/timeout result. The built-in installer needs no prior Terminal launch. A null launch result means this check did not launch the tool, not that it was never run historically |
 | A SteamCMD you picked stops working | It's re-verified on **every** run, not only when you chose it — an upgrade that changed its signature will be rejected | Re-pick it with **Choose SteamCMD**, or switch to a managed install |
 | Browse shows nothing | Filters, connectivity, and API-key status for API-only features | Clear restrictive filters and retry. Public browsing can work without a key; creator/preset/API queries may require one. Presets are hidden from general browse by default |
 | Import says an item "is already in your library from another folder" | The library keeps one entry per Workshop item | Use the entry already in the library. A Steam download of the same item asks before it replaces a local copy |

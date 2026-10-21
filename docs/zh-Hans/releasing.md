@@ -105,9 +105,9 @@ Gatekeeper 命令里——这也是它在打包时生成、而不是作为静态
 
 ```sh
 scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks \
-  --notes-file <private-notes>
+  --notes-file build/release-notes/X.Y.Z.md
 scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks \
-  --notes-file <private-notes>
+  --notes-file build/release-notes/X.Y.Z.md
 ```
 
 `--notes-file` 实际上不是可选项。不加的话 appcast 会退回到只有 quarantine 那一行，
@@ -266,3 +266,13 @@ shasum -a 256 Loomscreen-X.Y.Z.dmg   # 必须等于 build/release/Loomscreen-X.Y
 3. 启动 Loomscreen，确认菜单栏应用能打开。
 4. 在 **设置 → 关于** 里确认版本为 `X.Y.Z`。
 5. 确认**立即检查**走的是 Sparkle（不是报错，也不是 appcast 还没上 `main` 时的假“已是最新”）。
+
+## 本地产物保留
+
+当前 stable 和 beta 的 DMG、校验文件、xcarchive 及匹配 dSYM 保留在
+`build/release/`。旧版本按整组移入 `build/release/archive/YYYY-MM/`；精确匹配的
+dSYM 用于历史崩溃符号化，继续保留。记录移动前后路径，不改写发布收据里的历史测量或签名。
+
+核对保留的 DMG 且确认暂存路径没有运行中的应用后，可删除 `staging-Loomscreen*`
+暂存副本。编译和模块缓存可以重建；唯一 xcresult、trace、源码快照和许可来源应明确保留或归档，
+不整批删除。当前 shader 工具链输入继续按 `WPEShaderCompiler/toolchain-inputs.sha256` 固定。

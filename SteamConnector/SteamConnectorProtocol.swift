@@ -219,9 +219,11 @@ final class SteamConnectorCallerLiveness: Sendable {
     }
 }
 
-/// The one SteamCMD child currently running, so a user cancel can reach the
-/// real process, not just the app-side await. The connector serializes every
-/// SteamCMD run on one queue, so at most one child exists at a time.
+enum SteamCMDDownloadLimits {
+    static let maximumConcurrent = 3
+}
+
+/// Tracks all owned children; a cancel reaches only its own operation.
 /// Identified by the app's own operation id, not by kind of work: a
 /// kind-scoped id could arrive over XPC after the *next* same-kind run
 /// registered, and kill that innocent child — exactly what "cancel, then
@@ -235,7 +237,7 @@ final class SteamCMDActiveProcessRegistry: Sendable {
         var cancellationRequested = false
     }
 
-    private let state = OSAllocatedUnfairLock<Active?>(initialState: nil)
+    private let state = OSAllocatedUnfairLock<[pid_t: Active]>(initialState: [:])
 
     /// Set once by host exit and never cleared: the serial queue would otherwise start the next
     /// queued body's child after the one that was signalled, and launchd's SIGKILL of the service
@@ -259,18 +261,26 @@ final class SteamCMDActiveProcessRegistry: Sendable {
         isCancelled: () -> Bool = { false },
         kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }
     ) {
-        state.withLock { $0 = Active(pid: pid, hasOwnGroup: hasOwnGroup, operationID: operationID) }
+        state.withLock { $0[pid] = Active(pid: pid, hasOwnGroup: hasOwnGroup, operationID: operationID) }
         if Self.hostExiting || isCancelled() {
             _ = kill(hasOwnGroup ? -pid : pid, SIGTERM)
         }
     }
 
     func clear() {
-        state.withLock { $0 = nil }
+        state.withLock { $0.removeAll() }
+    }
+
+    func clear(pid: pid_t) {
+        _ = state.withLock { $0.removeValue(forKey: pid) }
+    }
+
+    func cancellationRequested(for pid: pid_t) -> Bool {
+        state.withLock { $0[pid]?.cancellationRequested ?? false }
     }
 
     var cancellationRequested: Bool {
-        state.withLock { $0?.cancellationRequested ?? false }
+        state.withLock { $0.values.contains { $0.cancellationRequested } }
     }
 
     /// SIGTERM to the active child — its whole process group when it has one,
@@ -280,22 +290,92 @@ final class SteamCMDActiveProcessRegistry: Sendable {
     /// child was registered under: a cancel for one operation must never
     /// signal a different one's child (review finding, both models).
     func terminateActive(operationID: String, kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) -> Bool {
-        guard let active = state.withLock({ current -> Active? in
-            guard current?.operationID == operationID else { return nil }
-            current?.cancellationRequested = true
-            return current
-        }) else { return false }
-        _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
-        return true
+        // Signal under the lock, before a child can be reaped and its PID reused.
+        state.withLockUnchecked { current in
+            let matches = current.values.filter { $0.operationID == operationID }
+            for active in matches {
+                current[active.pid]?.cancellationRequested = true
+                _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
+            }
+            return !matches.isEmpty
+        }
     }
 
     /// Host exit only: no operation id check, because after a quit there is no later run for a stale cancel to hit.
     /// Also latches `hostExiting`, so queued bodies bail and a child that slips through `register` is signalled there.
     func terminateActiveForHostExit(kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) -> Bool {
         Self.hostExitState.withLock { $0 = true }
-        guard let active = state.withLock({ $0 }) else { return false }
-        _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
-        return true
+        return state.withLockUnchecked { current in
+            for active in current.values {
+                _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
+            }
+            return !current.isEmpty
+        }
+    }
+}
+
+/// Cancellation belongs to the job, including time spent waiting for a worker or publication.
+final class SteamCMDDownloadJob: Sendable {
+    let id = UUID()
+    let operationID: String
+    let accountName: String
+    let itemID: String
+    let libraryPath: String
+    private let cancelled = OSAllocatedUnfairLock(initialState: false)
+
+    init(operationID: String, accountName: String, itemID: String, libraryPath: String) {
+        self.operationID = operationID
+        self.accountName = accountName.lowercased()
+        self.itemID = itemID
+        self.libraryPath = libraryPath
+    }
+
+    var isCancelled: Bool {
+        cancelled.withLock { $0 }
+    }
+
+    func cancel() {
+        cancelled.withLock { $0 = true }
+    }
+}
+
+final class SteamCMDDownloadJobs: Sendable {
+    private struct State {
+        var jobs: [UUID: SteamCMDDownloadJob] = [:]
+        var cancelledOperations: [String: Date] = [:]
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func insert(_ job: SteamCMDDownloadJob) {
+        state.withLock {
+            $0.cancelledOperations = $0.cancelledOperations.filter { $0.value.timeIntervalSinceNow > -900 }
+            if $0.cancelledOperations[job.operationID] != nil {
+                job.cancel()
+            }
+            $0.jobs[job.id] = job
+        }
+    }
+
+    func remove(_ job: SteamCMDDownloadJob) {
+        _ = state.withLock { $0.jobs.removeValue(forKey: job.id) }
+    }
+
+    /// The returned IDs are signalled outside this lock by the connector.
+    func cancel(operationID: String? = nil, accountName: String? = nil, itemID: String? = nil, libraryPath: String? = nil) -> [String] {
+        state.withLock { current in
+            if let operationID {
+                current.cancelledOperations[operationID] = Date()
+            }
+            return current.jobs.values.compactMap { job in
+                guard operationID == nil || job.operationID == operationID,
+                      accountName == nil || job.accountName == accountName?.lowercased(),
+                      itemID == nil || job.itemID == itemID,
+                      libraryPath == nil || job.libraryPath == libraryPath else { return nil }
+                job.cancel()
+                return job.operationID
+            }
+        }
     }
 }
 
@@ -1246,9 +1326,111 @@ enum SteamAccountsFile {
     }
 }
 
+/// Follows only bytes appended during one SteamCMD execution. The console's
+/// `workshop_status` command returns before its subscription request completes;
+/// the Workshop log is where SteamCMD acknowledges that response.
+final class SteamCMDSubscriptionRefresh {
+    struct Completion: Equatable {
+        let count: Int
+        /// A changed list carries the server's version, which must also be in
+        /// the ledger. An unchanged response explicitly authorizes the cache.
+        let updatedAt: String?
+
+        func subscriptions(in text: String) -> [String]? {
+            guard SteamWorkshopManifest.subscriptionField("appid", in: text) == SteamLibraryPaths.wallpaperEngineAppID,
+                  let ids = SteamWorkshopManifest.subscribedIDs(fromSubscriptionsVDF: text),
+                  ids.count == count else { return nil }
+            if let updatedAt,
+               SteamWorkshopManifest.subscriptionField("time_last_updated", in: text) != updatedAt {
+                return nil
+            }
+            return ids
+        }
+    }
+
+    private let logURL: URL
+    private var identity: (device: dev_t, inode: ino_t)?
+    private var offset: off_t = 0
+    private var framer = SteamCMDOutputFramer()
+    private var requested = false
+    private(set) var completion: Completion?
+
+    init(logURL: URL) {
+        self.logURL = logURL
+        let fd = open(logURL.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return }
+        identity = (info.st_dev, info.st_ino)
+        offset = info.st_size
+    }
+
+    func poll() {
+        let fd = open(logURL.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return }
+        if identity?.device != info.st_dev || identity?.inode != info.st_ino || info.st_size < offset {
+            offset = 0
+            framer = SteamCMDOutputFramer()
+            requested = false
+            completion = nil
+        }
+        identity = (info.st_dev, info.st_ino)
+        guard lseek(fd, offset, SEEK_SET) >= 0 else { return }
+        // Bounded per poll and per line, even if a broken child floods the log.
+        var bytes = [UInt8](repeating: 0, count: 64 * 1024)
+        let count = read(fd, &bytes, bytes.count)
+        guard count > 0 else { return }
+        offset += off_t(count)
+        for line in framer.append(Data(bytes.prefix(count))) {
+            let app = "[AppID \(SteamLibraryPaths.wallpaperEngineAppID)] "
+            guard let marker = line.range(of: app) else { continue }
+            let message = String(line[marker.upperBound...])
+            if message == "Requesting updated subscription list" {
+                requested = true
+                completion = nil
+            } else if requested,
+                      let match = message.firstMatch(of: /^Subscribed items changed\. Number of items: ([0-9]+) \(update time: ([0-9]+)\)$/),
+                      let count = Int(match.1) {
+                completion = Completion(count: count, updatedAt: String(match.2))
+            } else if requested,
+                      let match = message.firstMatch(of: /^Subscribed items did not change\. Number of items: ([0-9]+)(?: \(cache update time: [0-9]+\))?$/),
+                      let count = Int(match.1) {
+                completion = Completion(count: count, updatedAt: nil)
+            }
+        }
+    }
+}
+
 /// The account's Workshop subscription list as SteamCMD keeps it in the profile,
 /// readable without a publisher Web API key.
 enum SteamWorkshopManifest {
+    /// Read only scalar fields at the root of the subscription ledger; a
+    /// similarly named field inside an item cannot authorize an old cache.
+    static func subscriptionField(_ name: String, in text: String) -> String? {
+        var cursor = text.startIndex
+        guard SteamAccountsFile.nextQuoted(in: text[...], from: &cursor) == "subscribedfiles",
+              let root = SteamAccountsFile.nextBraceBlock(in: text[...], from: &cursor) else { return nil }
+        cursor = root.startIndex
+        while let key = SteamAccountsFile.nextQuoted(in: root, from: &cursor) {
+            while cursor < root.endIndex, root[cursor].isWhitespace {
+                cursor = root.index(after: cursor)
+            }
+            if cursor < root.endIndex, root[cursor] == "{" {
+                guard SteamAccountsFile.nextBraceBlock(in: root, from: &cursor) != nil else { return nil }
+            } else {
+                guard let value = SteamAccountsFile.nextQuoted(in: root, from: &cursor) else { return nil }
+                if key == name {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
     /// SteamCMD only requests the subscription list for apps it sees installed;
     /// without `Universe` it ignores the manifest.
     static let probeAppManifest = """
@@ -1882,20 +2064,19 @@ enum SteamCMDDiagnosisRemedy {
         }
         guard let path = diagnosis.canonicalPath else {
             let detail = diagnosis.resolutionFailure.map { " (\($0))" } ?? ""
-            // "Install it with brew" is a dead end when brew already has it:
-            // the user runs the command, is told it is installed, and lands
-            // back here. Name the copy we found and could not use instead.
+            // Preserve the existing-copy evidence, but send first installs and
+            // recovery through the same managed-install entry point.
             if let found = unusableExisting.first {
                 return """
                 SteamCMD is installed at \(found), but Loomscreen could not use it\(detail). \
-                Reinstall it with `brew reinstall --cask steamcmd`, or choose the steamcmd \
-                binary yourself in Workshop settings.
+                Choose Set up SteamCMD in Workshop settings to let Loomscreen install its \
+                own copy, or choose another existing steamcmd binary yourself.
                 """
             }
             return """
-            SteamCMD was not found on this Mac\(detail). Install it with \
-            `brew install --cask steamcmd`, or choose the steamcmd binary yourself in \
-            Workshop settings.
+            SteamCMD was not found on this Mac\(detail). Choose Set up SteamCMD in \
+            Workshop settings to let Loomscreen install it, or choose an existing \
+            steamcmd binary yourself.
             """
         }
         // A trust-gate refusal has no launch receipt. Explain the gate before
@@ -1904,8 +2085,8 @@ enum SteamCMDDiagnosisRemedy {
             if diagnosis.signature?.isValveSigned != true {
                 return """
                 Loomscreen did not start SteamCMD at \(path) because its Valve signature \
-                could not be verified. Reinstall it with `brew reinstall --cask steamcmd`, \
-                or let Loomscreen install its own copy.
+                could not be verified. Choose Set up SteamCMD in Workshop settings to let \
+                Loomscreen install its own copy.
                 """
             }
             if diagnosis.isQuarantined {
@@ -2443,6 +2624,14 @@ enum SteamCMDProfile {
             throw ProfileError.unsafeDirectory
         }
         return probe
+    }
+
+    static func prepareDownloadWorker(id: UUID, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        let directory = root(realHome: realHome).appendingPathComponent("DownloadWorkers/\(id.uuidString)", isDirectory: true)
+        let relative = directory.pathComponents.dropFirst(URL(fileURLWithPath: realHome).pathComponents.count)
+        let fd = try openPrivateDirectory(Array(relative), realHome: realHome)
+        close(fd)
+        return directory
     }
 
     static func subscriptionsFile(accountName: String, accountID: UInt32, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {

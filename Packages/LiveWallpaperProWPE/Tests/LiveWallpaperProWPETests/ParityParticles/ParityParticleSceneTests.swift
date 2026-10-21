@@ -401,17 +401,18 @@ final class ParityParticleSceneTests: XCTestCase {
     func testParticleDrawKeysAndContainerNodesAgreeOnCaptureAndWorkshopScenes() throws {
         let install = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-        let capture = URL(fileURLWithPath: ProcessInfo.processInfo.environment["WPE_HLSL_CAPTURE_DIR"]
-            ?? "/Users/example/Developer/wpe-fixtures/hlsl-capture-2026-10-12")
+        let capture = ProcessInfo.processInfo.environment["WPE_HLSL_CAPTURE_DIR"].map { URL(fileURLWithPath: $0) }
         var checked = 0
-        for sceneID in ["3509243656", "3660962877"] {
-            let directory = capture.appendingPathComponent("scene-sources/\(sceneID)")
-            guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("scene.json").path) else {
-                continue
+        if let capture {
+            for sceneID in ["3509243656", "3660962877"] {
+                let directory = capture.appendingPathComponent("scene-sources/\(sceneID)")
+                guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("scene.json").path) else {
+                    continue
+                }
+                checked += try Self.assertKeysAlign(
+                    directory, assets: [capture.appendingPathComponent("wpeassets"), install], label: sceneID
+                )
             }
-            checked += try Self.assertKeysAlign(
-                directory, assets: [capture.appendingPathComponent("wpeassets"), install], label: sceneID
-            )
         }
         let package = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
             "Library/Application Support/Steam/steamapps/workshop/content/431960/3448877775/scene.pkg"

@@ -127,9 +127,9 @@ Expected commands, Lite first so packaging order matches upload order:
 
 ```sh
 scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks \
-  --notes-file <private-notes>
+  --notes-file build/release-notes/X.Y.Z.md
 scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks \
-  --notes-file <private-notes>
+  --notes-file build/release-notes/X.Y.Z.md
 ```
 
 `--notes-file` is not optional in practice. Without it the appcast falls back to
@@ -312,3 +312,17 @@ Then smoke the build itself:
 4. In **Settings -> About**, confirm the version is `X.Y.Z`.
 5. Confirm **Check Now** talks to Sparkle (not an error, not a false
    “up to date” before the appcast is on `main`).
+
+## Local artifact retention
+
+Keep current stable and beta DMGs, checksums, xcarchives and matching dSYMs in
+`build/release/`. Move superseded releases together into
+`build/release/archive/YYYY-MM/`; retain their exact dSYMs for crash symbolication.
+Record old/new paths when moving artifacts, without rewriting the historical
+measurements or signatures in release receipts.
+
+After verifying the retained DMG and confirming no app is using the staging path,
+remove the disposable `staging-Loomscreen*` copies. Compiler/module caches can be
+rebuilt; unique xcresults, traces, source snapshots and license provenance need
+explicit retention or archival rather than blanket deletion. Keep the active
+shader-toolchain inputs pinned by `WPEShaderCompiler/toolchain-inputs.sha256`.

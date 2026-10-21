@@ -502,6 +502,92 @@ struct SteamLibraryWriterBehaviourTests {
         #expect(Self.exists(published.appendingPathComponent("project.json")))
     }
 
+    @Test("Publishing isolated workers merges only their own ledger records and preserves existing content")
+    func isolatedPublicationMergesLedger() throws {
+        let first = try Self.makeTree()
+        let second = try Self.makeTree()
+        let target = try Self.makeTree()
+        defer { first.cleanup(); second.cleanup(); target.cleanup() }
+        let nextID = "3725117708"
+        let nextItem = second.item.deletingLastPathComponent().appendingPathComponent(nextID)
+        try FileManager.default.moveItem(at: second.item, to: nextItem)
+        let leaf = "steamapps/workshop/appworkshop_431960.acf"
+        func manifest(_ id: String, _ size: Int) -> String {
+            #"""
+            "AppWorkshop" {
+              "appid" "431960" "SizeOnDisk" "\#(size)" "UnknownField" "keep me"
+              "WorkshopItemsInstalled" { "\#(id)" { "size" "\#(size)" "manifest" "123" } }
+              "WorkshopItemDetails" { "\#(id)" { "manifest" "123" } }
+            }
+            """#
+        }
+        try manifest(Self.itemID, 10).write(to: first.root.appendingPathComponent(leaf), atomically: true, encoding: .utf8)
+        try manifest(nextID, 20).write(to: second.root.appendingPathComponent(leaf), atomically: true, encoding: .utf8)
+        _ = try SteamLibraryWriter.publishWorkshopItem(workshopID: Self.itemID, from: first.root, to: target.root)
+        _ = try SteamLibraryWriter.publishWorkshopItem(workshopID: nextID, from: second.root, to: target.root)
+        let text = try String(contentsOf: target.root.appendingPathComponent(leaf), encoding: .utf8)
+        #expect(SteamWorkshopManifest.installedIDs(fromACF: text) == [Self.itemID, nextID])
+        #expect(text.contains("keep me"))
+        #expect(text.contains("\"SizeOnDisk\"\t\"30\""))
+        #expect(Self.exists(target.item.appendingPathComponent("project.json")))
+        #expect(Self.exists(SteamLibraryPaths.workshopContentRoot(steamRoot: target.root).appendingPathComponent(nextID + "/project.json")))
+        #expect(!Self.exists(first.item) && !Self.exists(nextItem))
+    }
+
+    @Test("A cancelled publication or linked ledger cannot change the old item")
+    func publicationRefusesCancellationAndLinkedLedger() throws {
+        let source = try Self.makeTree()
+        let target = try Self.makeTree()
+        defer { source.cleanup(); target.cleanup() }
+        let original = target.item.appendingPathComponent("project.json")
+        try Data("old".utf8).write(to: original)
+        #expect(throws: CancellationError.self) {
+            try SteamLibraryWriter.publishWorkshopItem(workshopID: Self.itemID, from: source.root, to: target.root, isCancelled: { true })
+        }
+        let leaf = target.root.appendingPathComponent("steamapps/workshop/appworkshop_431960.acf")
+        let sentinel = target.root.appendingPathComponent("sentinel")
+        try Data("untouched".utf8).write(to: sentinel)
+        try FileManager.default.createSymbolicLink(at: leaf, withDestinationURL: sentinel)
+        let workerLeaf = source.root.appendingPathComponent("steamapps/workshop/appworkshop_431960.acf")
+        try Data("\"AppWorkshop\" { \"appid\" \"431960\" }".utf8).write(to: workerLeaf)
+        #expect(throws: SteamLibraryWriter.WriteError.self) {
+            try SteamLibraryWriter.publishWorkshopItem(workshopID: Self.itemID, from: source.root, to: target.root)
+        }
+        #expect(try String(contentsOf: original, encoding: .utf8) == "old")
+        #expect(try String(contentsOf: sentinel, encoding: .utf8) == "untouched")
+        #expect(Self.exists(source.item))
+    }
+
+    @Test("Worker snapshots are private and abandoned credentials are reaped without touching live workers")
+    func workerAccountIsolationAndCrashRecovery() throws {
+        let scratch = try Self.makeTree()
+        defer { scratch.cleanup() }
+        let home = scratch.root.path
+        let source = try SteamCMDProfile.acquire(accountName: "test_account", realHome: home)
+        close(source.fd)
+        let sourceSteam = try SteamCMDProfile.steamRoot(accountName: "test_account", realHome: home)
+        let config = sourceSteam.appendingPathComponent("config/config.vdf")
+        let token = "fictional cached login"
+        try token.write(to: config, atomically: true, encoding: .utf8)
+        try "old library".write(to: config.deletingLastPathComponent().appendingPathComponent("libraryfolders.vdf"), atomically: true, encoding: .utf8)
+        let first = try SteamLibraryWriter.prepareDownloadWorkspace(id: UUID(), realHome: home)
+        try SteamLibraryWriter.snapshotDownloadAccount(accountName: "test_account", to: first.root, realHome: home)
+        let copy = try SteamCMDProfile.steamRoot(accountName: "test_account", realHome: first.root.path).appendingPathComponent("config/config.vdf")
+        #expect(try String(contentsOf: copy, encoding: .utf8) == token)
+        #expect(try String(contentsOf: config, encoding: .utf8) == token)
+        #expect(!Self.exists(copy.deletingLastPathComponent().appendingPathComponent("libraryfolders.vdf")))
+        let mode = try FileManager.default.attributesOfItem(atPath: first.root.path)[.posixPermissions] as? Int
+        #expect(mode == 0o700)
+        let second = try SteamLibraryWriter.prepareDownloadWorkspace(id: UUID(), realHome: home)
+        #expect(Self.exists(copy), "a live worker was reaped")
+        close(first.fd) // Simulate a crashed service releasing its OS lease.
+        let third = try SteamLibraryWriter.prepareDownloadWorkspace(id: UUID(), realHome: home)
+        #expect(!Self.exists(first.root), "abandoned cached credentials survived the next job")
+        #expect(Self.exists(second.root))
+        close(second.fd)
+        close(third.fd)
+    }
+
     private static let itemID = "3725117707"
 
     private static func makeTree() throws -> (root: URL, item: URL, cleanup: () -> Void) {

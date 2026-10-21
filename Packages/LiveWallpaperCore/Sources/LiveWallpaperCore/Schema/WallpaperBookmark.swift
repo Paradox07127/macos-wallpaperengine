@@ -1,7 +1,7 @@
 import Foundation
 
 /// Applying one never touches the target display's settings; `playbackSettings` is
-/// kept for older files and never read (see `<private-notes>`).
+/// kept for older files and never read.
 public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var label: String

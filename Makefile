@@ -131,8 +131,7 @@ test-app-hosted:
 	@echo "== Fast app architecture/security contracts (no Lite host) =="
 	DERIVED_DATA="$(DERIVED_DATA)" bash scripts/fast_app_contract_tests.sh --pro-only
 
-# .claude/ is gitignored, so this target is a local-only gate on the agent
-# guards themselves; it no-ops on a clean clone rather than failing.
+# Optional agent guard self-test; skips when the local hook is absent.
 hooks:
 	@if [[ -f .claude/hooks/test-hooks.py ]]; then \
 	  echo "== Agent gate self-test =="; \

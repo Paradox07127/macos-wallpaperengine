@@ -3,7 +3,7 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Hands downloads to the coordinator one at a time: the connector runs SteamCMD on a serial queue and drops a request that waited too long, so a batch sent at once times out everything after the first item.
+/// Bounds submitted downloads so queued items do not consume connector deadlines.
 @MainActor
 @Observable
 final class WorkshopDownloadQueue {
@@ -19,29 +19,32 @@ final class WorkshopDownloadQueue {
 
     static let shared = WorkshopDownloadQueue()
 
-    /// Waiting items in order; excludes `current`.
+    /// Waiting items in order; excludes active downloads.
     private(set) var pending: [UInt64] = []
-    private(set) var current: UInt64?
+    private(set) var active: Set<UInt64> = []
+    var current: UInt64? {
+        active.first
+    }
 
     @ObservationIgnored private let downloads: WorkshopDownloadCoordinator
     /// `phaseAtEnqueue` tells a success another entry point produced while the item waited from one it already had.
     @ObservationIgnored private var requests: [UInt64: (request: Request, phaseAtEnqueue: WorkshopDownloadCoordinator.DownloadPhase)] = [:]
-    @ObservationIgnored private var walk: Task<Void, Never>?
+    @ObservationIgnored private let maximumConcurrentDownloads: Int
 
-    init(downloads: WorkshopDownloadCoordinator = .shared) {
+    init(downloads: WorkshopDownloadCoordinator = .shared, maximumConcurrentDownloads: Int = SteamCMDDownloadLimits.maximumConcurrent) {
         self.downloads = downloads
+        self.maximumConcurrentDownloads = min(SteamCMDDownloadLimits.maximumConcurrent, max(1, maximumConcurrentDownloads))
     }
 
     func enqueue(_ newRequests: [Request]) {
         for request in newRequests {
             let itemID = request.itemID
-            guard itemID != current, requests[itemID] == nil, !downloads.isBusy(itemID) else { continue }
+            guard !active.contains(itemID), requests[itemID] == nil, !downloads.isBusy(itemID) else { continue }
             downloads.retainRequest(request)
             requests[itemID] = (request, downloads.phase(for: itemID))
             pending.append(itemID)
         }
-        guard walk == nil, !pending.isEmpty else { return }
-        walk = Task { [weak self] in await self?.drain() }
+        drain()
     }
 
     func isQueued(_ itemID: UInt64) -> Bool {
@@ -58,7 +61,7 @@ final class WorkshopDownloadQueue {
     /// Also stops a download another entry point started, so a row's cancel works whoever sent it.
     func cancel(_ itemID: UInt64) {
         remove(itemID)
-        if itemID == current || downloads.isBusy(itemID) {
+        if active.contains(itemID) || downloads.isBusy(itemID) {
             downloads.cancel(itemID)
         }
     }
@@ -68,24 +71,28 @@ final class WorkshopDownloadQueue {
         enqueue([request])
     }
 
-    private func drain() async {
-        while !pending.isEmpty {
+    private func drain() {
+        while active.count < maximumConcurrentDownloads, !pending.isEmpty {
             let itemID = pending.removeFirst()
             guard case let (request, phaseAtEnqueue)? = requests.removeValue(forKey: itemID) else { continue }
             if !downloads.isBusy(itemID), Self.isSuccess(downloads.phase(for: itemID)), !Self.isSuccess(phaseAtEnqueue) {
                 continue
             }
-            current = itemID
+            active.insert(itemID)
             let replacing = request.approvedReplacement
                 ?? (request.replacesLocalCopy ? downloads.libraryCopyBlockingDownload(of: itemID) : nil)
             if let attempt = downloads.download(
                 itemID: itemID, title: request.title, using: request.doctor, replacing: replacing
             ) {
-                for await _ in attempt.outcomes() {}
+                Task { [self] in
+                    for await _ in attempt.outcomes() {}
+                    active.remove(itemID)
+                    drain()
+                }
+            } else {
+                active.remove(itemID)
             }
-            current = nil
         }
-        walk = nil
     }
 
     private static func isSuccess(_ phase: WorkshopDownloadCoordinator.DownloadPhase) -> Bool {

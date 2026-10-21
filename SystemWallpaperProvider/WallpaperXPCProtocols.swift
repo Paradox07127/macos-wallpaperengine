@@ -1,7 +1,6 @@
 import Foundation
 
-// Selector names below are the wire contract with WallpaperAgent
-// (<private-notes> §2.2) — do not rename.
+// Selector names below are the wire contract with WallpaperAgent; do not rename.
 
 @objc protocol WallpaperExtensionXPCProtocol: NSObjectProtocol {
     // Lifecycle

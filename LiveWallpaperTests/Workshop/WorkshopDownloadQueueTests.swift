@@ -17,7 +17,7 @@ struct WorkshopDownloadQueueTests {
     )
 
     private func makeQueue() -> WorkshopDownloadQueue {
-        WorkshopDownloadQueue(downloads: downloads)
+        WorkshopDownloadQueue(downloads: downloads, maximumConcurrentDownloads: 1)
     }
 
     private func request(_ itemID: UInt64) -> WorkshopDownloadQueue.Request {
@@ -38,6 +38,26 @@ struct WorkshopDownloadQueueTests {
         for _ in 0 ..< 20 {
             await Task.yield()
         }
+    }
+
+    @Test("Three downloads start together; completion or cancel admits the next waiting item")
+    func productionParallelLimitAndCancellation() async {
+        let queue = WorkshopDownloadQueue(downloads: downloads)
+        let ids = (0 ..< 5).map { first + UInt64($0) }
+        queue.enqueue(ids.map(request))
+        #expect(await waitUntil { downloader.requestedIDs.count == 3 })
+        #expect(Set(downloader.requestedIDs) == Set(ids.prefix(3)))
+        #expect(queue.active.count == 3)
+        #expect(queue.pending == Array(ids.suffix(2)))
+        downloader.release(ids[1])
+        #expect(await waitUntil { downloader.requestedIDs.count == 4 })
+        #expect(downloader.requestedIDs.last == ids[3])
+        queue.cancel(ids[0])
+        #expect(await waitUntil { downloader.requestedIDs.count == 5 })
+        #expect(downloader.requestedIDs.last == ids[4])
+        #expect(downloads.cancelledItems.contains(ids[0]))
+        downloader.releaseAll()
+        #expect(await waitUntil { queue.active.isEmpty && queue.pending.isEmpty })
     }
 
     @Test("Requests the next item only after the current one ends")
@@ -259,7 +279,7 @@ struct WorkshopDownloadQueueTests {
             toasts: WorkshopToastCenter(),
             cancelSteamCMD: { _ in }
         )
-        let queue = WorkshopDownloadQueue(downloads: downloads)
+        let queue = WorkshopDownloadQueue(downloads: downloads, maximumConcurrentDownloads: 1)
 
         queue.enqueue([request(first), request(second)])
         #expect(await waitUntil { downloader.requestedIDs == [first] })
@@ -291,7 +311,7 @@ struct WorkshopDownloadQueueTests {
             repositoryCoordinator: WorkshopRepositoryCoordinator(), settings: settings,
             toasts: WorkshopToastCenter(), cancelSteamCMD: { _ in }
         )
-        let queue = WorkshopDownloadQueue(downloads: downloads)
+        let queue = WorkshopDownloadQueue(downloads: downloads, maximumConcurrentDownloads: 1)
         try await TestScratch.withCleanup {
             queue.cancel(first)
             queue.cancel(second)

@@ -69,8 +69,7 @@ reporter: "xcode"
 
 # G4 (review 2026-07-06 cycle-3): font-token bypass guards. High-precision forms
 # only — general `.font(.system(size:))` expressions are not enforced because
-# DESIGN.md rule 1 exempts standalone SF Symbol sizing (99 of 113 remaining
-# inline sites, taxonomy in <private-notes>). Revisit if
+# DESIGN.md rule 1 exempts standalone SF Symbol sizing. Revisit if
 # an AST-based checker becomes available. Measured pt table: DESIGN.md Typography.
 custom_rules:
   token_bypass_textstyle_font:
@@ -98,8 +97,7 @@ custom_rules:
     message: "Custom fonts are banned on Text/Label — use DesignTokens.Typography (DESIGN.md rule 1)"
     severity: warning
   # W0 (HIG UI-consistency program, 2026-08-31): token-bypass + wrapper-bypass
-  # guards. Probes live in <private-notes> — run verify.py after ANY edit
-  # to this section; expected.json defines both sides (caught + not caught).
+  # guards. Run scripts/check_ui_lint_probes.py after editing this section.
   # NOTE: standalone SF Symbol sizing remains exempt. The Text/Label rule
   # above only catches simple explicit modifier chains, not arbitrary expressions.
   token_bypass_literal_color:

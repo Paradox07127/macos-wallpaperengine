@@ -38,16 +38,10 @@ Icon
 __pycache__/
 *.pyc
 
-# Maintainer-local: agent config, notes, probes and one-off tooling. None of it
-# ships, and scripts/ is the only place a gate or release script may live.
+# Editor temporary files and diagnostic output
 *.log
 *.swp
 *.trace/
-
-# Instruments trace bundles run to gigabytes each; keep them local. The sibling
-# README.md stays tracked because it is the measurement record, so ignore the
-# bundles individually rather than the whole artifacts/ directory.
-artifacts/**/*.trace/
 
 # Test fixtures are opt-in: only these three survive. workshop/ is ~1.5 MB of
 # trimmed Steam browse pages, provenance in its own README.
@@ -56,7 +50,3 @@ LiveWallpaperTests/Fixtures/*
 !LiveWallpaperTests/Fixtures/oracle-golden/
 !LiveWallpaperTests/Fixtures/GeneralSettingsOwnershipFixture.swift
 !LiveWallpaperTests/Fixtures/workshop/
-
-# scripts/ holds only the portable gate and release toolchain: every file there
-# runs on a clean clone via `make verify`, ci.yml or a release. Maintainer-local
-# tooling lives in tools/, ignored above.

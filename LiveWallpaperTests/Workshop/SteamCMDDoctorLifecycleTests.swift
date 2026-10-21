@@ -90,6 +90,45 @@ struct SteamCMDDoctorLifecycleTests {
                           isQuarantined: quarantined, launch: launch, unavailableReason: nil, rejectedExisting: [])
     }
 
+    @Test("Three download leases coexist while an update waits for every lease to end")
+    func threeDownloadsAndExclusiveUpdate() async throws {
+        let coordinator = SteamCMDDoctorOperationCoordinator()
+        let starts = (0 ..< 3).map { _ in AF12Latch() }
+        let releases = (0 ..< 3).map { _ in AF12Latch() }
+        let tasks = (0 ..< 3).map { index in
+            Task {
+                try await coordinator.withOperation(.workshopDownload) { lease in
+                    await starts[index].signal()
+                    await releases[index].wait()
+                    return lease
+                }
+            }
+        }
+        for started in starts {
+            await started.wait()
+        }
+        let updateStarted = AF12Latch()
+        let update = Task {
+            try await coordinator.withOperation(.appUpdate) { lease in
+                await updateStarted.signal()
+                return lease
+            }
+        }
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        #expect(await !updateStarted.isSignalled)
+        await releases[0].signal()
+        _ = try await tasks[0].value
+        #expect(await !updateStarted.isSignalled)
+        await releases[1].signal()
+        await releases[2].signal()
+        _ = try await tasks[1].value
+        _ = try await tasks[2].value
+        let lease = try await update.value
+        #expect(lease.generation == 4)
+    }
+
     @Test("operation owner serializes generations and rejects stale completion")
     func operationGenerationsAreExclusive() async throws {
         let coordinator = SteamCMDDoctorOperationCoordinator()

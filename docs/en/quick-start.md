@@ -96,16 +96,22 @@ Start in **Workshop** to search, filter, sort and inspect public wallpapers; pub
    **Set up SteamCMD**, **Locate automatically** and **Choose SteamCMD**; once
    it is ready, the row offers **Change**, **Locate automatically** and
    **Set up SteamCMD**:
-   - **Set up SteamCMD** — opens a dialog with two choices.
-     **Install with Loomscreen** shows the download size and where the copy will
-     go, and **Download and install** installs a managed copy. It fetches Valve's
+   - **Set up SteamCMD** — shows the download size and installation location.
+     **Download and install** installs a managed copy with native Apple Silicon
+     support, without Rosetta. Loomscreen fetches Valve's
      package manifest, checks every download against the manifest's SHA-256,
      unpacks it, and keeps the result only if the binary's code signature and
      team identifier are Valve's. If any step fails it rolls back and leaves
-     your previous setup alone. **Install with Homebrew** shows a Terminal
-     command with a **Copy** button; run it, then use **Locate automatically**.
+     your previous setup alone.
    - **Locate automatically** — finds an existing install (Homebrew,
-     `/usr/local/bin`, and friends).
+     `/usr/local/bin`, and friends) and launches a trusted copy to check and
+     prepare it. Existing Homebrew installations remain supported. On Apple
+     Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually
+     run `steamcmd +quit` in Terminal to let SteamCMD update itself, then choose
+     **Locate automatically**. The built-in installer avoids this requirement.
+     If a local trust or launch failure prevents use, Loomscreen offers an in-app
+     **Download and install** recovery; your existing installation stays in place.
+     A busy connector or timeout can be retried with **Locate automatically**.
    - **Choose SteamCMD** (**Change** once the tool is ready) — point at a binary
      yourself. It goes through the same signature and checksum gates as
      everything else, on every run rather than only when you pick it.
@@ -115,6 +121,9 @@ Start in **Workshop** to search, filter, sort and inspect public wallpapers; pub
      confirm.
 3. **Steam Web API key** — enables API-backed browsing, creator metadata and preset lists; public browsing and download-by-link can be used without it. Get a key at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). New keys are stored in the login Keychain; older file-based keys migrate when Keychain access succeeds.
 4. **Engine assets** — scenes reference shared Wallpaper Engine assets; Loomscreen downloads them once via SteamCMD and can check for updates on launch (**Settings → Workshop**).
+
+The first-run recovery described above is in current source and is newer than
+the published 0.9.0b2 package.
 
 Sign in with your Steam account through the guided flow; Steam Guard is supported.
 Downloads use the authorized Steam library and subscription sync makes your
