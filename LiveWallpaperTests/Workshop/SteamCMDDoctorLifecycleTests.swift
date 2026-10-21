@@ -5,6 +5,91 @@ import Testing
 
 @Suite("AF-12: Doctor operation and asset lifecycle", .serialized)
 struct SteamCMDDoctorLifecycleTests {
+    @MainActor
+    @Test("Locate automatically offers in-app preparation for a quarantined fresh installation")
+    func firstRunOffersInAppSetup() async throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "AF12-first-run")
+        defer { scratch.defaults.removePersistentDomain(forName: scratch.name) }
+        let diagnosis = Self.freshDiagnosis(quarantined: true)
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { diagnosis })
+        let controller = WorkshopSetupController(doctor: doctor, defaults: scratch.defaults)
+        var offeredSetup = false
+        await controller.autoDetectBinary(onNeedsSetup: { offeredSetup = true }).value
+        #expect(offeredSetup)
+        #expect(!controller.isSteamCMDBusy)
+        #expect(!doctor.hasBoundBinary)
+        #expect(doctor.lastExecutedBinaryPath == nil)
+        #expect(controller.setupError == SteamCMDDoctorService.setupRequiredMessage)
+        await doctor.runProbe(.binaryIdentity)
+        guard case .red(let message, _) = doctor.probes[.binaryIdentity]?.status else {
+            Issue.record("The refused discovery must remain visible in diagnostics"); return
+        }
+        #expect(message == SteamCMDDoctorService.setupRequiredMessage)
+        let json = try #require(doctor.diagnosticsJSON())
+        let report = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let detection = try #require(report["autoDetection"] as? [String: Any])
+        #expect(detection["isQuarantined"] as? Bool == true)
+        #expect(detection["launchAttempted"] as? Bool == false)
+        #expect(detection["launch"] is NSNull)
+        let signature = try #require(detection["signature"] as? [String: Any])
+        #expect(signature["isValveSigned"] as? Bool == true)
+        let probes = try #require(report["probes"] as? [String: [String: Any]])
+        #expect(probes["codeSignature"]?["status"] as? String == "green")
+        #expect(probes["gatekeeperQuarantine"]?["status"] as? String == "red")
+        #expect(!json.contains("No SteamCMD binary is selected"))
+    }
+
+    @MainActor
+    @Test("A busy connector or timed-out first run stays retryable without installing again", arguments: [false, true])
+    func transientDetectionDoesNotOfferInstall(timeout: Bool) async throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "AF12-transient-\(timeout)")
+        defer { scratch.defaults.removePersistentDomain(forName: scratch.name) }
+        let diagnosis = timeout ? Self.freshDiagnosis(quarantined: false, launch: SteamCMDLaunchProbe(
+            outcome: .timedOut, arguments: ["+quit"], exitCode: 0, timeout: 180, outputTail: "Connecting"
+        )) : .unavailable("queued behind another operation")
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { diagnosis })
+        let controller = WorkshopSetupController(doctor: doctor, defaults: scratch.defaults)
+        var offeredSetup = false
+        await controller.autoDetectBinary(onNeedsSetup: { offeredSetup = true }).value
+        #expect(!offeredSetup)
+        #expect(!controller.isSteamCMDBusy)
+        #expect(!doctor.hasBoundBinary)
+        #expect(controller.setupError != nil)
+        #expect(controller.setupError?.contains("Terminal") == false)
+    }
+
+    @MainActor
+    @Test("Discovery export preserves the failure while redacting unbound paths and Steam identity")
+    func unboundDiscoveryExportRedactsDetails() async throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "AF12-discovery-export")
+        defer { scratch.defaults.removePersistentDomain(forName: scratch.name) }
+        let secret = String(repeating: "a", count: 32)
+        let diagnosis = Self.freshDiagnosis(quarantined: false, launch: SteamCMDLaunchProbe(
+            outcome: .couldNotSpawn, arguments: ["+quit"], exitCode: -1, timeout: 180,
+            outputTail: "/opt/private-steamcmd/MacOS/steamcmd key=\(secret) Logging in user 'probe_account' [U:1:12345]"
+        ))
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { diagnosis })
+        try doctor.setUsername("probe_account")
+        #expect(await doctor.autoDetectBinary() == false)
+        let json = try #require(doctor.diagnosticsJSON())
+        #expect(!json.contains("/opt/private-steamcmd"))
+        #expect(!json.contains(secret))
+        #expect(!json.contains("probe_account"))
+        #expect(!json.contains("[U:1:12345]"))
+        let report = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let detection = try #require(report["autoDetection"] as? [String: Any])
+        let launch = try #require(detection["launch"] as? [String: Any])
+        #expect(launch["outcome"] as? String == "couldNotSpawn")
+        #expect(launch["exitCode"] as? Int == -1)
+    }
+
+    private static func freshDiagnosis(quarantined: Bool, launch: SteamCMDLaunchProbe? = nil) -> SteamCMDDiagnosis {
+        SteamCMDDiagnosis(source: .homebrew, canonicalPath: "/opt/private-steamcmd/MacOS/steamcmd",
+                          resolutionFailure: nil, sha256: "test-digest",
+                          signature: SteamCMDSignatureVerdict(isValid: true, teamIdentifier: "MXGJJ98X76", isHardenedRuntime: true),
+                          isQuarantined: quarantined, launch: launch, unavailableReason: nil, rejectedExisting: [])
+    }
+
     @Test("operation owner serializes generations and rejects stale completion")
     func operationGenerationsAreExclusive() async throws {
         let coordinator = SteamCMDDoctorOperationCoordinator()

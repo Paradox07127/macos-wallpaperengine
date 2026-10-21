@@ -16,7 +16,8 @@ final class PageGuideSession {
     }
 
     var steps: [PageGuideStep] {
-        context?.steps ?? []
+        let steps = context?.steps ?? []
+        return isTour && tourPage == .settings ? steps + [.completion] : steps
     }
 
     var currentStep: PageGuideStep? {
@@ -31,7 +32,7 @@ final class PageGuideSession {
     }
 
     var stepCount: Int {
-        isTour ? tourPages.reduce(0) { $0 + PageGuideContext.onboarding($1).steps.count } : steps.count
+        isTour ? tourPages.reduce(0) { $0 + PageGuideContext.onboarding($1).steps.count } + 1 : steps.count
     }
 
     var canGoBack: Bool {
@@ -42,10 +43,12 @@ final class PageGuideSession {
         index + 1 == steps.count && (!isTour || tourPage == tourPages.last)
     }
 
-    func start(_ context: PageGuideContext) {
+    func start(_ context: PageGuideContext, router: EditDeskRouter? = nil) {
         close()
         index = 0
+        self.router = router
         self.context = context
+        revealSettingsStep()
     }
 
     func startTour(progress: OnboardingProgress, router: EditDeskRouter, from page: OnboardingProgress.Page? = nil) {
@@ -100,12 +103,14 @@ final class PageGuideSession {
             show(tourPages[position - 1])
             index = steps.count - 1
         }
+        revealSettingsStep()
     }
 
     func next() {
         guard context != nil else { return }
         if index + 1 < steps.count {
             index += 1
+            revealSettingsStep()
         } else if let tourPage, let position = tourPages.firstIndex(of: tourPage) {
             progress?.record(tourPage)
             if position + 1 < tourPages.count {
@@ -117,10 +122,17 @@ final class PageGuideSession {
             close()
         }
     }
+
+    private func revealSettingsStep() {
+        if let step = currentStep, case let .settingsItem(destination) = step.target {
+            router?.openSettings(destination)
+        }
+    }
 }
 
 enum PageGuideTarget: Hashable {
-    case navigation, page, status, inspector, playback, overlayCanvas, overlayAdd, settingsSidebar, display, shelfHandle, libraryTools, steamMenu, detailLayers, detailActions, detailShared, automationModes, automationFooter
+    case navigation, page, status, inspector, playback, overlayCanvas, overlayAdd, settingsSidebar, display, shelfHandle, libraryTools, aerials, steamMenu, detailLayers, detailActions, detailShared, automationModes, automationFooter
+    case settingsItem(SettingsNavigation)
 }
 
 enum PageGuideContext: CaseIterable {
@@ -160,7 +172,7 @@ enum PageGuideContext: CaseIterable {
         switch self {
         case .overview:
             [
-                .init(.navigation, "Loomscreen stays in the menu bar", "Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."),
+                .init(.navigation, "Welcome to Loomscreen", "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."),
                 .init(.navigation, "Find your way around", "Overview shows your displays. Wallpaper Library holds your sources; its Bookmarks filter shows the ones you marked. Schemes holds saved display setups. Settings contains app-wide preferences."),
                 .init(.display, "Choose a display", "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper. While a playlist runs, Previous and Next appear when you move the pointer over the display and in the menu bar.", footnote: Self.importHint),
                 .init(.shelfHandle, "Open the wallpaper shelf", "Click Wallpaper Library at the bottom, or scroll upward, to reveal the shelf. Continue upward for the full library. You can also use the top navigation."),
@@ -170,7 +182,7 @@ enum PageGuideContext: CaseIterable {
             [
                 .init(.libraryTools, "Import, filter and sort", "Add to Library imports files without changing a display. Filter by source, search by name or tag, and choose a sort order. Local files stay in their original location; keep them available."),
                 .init(.page, "Apply a wallpaper", "Click a wallpaper to see its details and choose a target display, or drag it onto a display. Bookmark keeps the source; a scheme also keeps a display's settings and overlays."),
-                .init(.libraryTools, "Apple Aerials", "Choose Aerials to connect the local aerial folder. Download videos first in macOS System Settings › Wallpaper if the list is empty."),
+                .init(.aerials, "Apple Aerials", "Choose Aerials to connect the local aerial folder. Download videos first in macOS System Settings › Wallpaper if the list is empty."),
             ]
         case .saved:
             [
@@ -184,7 +196,7 @@ enum PageGuideContext: CaseIterable {
             ]
         case .workshop:
             [
-                .init(.page, "Browse before connecting", "Use search, filters, sort and time range to find wallpapers. Click a result for details. A Steam Web API key is optional; its settings explain the extra information it enables."),
+                .init(.page, "Browse before connecting", "Use search, filters, sort and time range to find wallpapers. Click a result for details. A Steam Web API key is optional; its settings explain the extra information it enables.", settingsAnchor: .workshopSetup),
                 .init(.steamMenu, "Connect or import locally", "Use the Steam menu to connect your account, sync subscriptions or add a link. Downloads need SteamCMD and ownership of Wallpaper Engine. Import a Local Folder works without signing in."),
                 .init(.steamMenu, "Install the download component", "Open Settings › Workshop › Steam connection. Set up SteamCMD offers Install with Loomscreen, with download size and location shown before installing. Already installed it? Use Locate automatically or Choose SteamCMD.", settingsAnchor: .workshopConnection),
                 .init(.steamMenu, "Authorize your Steam library", "In Steam connection, choose or authorize your Steam library folder. This grants Loomscreen access to local Workshop files; it does not sign you in. Follow the folder picker's instructions, then check the library status.", settingsAnchor: .workshopConnection),
@@ -196,9 +208,15 @@ enum PageGuideContext: CaseIterable {
         case .settings:
             [
                 .init(.settingsSidebar, "Search for a setting", "The sidebar groups settings by task. Search finds both pages and individual settings; the information buttons explain their scope and effects."),
-                .init(.page, "Startup, transitions and defaults", "General controls language, appearance, login startup, the Dock, and the wallpaper transition and opening animation. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer."),
-                .init(.page, "Performance and permissions", "Performance controls automatic pausing. Integrations controls weather location and supported audio response. Shortcuts configures keyboard actions; Overlays changes shared widget appearance."),
-                .init(.page, "Keep and recover your setup", "Backup & Restore saves settings without wallpaper files. Advanced provides diagnostics and reset. About contains Welcome Tour. Review each confirmation before replacing settings or deleting content."),
+                .init(.settingsItem(.general), "Startup and transitions", "General controls language, login startup, the Dock, and the wallpaper transition and opening animation."),
+                .init(.settingsItem(.displayDefaults), "Defaults for new wallpapers", "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer."),
+                .init(.settingsItem(.performancePower), "Performance", "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac."),
+                .init(.settingsItem(.integrations), "Integrations", "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use."),
+                .init(.settingsItem(.shortcuts), "Shortcuts", "Shortcuts configures keyboard actions for playback, wallpapers and the app window."),
+                .init(.settingsItem(.overlays), "Overlays", "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor."),
+                .init(.settingsItem(.backupRestore), "Backup & Restore", "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup."),
+                .init(.settingsItem(.advanced), "Advanced", "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content."),
+                .init(.settingsItem(.about), "About", "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime."),
             ]
         case .configuration:
             [
@@ -228,6 +246,10 @@ enum PageGuideContext: CaseIterable {
 }
 
 struct PageGuideStep {
+    static var completion: Self {
+        .init(.page, "Enjoy your wallpapers!", "You're all set. Thanks for using Loomscreen—enjoy your desktop! You can replay this tour anytime from Settings › About.")
+    }
+
     let target: PageGuideTarget
     let title: LocalizedStringKey
     let message: LocalizedStringKey
@@ -251,9 +273,9 @@ struct PageGuideAnchorKey: PreferenceKey {
 }
 
 extension View {
-    func pageGuideTarget(_ target: PageGuideTarget) -> some View {
+    func pageGuideTarget(_ target: PageGuideTarget?) -> some View {
         transformAnchorPreference(key: PageGuideAnchorKey.self, value: .bounds) { anchors, anchor in
-            anchors[target] = anchor
+            if let target { anchors[target] = anchor }
         }
     }
 }
@@ -262,13 +284,14 @@ struct PageGuideButton: View {
     let context: PageGuideContext
     var grouped = false
     @Environment(PageGuideSession.self) private var session: PageGuideSession?
+    @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
 
     var body: some View {
         Group {
             if grouped {
-                GlassToolbarItem("questionmark") { session?.start(context) }
+                GlassToolbarItem("questionmark") { session?.start(context, router: router) }
             } else {
-                GlassIconButton("questionmark", size: .large) { session?.start(context) }
+                GlassIconButton("questionmark", size: .large) { session?.start(context, router: router) }
             }
         }
         .help(Text("Explain This Page"))
@@ -324,7 +347,9 @@ struct PageGuideHost: View {
             GeometryReader { geometry in
                 // GeometryReader can update after close() clears the session, before this host unmounts.
                 if let step = session.currentStep {
-                    let rect = step.target == .page ? nil : anchors[step.target].map { geometry[$0] }
+                    let rect = step.target == .page ? nil : anchors[step.target].map {
+                        geometry[$0].insetBy(dx: -DesignTokens.Spacing.sm, dy: -DesignTokens.Spacing.sm)
+                    }
                     ZStack {
                         GuideScrim(hole: rect)
                             .fill(.black.opacity(0.22), style: FillStyle(eoFill: true))
@@ -386,7 +411,9 @@ struct PageGuideHost: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let anchor = step.settingsAnchor, let onOpenWorkshopSettings {
-                Button("Open Workshop Settings") { onOpenWorkshopSettings(anchor) }
+                Button(anchor == .workshopSetup ? "API Key Settings (Optional)" : "Open Workshop Settings") {
+                    onOpenWorkshopSettings(anchor)
+                }
                     .buttonStyle(.bordered)
             }
             HStack {

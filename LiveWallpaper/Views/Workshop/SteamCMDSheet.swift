@@ -5,6 +5,7 @@ import SwiftUI
 
 struct SteamCMDSetupSheet: View {
     let onConfirmManagedInstall: () -> Void
+    var isRecovery = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var route: Route = .managed
@@ -18,6 +19,7 @@ struct SteamCMDSetupSheet: View {
     }
 
     private static let brewCommand = "brew install --cask steamcmd"
+    private var effectiveRoute: Route { isRecovery ? .managed : route }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,15 +29,21 @@ struct SteamCMDSetupSheet: View {
                     title: "Set up SteamCMD"
                 )
 
-                Picker("How to install", selection: $route) {
-                    Text("Install with Loomscreen").tag(Route.managed)
-                    Text("Install with Homebrew").tag(Route.homebrew)
+                if isRecovery {
+                    Text("Loomscreen will download and prepare SteamCMD for this Mac. Your existing installation stays in place. No Terminal commands are needed.")
+                        .font(DesignTokens.Typography.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Picker("How to install", selection: $route) {
+                        Text("Install with Loomscreen").tag(Route.managed)
+                        Text("Install with Homebrew").tag(Route.homebrew)
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    .accessibilityLabel(Text("How to install SteamCMD"))
                 }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                .accessibilityLabel(Text("How to install SteamCMD"))
 
-                switch route {
+                switch effectiveRoute {
                 case .managed: managedDetail
                 case .homebrew: homebrewDetail
                 }
@@ -49,10 +57,10 @@ struct SteamCMDSetupSheet: View {
 
     private var footer: some View {
         SheetFooterBar(
-            primaryTitle: route == .managed ? "Download and install" : "Done",
+            primaryTitle: effectiveRoute == .managed ? "Download and install" : "Done",
             primaryAction: {
                 dismiss()
-                if route == .managed { onConfirmManagedInstall() }
+                if effectiveRoute == .managed { onConfirmManagedInstall() }
             },
             primaryDisabled: false,
             cancelTitle: "Cancel",
@@ -152,4 +160,5 @@ struct SteamCMDSetupSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
 #endif

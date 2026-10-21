@@ -273,9 +273,15 @@ struct OnboardingProgressTests {
         #expect(guide.tourPage == .library)
         var count = 0
         let total = guide.stepCount
+        var reachedCompletion = false
         while guide.context != nil, count < 100 {
             let previous = guide.stepNumber
             #expect(guide.stepCount == total)
+            if guide.isLastStep {
+                reachedCompletion = true
+                #expect(guide.currentStep?.title == PageGuideStep.completion.title)
+                #expect(!progress.isFinished)
+            }
             guide.next()
             if guide.context != nil {
                 #expect(guide.stepNumber == previous + 1)
@@ -283,9 +289,28 @@ struct OnboardingProgressTests {
             count += 1
         }
         #expect(count < 100)
+        #expect(reachedCompletion)
         #expect(progress.isFinished)
         #expect(router.page == .settings)
         #expect(guide.context == nil)
+    }
+
+    @Test("Settings guide selects each described category when moving forward and back")
+    func settingsGuideRoutesCategories() {
+        let router = EditDeskRouter(initialNavigation: .general, initialAddWallpaperRequest: nil, isWorkshopAvailable: { true })
+        let guide = PageGuideSession()
+        guide.start(.settings, router: router)
+        let destinations: [SettingsNavigation] = [.general, .displayDefaults, .performancePower, .integrations, .shortcuts, .overlays, .backupRestore, .advanced, .about]
+        for destination in destinations {
+            guide.next()
+            #expect(router.page == .settings)
+            #expect(router.settingsSelection == destination)
+            #expect(guide.currentStep?.target == .settingsItem(destination))
+        }
+        guide.back()
+        #expect(router.settingsSelection == .advanced)
+        guide.next()
+        #expect(router.settingsSelection == .about)
     }
 
     @MainActor

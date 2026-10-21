@@ -1831,6 +1831,14 @@ struct SteamCMDDiagnosis: Codable, Equatable, Sendable {
     /// separately can disagree with the facts it is supposed to explain.
     var remedy: String? { SteamCMDDiagnosisRemedy.advice(for: self) }
 
+    /// A definitive local failure can be recovered through the managed installer.
+    /// A busy connector or a timeout needs a retry, not another installation.
+    var needsInAppSetup: Bool {
+        guard unavailableReason == nil, canonicalPath != nil, !isUsable else { return false }
+        if signature?.isValveSigned != true || isQuarantined { return true }
+        return launch?.outcome == .couldNotSpawn || launch?.outcome == .exitedNonZero
+    }
+
     /// `rejectedExisting` defaults to a live scan because the only caller is the
     /// connector; tests and the app pass their own.
     static func notFound(
@@ -1890,12 +1898,16 @@ enum SteamCMDDiagnosisRemedy {
             Workshop settings.
             """
         }
-        guard let launch = diagnosis.launch else {
-            return "SteamCMD at \(path) was never launched, so it cannot be reported as working. Run the check again."
-        }
-
-        switch launch.outcome {
-        case .couldNotSpawn:
+        // A trust-gate refusal has no launch receipt. Explain the gate before
+        // falling back to the missing-receipt message.
+        if diagnosis.launch == nil || diagnosis.launch?.outcome == .couldNotSpawn {
+            if diagnosis.signature?.isValveSigned != true {
+                return """
+                Loomscreen did not start SteamCMD at \(path) because its Valve signature \
+                could not be verified. Reinstall it with `brew reinstall --cask steamcmd`, \
+                or let Loomscreen install its own copy.
+                """
+            }
             if diagnosis.isQuarantined {
                 return """
                 macOS quarantined \(path), and a quarantined command-line binary cannot be \
@@ -1903,13 +1915,13 @@ enum SteamCMDDiagnosisRemedy {
                 run the check again.
                 """
             }
-            if diagnosis.signature?.isValid == false {
-                return """
-                \(path) could not be launched and its code signature is not valid. Reinstall \
-                SteamCMD with `brew reinstall --cask steamcmd`, or let Loomscreen install its \
-                own copy.
-                """
-            }
+        }
+        guard let launch = diagnosis.launch else {
+            return "Loomscreen did not start SteamCMD at \(path) during this check. Run the check again; you do not need to launch SteamCMD manually first."
+        }
+
+        switch launch.outcome {
+        case .couldNotSpawn:
             return """
             \(path) could not be launched: \(condensed(launch.outputTail)). Check that it is \
             executable with `chmod +x \(path)`.

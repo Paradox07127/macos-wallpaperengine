@@ -188,6 +188,7 @@ final class SteamCMDDoctorService {
     ) async -> SteamWorkshopDownloadResult?
 
     @ObservationIgnored private let downloadOperation: WorkshopDownloadOperation
+    @ObservationIgnored private let diagnoseBinary: @MainActor @Sendable () async -> SteamCMDDiagnosis?
 
     var probes: [DoctorProbeKind: DoctorProbeReport]
     var state: DoctorState = .idle
@@ -257,6 +258,7 @@ final class SteamCMDDoctorService {
         bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
         workshopFileInventory: (any SteamCMDWorkshopFileInventoryServing)? = nil,
         operationCoordinator: SteamCMDDoctorOperationCoordinator = .shared,
+        diagnoseBinary: @escaping @MainActor @Sendable () async -> SteamCMDDiagnosis? = { await SteamConnectorClient.diagnoseSteamCMD() },
         downloadOperation: @escaping WorkshopDownloadOperation = { @Sendable item, account, library, progress in
             await SteamConnectorClient.downloadWorkshopItem(
                 workshopID: item, accountName: account, libraryPath: library, onProgress: progress
@@ -265,6 +267,7 @@ final class SteamCMDDoctorService {
     ) {
         self.operationCoordinator = operationCoordinator
         self.downloadOperation = downloadOperation
+        self.diagnoseBinary = diagnoseBinary
         self.defaults = defaults
         self.fileManager = fileManager
         self.bookmarkResolver = bookmarkResolver
@@ -344,20 +347,28 @@ final class SteamCMDDoctorService {
     }
 
     private(set) var lastAutoDetectDiagnosis: SteamCMDDiagnosis?
+    private(set) var lastAutoDetectDate: Date?
 
     @discardableResult
     func autoDetectBinary() async -> Bool {
         lastAutoDetectDiagnosis = nil
-        if let diagnosis = await SteamConnectorClient.diagnoseSteamCMD() {
+        lastAutoDetectDate = nil
+        if let diagnosis = await diagnoseBinary() {
             lastAutoDetectDiagnosis = diagnosis
+            lastAutoDetectDate = Date()
             if diagnosis.launch != nil, let executed = diagnosis.canonicalPath {
                 noteExecutionReceipt(executed)
             }
             // A reached verdict is the answer. Falling through to locate/bind on a negative one would bind a path just proved unable to launch.
-            guard diagnosis.isUsable, let resolved = diagnosis.canonicalPath else { return false }
+            guard diagnosis.isUsable, let resolved = diagnosis.canonicalPath else {
+                for kind in Self.binaryProbeKinds { _ = reportUnboundBinaryProbe(kind) }
+                return false
+            }
             return (try? await bindResolvedBinary(resolved)) != nil
         }
         // Only an unreachable connector falls through.
+        lastAutoDetectDiagnosis = .unavailable(SteamCMDDoctorError.connectorUnavailable.localizedDescription)
+        lastAutoDetectDate = Date()
         guard let located = await SteamConnectorClient.locateSteamCMDBinary(),
               let path = located.canonicalPath else { return false }
         do {
@@ -571,6 +582,7 @@ final class SteamCMDDoctorService {
     }
 
     func runAll() async {
+        if !hasBoundBinary { await autoDetectBinary() }
         beginProbeRun()
         state = .probing
         for kind in DoctorProbeKind.allCases {
@@ -580,6 +592,7 @@ final class SteamCMDDoctorService {
     }
 
     func runProbe(_ kind: DoctorProbeKind) async {
+        if !hasBoundBinary, Self.binaryProbeKinds.contains(kind) { await autoDetectBinary() }
         beginProbeRun()
         state = .probing
         await performProbe(kind)
@@ -587,6 +600,7 @@ final class SteamCMDDoctorService {
     }
 
     private func performProbe(_ kind: DoctorProbeKind) async {
+        if reportUnboundBinaryProbe(kind) { return }
         setProbe(kind, status: .running)
         switch kind {
         case .binaryIdentity: await runBinaryIdentityProbe()

@@ -7,6 +7,7 @@ struct WorkshopProbeRow: View {
     let service: SteamCMDDoctorService
     let onCopied: () -> Void
     var onConnectAccount: (() -> Void)?
+    var onLocateSteamCMD: (() -> Void)?
 
     @State private var isExpanded = false
     /// Distinguishes "the user has not touched this row" from "the user closed
@@ -122,8 +123,9 @@ struct WorkshopProbeRow: View {
                 .controlSize(.small)
         } else if report.id == .binaryIdentity, case .red = report.status {
             Button("Locate automatically") {
-                Task { await service.autoDetectBinary() }
+                onLocateSteamCMD?()
             }
+            .disabled(onLocateSteamCMD == nil)
             .buttonStyle(.bordered)
             .controlSize(.small)
         }

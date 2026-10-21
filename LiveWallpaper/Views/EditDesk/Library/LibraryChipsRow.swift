@@ -34,6 +34,7 @@ struct LibraryChipsRow: View {
                 FilterChip(title: Text(chip.title), isSelected: selection == chip.id) {
                     selection = chip.id
                 }
+                .pageGuideTarget(chip.id == "aerials" ? .aerials : nil)
             }
         } search: {
             LibrarySearchField(text: $searchText, prompt: searchPrompt, shortPrompt: searchShortPrompt)

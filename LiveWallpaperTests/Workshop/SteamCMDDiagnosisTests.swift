@@ -144,23 +144,34 @@ struct SteamCMDDiagnosisRemedyTests {
         #expect(advice?.contains("notMachO") == true)
     }
 
-    @Test("Quarantine gets the command that clears it")
-    func quarantineAdvisesXattr() {
+    @Test("Quarantine explains both a refused launch and a failed spawn", arguments: [false, true])
+    func quarantineAdvisesXattr(launchAttempted: Bool) {
         let advice = diagnosis(
-            quarantined: true, launch: launch(.couldNotSpawn, exitCode: -1)
+            quarantined: true, launch: launchAttempted ? launch(.couldNotSpawn, exitCode: -1) : nil
         ).remedy
         #expect(advice?.contains("xattr -d com.apple.quarantine") == true)
         #expect(advice?.contains("/opt/homebrew/bin/steamcmd") == true)
     }
 
-    @Test("A spawn failure with a bad signature advises reinstalling, not xattr")
-    func brokenSignatureAdvisesReinstall() {
+    @Test("A bad signature explains both a refused launch and a failed spawn", arguments: [false, true])
+    func brokenSignatureAdvisesReinstall(launchAttempted: Bool) {
         let advice = diagnosis(
             signature: SteamCMDSignatureVerdict(
                 isValid: false, teamIdentifier: nil, isHardenedRuntime: false
             ),
-            launch: launch(.couldNotSpawn, exitCode: -1)
+            launch: launchAttempted ? launch(.couldNotSpawn, exitCode: -1) : nil
         ).remedy
+        #expect(advice?.contains("reinstall") == true)
+        #expect(advice?.contains("xattr") == false)
+    }
+
+    @Test("A foreign signature is explained before asking to clear quarantine")
+    func foreignSignaturePreventsLaunch() {
+        let advice = diagnosis(
+            signature: SteamCMDSignatureVerdict(isValid: true, teamIdentifier: "ABCDE12345", isHardenedRuntime: true),
+            quarantined: true, launch: nil
+        ).remedy
+        #expect(advice?.contains("Valve") == true)
         #expect(advice?.contains("reinstall") == true)
         #expect(advice?.contains("xattr") == false)
     }

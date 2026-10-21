@@ -145,7 +145,7 @@ struct WorkshopPage: View {
             onDownloadByLink: { presentPasteFlow() },
             onEnterAPIKey: { isShowingKeyEntry = true },
             onInstallSteamCMD: { isShowingInstallConsent = true },
-            onLocateSteamCMD: { setupController.autoDetectBinary() },
+            onLocateSteamCMD: { setupController.autoDetectBinary(onNeedsSetup: { isShowingInstallConsent = true }) },
             onImportLocalFolder: { SteamWizard.importLocalFolder() },
             steamCMDReady: doctor.isBinaryPresumedReady,
             steamCMDBusy: setupController.isSteamCMDBusy,
@@ -199,7 +199,7 @@ struct WorkshopPage: View {
                 }
                 .sheet(isPresented: page.$isShowingInstallConsent) {
                     AppLanguageScope(defaults: .appScoped()) {
-                        SteamCMDSetupSheet(onConfirmManagedInstall: { page.setupController.runManagedInstall() })
+                        SteamCMDSetupSheet(onConfirmManagedInstall: { page.setupController.runManagedInstall() }, isRecovery: page.doctor.lastAutoDetectDiagnosis?.needsInAppSetup == true)
                     }
                 }
                 .confirmationDialog(

@@ -193,12 +193,18 @@ git push origin main
 
 ## Release notes
 
+The first line must be an H1 containing only the release version, for example
+`# 0.9.0b2`, followed by a blank line. Use one version heading for the entire
+bilingual document.
+
 Four blocks, in this order: a download chooser, a collapsed first-launch note,
 the three-section changelog, and the system requirement. English set first,
 then `---`, then the equivalent Simplified Chinese set. Link definitions go at
 the very bottom of the file and are shared by both languages.
 
 ````markdown
+# X.Y.Z
+
 ## Download
 
 | Edition | Your Mac | Wallpapers |

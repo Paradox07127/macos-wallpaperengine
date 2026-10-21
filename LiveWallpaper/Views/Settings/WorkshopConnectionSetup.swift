@@ -55,7 +55,7 @@ struct WorkshopConnectionSetup: View {
         // Keep presenters on the row so Form recognizes the Section.
         .sheet(isPresented: $showingSetupSheet) {
             AppLanguageScope(defaults: .appScoped()) {
-                SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() })
+                SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() }, isRecovery: service.lastAutoDetectDiagnosis?.needsInAppSetup == true)
             }
         }
         .sheet(isPresented: $showingSignIn) {
@@ -148,7 +148,7 @@ struct WorkshopConnectionSetup: View {
     private var binarySecondaryRoutes: [WorkshopSetupRoute] {
         var routes = [
             WorkshopSetupRoute(id: "steamcmd.locate", title: "Locate automatically") {
-                controller.autoDetectBinary()
+                controller.autoDetectBinary(onNeedsSetup: { showingSetupSheet = true })
             }
         ]
         if service.isBinaryPresumedReady {

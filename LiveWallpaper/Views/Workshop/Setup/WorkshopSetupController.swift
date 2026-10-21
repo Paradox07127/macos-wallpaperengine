@@ -159,23 +159,31 @@ final class WorkshopSetupController {
         }
     }
 
-    func autoDetectBinary() {
+    @discardableResult
+    func autoDetectBinary(onNeedsSetup: @escaping () -> Void = {}) -> Task<Void, Never> {
         beginSetupAction()
         beginBinaryDetection()
-        Task {
+        return Task {
             let found = await doctor.autoDetectBinary()
             endBinaryDetection()
             // `!doctor.hasBoundBinary`, not just `!found`: a parallel detect can bind while
             // this one is out, and its late "not found" would overwrite that.
             if !found, !doctor.hasBoundBinary {
                 setupError = Self.autoDetectFailureMessage(for: doctor.lastAutoDetectDiagnosis)
+                if doctor.lastAutoDetectDiagnosis?.needsInAppSetup == true { onNeedsSetup() }
             }
         }
     }
 
     /// No remedy is not "nothing found": the connector never answered, or answered with a usable copy the bind then refused.
     static func autoDetectFailureMessage(for diagnosis: SteamCMDDiagnosis?) -> String {
-        diagnosis?.remedy ?? SteamCMDDoctorError.connectorUnavailable.localizedDescription
+        if diagnosis?.needsInAppSetup == true {
+            return SteamCMDDoctorService.setupRequiredMessage
+        }
+        if diagnosis?.launch?.outcome == .timedOut {
+            return String(localized: "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry.", bundle: .appLanguage, comment: "First-run SteamCMD timeout recovery inside the app.")
+        }
+        return diagnosis?.remedy ?? SteamCMDDoctorError.connectorUnavailable.localizedDescription
     }
 
     /// Returns true when a binding was recorded, so the caller can update its hint.

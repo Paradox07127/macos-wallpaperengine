@@ -70,7 +70,7 @@ struct SteamWizard: View {
         .task { await setupController.prepare() }
         .sheet(isPresented: $isShowingInstall) {
             AppLanguageScope(defaults: .appScoped()) {
-                SteamCMDSetupSheet(onConfirmManagedInstall: { setupController.runManagedInstall() })
+                SteamCMDSetupSheet(onConfirmManagedInstall: { setupController.runManagedInstall() }, isRecovery: doctor.lastAutoDetectDiagnosis?.needsInAppSetup == true)
             }
         }
         .sheet(isPresented: $isShowingSignIn) {

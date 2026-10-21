@@ -11088,41 +11088,6 @@
         }
       }
     },
-    "Backup & Restore saves settings without wallpaper files. Advanced provides diagnostics and reset. About contains Welcome Tour. Review each confirmation before replacing settings or deleting content." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Backup & Restore saves settings without wallpaper files. Advanced provides diagnostics and reset. About contains Welcome Tour. Review each confirmation before replacing settings or deleting content."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia y restauración guarda ajustes sin archivos de fondo. Avanzado ofrece diagnóstico y restablecimiento; Acerca de contiene el recorrido. Revisa las confirmaciones antes de reemplazar o borrar."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "バックアップと復元は壁紙ファイルを含まず設定を保存します。詳細設定には診断とリセット、情報にはガイドがあります。置換や削除前に確認文をお読みください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "备份与恢复保存设置，不包含壁纸文件。高级提供诊断和重置，关于提供欢迎导览。替换设置或删除内容前，请阅读确认说明。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "備份與還原儲存設定，不包含桌布檔案。進階提供診斷和重設，關於提供歡迎導覽。取代設定或刪除內容前，請閱讀確認說明。"
-          }
-        }
-      }
-    },
     "Bad payload" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31984,41 +31949,6 @@
         }
       }
     },
-    "General controls language, appearance, login startup, the Dock, and the wallpaper transition and opening animation. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "General controls language, appearance, login startup, the Dock, and the wallpaper transition and opening animation. Display Defaults seed a display's first wallpaper; adjust an existing wallpaper in that display's configuration layer."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "General gestiona idioma, apariencia, inicio, Dock, la transición de fondo y la animación de apertura. Los valores predeterminados se usan en el primer fondo; ajusta uno existente en la configuración de su pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般設定では言語・外観・ログイン時の起動・Dock に加え、壁紙の切り替え効果とオープニングアニメーションを管理します。既定値はディスプレイの最初の壁紙用です。既存の壁紙はそのディスプレイの設定レイヤーで調整します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通用设置管理语言、外观、登录启动、Dock，以及换壁纸动画和开场动画。显示器默认值用于首次设置壁纸；现有壁纸请在该显示器的配置层调整。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般設定管理語言、外觀、登入啟動、Dock，以及換桌布動畫和開場動畫。顯示器預設值用於首次設定桌布；現有桌布請在該顯示器的設定層調整。"
-          }
-        }
-      }
-    },
     "general.orthogonalprojection is null — using perspective camera with 1920×1080 render size" : {
       "comment" : "Wallpaper Engine scene diagnostic when perspective projection is used.",
       "extractionState" : "manual",
@@ -35640,41 +35570,6 @@
         }
       }
     },
-    "Keep and recover your setup" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keep and recover your setup"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar y recuperar la configuración"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定の保存と復元"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存与恢复配置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "儲存與還原設定"
-          }
-        }
-      }
-    },
     "Key %u" : {
       "comment" : "Fallback keyboard key name. The placeholder is a hardware key code.",
       "extractionState" : "manual",
@@ -38697,40 +38592,6 @@
         }
       }
     },
-    "Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen es una app de la barra de menús. Al cerrar esta ventana, los fondos siguen funcionando. Haz clic en su icono de la barra de menús y elige Gestionar para volver. La opción Mostrar en el Dock, en los ajustes generales, también permite encontrar la app en el Dock y con Comando-Tab."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen はメニューバーに常駐するアプリです。このウインドウを閉じても壁紙は動作し続けます。メニューバーのアイコンをクリックし、「管理」を選ぶと戻れます。一般設定の「Dock に表示」をオンにすると、Dock と Command-Tab からもアプリを開けます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 是一款菜单栏应用。关闭此窗口后，壁纸仍会继续运行。点击菜单栏中的图标并选择“管理”即可重新打开窗口。在通用设置中开启“在 Dock 中显示”，也可通过 Dock 和 Command-Tab 找到应用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 是一款選單列應用程式。關閉此視窗後，桌布仍會繼續執行。點擊選單列中的圖示並選擇「管理」即可重新開啟視窗。在一般設定中開啟「在 Dock 中顯示」，也可透過 Dock 和 Command-Tab 找到應用程式。"
-          }
-        }
-      }
-    },
     "Loomscreen is quitting." : {
       "comment" : "Scene import refused because the app is shutting down.",
       "extractionState" : "manual",
@@ -38828,40 +38689,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 絕不會讀取你的 Steam 密碼——只讀取此金鑰，並且只儲存在這台 Mac 上。"
-          }
-        }
-      }
-    },
-    "Loomscreen stays in the menu bar" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen stays in the menu bar"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen permanece en la barra de menús"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen はメニューバーに常駐します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 常驻菜单栏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 常駐選單列"
           }
         }
       }
@@ -50152,76 +49979,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "效能與電池"
-          }
-        }
-      }
-    },
-    "Performance and permissions" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Performance and permissions"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rendimiento y permisos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "パフォーマンスと権限"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "性能与权限"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "效能與權限"
-          }
-        }
-      }
-    },
-    "Performance controls automatic pausing. Integrations controls weather location and supported audio response. Shortcuts configures keyboard actions; Overlays changes shared widget appearance." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Performance controls automatic pausing. Integrations controls weather location and supported audio response. Shortcuts configures keyboard actions; Overlays changes shared widget appearance."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rendimiento controla la pausa automática; Integraciones, ubicación y respuesta de audio compatible; Atajos, acciones de teclado; Superposiciones, apariencia compartida."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "パフォーマンスは自動一時停止、連携は天気の位置情報と対応する音声反応、ショートカットはキー操作、オーバーレイは共通の外観を設定します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "性能设置管理自动暂停；系统联动管理天气定位和受支持的音频响应；快捷键设置键盘操作；叠加层设置小组件的共享外观。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "效能設定管理自動暫停；系統整合管理天氣定位和支援的音訊反應；快速鍵設定鍵盤操作；疊加層設定小工具的共用外觀。"
           }
         }
       }
@@ -66711,41 +66468,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啟動"
-          }
-        }
-      }
-    },
-    "Startup, transitions and defaults" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Startup, transitions and defaults"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inicio, transiciones y valores predeterminados"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起動・切り替え効果・既定値"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动、换壁纸动画与默认值"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟動、換桌布動畫與預設值"
           }
         }
       }
@@ -85381,6 +85103,706 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 密碼與 Steam 令牌驗證碼只會交給 SteamCMD。Loomscreen 既不儲存，也不會傳往別處。"
+          }
+        }
+      }
+    },
+    "API Key Settings (Optional)" : {
+      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key Settings (Optional)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes de clave API (opcional)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API キー設定（任意）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥设置（可选）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 金鑰設定（選用）"
+          }
+        }
+      }
+    },
+    "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acerca de muestra la versión, enlaces de ayuda y el recorrido de bienvenida. Puedes repetir este recorrido aquí cuando quieras."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアプリについてには、バージョン、サポートへのリンク、ウェルカムツアーがあります。いつでもここからツアーを再開できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关于页面显示应用版本、支持链接和欢迎导览，你可随时在此重新开始导览。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關於頁面顯示 App 版本、支援連結和歡迎導覽，你可隨時在此重新開始導覽。"
+          }
+        }
+      }
+    },
+    "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avanzado ofrece diagnósticos y restablecimiento. Revisa cada confirmación antes de restablecer ajustes o eliminar contenido."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細設定には診断とリセット機能があります。設定のリセットやコンテンツの削除前に、確認内容を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级设置提供诊断与重置功能。重置设置或删除内容前请仔细阅读确认提示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進階設定提供診斷與重設功能。重設設定或刪除內容前請仔細閱讀確認提示。"
+          }
+        }
+      }
+    },
+    "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia y restauración guarda ajustes sin los archivos de los fondos. Revisa la confirmación antes de importar una copia."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バックアップと復元では、壁紙ファイルを含めずに設定を保存します。バックアップの読み込み前に確認内容を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备份与恢复仅保存设置，不包含壁纸文件。导入备份前请仔细阅读确认提示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "備份與還原僅儲存設定，不包含桌布檔案。匯入備份前請仔細閱讀確認提示。"
+          }
+        }
+      }
+    },
+    "Defaults for new wallpapers" : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defaults for new wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valores para nuevos fondos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい壁紙のデフォルト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新壁纸默认设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新桌布的預設值"
+          }
+        }
+      }
+    },
+    "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los valores de pantalla se aplican al configurar su primer fondo. Ajusta un fondo existente en la capa de configuración de esa pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイのデフォルトは、そのディスプレイに初めて壁紙を設定するときに使われます。既存の壁紙は、そのディスプレイの設定レイヤーで調整してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器默认值用于首次为显示器设置壁纸。已有壁纸的选项请在该显示器的配置层中调整。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示器預設值用於首次為顯示器設定桌布。現有桌布的選項請在該顯示器的設定層中調整。"
+          }
+        }
+      }
+    },
+    "Enjoy your wallpapers!" : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enjoy your wallpapers!"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¡Disfruta de tus fondos!"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙をお楽しみください！"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尽享桌面时光！"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "盡享桌面時光！"
+          }
+        }
+      }
+    },
+    "General controls language, login startup, the Dock, and the wallpaper transition and opening animation." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General controls language, login startup, the Dock, and the wallpaper transition and opening animation."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General permite configurar el idioma, el inicio de sesión, el Dock y las transiciones y animaciones de apertura del fondo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般設定では、言語、ログイン時の起動、Dock への表示、壁紙のトランジションと開始アニメーションを設定できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通用设置管理语言、登录时启动、程序坞显示，以及壁纸切换过渡和开场动画。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般設定管理語言、登入時啟動、Dock 顯示，以及桌布的轉場和開場動畫。"
+          }
+        }
+      }
+    },
+    "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integraciones controla la ubicación del tiempo y la respuesta de audio compatible. Activa solo los permisos necesarios para las funciones que uses."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連携では、天気の位置情報や対応する音声反応を設定できます。使う機能に必要な権限だけを許可してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "集成设置管理天气位置和受支持的音频响应。请按所用功能的需要授予权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整合設定管理天氣位置和支援的音訊回應。請依所用功能的需要授予權限。"
+          }
+        }
+      }
+    },
+    "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Superposiciones cambia la apariencia y las unidades compartidas de los widgets. Organiza cada widget en el editor de superposiciones de su pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーバーレイでは、ウィジェット共通の外観や単位を設定できます。個別の配置は各ディスプレイのオーバーレイエディタで調整してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "叠加层设置管理小组件的共用外观和单位。单个小组件的位置请在各显示器的叠加层编辑器中调整。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "疊加層設定管理小工具的共用外觀和單位。個別小工具的位置請在各顯示器的疊加層編輯器中調整。"
+          }
+        }
+      }
+    },
+    "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendimiento controla la pausa automática, la frecuencia de fotogramas adaptativa y el uso de memoria. Ajusta estas opciones a tu Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パフォーマンスでは、自動一時停止、適応フレームレート、メモリ使用量を設定できます。お使いの Mac に合わせて調整してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能设置管理自动暂停、自适应帧率和内存使用，可根据你的 Mac 调整这些选项。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "效能設定管理自動暫停、適應性影格率和記憶體使用量，可依照你的 Mac 調整這些選項。"
+          }
+        }
+      }
+    },
+    "Shortcuts configures keyboard actions for playback, wallpapers and the app window." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts configures keyboard actions for playback, wallpapers and the app window."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atajos permite configurar acciones de teclado para la reproducción, los fondos y la ventana de la app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ショートカットでは、再生、壁紙、アプリのウインドウを操作するキーを設定できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷键设置用于配置播放、壁纸和应用窗口的键盘操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速鍵設定用於設定播放、桌布和 App 視窗的鍵盤操作。"
+          }
+        }
+      }
+    },
+    "Startup and transitions" : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup and transitions"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio y transiciones"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起動とトランジション"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动与过渡"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動與轉場"
+          }
+        }
+      }
+    },
+    "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab." : {
+      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¡Gracias por descargar Loomscreen! Loomscreen se ejecuta en la barra de menús. Los fondos siguen funcionando al cerrar esta ventana. Haz clic en su icono y elige Gestionar para volver. Activa Mostrar en el Dock en los ajustes generales para acceder también desde el Dock y con Command-Tab."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen をダウンロードしていただき、ありがとうございます！Loomscreen はメニューバーに常駐します。このウインドウを閉じても壁紙は動き続けます。メニューバーアイコンから「管理」を選ぶと、この画面に戻れます。「一般」設定で「Dock に表示」を有効にすると、Dock や Command-Tab からもアプリを開けます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感谢下载 Loomscreen！Loomscreen 常驻菜单栏，关闭此窗口后壁纸仍会继续播放。点按菜单栏图标并选择“管理”即可返回。在“通用”设置中启用“在程序坞中显示”，还可通过程序坞或 Command-Tab 切换到本应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感謝下載 Loomscreen！Loomscreen 常駐選單列，關閉此視窗後桌布仍會繼續播放。按一下選單列圖示並選擇「管理」即可返回。在「一般」設定中啟用「在 Dock 中顯示」，也可透過 Dock 或 Command-Tab 切換至本 App。"
+          }
+        }
+      }
+    },
+    "Welcome to Loomscreen" : {
+      "comment" : "Welcome Tour introduction or optional Workshop settings action.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to Loomscreen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te damos la bienvenida a Loomscreen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen へようこそ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎使用 Loomscreen"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歡迎使用 Loomscreen"
+          }
+        }
+      }
+    },
+    "You're all set. Thanks for using Loomscreen—enjoy your desktop! You can replay this tour anytime from Settings › About." : {
+      "comment" : "Welcome Tour settings walkthrough or completion.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're all set. Thanks for using Loomscreen—enjoy your desktop! You can replay this tour anytime from Settings › About."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo listo. ¡Gracias por usar Loomscreen y disfruta de tu escritorio! Puedes repetir este recorrido desde Ajustes › Acerca de."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備ができました。Loomscreen をご利用いただき、ありがとうございます。デスクトップをお楽しみください！このツアーは「設定 › このアプリについて」からいつでも再開できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一切就绪。感谢使用 Loomscreen，愿你尽享桌面时光！你可随时从“设置 › 关于”重新开始此导览。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一切就緒。感謝使用 Loomscreen，願你盡享桌面時光！你可隨時從「設定 › 關於」重新開始此導覽。"
+          }
+        }
+      }
+    },
+    "SteamCMD was found but needs setup on this Mac. Loomscreen can download and prepare a verified copy automatically." : {
+      "comment" : "SteamCMD first-run preparation and in-app recovery.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD was found but needs setup on this Mac. Loomscreen can download and prepare a verified copy automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已找到 SteamCMD，但需要先完成设置。Loomscreen 可自动下载并准备经过验证的副本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已找到 SteamCMD，但需要先完成設定。Loomscreen 可自動下載並準備經過驗證的副本。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD は見つかりましたが、この Mac で使うには準備が必要です。Loomscreen が検証済みのコピーを自動でダウンロードして準備できます。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se encontró SteamCMD, pero necesita prepararse en este Mac. Loomscreen puede descargar y preparar automáticamente una copia verificada."
+          }
+        }
+      }
+    },
+    "SteamCMD has no quarantine attribute. Its launch check has not completed." : {
+      "comment" : "SteamCMD first-run preparation and in-app recovery.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD has no quarantine attribute. Its launch check has not completed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 未带隔离属性，但尚未完成启动检查。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 未帶隔離屬性，但尚未完成啟動檢查。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD に隔離属性はありません。起動の確認はまだ完了していません。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD no tiene atributo de cuarentena. La comprobación de inicio aún no ha finalizado."
+          }
+        }
+      }
+    },
+    "Loomscreen will download and prepare SteamCMD for this Mac. Your existing installation stays in place. No Terminal commands are needed." : {
+      "comment" : "SteamCMD first-run preparation and in-app recovery.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen will download and prepare SteamCMD for this Mac. Your existing installation stays in place. No Terminal commands are needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 将为本机下载并准备 SteamCMD，保留现有安装，无需执行终端命令。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 將為這台 Mac 下載並準備 SteamCMD，保留現有安裝，無需執行終端機指令。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen がこの Mac 用の SteamCMD をダウンロードして準備します。既存のインストールはそのまま残ります。ターミナルでの操作は不要です。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen descargará y preparará SteamCMD para este Mac. Tu instalación actual se conservará. No necesitas usar comandos de Terminal."
+          }
+        }
+      }
+    },
+    "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry." : {
+      "comment" : "SteamCMD first-run preparation and in-app recovery.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 仍在准备中，或暂时无法连接 Steam。请检查网络连接，然后点按“自动查找”重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 仍在準備中，或暫時無法連線至 Steam。請檢查網路連線，然後按一下「自動尋找」重試。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD は準備中か、Steam に接続できませんでした。接続を確認し、「自動検出」を選んで再試行してください。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD sigue preparándose o no pudo conectar con Steam. Comprueba la conexión y elige Localizar automáticamente para reintentarlo."
           }
         }
       }

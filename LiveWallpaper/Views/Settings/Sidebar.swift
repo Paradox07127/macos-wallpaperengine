@@ -42,34 +42,39 @@ struct SettingsSidebar: View {
             .padding(.horizontal, DesignTokens.Spacing.md)
             .padding(.bottom, DesignTokens.Spacing.sm)
 
-            List(selection: sidebarSelection) {
-                // Search ranks across the whole window, so its hits stay one flat list;
-                // grouping them would scatter the best match down the column.
-                if isSearching {
-                    Section {
-                        if searchResults.isEmpty {
-                            emptySearchRow
-                        } else {
-                            rows(for: searchResults)
+            ScrollViewReader { proxy in
+                List(selection: sidebarSelection) {
+                    // Search ranks across the whole window, so its hits stay one flat list;
+                    // grouping them would scatter the best match down the column.
+                    if isSearching {
+                        Section {
+                            if searchResults.isEmpty {
+                                emptySearchRow
+                            } else {
+                                rows(for: searchResults)
+                            }
+                        } header: {
+                            SidebarSectionHeader(title: "Search Results")
                         }
-                    } header: {
-                        SidebarSectionHeader(title: "Search Results")
-                    }
-                } else {
-                    ForEach(SettingsNavigationGroup.allCases) { group in
-                        let groupResults = searchResults.filter { $0.item.group == group }
-                        if !groupResults.isEmpty {
-                            Section {
-                                rows(for: groupResults)
-                            } header: {
-                                SidebarSectionHeader(title: group.title)
+                    } else {
+                        ForEach(SettingsNavigationGroup.allCases) { group in
+                            let groupResults = searchResults.filter { $0.item.group == group }
+                            if !groupResults.isEmpty {
+                                Section {
+                                    rows(for: groupResults)
+                                } header: {
+                                    SidebarSectionHeader(title: group.title)
+                                }
                             }
                         }
                     }
                 }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .onChange(of: selection, initial: true) { _, destination in
+                    if let destination { proxy.scrollTo(destination, anchor: .center) }
+                }
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
         }
         .navigationSplitViewColumnWidth(
             min: SettingsWindowMetrics.sidebarColumnWidth,
@@ -88,6 +93,8 @@ struct SettingsSidebar: View {
             // A tag, not a NavigationLink: the Edit Desk hosts this list outside any navigation container, where links draw disabled.
             SettingsSidebarRow(result: result)
                 .tag(result.destination)
+                .id(result.destination)
+                .pageGuideTarget(.settingsItem(result.destination))
                 .accessibilityHint(Text("Open settings category"))
         }
     }
