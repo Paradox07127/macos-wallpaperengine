@@ -37,7 +37,8 @@ struct EditDeskChromeSourceTests {
             source.components(separatedBy: "prepareLibrary(").count - 1 == 1,
             "the cover sweep must not run again on every library rebuild"
         )
-        let homeSweeps = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift").contains("prepareLibrary(")
+        let homeSweeps = try (RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+            + RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/LibraryGridTile.swift")).contains("prepareLibrary(")
         #expect(!homeSweeps, "the sweep would run again each time a page switch remounts HomePage")
     }
 

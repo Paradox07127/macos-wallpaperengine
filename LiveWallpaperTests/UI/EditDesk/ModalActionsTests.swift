@@ -585,8 +585,9 @@ struct ModalActionsTests {
     @Test("The stage follows each display's configuration revision rather than every configuration-change notification")
     func stageFollowsConfigurationRevisions() throws {
         let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        let tiles = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/LibraryGridTile.swift")
         #expect(
-            !home.contains("publisher(for: .wallpaperConfigurationDidChange)"),
+            !(home + tiles).contains("publisher(for: .wallpaperConfigurationDidChange)"),
             "a volume or mute save still recaptures the cover through the change notification"
         )
         #expect(home.contains("configurationRevision"), "the stage never hears that a display's configuration was committed")
