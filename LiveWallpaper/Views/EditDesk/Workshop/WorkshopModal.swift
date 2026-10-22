@@ -48,6 +48,7 @@ struct WorkshopModal: View {
             windowSize: windowSize,
             titlebarInset: titlebarInset,
             title: item.title,
+            pageID: String(item.id),
             actions: actions.headerActions(
                 for: item, isLiked: WorkshopBookmarkActions.contains(item.id),
                 toggleLike: { WorkshopBookmarkActions.toggle(item) }

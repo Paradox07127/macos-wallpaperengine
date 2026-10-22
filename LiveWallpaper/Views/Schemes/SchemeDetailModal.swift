@@ -63,6 +63,7 @@ struct SchemeDetailModal: View {
         EditDeskModalChrome(
             windowSize: windowSize,
             title: shown.name,
+            pageID: shown.id.uuidString,
             actions: headerActions,
             onDismiss: onDismiss,
             onTargetShortcut: applyToShortcut,
