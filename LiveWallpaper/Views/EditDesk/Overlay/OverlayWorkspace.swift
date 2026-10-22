@@ -88,8 +88,8 @@ struct OverlayWorkspace: View {
         .pageGuideTarget(.overlayCanvas)
         .coordinateSpace(name: Self.dragSpace)
         .overlay(alignment: .topLeading) { ghost }
-        .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: layersVisible)
-        .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: addExpanded)
+        .animation(Self.panelAnimation(reduceMotion: reduceMotion), value: layersVisible)
+        .animation(Self.panelAnimation(reduceMotion: reduceMotion), value: addExpanded)
         .onChange(of: session.selection) { _, selection in
             inspectorVisible = Self.inspectorVisible(inspectorVisible, after: .selectionChanged, selection: selection)
         }
@@ -102,6 +102,16 @@ struct OverlayWorkspace: View {
         .onChange(of: previewMode) { _, _ in session.capturePreview() }
         .onChange(of: sessionKey) { addDrag.cancel() }
         .onDisappear { addDrag.cancel() }
+    }
+
+    /// Shared by the strip's panels and the add drawer.
+    static func panelAnimation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .linear(duration: 0.15) : .easeInOut(duration: 0.22)
+    }
+
+    /// Reduce Motion fades in place instead of sliding down.
+    static func panelTransition(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
     }
 
     enum InspectorEvent {
@@ -260,7 +270,7 @@ struct OverlayWorkspace: View {
                                            max(30, min(300, availableHeight - 76 - OverlayWorkspaceLayout.rowHeight))),
                                copyLayer: copyLayer)
                     .padding(.vertical, 6)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(Self.panelTransition(reduceMotion: reduceMotion))
                 VStack(spacing: 0) {
                     Divider().padding(.horizontal, 12)
                     Button(role: .destructive) { session.removeAllObjects() } label: {
@@ -273,7 +283,7 @@ struct OverlayWorkspace: View {
                     .padding(.horizontal, 12)
                     .frame(height: OverlayWorkspaceLayout.rowHeight)
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(Self.panelTransition(reduceMotion: reduceMotion))
             }
         }
         .clipped()

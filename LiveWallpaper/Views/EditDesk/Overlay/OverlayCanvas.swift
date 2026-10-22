@@ -253,28 +253,37 @@ struct OverlayObjectChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // Each fade is scoped to its own overlay and keyed on `selected` alone: the caller's `.position` moves every drag frame.
             .overlay {
-                if selected || dragging {
-                    RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.chip)
-                        .strokeBorder(DesignTokens.EditDesk.Colors.strokeHotShell,
-                                      lineWidth: OverlayGeometry.decorationLineWidth(forRenderScale: renderScale))
-                        .allowsHitTesting(false)
+                ZStack {
+                    if selected || dragging {
+                        RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.chip)
+                            .strokeBorder(DesignTokens.EditDesk.Colors.strokeHotShell,
+                                          lineWidth: OverlayGeometry.decorationLineWidth(forRenderScale: renderScale))
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
                 }
+                .animation(selectionFade, value: selected)
             }
             .overlay(alignment: .topTrailing) {
-                if let onRemove, selected || hovering || hoveringButton {
-                    let boost = MonitorChromeScale.boost(forRenderScale: renderScale)
-                    // Board points: from the unscaled circle's centre to the corner, less 4pt on screen.
-                    let reach = DesignTokens.iconButtonDiameter(.small) / 2 - DesignTokens.Spacing.xs * boost
-                    GlassIconButton("xmark", size: .small, action: onRemove)
-                        .help(Text("Remove"))
-                        .accessibilityLabel(Text("Remove"))
-                        // Undoes the board shrink so the circle stays 20pt on screen; the offset centres it 4pt in from the corner.
-                        .scaleEffect(boost)
-                        .offset(x: reach, y: -reach)
-                        // Part of the circle hangs outside the object, where the object's own hover has already ended.
-                        .onHover { hoveringButton = $0 }
+                ZStack {
+                    if let onRemove, selected || hovering || hoveringButton {
+                        let boost = MonitorChromeScale.boost(forRenderScale: renderScale)
+                        // Board points: from the unscaled circle's centre to the corner, less 4pt on screen.
+                        let reach = DesignTokens.iconButtonDiameter(.small) / 2 - DesignTokens.Spacing.xs * boost
+                        GlassIconButton("xmark", size: .small, action: onRemove)
+                            .help(Text("Remove"))
+                            .accessibilityLabel(Text("Remove"))
+                            // Undoes the board shrink so the circle stays 20pt on screen; the offset centres it 4pt in from the corner.
+                            .scaleEffect(boost)
+                            .offset(x: reach, y: -reach)
+                            // Part of the circle hangs outside the object, where the object's own hover has already ended.
+                            .onHover { hoveringButton = $0 }
+                            .transition(.opacity)
+                    }
                 }
+                .animation(selectionFade, value: selected)
             }
             .onHover { hovering = $0 }
             .shadow(color: DesignTokens.EditDesk.Shadow.floatPanel.color.opacity(dragging && !reduceMotion ? 1 : 0),
@@ -304,6 +313,10 @@ struct OverlayObjectChrome: ViewModifier {
     private func claimLanding() {
         guard claimsLanding, selected, chrome.editor?.claimLanding() == true else { return }
         landings += 1
+    }
+
+    private var selectionFade: Animation? {
+        DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15))
     }
 
     private var animation: Animation {

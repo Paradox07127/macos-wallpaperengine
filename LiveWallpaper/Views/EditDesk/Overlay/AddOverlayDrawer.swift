@@ -17,7 +17,6 @@ struct AddOverlayDrawer: View {
     let items: [OverlayAddItem]
     let onDrag: (OverlayAddDragPhase) -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var interaction: InteractionModel
     @State private var boardFull = false
     @State private var draggedItem: OverlayAddItem?
@@ -88,11 +87,8 @@ struct AddOverlayDrawer: View {
 
     private var header: some View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-            Button {
-                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.82)) {
-                    isExpanded.toggle()
-                }
-            } label: {
+            // The workspace's `.animation(value: addExpanded)` animates this toggle.
+            Button { isExpanded.toggle() } label: {
                 HStack(spacing: DesignTokens.Spacing.sm) {
                     if !isExpanded {
                         Image(systemName: "plus")

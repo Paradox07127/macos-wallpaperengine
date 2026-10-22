@@ -26,7 +26,7 @@ struct OverlayEffectPanel: View {
             if expanded {
                 Divider().padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
                 settings
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(OverlayWorkspace.panelTransition(reduceMotion: reduceMotion))
             }
         }
         .clipped()
@@ -112,7 +112,7 @@ struct OverlayEffectPanel: View {
     }
 
     private func toggleExpanded() {
-        withAnimation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22)) {
+        withAnimation(OverlayWorkspace.panelAnimation(reduceMotion: reduceMotion)) {
             expanded.toggle()
         }
     }
