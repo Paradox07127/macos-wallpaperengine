@@ -366,6 +366,10 @@ struct HomePage: View {
         router.detailDisplayID != nil
     }
 
+    private var topBarCovered: Bool {
+        router.detailDisplayID != nil || detailBusy
+    }
+
     /// Shelf thumbnails are requested at the row card size on a 2× screen; the grid shows them only
     /// until its own size decodes.
     private static let thumbnailPixelSize = CGSize(
@@ -400,14 +404,15 @@ struct HomePage: View {
                 .modifier(CoveredByDetail(covered: detailCovers))
             wallpapersOffBanner
                 .modifier(CoveredByDetail(covered: detailCovers))
-            if router.detailDisplayID == nil, !detailBusy {
-                TopBar(
-                    page: pageBinding,
-                    workshopAvailable: featureCatalog.isEnabled(.wpeImport),
-                    windowWidth: stage.stageSize.width,
-                    status: statusCapsule
-                )
-            }
+            TopBar(
+                page: pageBinding,
+                workshopAvailable: featureCatalog.isEnabled(.wpeImport),
+                windowWidth: stage.stageSize.width,
+                status: statusCapsule
+            )
+            // Hidden and unhittable is not enough: the status capsule's focus and Escape handler would still respond under the detail page.
+            .disabled(topBarCovered)
+            .modifier(CoveredByDetail(covered: topBarCovered))
             DisplayDetailHost(
                 router: router, stage: stage, library: library, modalPresented: presentedItemID != nil,
                 refreshCover: { refreshCover(for: $0, crossfade: false) },
@@ -952,6 +957,22 @@ struct HomePage: View {
 
     // MARK: Library page
 
+    private enum LibraryGridContent {
+        case aerialsStatus, firstRunGuide, noResults, grid
+    }
+
+    /// Which of `wallpaperGrid`'s branches is showing; nil without a library model.
+    private var libraryGridContent: LibraryGridContent? {
+        guard let library else { return nil }
+        if library.chip == .aerials, library.aerialsStatus.isEmpty {
+            return .aerialsStatus
+        }
+        if library.visibleItems.isEmpty {
+            return library.items.isEmpty ? .firstRunGuide : .noResults
+        }
+        return .grid
+    }
+
     private var wallpaperGrid: some View {
         VStack(spacing: 0) {
             GeometryReader { geometry in
@@ -960,9 +981,11 @@ struct HomePage: View {
                     VStack(spacing: Self.libraryStackSpacing) {
                         if let screen = libraryTargetScreen {
                             libraryTargetBanner(for: screen)
+                                .transition(.opacity)
                         }
                         if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
                             AerialsSourceStatusCard()
+                                .transition(.opacity)
                         } else if let library, library.visibleItems.isEmpty {
                             if library.items.isEmpty {
                                 LibraryGuideCard(
@@ -974,6 +997,7 @@ struct HomePage: View {
                                     actionSystemImage: "plus",
                                     action: promptLibraryImport
                                 )
+                                .transition(.opacity)
                             } else {
                                 IllustratedEmptyState(
                                     symbol: "magnifyingglass",
@@ -984,6 +1008,7 @@ struct HomePage: View {
                                         library.filter = nil
                                     }
                                 )
+                                .transition(.opacity)
                             }
                         } else if let library {
                             LibraryGalleryGrid(
@@ -1019,8 +1044,18 @@ struct HomePage: View {
                                 }
                             }
                             .libraryGridPadding()
+                            .transition(.opacity)
                         }
                     }
+                    // Keyed on the branch, not the items: a filter change inside the grid must not animate its lazy layout.
+                    .animation(
+                        DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.exitDuration)),
+                        value: libraryGridContent
+                    )
+                    .animation(
+                        DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.exitDuration)),
+                        value: libraryTargetScreen != nil
+                    )
                     .frame(minHeight: library?.visibleItems.isEmpty == true ? geometry.size.height : nil)
                 }
                 .scrollBounceBehavior(.basedOnSize)
