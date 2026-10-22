@@ -405,6 +405,14 @@ public enum DesignTokens {
         public static let enterDuration: TimeInterval = 0.4
         public static let exitDuration: TimeInterval = 0.2
 
+        public static func modalPresentation(reduceMotion: Bool) -> Animation {
+            reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.82)
+        }
+
+        public static func modalDismissal(reduceMotion: Bool) -> Animation {
+            reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: exitDuration)
+        }
+
         /// Deliberately longer than `exitDuration`, which is tuned for widget-sized
         /// elements and reads as a jump at full screen.
         public static let wallpaperCrossfadeDuration: TimeInterval = 0.4

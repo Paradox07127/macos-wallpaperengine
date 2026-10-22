@@ -76,7 +76,7 @@ struct ModalArrowWindowTests {
     }
 
     /// The smallest Edit Desk window: the panel leaves a 60pt gutter each side, 372 is its middle.
-    private static let size = CGSize(width: 1040, height: 700)
+    fileprivate static let size = CGSize(width: 1040, height: 700)
     private static let previousArrow = CGPoint(x: 30, y: 372)
     private static let nextArrow = CGPoint(x: 1010, y: 372)
     /// Where ← stood inside the panel: past the side padding, level with the middle of the preview box.
@@ -135,6 +135,117 @@ struct ModalArrowWindowTests {
         #expect(presses.next == 1 && presses.previous == 1, Comment(rawValue: "\(modal) at the first item: → \(presses.next), ← \(presses.previous)"))
         #expect(presses.dismissals == 0)
     }
+
+    @Test("Workshop arrow keys keep paging after the first item and stop at both ends", .timeLimit(.minutes(1)))
+    func workshopKeysContinuePaging() async throws {
+        let model = WorkshopPagingProbeModel()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("WorkshopPagingProbe-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = FirstMouseHost(rootView: WorkshopPagingProbe(model: model, directory: directory)
+            .frame(width: Self.size.width, height: Self.size.height))
+        let window = ParkedTestWindow(contentRect: CGRect(origin: .zero, size: Self.size), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.parkOffScreen()
+        window.makeKey()
+        defer { window.orderOut(nil); window.contentView = nil; window.close() }
+        let steps: [(ArrowWindow.Key, Int)] = [(.right, 1), (.right, 2), (.right, 3), (.right, 3), (.left, 2), (.left, 1), (.left, 0), (.left, 0)]
+        for (key, expected) in steps {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            ArrowWindow.press(key, in: window)
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(model.index == expected, Comment(rawValue: "\(key) should display index \(expected), received \(model.index)"))
+        }
+        #expect(model.visited == [1, 2, 3, 2, 1, 0])
+    }
+
+    @Test("The apply shortcut follows the displayed item and its applied state", .timeLimit(.minutes(1)))
+    func applyShortcutFollowsPaging() async throws {
+        let model = ModalShortcutProbeModel()
+        let size = Self.size
+        let host = FirstMouseHost(rootView: ModalShortcutProbe(model: model).frame(width: size.width, height: size.height))
+        let window = ParkedTestWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.parkOffScreen()
+        window.makeKey()
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+        for (id, applied, expected) in [("first", true, "show first"), ("second", false, "apply second"), ("second", true, "show second")] {
+            model.itemID = id
+            model.applied = applied
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            let event = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: "1", charactersIgnoringModifiers: "1",
+                isARepeat: false, keyCode: 18
+            ))
+            NSApp.sendEvent(event)
+            let deadline = ContinuousClock.now + .seconds(2)
+            while model.presses.last != expected, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(model.presses.last == expected, Comment(rawValue: "expected \(expected), received \(model.presses)"))
+        }
+        #expect(model.presses == ["show first", "apply second", "show second"])
+    }
+}
+
+@MainActor @Observable
+private final class WorkshopPagingProbeModel {
+    var index = 0
+    var visited: [Int] = []
+}
+
+private struct WorkshopPagingProbe: View {
+    let model: WorkshopPagingProbeModel
+    let directory: URL
+
+    var body: some View {
+        let index = model.index
+        let navigation = ModalNavigation(
+            canGoPrevious: index > 0, canGoNext: index < 3,
+            previous: { model.index = index - 1; model.visited.append(index - 1) },
+            next: { model.index = index + 1; model.visited.append(index + 1) }
+        )
+        return ArrowWindow.workshopModal(
+            size: ModalArrowWindowTests.size, navigation: navigation, presses: ModalArrowWindowTests.Presses(),
+            directory: directory, itemID: UInt64(index + 1)
+        )
+    }
+}
+
+@MainActor @Observable
+private final class ModalShortcutProbeModel {
+    var itemID = "first"
+    var applied = true
+    var presses: [String] = []
+}
+
+private struct ModalShortcutProbe: View {
+    let model: ModalShortcutProbeModel
+
+    var body: some View {
+        let id = model.itemID
+        var targets = ProbeFixtures.targets(thumbnail: nil)
+        targets[0].isApplied = model.applied
+        return WallpaperModal(
+            content: WallpaperModalContent(itemID: id, title: id, kind: .video), targets: targets,
+            actions: WallpaperModalActions(
+                applyTo: { _ in model.presses.append("apply \(id)") }, applyToAllDisplays: {},
+                showDisplay: { _ in model.presses.append("show \(id)") }
+            ),
+            requestRename: {}, requestDelete: {},
+            navigation: ModalNavigation(canGoPrevious: false, canGoNext: false, previous: {}, next: {}),
+            windowSize: ModalArrowWindowTests.size, titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
+            onDismiss: {}, onDrag: { _ in }
+        )
+    }
 }
 
 @MainActor
@@ -180,10 +291,10 @@ private final class ArrowWindow {
     }
 
     /// Keyless and offline, so the presets section asks nothing of Steam.
-    private static func workshopModal(
-        size: CGSize, navigation: ModalNavigation, presses: ModalArrowWindowTests.Presses, directory: URL
+    fileprivate static func workshopModal(
+        size: CGSize, navigation: ModalNavigation, presses: ModalArrowWindowTests.Presses, directory: URL, itemID: UInt64 = 2_468_489_223
     ) -> some View {
-        let item = ProbeFixtures.workshopItem()
+        let item = ProbeFixtures.workshopItem(id: itemID)
         let keychain = WorkshopKeychainStore(directory: directory, slot: WorkshopKeychainSlotSpy().slot())
         let cache = WorkshopQueryCache(directoryURL: directory.appendingPathComponent("cache"))
         let services = WorkshopServices(
@@ -238,6 +349,10 @@ private final class ArrowWindow {
 
     /// Through `NSApp`, the way a real key press reaches the window's key equivalents.
     func press(_ key: Key) {
+        Self.press(key, in: window)
+    }
+
+    static func press(_ key: Key, in window: NSWindow) {
         let (code, scalar): (UInt16, Int) = key == .left ? (123, NSLeftArrowFunctionKey) : (124, NSRightArrowFunctionKey)
         let characters = UnicodeScalar(UInt32(scalar)).map { String(Character($0)) } ?? ""
         guard let event = NSEvent.keyEvent(

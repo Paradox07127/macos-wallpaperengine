@@ -28,6 +28,8 @@ struct AnimatedGIFThumbnail: View {
     @State private var retryAttempt = 0
     @State private var isVisible = false
     @State private var hostAllowsPlayback = false
+    /// Decoded poster dimensions, reported per completed source load rather than per animation frame.
+    private let onImageSizeChange: @MainActor (CGSize?) -> Void
     private let loadAsset: @MainActor (URL, WorkshopPreviewSize) async -> WorkshopPreviewAsset?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A collapsed inspector keeps its subtree mounted, so `onDisappear` never
@@ -65,6 +67,7 @@ struct AnimatedGIFThumbnail: View {
         previewSize: WorkshopPreviewSize = .tile,
         isBlurred: Bool = false,
         contentMode: ContentMode = .fill,
+        onImageSizeChange: @escaping @MainActor (CGSize?) -> Void = { _ in },
         isHovered: Binding<Bool> = .constant(false),
         controller: GIFAnimationController = GIFAnimationController(),
         loadAsset: @escaping @MainActor (URL, WorkshopPreviewSize) async -> WorkshopPreviewAsset? = { url, size in
@@ -77,6 +80,7 @@ struct AnimatedGIFThumbnail: View {
         self.previewSize = previewSize
         self.isBlurred = isBlurred
         self.contentMode = contentMode
+        self.onImageSizeChange = onImageSizeChange
         self._isHovered = isHovered
         _controller = State(initialValue: controller)
         self.loadAsset = loadAsset
@@ -203,12 +207,14 @@ struct AnimatedGIFThumbnail: View {
         guard let url else {
             controller.setAsset(nil)
             phase = .empty
+            onImageSizeChange(nil)
             return
         }
         phase = .loading
         let asset = await loadAsset(url, previewSize)
         guard !Task.isCancelled else { return }
         controller.setAsset(asset)
+        onImageSizeChange(asset.map { CGSize(width: $0.posterFrame.width, height: $0.posterFrame.height) })
         phase = asset == nil ? .failed : .ready
         guard asset != nil else { return }
         applyPlaybackGate()

@@ -23,6 +23,7 @@ struct EditDeskModalChrome<Panel: View>: View {
     /// nil greys the arrow out and drops its key: there is no item that way.
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
+    var shortcutIdentity: String?
     @ViewBuilder let panel: (CGRect) -> Panel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -40,7 +41,7 @@ struct EditDeskModalChrome<Panel: View>: View {
         ZStack(alignment: .topLeading) {
             DesignTokens.EditDesk.Colors.modalScrim
                 .allowsHitTesting(false)
-                .transition(.opacity.animation(openAnimation))
+                .transition(.asymmetric(insertion: .opacity.animation(openAnimation), removal: .opacity.animation(closeAnimation)))
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onDismiss)
@@ -49,6 +50,7 @@ struct EditDeskModalChrome<Panel: View>: View {
                 .offset(x: frame.minX, y: frame.minY)
                 .transition(panelTransition)
             shortcuts
+                .id(shortcutIdentity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -162,13 +164,20 @@ struct EditDeskModalChrome<Panel: View>: View {
     // MARK: Motion
 
     private var openAnimation: Animation {
-        reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.82)
+        DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion)
+    }
+
+    private var closeAnimation: Animation {
+        DesignTokens.Motion.modalDismissal(reduceMotion: reduceMotion)
     }
 
     private var panelTransition: AnyTransition {
         if reduceMotion {
-            return .opacity.animation(openAnimation)
+            return .asymmetric(insertion: .opacity.animation(openAnimation), removal: .opacity.animation(closeAnimation))
         }
-        return .scale(scale: 0.92).combined(with: .opacity).animation(openAnimation)
+        return .asymmetric(
+            insertion: .scale(scale: 0.92).combined(with: .opacity).animation(openAnimation),
+            removal: .scale(scale: 0.98).combined(with: .opacity).animation(closeAnimation)
+        )
     }
 }

@@ -5,6 +5,27 @@ import Testing
 @MainActor
 @Suite("Detail transition coordinator")
 struct DetailTransitionTests {
+    @Test("A modal-covered detail waits for layout and releases without a hidden tile flight", arguments: [false, true])
+    func coveredDetailHandoff(cancelBeforeLayout: Bool) async throws {
+        let stage = FakeStage()
+        let coordinator = DetailTransitionCoordinator(stage: stage, usesMeasuredFrame: true) { .zero }
+        var releases = 0
+        coordinator.onRelease = { releases += 1 }
+        coordinator.request(1, covered: true)
+        try await settle { coordinator.shownDisplayID == 1 }
+        try #require(!coordinator.heroVisible && coordinator.busy, "the covered detail did not wait for its real layout")
+        if !cancelBeforeLayout {
+            coordinator.heroDidLayout(display: 1, frame: CGRect(x: 24, y: 100, width: 700, height: 400))
+            try await settle { coordinator.phase == .shown }
+            #expect(coordinator.heroVisible && stage.covering)
+        }
+        coordinator.request(nil)
+        try await settle { coordinator.phase == .idle }
+        #expect(!coordinator.heroVisible && !coordinator.busy && !stage.covering)
+        #expect(releases == 1)
+        #expect(!stage.log.contains { $0.hasPrefix("fly ") || $0.hasPrefix("return ") })
+    }
+
     @Test("Open hands the hero over once the tile lands; close reveals the tile before returning it")
     func openThenClose() async throws {
         let stage = FakeStage()

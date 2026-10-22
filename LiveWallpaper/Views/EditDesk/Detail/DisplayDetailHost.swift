@@ -26,6 +26,12 @@ struct DisplayDetailHost: View {
     @Binding var busy: Bool
     /// The page's own toast stack, so overlay copies and wallpaper applies queue in one place.
     let toasts: EditDeskToastCenter
+    var onPresentationReady: (CGDirectDisplayID) -> Void = { _ in }
+    var previewFallback: (CGDirectDisplayID) -> CGImage? = { _ in nil }
+    var backLabel: LocalizedStringKey = "Overview"
+    var onBack: (() -> Void)?
+    var coveredPresentation = false
+    var onPresentationClosed: () -> Void = {}
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
@@ -75,6 +81,8 @@ struct DisplayDetailHost: View {
 
     var body: some View {
         content
+            .allowsHitTesting(!modalPresented)
+            .accessibilityHidden(modalPresented)
             .onChange(of: router.detailDisplayID, initial: true) { _, id in
                 request(id)
             }
@@ -84,6 +92,11 @@ struct DisplayDetailHost: View {
                 busy = value
                 if !value, let libraryHandoff {
                     openLibrary(libraryHandoff)
+                }
+            }
+            .onChange(of: coordinator?.heroVisible ?? false) { _, visible in
+                if visible, let id = coordinator?.shownDisplayID {
+                    onPresentationReady(id)
                 }
             }
             .onChange(of: stage.stageSize) { coordinator?.windowDidResize() }
@@ -110,7 +123,7 @@ struct DisplayDetailHost: View {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
                 presentations(refreshes(detail(for: screen, id: id), for: screen), for: screen)
                 if !modalPresented, pageGuide?.context == nil {
-                    Button(action: router.closeDetail) { EmptyView() }
+                    Button(action: requestBack) { EmptyView() }
                         .keyboardShortcut(.cancelAction)
                         .opacity(0)
                         .frame(width: 0, height: 0)
@@ -297,8 +310,11 @@ struct DisplayDetailHost: View {
                 session.capturePreview()
             }
         }
-        coordinator.onRelease = { overlaySession = nil }
-        coordinator.request(id)
+        coordinator.onRelease = {
+            overlaySession = nil
+            onPresentationClosed()
+        }
+        coordinator.request(id, covered: coveredPresentation)
     }
 
     private func reloadDraft(for screen: Screen) {
@@ -618,7 +634,7 @@ struct DisplayDetailHost: View {
     // MARK: Content
 
     private func cover(_ id: CGDirectDisplayID) -> CGImage? {
-        stage.displays.first { $0.id == id }?.cover
+        stage.displays.first { $0.id == id }?.cover ?? previewFallback(id)
     }
 
     private func tags(current: CGDirectDisplayID) -> [DetailDisplayTag] {
@@ -670,10 +686,10 @@ struct DisplayDetailHost: View {
 
     /// Ignored while the hero is not up, so a swipe during a flight cannot start another.
     private func swipe(_ step: DetailSwipeStep) {
-        guard coordinator?.heroVisible == true, let current = router.detailDisplayID else { return }
+        guard !modalPresented, coordinator?.heroVisible == true, let current = router.detailDisplayID else { return }
         switch Self.swipeTarget(step, from: current, in: Self.displayOrder(stage.displays).map(\.id)) {
         case .home?:
-            router.closeDetail()
+            requestBack()
         case let .display(id)?:
             router.showDetail(id)
         case nil:
@@ -737,10 +753,18 @@ struct DisplayDetailHost: View {
 
     // MARK: Actions
 
+    private func requestBack() {
+        if let onBack {
+            onBack()
+        } else {
+            router.closeDetail()
+        }
+    }
+
     private func actions(for screen: Screen) -> DetailActions {
         let switchBack = Self.switchBackTypes(screenManager.getConfiguration(for: screen))
         return DetailActions(
-            back: router.closeDetail,
+            back: requestBack,
             selectDisplay: { router.showDetail($0) },
             saveAsScheme: { showSchemeCapture = true },
             applyToAll: { requestApplyToAll(from: screen) },
@@ -776,7 +800,7 @@ struct DisplayDetailHost: View {
             switchBackToWebPage: switchBack.contains(.html) ? { switchToSaved(.html, on: screen) } : nil,
             applyWebSource: { apply(.html($0), screen.id) },
             reload: { screenManager.reloadWallpaperForScreen(screen) },
-            swipe: { swipe($0) }
+            swipe: { swipe($0) }, backLabel: backLabel
         )
     }
 

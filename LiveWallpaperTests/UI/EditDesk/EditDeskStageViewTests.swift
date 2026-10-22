@@ -891,6 +891,11 @@ struct EditDeskStageViewTests {
         let first = Task { await model.flyTile(display: 1, to: CGRect(x: 50, y: 50, width: 700, height: 400)) }
         try #require(await yielding(until: { shell.content.superlayer !== shell.layer }), "the first flight never took off")
         view.advance(dt: 1 / 60)
+        let inFlight = shell.content.frame
+        model.updateFlightDestination(display: 1, to: CGRect(x: 200, y: 160, width: 900, height: 500))
+        #expect(sameRect(shell.content.frame, inFlight), "retargeting must not move the currently displayed rectangle")
+        view.advance(dt: 1 / 120)
+        #expect(abs(shell.content.frame.minX - inFlight.minX) < 20, "the retarget must continue from the current velocity")
         model.setTileConcealed(display: 1, true)
         let destination = CGRect(x: 100, y: 100, width: 800, height: 450)
         let second = Task { await model.flyTile(display: 1, to: destination) }

@@ -16,6 +16,7 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
     var onSelectTag: (@MainActor (String) -> Void)?
     /// The preview's box in points; the left column is as wide, down to `ModalGeometry.leadingColumnFloor`.
     var previewSize = ModalGeometry.previewSize
+    var scrollResetID: String?
     @ViewBuilder let preview: () -> Preview
     @ViewBuilder let sidebar: () -> Sidebar
     @ViewBuilder let status: () -> Status
@@ -23,17 +24,29 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
 
     var body: some View {
         VStack(spacing: ModalGeometry.sectionGap) {
-            ScrollView {
-                HStack(alignment: .top, spacing: ModalGeometry.columnSpacing) {
-                    leadingColumn
-                    VStack(alignment: .leading, spacing: ModalGeometry.sidebarSpacing) {
-                        sidebar()
+            GeometryReader { geometry in
+                let sidebarWidth = max(1, geometry.size.width - 2 * ModalGeometry.horizontalPadding
+                    - ModalGeometry.leadingColumnWidth(preview: previewSize) - ModalGeometry.columnSpacing)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        HStack(alignment: .top, spacing: ModalGeometry.columnSpacing) {
+                            leadingColumn
+                            VStack(alignment: .leading, spacing: ModalGeometry.sidebarSpacing) {
+                                sidebar()
+                            }
+                            .frame(width: sidebarWidth, alignment: .leading)
+                        }
+                        .padding(.horizontal, ModalGeometry.horizontalPadding)
+                        .id("wallpaper-detail-top")
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .onChange(of: scrollResetID) {
+                        var transaction = Transaction(animation: nil)
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) { proxy.scrollTo("wallpaper-detail-top", anchor: .top) }
+                    }
                 }
-                .padding(.horizontal, ModalGeometry.horizontalPadding)
             }
-            .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: .infinity)
             VStack(spacing: DesignTokens.Spacing.sm) {
                 status()

@@ -20,12 +20,24 @@ struct LibraryModalHost: View {
     var applying: Set<CGDirectDisplayID> = []
     /// Displays whose newest cover capture has landed: only their covers show what runs there now.
     var currentCovers: Set<CGDirectDisplayID> = []
-    /// Opens a display's detail page; the modal closes first.
+    /// Opens a display's detail page, optionally retaining the modal until the host hands it over.
     let showDisplay: @MainActor (CGDirectDisplayID) -> Void
+    var previewSeed: @MainActor (LibraryItem) -> CGImage? = { _ in nil }
+    var retainsUntilDetailReady = false
+    var prepareDetail: @MainActor (CGDirectDisplayID, CGImage?) -> Void = { _, _ in }
+    var retainedItemID: String?
+    var contentReady = true
+    var prepareDetailContent: @MainActor (LibraryItem) async -> Void = { _ in }
+
+    private struct LoadID: Hashable {
+        var item: String?
+        var ready: Bool
+    }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @State private var content: WallpaperModalContent?
+    @State private var loadGeneration = 0
     #if !LITE_BUILD
     @Environment(WorkshopServices.self) private var services: WorkshopServices?
     /// What Steam answered per Workshop ID this session, so paging back and reloads ask it once.
@@ -35,7 +47,8 @@ struct LibraryModalHost: View {
     /// What the modal is showing right now: the loaded content's item, so a navigation whose
     /// content is still decoding keeps title, preview and actions on the same wallpaper.
     private var presentedItem: LibraryItem? {
-        guard let id = content?.itemID ?? presentedItemID else { return nil }
+        guard presentedItemID != nil || retainedItemID != nil,
+              let id = content?.itemID ?? presentedItemID ?? retainedItemID else { return nil }
         return library.items.first { $0.id == id }
     }
 
@@ -53,23 +66,37 @@ struct LibraryModalHost: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            if let item = presentedItem, let content {
-                modal(for: item, content: content, targets: targets(for: item))
+            if presentedItemID != nil, let item = presentedItem {
+                let shownContent = contentReady ? content : nil
+                modal(
+                    for: item,
+                    content: shownContent ?? actions.seedContent(for: item, preview: content?.preview ?? previewSeed(item)),
+                    targets: targets(for: item)
+                )
             }
             LibraryDragOverlay(
                 drag: drag, targets: drag.payload?.item.map { targets(for: $0) } ?? [], windowWidth: stage.stageSize.width
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.45, dampingFraction: 0.82)), value: presentedItemID != nil)
+        .animation(DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion), value: presentedItemID != nil)
         .onChange(of: presentedItemID, initial: true) { _, id in
             if id == nil {
-                content = nil
+                loadGeneration += 1
+                if retainedItemID == nil {
+                    content = nil
+                }
                 drag.clear()
             }
         }
+        .onChange(of: retainedItemID) {
+            if retainedItemID == nil, presentedItemID == nil {
+                content = nil
+            }
+        }
         .onChange(of: reduceMotion, initial: true) { drag.reduceMotion = reduceMotion }
-        .task(id: presentedItemID) { await load() }
+        .onDisappear { loadGeneration += 1 }
+        .task(id: LoadID(item: presentedItemID, ready: contentReady)) { await load(reusingRetained: true) }
         .onChange(of: library.items) { previous, _ in
             guard let requestedID = presentedItemID else { return }
             // The shown item can be removed from under the modal (Remove from Wallpaper Library, delete): the
@@ -111,7 +138,10 @@ struct LibraryModalHost: View {
     private func modal(for item: LibraryItem, content: WallpaperModalContent, targets: [ModalDisplayTarget]) -> WallpaperModal {
         var itemActions = actions.actions(for: item)
         itemActions.showDisplay = { id in
-            dismiss()
+            prepareDetail(id, content.preview)
+            if !retainsUntilDetailReady {
+                dismiss()
+            }
             showDisplay(id)
         }
         var modal = WallpaperModal(
@@ -134,11 +164,17 @@ struct LibraryModalHost: View {
         return modal
     }
 
-    private func load() async {
+    private func load(reusingRetained: Bool = false) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        guard contentReady else { return }
         guard let item = requestedItem else {
             if presentedItemID != nil {
                 presentedItemID = nil
             }
+            return
+        }
+        if reusingRetained, retainedItemID == item.id, content?.itemID == item.id {
             return
         }
         // Read with `item` and `currentCovers`, before any await: a cover landing meanwhile can show another wallpaper.
@@ -149,17 +185,23 @@ struct LibraryModalHost: View {
             for: item, box: CGSize(width: preview.width * displayScale, height: preview.height * displayScale), liveStill: liveStill
         )
         // The item can change under a slow preview decode; a stale load must not replace the newer one.
-        guard presentedItemID == item.id else { return }
+        guard !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id else { return }
         #if !LITE_BUILD
         if let id = loaded.workshopID, let known = steamLookups[id] {
             Self.apply(known, to: &loaded)
         }
         #endif
+        if content == nil, loaded.preview == nil {
+            loaded.preview = previewSeed(item) ?? liveStill
+        }
         content = loaded
+        await prepareDetailContent(item)
+        guard !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id else { return }
         #if !LITE_BUILD
         // A first open draws the local rows, then Steam's when it answers. The answer goes into whatever
         // content is current by then: a reload may have replaced `loaded` while Steam was being asked.
         guard let id = loaded.workshopID, steamLookups[id] == nil, let lookup = await steamLookup(id),
+              !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id,
               var current = content, current.itemID == item.id else { return }
         Self.apply(lookup, to: &current)
         content = current

@@ -323,9 +323,9 @@ enum ProbeFixtures {
         ModalNavigation(canGoPrevious: true, canGoNext: true, previous: {}, next: {})
     }
 
-    static func workshopItem() -> WorkshopQueryItem {
+    static func workshopItem(id: UInt64 = 2_468_489_223) -> WorkshopQueryItem {
         WorkshopQueryItem(
-            id: 2_468_489_223,
+            id: id,
             rawTitle: "Painting the Sharks 4K",
             shortDescription: String(repeating: "A description long enough to fold. ", count: 12),
             creatorID: "76561198000000000",

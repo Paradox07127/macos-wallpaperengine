@@ -46,6 +46,7 @@ struct DetailActions {
     var applyWebSource: (HTMLSource) -> Void = { _ in }
     var reload: () -> Void = {}
     var swipe: (DetailSwipeStep) -> Void = { _ in }
+    var backLabel: LocalizedStringKey = "Overview"
 }
 
 /// One toolbar and one background shared by the wallpaper and overlay workspaces.

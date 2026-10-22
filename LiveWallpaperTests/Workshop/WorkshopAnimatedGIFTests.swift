@@ -390,12 +390,14 @@ struct MountedGIFHostVisibilityTests {
     @Test("Mounted hidden previews defer loading, reject cancelled results, and reload when their size changes")
     func mountedHiddenPreviewLoadLifecycle() async throws {
         let controller = GIFAnimationController()
-        let asset = GIFTestFixtures.staticAsset()
+        let asset = try #require(WorkshopAnimatedGIF.make(from: GIFTestFixtures.png(width: 96, height: 48)))
+        var publishedSizes: [CGSize?] = []
         var requestedSizes: [WorkshopPreviewSize] = []
         var releases: [CheckedContinuation<WorkshopPreviewAsset?, Never>] = []
         func thumbnail(presented: Bool, size: WorkshopPreviewSize = .tile) -> AnyView {
             AnyView(AnimatedGIFThumbnail(
                 url: URL(fileURLWithPath: "/visibility.png"), previewSize: size,
+                onImageSizeChange: { publishedSizes.append($0) },
                 controller: controller, loadAsset: { _, size in
                     requestedSizes.append(size)
                     return await withCheckedContinuation { releases.append($0) }
@@ -422,6 +424,7 @@ struct MountedGIFHostVisibilityTests {
         try await Task.sleep(for: .milliseconds(100))
         #expect(controller.displayedFrame == nil, "A hidden preview must not publish its cancelled load")
         #expect(requestedSizes.count == 1)
+        #expect(publishedSizes.isEmpty, "A cancelled load must not resize the visible preview")
 
         host.rootView = thumbnail(presented: true)
         await GIFTestFixtures.waitUntil { releases.count == 2 }
@@ -429,6 +432,7 @@ struct MountedGIFHostVisibilityTests {
         releases[1].resume(returning: asset)
         await GIFTestFixtures.waitUntil { controller.displayedFrame != nil }
         #expect(controller.displayedFrame != nil)
+        #expect(publishedSizes == [CGSize(width: 96, height: 48)])
 
         host.rootView = thumbnail(presented: true, size: .hero)
         await GIFTestFixtures.waitUntil { releases.count == 3 }

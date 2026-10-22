@@ -29,6 +29,7 @@ struct HomePage: View {
     @State private var stage = EditDeskStageModel()
     /// The modal's actions, which the grid's and the shelf's context menus offer too.
     @State private var modalActions: ModalActions?
+    @State private var modalContentReady = false
     @State private var thumbnails = ShelfThumbnailCache()
     /// Set before a stage snap changes `router.page`, so that change is not echoed back as a command.
     @State private var pageChangeFromStage = false
@@ -45,6 +46,13 @@ struct HomePage: View {
     @State private var applies = ApplyQueue()
     /// The library item the S4 modal shows; nil when closed.
     @State private var presentedItemID: String?
+    @State private var modalDetailTarget: CGDirectDisplayID?
+    @State private var modalReturnPending = false
+    @State private var modalHandoffGeneration = 0
+    @State private var modalReturn: (itemID: String, page: EditDeskRouter.Page, target: CGDirectDisplayID?)?
+    @State private var modalDetailPreview: (display: CGDirectDisplayID, image: CGImage, configuration: ScreenConfiguration)?
+    @State private var libraryGridOpacity = 0.0
+    @State private var libraryHandoffGeneration = 0
     /// A wallpaper dragged from the modal's preview or a grid tile toward the displays.
     @State private var libraryDrag = LibraryDragController()
     /// Which grid tile plays its GIF preview on hover.
@@ -420,14 +428,37 @@ struct HomePage: View {
                 applyToAllDisplays: { applyConfigurationToAllDisplays(from: $0) },
                 applying: applies.inFlight,
                 cancelApply: { applies.cancel($0) },
-                busy: $detailBusy, toasts: toasts
+                busy: $detailBusy, toasts: toasts, onPresentationReady: modalDetailReady,
+                previewFallback: modalPreview, backLabel: modalReturn == nil ? "Overview" : "Back",
+                onBack: beginModalReturn, coveredPresentation: modalReturn != nil,
+                onPresentationClosed: finishModalReturn
             )
             if let library, let modalActions {
                 LibraryModalHost(
                     library: library, stage: stage, drag: libraryDrag, actions: modalActions,
                     requestRename: requestRename, requestDelete: requestDelete,
                     presentedItemID: $presentedItemID, preferredTarget: router.libraryTarget, applying: applies.inFlight,
-                    currentCovers: currentCoverDisplays, showDisplay: { router.showDetail($0) }
+                    currentCovers: currentCoverDisplays, showDisplay: showDisplayFromModal,
+                    previewSeed: { item in
+                        guard let thumbnail = gridThumbnail(for: item) else { return nil }
+                        return Self.gridImage(thumbnail, in: thumbnails)
+                    }, retainsUntilDetailReady: true, prepareDetail: { id, image in
+                        guard let image, let screen = screenManager.screen(withID: id),
+                              let configuration = screenManager.getConfiguration(for: screen) else { return }
+                        modalDetailPreview = (id, image, configuration)
+                    }, retainedItemID: modalReturn?.itemID,
+                    contentReady: presentedItemID != nil && modalContentReady,
+                    prepareDetailContent: { item in
+                        #if !LITE_BUILD
+                        for id in item.onDisplays {
+                            guard let screen = screenManager.screen(withID: id),
+                                  let configuration = screenManager.getConfiguration(for: screen),
+                                  case let .scene(descriptor) = configuration.activeWallpaper,
+                                  WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: configuration.wpeOrigin) == nil else { continue }
+                            _ = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: configuration.wpeOrigin)
+                        }
+                        #endif
+                    }
                 )
             }
         }
@@ -458,6 +489,8 @@ struct HomePage: View {
         }
         // These closures capture this view, whose state owns the objects holding them: left set, the page is never freed.
         .onDisappear {
+            modalHandoffGeneration += 1
+            modalReturnPending = false
             stage.displayMenu = nil
             stage.cardMenu = nil
             modalActions?.detach()
@@ -471,6 +504,28 @@ struct HomePage: View {
         .modifier(ApplyHook(page: self))
         .modifier(DisplayCommands(page: self))
         .modifier(LibraryItemCommands(page: self))
+        .onChange(of: router.detailDisplayID) { _, id in
+            if id == nil {
+                returnToModal()
+            }
+        }
+        .onChange(of: presentedItemID) { _, id in
+            if id == nil {
+                modalContentReady = false
+            }
+            if id == nil, modalDetailTarget != nil || modalReturnPending {
+                let origin = modalReturn
+                modalHandoffGeneration += 1
+                modalReturnPending = false
+                modalDetailTarget = nil
+                modalReturn = nil
+                router.closeDetail()
+                if let origin {
+                    router.select(origin.page)
+                    router.libraryTarget = origin.target
+                }
+            }
+        }
         .onChange(of: pageGuide?.context) {
             if pageGuide?.context != nil {
                 presentedItemID = nil
@@ -686,41 +741,45 @@ struct HomePage: View {
                     .padding(.top, StageGeometry.gridTop)
                     // Hidden rather than unmounted while the stage carries the cards off: unmounting here would
                     // lose the scroll position, and a swipe pushed back would rebuild the grid at its top.
-                    .opacity(stage.leavingLibrary ? 0 : 1)
+                    .opacity(stage.leavingLibrary ? 0 : libraryGridOpacity)
                     .allowsHitTesting(!stage.leavingLibrary)
                     .accessibilityHidden(stage.leavingLibrary)
-                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                    .transition(.identity)
             }
         }
-        // On this layer only: the top bar changes in the same update and keeps its own transaction.
-        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: Self.libraryFadeDuration)), value: isLibraryOpen)
-        .task(id: isLibraryOpen) { await coverLandedCards(gridOpen: isLibraryOpen) }
+        .onChange(of: isLibraryOpen, initial: true) { _, open in coverLandedCards(gridOpen: open) }
+        .onChange(of: reduceMotion) { _, _ in coverLandedCards(gridOpen: isLibraryOpen) }
     }
 
     /// The grid has no fill, so the cards the stage landed under it stop drawing once it has faded in
     /// over them; the stage itself shows them again the moment a return starts.
-    private func coverLandedCards(gridOpen: Bool) async {
+    private func coverLandedCards(gridOpen: Bool) {
+        libraryHandoffGeneration += 1
+        let generation = libraryHandoffGeneration
+        stage.gridCoversCards = false
         guard gridOpen else {
-            stage.gridCoversCards = false
+            libraryGridOpacity = 0
             return
         }
-        // A frame past the fade-in: hidden any earlier, the cards would leave the grid translucent.
-        try? await Task.sleep(for: .seconds(reduceMotion ? 0 : Self.libraryFadeDuration + 1.0 / 60))
-        if !Task.isCancelled {
+        withAnimation(DesignTokens.motion(reduceMotion, .easeOut(duration: Self.libraryFadeDuration)), completionCriteria: .removed) {
+            libraryGridOpacity = 1
+        } completion: {
+            guard generation == libraryHandoffGeneration, isLibraryOpen, !stage.leavingLibrary else { return }
             stage.gridCoversCards = true
         }
     }
 
     private var isLibraryOpen: Bool {
         Self.mountsLibraryGrid(
-            page: router.page, snappedIndex: stage.snappedIndex, pastHandoff: stage.pastLibraryHandoff,
+            page: modalReturn?.page == .library ? .library : router.page,
+            snappedIndex: stage.snappedIndex, pastHandoff: stage.pastLibraryHandoff,
             leaving: stage.leavingLibrary
         )
     }
 
     /// The display the library was opened for, while its banner shows above the grid.
     private var libraryTargetScreen: Screen? {
-        router.libraryTarget.flatMap { target in screenManager.screens.first { $0.id == target } }
+        (modalReturn?.target ?? router.libraryTarget).flatMap { target in screenManager.screens.first { $0.id == target } }
     }
 
     /// Between the display banner and the grid inside the library's scroll view.
@@ -940,7 +999,7 @@ struct HomePage: View {
                                         if NSApp.currentEvent?.type == .leftMouseUp, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
                                             quickApply(item.id)
                                         } else {
-                                            presentedItemID = item.id
+                                            openLibraryItem(item.id)
                                         }
                                     } label: {
                                         LibraryGridTile(
@@ -1049,6 +1108,9 @@ struct HomePage: View {
     }
 
     private func syncProgress(to page: EditDeskRouter.Page, animated: Bool) {
+        if modalReturn != nil, router.detailDisplayID != nil {
+            return
+        }
         if pageChangeFromStage {
             pageChangeFromStage = false
             return
@@ -1061,6 +1123,83 @@ struct HomePage: View {
         default:
             break
         }
+    }
+
+    /// Start enrichment only after the first presentation; file and Steam results must not rebuild an entering panel.
+    private func openLibraryItem(_ itemID: String) {
+        modalHandoffGeneration += 1
+        let generation = modalHandoffGeneration
+        modalContentReady = false
+        withAnimation(DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion), completionCriteria: .removed) {
+            presentedItemID = itemID
+        } completion: {
+            // Paging may have selected another item while the panel was entering.
+            guard presentedItemID != nil, modalHandoffGeneration == generation else { return }
+            modalContentReady = true
+        }
+    }
+
+    private func showDisplayFromModal(_ display: CGDirectDisplayID) {
+        guard let itemID = presentedItemID else { return }
+        modalHandoffGeneration += 1
+        modalReturnPending = false
+        if modalReturn == nil {
+            modalReturn = (itemID, router.page, router.libraryTarget)
+        }
+        modalDetailTarget = display
+        let alreadyShown = router.detailDisplayID == display && !detailBusy
+        router.showDetail(display)
+        if alreadyShown {
+            modalDetailReady(display)
+        }
+    }
+
+    private func beginModalReturn() {
+        guard router.detailDisplayID != nil, !modalReturnPending else { return }
+        guard let origin = modalReturn, library?.items.contains(where: { $0.id == origin.itemID }) == true else {
+            router.closeDetail()
+            return
+        }
+        modalHandoffGeneration += 1
+        let generation = modalHandoffGeneration
+        modalReturnPending = true
+        withAnimation(DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion), completionCriteria: .removed) {
+            presentedItemID = origin.itemID
+        } completion: {
+            guard modalReturnPending, modalHandoffGeneration == generation, presentedItemID == origin.itemID else { return }
+            modalReturnPending = false
+            modalContentReady = true
+            router.closeDetail()
+        }
+    }
+
+    private func modalDetailReady(_ display: CGDirectDisplayID) {
+        guard modalDetailTarget == display else { return }
+        modalDetailTarget = nil
+        withAnimation(DesignTokens.Motion.modalDismissal(reduceMotion: reduceMotion)) {
+            presentedItemID = nil
+        }
+    }
+
+    private func modalPreview(_ id: CGDirectDisplayID) -> CGImage? {
+        guard let preview = modalDetailPreview, preview.display == id,
+              let screen = screenManager.screen(withID: id),
+              screenManager.getConfiguration(for: screen)?.activeWallpaper == preview.configuration.activeWallpaper else { return nil }
+        return preview.image
+    }
+
+    private func returnToModal() {
+        guard let origin = modalReturn, router.pendingOnboardingStep == nil, pageGuide?.context == nil else { return }
+        modalDetailTarget = nil
+        router.select(origin.page)
+        router.libraryTarget = origin.target
+    }
+
+    private func finishModalReturn() {
+        guard router.detailDisplayID == nil else { return }
+        modalReturnPending = false
+        modalReturn = nil
+        modalDetailPreview = nil
     }
 
     // MARK: Displays
@@ -1578,7 +1717,7 @@ struct HomePage: View {
             case let .filesDroppedOnShelf(urls):
                 importToLibrary(urls)
             case let .cardTapped(cardID):
-                presentedItemID = cardID
+                openLibraryItem(cardID)
             case let .cardApplyRequested(cardID):
                 quickApply(cardID)
             case .dropCancelled:

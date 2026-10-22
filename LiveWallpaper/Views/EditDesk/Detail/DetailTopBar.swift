@@ -35,7 +35,7 @@ struct DetailTopBar: View {
         HStack(spacing: 12) {
             Color.clear.frame(width: 68)
             GlassToolbarGroup {
-                icon("chevron.left", "Overview", action: actions.back)
+                icon("chevron.left", actions.backLabel, action: actions.back)
             }
             Spacer(minLength: 8).background(WindowDragRegion())
             tagRow

@@ -26,10 +26,13 @@ struct WorkshopModal: View {
     let actions: WorkshopModalActions
 
     @Environment(WorkshopServices.self) private var services
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
     @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blursMature = true
     @State private var showingAgeConfirm = false
     @State private var descriptionExpanded = false
+    @State private var previewPixels: CGSize?
 
     private var item: WorkshopQueryItem {
         content.item
@@ -51,19 +54,26 @@ struct WorkshopModal: View {
             onDismiss: onDismiss,
             onTargetShortcut: pressByShortcut,
             onPrevious: navigation.canGoPrevious ? { navigation.previous() } : nil,
-            onNext: navigation.canGoNext ? { navigation.next() } : nil
+            onNext: navigation.canGoNext ? { navigation.next() } : nil,
+            shortcutIdentity: shortcutIdentity
         ) { _ in
             WallpaperDetailLayout(
                 facts: facts,
                 tags: WallpaperFacts.chips(item.tags),
                 authorLink: authorLink,
                 onSelectTag: actions.selectTag,
+                previewSize: previewFit.size,
+                scrollResetID: String(item.id),
                 preview: { preview },
                 sidebar: { sidebar },
                 status: { status },
                 buttons: { buttons }
             )
-            .id(item.id)
+            .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.25)), value: previewFit.size)
+        }
+        .onChange(of: item.id) {
+            descriptionExpanded = false
+            showingAgeConfirm = false
         }
         .matureContentConfirmation(isPresented: $showingAgeConfirm) {
             actions.reveal()
@@ -76,6 +86,13 @@ struct WorkshopModal: View {
         RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.panelLarge, style: .continuous)
     }
 
+    private var previewFit: ModalGeometry.PreviewFit {
+        guard let previewPixels else {
+            return ModalGeometry.PreviewFit(size: ModalGeometry.previewSize, isLowResolution: false)
+        }
+        return ModalGeometry.previewFit(pixels: previewPixels, scale: displayScale)
+    }
+
     /// Keep the thumbnail mounted across reveal; only the mature cover intercepts clicks.
     private var preview: some View {
         ZStack {
@@ -86,7 +103,8 @@ struct WorkshopModal: View {
                 showsPlayingBadge: false,
                 previewSize: .hero,
                 isBlurred: shouldBlurPreview,
-                contentMode: .fit
+                contentMode: .fit,
+                onImageSizeChange: { previewPixels = $0 }
             )
             .accessibilityHidden(shouldBlurPreview)
         }
@@ -218,6 +236,12 @@ struct WorkshopModal: View {
     }
 
     // MARK: Keyboard
+
+    private var shortcutIdentity: String {
+        "\(item.id):\(row.canPress):\(row.mode):\(actions.showDisplay != nil):"
+            + "\(navigation.canGoPrevious):\(navigation.canGoNext):"
+            + row.targets.map { "\($0.id):\($0.isApplied):\($0.isPreparing)" }.joined(separator: ",")
+    }
 
     /// ⌘1…⌘9 press that display's button, as a click would.
     private func pressByShortcut(_ index: Int) {

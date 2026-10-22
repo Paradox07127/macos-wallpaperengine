@@ -50,10 +50,19 @@ struct WallpaperModal: View {
             onEscape: cancelDragForEscape,
             onTargetShortcut: applyToShortcut,
             onPrevious: navigation.canGoPrevious ? { navigate(forward: false) } : nil,
-            onNext: navigation.canGoNext ? { navigate(forward: true) } : nil
+            onNext: navigation.canGoNext ? { navigate(forward: true) } : nil,
+            shortcutIdentity: shortcutIdentity
         ) { _ in
             panelBody
-                .id(content.itemID)
+        }
+        .onChange(of: content.itemID) {
+            if dragState == .active {
+                onDrag(.cancelled)
+            }
+            dragState = .idle
+            #if !LITE_BUILD
+            descriptionExpanded = false
+            #endif
         }
     }
 
@@ -64,6 +73,7 @@ struct WallpaperModal: View {
             facts: content.facts,
             tags: content.tags,
             previewSize: previewFit.size,
+            scrollResetID: content.itemID,
             preview: { previewArea },
             sidebar: { sidebar },
             status: { status },
@@ -74,6 +84,7 @@ struct WallpaperModal: View {
                 )
             }
         )
+        .animation(navigationAnimation, value: previewFit.size)
     }
 
     // MARK: Preview
@@ -92,12 +103,14 @@ struct WallpaperModal: View {
 
     /// The whole picture in a box of its own capped size, on a sunken fill.
     private var previewArea: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             DesignTokens.Colors.surfaceSunken
             previewImage
+                .frame(width: previewFit.size.width, height: previewFit.size.height)
                 .id(content.itemID)
                 .transition(previewTransition)
         }
+        .frame(width: previewFit.size.width, height: previewFit.size.height)
         .clipShape(previewShape)
         .animation(navigationAnimation, value: content.itemID)
         .overlay(previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1))
@@ -223,6 +236,12 @@ struct WallpaperModal: View {
     }
 
     // MARK: Keyboard
+
+    private var shortcutIdentity: String {
+        content.itemID + ":\(content.canApply):" + targets.map {
+            "\($0.id):\($0.isApplied):\($0.isPreparing)"
+        }.joined(separator: ",")
+    }
 
     private func applyToShortcut(_ index: Int) {
         guard let target = ModalKeyMap.target(forShortcut: index, in: targets),

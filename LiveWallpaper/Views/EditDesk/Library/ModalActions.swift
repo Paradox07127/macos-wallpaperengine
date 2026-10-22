@@ -172,8 +172,9 @@ final class ModalActions {
         }
     }
 
-    func content(for item: LibraryItem) async -> WallpaperModalContent {
+    func seedContent(for item: LibraryItem, preview: CGImage? = nil) -> WallpaperModalContent {
         var content = WallpaperModalContent(itemID: item.id, title: item.title, kind: item.kind)
+        content.preview = preview
         content.canApply = item.isSupported
         #if !LITE_BUILD
         if case let .workshop(entry) = item.source, entry.origin.resourceLocation == .unsupported {
@@ -188,6 +189,11 @@ final class ModalActions {
         } else if item.isSourceMissing {
             content.notice = DropFailure.sourceMissing.toastText
         }
+        return content
+    }
+
+    func content(for item: LibraryItem) async -> WallpaperModalContent {
+        var content = seedContent(for: item)
         #if LITE_BUILD
         content.facts = WallpaperFacts.library(
             item, sizeBytes: Self.fileSize(of: item), now: Date(), locale: AppLanguagePreference.current.locale

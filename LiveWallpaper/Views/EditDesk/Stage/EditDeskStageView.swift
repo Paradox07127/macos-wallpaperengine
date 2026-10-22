@@ -104,7 +104,54 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         var home: CGRect
         var destination: CGRect
         var spring = StageSpring(value: 0, target: 1, parameters: StageSpring.fly)
+        var x: StageSpring
+        var y: StageSpring
+        var width: StageSpring
+        var height: StageSpring
         var continuation: CheckedContinuation<Void, Never>?
+
+        init(home: CGRect, destination: CGRect, continuation: CheckedContinuation<Void, Never>?) {
+            self.home = home
+            self.destination = destination
+            self.continuation = continuation
+            x = StageSpring(value: home.minX, target: destination.minX, parameters: StageSpring.fly)
+            y = StageSpring(value: home.minY, target: destination.minY, parameters: StageSpring.fly)
+            width = StageSpring(value: home.width, target: destination.width, parameters: StageSpring.fly)
+            height = StageSpring(value: home.height, target: destination.height, parameters: StageSpring.fly)
+        }
+
+        var frame: CGRect {
+            CGRect(x: x.value, y: y.value, width: width.value, height: height.value)
+        }
+
+        var isSettled: Bool {
+            spring.isSettled && [x, y, width, height].allSatisfy {
+                abs($0.target - $0.value) < 0.5 && abs($0.velocity) < 2
+            }
+        }
+
+        mutating func retarget(_ rect: CGRect) {
+            x.target = rect.minX
+            y.target = rect.minY
+            width.target = rect.width
+            height.target = rect.height
+        }
+
+        mutating func settle() {
+            spring.jump(to: spring.target)
+            x.jump(to: x.target)
+            y.jump(to: y.target)
+            width.jump(to: width.target)
+            height.jump(to: height.target)
+        }
+
+        mutating func step(dt: TimeInterval) {
+            spring.step(dt: dt)
+            x.step(dt: dt)
+            y.step(dt: dt)
+            width.step(dt: dt)
+            height.step(dt: dt)
+        }
     }
 
     override var isFlipped: Bool {
@@ -388,9 +435,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         jumpRow(to: row.target)
         arrangementInset.jump(to: arrangementInset.target)
         for id in flights.keys {
-            if let target = flights[id]?.spring.target {
-                flights[id]?.spring.jump(to: target)
-            }
+            flights[id]?.settle()
         }
         completeFlights()
         for tile in Array(cardLayers.values) + reserve {
@@ -860,7 +905,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 flightLayer.addSublayer(shell.content)
                 flights[display] = TileFlight(home: home, destination: rectInWindow, continuation: continuation)
                 if model.reduceMotion {
-                    flights[display]?.spring.jump(to: 1)
+                    flights[display]?.settle()
                     flights[display]?.continuation?.resume()
                     flights[display]?.continuation = nil
                 }
@@ -876,13 +921,20 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
     }
 
-    /// Only the endpoint moves: the tile keeps flying from where it took off, at the speed it had.
+    /// Retargeting changes acceleration without replacing the displayed rectangle or its velocity.
     func updateFlightDestination(display: StageDisplay.ID, to rectInWindow: CGRect) {
         guard flights[display] != nil else { return }
         withoutActions {
             flights[display]?.destination = rectInWindow
+            if flights[display]?.spring.target == 1 {
+                flights[display]?.retarget(rectInWindow)
+            }
+            if model.reduceMotion {
+                flights[display]?.settle()
+            }
             render()
         }
+        startDisplayLinkIfNeeded()
     }
 
     /// Off-screen there is no frame driver, so a flight that cannot animate lands immediately.
@@ -890,9 +942,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         guard displayLink == nil else { return }
         withoutActions {
             for id in flights.keys {
-                if let target = flights[id]?.spring.target {
-                    flights[id]?.spring.jump(to: target)
-                }
+                flights[id]?.settle()
             }
             completeFlights()
             render()
@@ -907,8 +957,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 flights[display]?.continuation?.resume()
                 flights[display]?.continuation = continuation
                 flights[display]?.spring.target = 0
+                if let home = flights[display]?.home {
+                    flights[display]?.retarget(home)
+                }
                 if model.reduceMotion {
-                    flights[display]?.spring.jump(to: 0)
+                    flights[display]?.settle()
                 }
                 completeFlights()
                 render()
@@ -984,12 +1037,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         for (id, flight) in flights {
             guard let shell = displayLayers[id] else { continue }
             let t = flight.spring.value
-            shell.content.frame = CGRect(
-                x: flight.home.minX + (flight.destination.minX - flight.home.minX) * t,
-                y: flight.home.minY + (flight.destination.minY - flight.home.minY) * t,
-                width: flight.home.width + (flight.destination.width - flight.home.width) * t,
-                height: flight.home.height + (flight.destination.height - flight.home.height) * t
-            )
+            shell.content.frame = flight.frame
             shell.content.cornerRadius = DesignTokens.EditDesk.Corner.content
                 + (DesignTokens.EditDesk.Corner.panelLarge - DesignTokens.EditDesk.Corner.content) * t
             shell.layoutContent()
@@ -998,7 +1046,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     private func completeFlights() {
         for id in Array(flights.keys) {
-            guard let flight = flights[id], flight.spring.isSettled else { continue }
+            guard let flight = flights[id], flight.isSettled else { continue }
             flight.continuation?.resume()
             flights[id]?.continuation = nil
             if flight.spring.target == 0 {
@@ -1015,7 +1063,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             || (dragging && !model.reduceMotion)
             || ghost.destination != nil
             || displayLayers.values.contains(where: \.hasAnimation)
-            || flights.values.contains { !$0.spring.isSettled }
+            || flights.values.contains { !$0.isSettled }
             || cardLayers.values.contains {
                 !$0.lift.isSettled || !$0.hover.isSettled || $0.shakeElapsed != nil
                     || (staggerToGrid && !$0.gridProgress.isSettled)
@@ -1085,7 +1133,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 shell.step(dt: dt, reduceMotion: model.reduceMotion)
             }
             for id in flights.keys {
-                flights[id]?.spring.step(dt: dt)
+                flights[id]?.step(dt: dt)
             }
             completeFlights()
             if model.reduceMotion {
@@ -2062,7 +2110,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     var debugSpringsSettled: Bool {
         progress.isSettled && row.isSettled && arrangementInset.isSettled
             && ghost.x.isSettled && ghost.y.isSettled && ghost.scale.isSettled && ghost.flight.isSettled
-            && flights.values.allSatisfy(\.spring.isSettled)
+            && flights.values.allSatisfy(\.isSettled)
             && (Array(cardLayers.values) + reserve).allSatisfy { $0.lift.isSettled && $0.hover.isSettled && $0.gridProgress.isSettled }
     }
     #endif

@@ -2,6 +2,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
 import SwiftUI
 import Testing
 
@@ -31,6 +32,14 @@ private final class NoBookmarks: BookmarkPersisting {
     func save(_: [WallpaperBookmark]) {}
 }
 
+@MainActor @Observable
+private final class RetainedModalSelection {
+    var itemID: String?
+    init(_ itemID: String) {
+        self.itemID = itemID
+    }
+}
+
 @MainActor
 @Suite("Library modal host load")
 struct LibraryModalHostLoadTests {
@@ -56,10 +65,14 @@ struct LibraryModalHostLoadTests {
             apply: { _, _ in }, applyToAll: { _, _ in }
         )
         let stage = EditDeskStageModel()
-        let modal = LibraryModalHost(
+        let selection = RetainedModalSelection(item.id)
+        var modal = LibraryModalHost(
             library: library, stage: stage, drag: LibraryDragController(), actions: actions,
-            requestRename: { _ in }, requestDelete: { _ in }, presentedItemID: .constant(item.id), showDisplay: { _ in }
+            requestRename: { _ in }, requestDelete: { _ in },
+            presentedItemID: Binding(get: { selection.itemID }, set: { selection.itemID = $0 }),
+            showDisplay: { _ in }, retainedItemID: item.id
         )
+        modal.contentReady = false
         var observedItems: [LiveWallpaper.LibraryItem] = []
         let host = NSHostingView(rootView: LibraryModalRefreshObservation(modal: modal, library: library) {
             observedItems = $0
@@ -76,6 +89,12 @@ struct LibraryModalHostLoadTests {
             window.orderOut(nil)
             window.contentView = nil
             window.close()
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(reads == 0, "enrichment began before the modal finished presenting")
+        modal.contentReady = true
+        host.rootView = LibraryModalRefreshObservation(modal: modal, library: library) {
+            observedItems = $0
         }
         @MainActor func settle(until ready: () -> Bool) async throws {
             let deadline = ContinuousClock.now + .seconds(3)
@@ -103,6 +122,15 @@ struct LibraryModalHostLoadTests {
         library.refresh()
         try await settle { reads > 1 }
         #expect(reads == 2, "the open item's own update did not reload its manifest once")
+        selection.itemID = nil
+        try await Task.sleep(for: .milliseconds(200))
+        selection.itemID = item.id
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(reads == 2, "returning to the retained modal re-read its manifest")
+
+        selection.itemID = try #require(library.items.first { $0.id != item.id }).id
+        try await settle { reads > 2 }
+        #expect(reads == 3, "paging in the presented modal did not load the next item's manifest")
     }
 
     private static func solid(red: CGFloat, green: CGFloat, blue: CGFloat) throws -> CGImage {
@@ -178,7 +206,7 @@ struct LibraryModalHostLoadTests {
         let host = LibraryModalHost(
             library: library, stage: stage, drag: LibraryDragController(), actions: actions,
             requestRename: { _ in }, requestDelete: { _ in }, presentedItemID: .constant(item.id), currentCovers: [display],
-            showDisplay: { _ in }
+            showDisplay: { _ in }, previewSeed: { _ in shown }
         )
         let hosting = NSHostingView(rootView: host.tint(.gray))
         hosting.sizingOptions = []
@@ -203,6 +231,8 @@ struct LibraryModalHostLoadTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         try #require(gate.entered, "the modal never read the project")
+        let loading = try Self.hues(in: hosting)
+        #expect(loading.green > 20000, "the clicked cover must remain visible while the manifest is still loading")
         stage.displays[0].cover = landed
         gate.open()
         var drawn = try Self.hues(in: hosting)

@@ -39,6 +39,7 @@ final class DetailTransitionCoordinator {
     private var layoutWaiter: (display: CGDirectDisplayID, continuation: CheckedContinuation<CGRect?, Never>)?
     private var transition: Task<Void, Never>?
     private var generation = 0
+    private var coveredPresentation = false
 
     init(stage: any DetailStageFlying, usesMeasuredFrame: Bool = false, heroFrame: @escaping () -> CGRect) {
         self.stage = stage
@@ -76,7 +77,7 @@ final class DetailTransitionCoordinator {
         stage.updateFlightDestination(display: shownDisplayID, to: heroFrame())
     }
 
-    func request(_ target: CGDirectDisplayID?) {
+    func request(_ target: CGDirectDisplayID?, covered: Bool = false) {
         // Shown or flying in: the running hand-off completes on its own. Returning: the cancelled
         // task never hands the hero over, so the return must finish and the tile fly again.
         if target == shownDisplayID, phase != .returning {
@@ -90,6 +91,10 @@ final class DetailTransitionCoordinator {
         }
         generation += 1
         let generation = generation
+        if phase == .idle {
+            coveredPresentation = covered
+        }
+        let coveredPresentation = coveredPresentation
         busy = true
         let directSwitch = target != nil && heroVisible
         let previous = shownDisplayID
@@ -103,6 +108,28 @@ final class DetailTransitionCoordinator {
                 if self.generation == generation {
                     busy = false
                 }
+            }
+            if coveredPresentation {
+                if let target {
+                    if !directSwitch {
+                        shownDisplayID = target
+                        phase = .flyingIn
+                        heroVisible = false
+                        onShow(target)
+                    }
+                    guard await destination(for: target) != nil, !Task.isCancelled else { return }
+                    heroVisible = true
+                    stage.setDetailCovering(true)
+                    phase = .shown
+                } else {
+                    heroVisible = false
+                    stage.setDetailCovering(false)
+                    shownDisplayID = nil
+                    onRelease()
+                    phase = .idle
+                    self.coveredPresentation = false
+                }
+                return
             }
             if directSwitch, let target {
                 if let previous {
