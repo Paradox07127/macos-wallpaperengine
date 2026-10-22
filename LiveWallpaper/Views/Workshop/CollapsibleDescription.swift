@@ -9,6 +9,8 @@ struct CollapsibleDescription: View {
     /// that many lines instead, for columns too narrow to spend 116pt on a description.
     var collapsedLineLimit: Int?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// ~6 lines of body copy before we crop + fade.
     private let collapsedHeight: CGFloat = 116
 
@@ -47,7 +49,7 @@ struct CollapsibleDescription: View {
             description(collapsed: collapsed)
             if isExpandable {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.28)) { isExpanded.toggle() }
+                    withAnimation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure)) { isExpanded.toggle() }
                 } label: {
                     Text(isExpanded ? "Show less" : "Show more")
                         .font(DesignTokens.Typography.caption)

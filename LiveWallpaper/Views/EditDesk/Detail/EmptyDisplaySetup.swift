@@ -33,7 +33,7 @@ struct EmptyDisplaySetup: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.12) : DesignTokens.Motion.disclosure, value: showsWebSetup)
+        .animation(reduceMotion ? DesignTokens.Motion.reducedMotionFade : DesignTokens.Motion.disclosure, value: showsWebSetup)
     }
 
     private var introduction: some View {

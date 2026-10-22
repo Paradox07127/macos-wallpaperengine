@@ -48,7 +48,7 @@ struct ModalDragGhost: View {
 
     private var transition: AnyTransition {
         reduceMotion
-            ? .opacity.animation(.easeOut(duration: 0.15))
+            ? .opacity.animation(DesignTokens.Motion.reducedMotionFade)
             : .scale.combined(with: .opacity).animation(DesignTokens.Motion.dragSettle)
     }
 }

@@ -99,7 +99,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
         // otherwise fall through to the hidden overview under the page.
         .background { Color.clear.contentShape(Rectangle()).allowsHitTesting(heroVisible) }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(reduceMotion ? .easeInOut(duration: 0.12) : DesignTokens.Motion.disclosure, value: section)
+        .animation(reduceMotion ? DesignTokens.Motion.reducedMotionFade : DesignTokens.Motion.disclosure, value: section)
         .onAppear { setChromeVisible(!returning) }
         .onChange(of: returning) { _, returning in setChromeVisible(!returning) }
         .accessibilityElement(children: .contain)

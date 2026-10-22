@@ -74,7 +74,7 @@ struct LibraryModalHost: View {
                     targets: targets(for: item)
                 )
                 // The seed has no fact rows, tags or sections, so the loaded ones are all insertions and only fade.
-                .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: shownContent != nil)
+                .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange), value: shownContent != nil)
             }
             LibraryDragOverlay(
                 drag: drag, targets: drag.payload?.item.map { targets(for: $0) } ?? [], windowWidth: stage.stageSize.width
