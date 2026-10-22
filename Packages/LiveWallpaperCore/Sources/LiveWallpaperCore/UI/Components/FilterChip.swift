@@ -2,17 +2,22 @@ import SwiftUI
 
 struct FilterChipBackground: ViewModifier {
     let isSelected: Bool
+    var isHovered = false
 
     func body(content: Content) -> some View {
-        if isSelected {
-            content
-                .background(Capsule().fill(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.selectedFill)))
-                .overlay(Capsule().strokeBorder(DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.strongStroke), lineWidth: 1))
-        } else {
-            content
-                .background(Capsule().fill(DesignTokens.Colors.textPrimary.opacity(0.04)))
-                .overlay(Capsule().strokeBorder(DesignTokens.Colors.textPrimary.opacity(DesignTokens.Opacity.activeFill), lineWidth: 0.5))
-        }
+        content
+            .background {
+                Capsule().fill(isSelected
+                    ? DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.selectedFill)
+                    : DesignTokens.Colors.textPrimary.opacity(0.04))
+                Capsule().fill(DesignTokens.Colors.textPrimary.opacity(isHovered ? DesignTokens.Opacity.hoverFill : 0))
+            }
+            .overlay(Capsule().strokeBorder(
+                isSelected
+                    ? DesignTokens.Colors.accent.opacity(DesignTokens.Opacity.strongStroke)
+                    : DesignTokens.Colors.textPrimary.opacity(DesignTokens.Opacity.activeFill),
+                lineWidth: isSelected ? 1 : 0.5
+            ))
     }
 }
 
@@ -26,6 +31,9 @@ public struct FilterChip: View {
     private let title: Text
     private let isSelected: Bool
     private let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
 
     public init(title: Text, isSelected: Bool, action: @escaping () -> Void) {
         self.title = title
@@ -41,9 +49,22 @@ public struct FilterChip: View {
                 .foregroundStyle(DesignTokens.Colors.textPrimary)
                 .padding(.horizontal, DesignTokens.Spacing.md)
                 .frame(minHeight: DesignTokens.LibraryFilterBar.controlHeight)
-                .filterChipBackground(isSelected: isSelected)
+                .modifier(FilterChipBackground(isSelected: isSelected, isHovered: isHovered))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FilterChipPressStyle(reduceMotion: reduceMotion))
+        .onHover { isHovered = $0 }
+        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isSelected)
+        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovered)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct FilterChipPressStyle: ButtonStyle {
+    let reduceMotion: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: configuration.isPressed)
     }
 }

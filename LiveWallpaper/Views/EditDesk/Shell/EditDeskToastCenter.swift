@@ -139,7 +139,7 @@ struct EditDeskToastHost: View {
         VStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
             ForEach(center.toasts.reversed()) { toast in
                 toastView(toast)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.top, Self.newestTopInset)

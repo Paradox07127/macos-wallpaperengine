@@ -52,8 +52,11 @@ private struct InfoOverlayModifier<OverlayContent: View>: ViewModifier {
                         .transition(.opacity)
                 }
             }
+            // `isShown` is already the new value here, so true picks the entrance curve.
             .animation(
-                DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.enterDuration)),
+                DesignTokens.motion(reduceMotion, isShown
+                    ? .easeOut(duration: DesignTokens.Motion.enterDuration)
+                    : .easeIn(duration: DesignTokens.Motion.exitDuration)),
                 value: isShown
             )
     }

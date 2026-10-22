@@ -286,7 +286,7 @@ struct StatusCapsule: View {
     }
 
     private var expansionAnimation: Animation {
-        reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.82)
+        DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion)
     }
 
     private func collapse() {

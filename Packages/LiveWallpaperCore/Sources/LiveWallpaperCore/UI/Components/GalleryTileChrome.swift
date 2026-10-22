@@ -54,7 +54,7 @@ struct GalleryTileChrome: ViewModifier {
                     ? DesignTokens.Card.shadowYOffset
                     : DesignTokens.Card.restShadowYOffset
             )
-            .scaleEffect(isHovering ? 1.02 : 1.0)
+            .scaleEffect(isHovering && !reduceMotion ? 1.02 : 1.0)
             // 150ms must match the title band and the hover-in delay, or the card
             // reads as settling twice.
             .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovering)
