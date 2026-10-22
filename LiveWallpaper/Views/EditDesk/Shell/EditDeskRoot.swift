@@ -6,6 +6,9 @@ struct EditDeskRoot: View {
     static let restartOnboardingNotification = Notification.Name("EditDeskRestartOnboarding")
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Shared by every page's nav pill so the selection capsule slides across page switches.
+    @Namespace private var navSelectionNamespace
     @State private var router: EditDeskRouter?
     @State private var pageGuide = PageGuideSession()
     @State private var progress: OnboardingProgress?
@@ -73,6 +76,11 @@ struct EditDeskRoot: View {
             }
     }
 
+    /// Home and library collapse to one value: the stage spring owns that switch, the page fade must not run.
+    private static func pageSwitchGroup(_ page: EditDeskRouter.Page) -> EditDeskRouter.Page {
+        page == .library ? .home : page
+    }
+
     private var guidedContent: some View {
         Group {
             if let router, let progress {
@@ -81,17 +89,21 @@ struct EditDeskRoot: View {
                     case .home, .library:
                         // One page: the library is the stage's p = 2 state, not a separate view.
                         homePage(router)
+                            .transition(.opacity)
                     case .schemes:
                         SchemesPage(router: router, toasts: toasts)
+                            .transition(.opacity)
                     case .systemWallpaper:
                         // The router turns this page away before macOS 26.
                         if #available(macOS 26.0, *) {
                             SystemWallpaperPage(router: router)
+                                .transition(.opacity)
                         }
                     case .workshop:
                         #if !LITE_BUILD
                         if let workshopSession {
                             WorkshopPage(router: router, session: workshopSession, toasts: toasts)
+                                .transition(.opacity)
                         }
                         #else
                         Color.clear
@@ -99,8 +111,14 @@ struct EditDeskRoot: View {
                     case .settings:
                         SettingsPageLayout(router: router, workshopAvailable: featureCatalog.isEnabled(.wpeImport))
                             .ignoresSafeArea()
+                            .transition(.opacity)
                     }
                 }
+                .animation(
+                    DesignTokens.Motion.pageSwitch(reduceMotion: reduceMotion),
+                    value: Self.pageSwitchGroup(router.page)
+                )
+                .environment(\.segmentedSelectionNamespace, navSelectionNamespace)
                 .allowsHitTesting(pageGuide.context == nil)
                 .accessibilityHidden(pageGuide.context != nil)
                 .environment(progress)

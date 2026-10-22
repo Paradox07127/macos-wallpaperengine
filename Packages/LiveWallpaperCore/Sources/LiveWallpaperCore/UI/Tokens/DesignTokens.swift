@@ -413,6 +413,10 @@ public enum DesignTokens {
             reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: exitDuration)
         }
 
+        public static func pageSwitch(reduceMotion: Bool) -> Animation {
+            reduceMotion ? .linear(duration: 0.15) : .easeInOut(duration: 0.22)
+        }
+
         /// Deliberately longer than `exitDuration`, which is tuned for widget-sized
         /// elements and reads as a jump at full screen.
         public static let wallpaperCrossfadeDuration: TimeInterval = 0.4

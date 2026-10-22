@@ -20,6 +20,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     private let label: (Value, _ isSelected: Bool) -> SegmentLabel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.segmentedSelectionNamespace) private var sharedSelectionNamespace
     @Namespace private var selectionNamespace
 
     public init(
@@ -79,11 +80,16 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
             if isSelected {
                 Capsule()
                     .fill(segmentFill(isSelected: true))
-                    .matchedGeometryEffect(id: "selectedSegment", in: selectionNamespace)
+                    .matchedGeometryEffect(id: "selectedSegment", in: backingNamespace)
             }
         } else {
             Capsule().fill(segmentFill(isSelected: isSelected))
         }
+    }
+
+    /// Only `.editDesk` joins a shared namespace: other shells can share a screen, and a shared id would collide.
+    private var backingNamespace: Namespace.ID {
+        shell == .editDesk ? sharedSelectionNamespace ?? selectionNamespace : selectionNamespace
     }
 
     private func segmentFill(isSelected: Bool) -> Color {
@@ -94,6 +100,11 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         case .flat, .glass: return Color.accentColor.opacity(0.35)
         }
     }
+}
+
+public extension EnvironmentValues {
+    /// nil = each picker uses its own namespace.
+    @Entry var segmentedSelectionNamespace: Namespace.ID?
 }
 
 public extension GlassSegmentedPicker where SegmentLabel == Text {
