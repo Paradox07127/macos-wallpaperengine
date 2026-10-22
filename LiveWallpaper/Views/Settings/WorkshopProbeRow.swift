@@ -21,7 +21,7 @@ struct WorkshopProbeRow: View {
             if isExpanded, hasDetail {
                 detail
                     .padding(.leading, Self.glyphColumn)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.vertical, DesignTokens.Spacing.xxs)

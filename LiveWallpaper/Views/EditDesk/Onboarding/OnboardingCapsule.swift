@@ -47,6 +47,7 @@ struct OnboardingCapsule: View {
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
     @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let height: CGFloat = 22
 
@@ -84,6 +85,7 @@ struct OnboardingCapsule: View {
         .overlay(
             Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1)
                 .opacity(isHovering ? 1 : 0)
+                .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: isHovering)
         )
         .accessibilityElement(children: .ignore)
     }

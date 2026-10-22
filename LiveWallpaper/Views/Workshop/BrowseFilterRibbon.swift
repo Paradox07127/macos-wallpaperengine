@@ -10,6 +10,7 @@ struct BrowseFilterRibbon: View {
 
     @State private var isFilterPanelExpanded = false
     @State private var filterRowsHeight: CGFloat = 240
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Cap on the chip area; beyond it the rows scroll internally rather than growing the ribbon unbounded — at narrow widths Genre wraps onto many rows that would otherwise overrun the layout.
     private static let maxRowsHeight: CGFloat = 240
@@ -27,6 +28,7 @@ struct BrowseFilterRibbon: View {
                     .disabled(controlsDisabled)
             }
         }
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: isFilterPanelExpanded)
     }
 
     // MARK: - Top row
@@ -231,7 +233,7 @@ struct BrowseFilterRibbon: View {
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
         .padding(.bottom, DesignTokens.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
     }
 
     private func chipFlow(@ViewBuilder content: () -> some View) -> some View {
