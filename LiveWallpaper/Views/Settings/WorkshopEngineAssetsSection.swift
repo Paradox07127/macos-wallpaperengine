@@ -160,21 +160,21 @@ struct WorkshopEngineAssetsSection: View {
             }
             .fixedSize()
             .help(Text("Show the Wallpaper Engine assets folder in Finder"))
-            .accessibilityLabel(Text("Show assets in Finder"))
+            .accessibilityLabel(Text("Show Wallpaper Engine assets in Finder"))
 
-            Button("Remove", role: .destructive) { showingRemoveConfirm = true }
+            Button("Unlink", role: .destructive) { showingRemoveConfirm = true }
                 .fixedSize()
                 .tint(DesignTokens.Colors.Status.danger)
-                .help(Text("Delete the downloaded Wallpaper Engine assets and unlink"))
+                .help(Text("Stop using the linked Wallpaper Engine assets"))
                 .confirmationDialog(
-                    Text("Remove Wallpaper Engine assets?"),
+                    Text("Unlink Wallpaper Engine assets?"),
                     isPresented: $showingRemoveConfirm,
                     titleVisibility: .visible
                 ) {
-                    Button("Remove", role: .destructive) { engineInstaller.remove() }
+                    Button("Unlink", role: .destructive) { engineInstaller.remove() }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("Deletes the downloaded assets from this Mac. They can be downloaded again.")
+                    Text("Loomscreen will stop using these Wallpaper Engine assets. Files in your Steam library will be kept. Scene wallpapers may have missing textures or effects until assets are linked again.")
                 }
         }
     }
@@ -185,7 +185,7 @@ struct WorkshopEngineAssetsSection: View {
             Button("Change") { Task { await controller.linkEngineAssetsFolder() } }
                 .fixedSize()
                 .help(Text("Pick a different Wallpaper Engine install folder"))
-            Button("Forget", role: .destructive) {
+            Button("Unlink", role: .destructive) {
                 engineAssets.clearAccess()
                 engineInstaller.clearTransientStatus()
             }
@@ -284,23 +284,23 @@ struct WorkshopEngineAssetsSection: View {
         switch engineInstaller.updateCheckOutcome {
         case .available:
             return EngineAssetsStatusLine(
-                message: String(localized: "Update available on Steam. Current downloaded assets are still linked.", bundle: .appLanguage, comment: "Engine-assets settings status when an update is available."),
+                message: String(localized: "A Wallpaper Engine update is available on Steam. Your linked assets remain in use.", bundle: .appLanguage, comment: "Engine-assets settings status when an update is available."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case .upToDate:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked and up to date.", bundle: .appLanguage, comment: "Engine-assets settings status when downloaded assets are current."),
+                message: String(localized: "Wallpaper Engine assets are linked and up to date.", bundle: .appLanguage, comment: "Engine-assets settings status when downloaded assets are current."),
                 tint: DesignTokens.Colors.Status.active
             )
         case .unableToCompare:
             return EngineAssetsStatusLine(
-                message: String(localized: "Assets linked; version unknown. Update to download and identify the current build.", bundle: .appLanguage, comment: "Engine-assets settings status when installed build id is unknown."),
+                message: String(localized: "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version.", bundle: .appLanguage, comment: "Engine-assets settings status when installed build id is unknown."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case let .checkFailed(reason):
             return EngineAssetsStatusLine(
                 message: String(
-                    localized: "Downloaded assets linked. \(reason.reason)",
+                    localized: "Wallpaper Engine assets are linked. \(reason.reason)",
                     bundle: .appLanguage, comment: "Engine-assets settings status when the update check fails; %@ is why it failed."
                 ),
                 tint: DesignTokens.Colors.Status.warning

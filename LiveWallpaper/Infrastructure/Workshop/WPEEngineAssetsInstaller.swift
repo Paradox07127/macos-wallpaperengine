@@ -277,8 +277,8 @@ final class WPEEngineAssetsInstaller {
               isDirectory.boolValue,
               let contents = try? FileManager.default.contentsOfDirectory(atPath: assets.path(percentEncoded: false)),
               !contents.isEmpty,
-              // Build id stays unknown here: nothing was downloaded, so there is
-              // no `app_info` answer to trust yet. The update check fills it in.
+              // Reusing files gives us no installed-build receipt. Looking up
+              // Steam's current build cannot identify the version on disk.
               WPEEngineAssetsLibrary.adoptManagedInstall(at: installRoot, buildID: nil)
         else { return false }
         hasManagedInstall = true
@@ -317,15 +317,20 @@ final class WPEEngineAssetsInstaller {
             return
         }
         defer { access.end() }
-        guard WPEEngineAssetsLibrary.adoptManagedInstall(at: installRoot, buildID: result.buildID) else {
+        // A completed download can still lack a version receipt. Never label it
+        // up to date just because the content was published successfully.
+        let buildID = result.buildID.flatMap {
+            $0.isEmpty || $0 == WPEEngineAssetsLibrary.unknownManagedBuildMarker ? nil : $0
+        }
+        guard WPEEngineAssetsLibrary.adoptManagedInstall(at: installRoot, buildID: buildID) else {
             fail(String(localized: "Installed Wallpaper Engine, but Loomscreen could not keep access to it.", bundle: .appLanguage, comment: "Engine-assets install succeeded but the bookmark could not be created."))
             return
         }
         hasManagedInstall = true
-        installedBuildID = result.buildID
-        latestBuildID = result.buildID
-        updateAvailable = false
-        updateCheckOutcome = .upToDate(buildID: result.buildID)
+        installedBuildID = buildID
+        latestBuildID = buildID
+        updateAvailable = buildID == nil
+        updateCheckOutcome = buildID.map { .upToDate(buildID: $0) } ?? .unableToCompare
         WPEEngineAssetsLibrary.shared.refresh()
         guard currentAttempt == attempt else { return }
         currentAttempt = nil
@@ -333,7 +338,7 @@ final class WPEEngineAssetsInstaller {
         WorkshopToastCenter.shared.post(
             headline: String(localized: "Wallpaper Engine assets ready", bundle: .appLanguage, comment: "Engine-assets download success toast headline."),
             title: "",
-            message: String(localized: "Linked for extra scene coverage.", bundle: .appLanguage, comment: "Engine-assets download success toast subtitle."),
+            message: String(localized: "Wallpaper Engine shared assets are linked and ready for scene wallpapers.", bundle: .appLanguage, comment: "Engine-assets download success toast subtitle."),
             isSuccess: true
         )
     }
@@ -405,11 +410,11 @@ final class WPEEngineAssetsInstaller {
             }
             // Every other exit from this actor calls fail; returning the phase to idle here would make a refused removal look like it had never been asked for.
             let message = String(
-                localized: "Couldn't remove the downloaded assets.",
+                localized: "Couldn't unlink the Wallpaper Engine assets.",
                 bundle: .appLanguage, comment: "Engine-assets removal failed for an unclassified reason."
             )
             fail(message, headline: String(
-                localized: "Removal failed",
+                localized: "Unlink failed",
                 bundle: .appLanguage, comment: "Engine-assets removal failure toast headline."
             ))
         }
@@ -475,10 +480,10 @@ final class WPEEngineAssetsInstaller {
             )
         case .unableToCompare:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Assets version unknown", bundle: .appLanguage, comment: "Engine-assets update check version-unknown headline."),
+                headline: String(localized: "Wallpaper Engine assets version unavailable", bundle: .appLanguage, comment: "Engine-assets update check version-unknown headline."),
                 title: "",
-                message: String(localized: "The downloaded assets don't record a build number. Click Update to download the current build and record it.", bundle: .appLanguage, comment: "Engine-assets update check version-unknown subtitle."),
-                isSuccess: false
+                message: String(localized: "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version.", bundle: .appLanguage, comment: "Engine-assets update check version-unknown subtitle; the files remain usable."),
+                isSuccess: true
             )
         case let .checkFailed(reason):
             WorkshopToastCenter.shared.post(

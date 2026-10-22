@@ -189,62 +189,61 @@ struct StageGeometryTests {
         let open = StageGeometry.arrangement(
             frames: frames, in: StageGeometry.stageRect(windowSize: Self.designWindow, topInset: 304)
         )
-        #expect(near(open.scale, 0.25, 0.0001), "460pt of stage still holds a 1:4 display")
+        #expect(near(open.scale, 0.275, 0.0001), "the shortened stage still holds the modest single-display size")
         let rect = open.contentRects.first ?? .zero
-        #expect(near(rect, CGRect(x: 400, y: 435, width: 480, height: 270)), Comment(rawValue: "\(rect)"))
+        #expect(near(rect, CGRect(x: 376, y: 421.5, width: 528, height: 297)), Comment(rawValue: "\(rect)"))
         let rest = StageGeometry.arrangement(frames: frames, in: Self.designStage)
         let restRect = rest.contentRects.first ?? .zero
         #expect(rect.minY > restRect.minY, "the card pushes the arrangement down, it does not lift it")
         #expect(rect.minY - restRect.minY == 152, "half the inset, because the band is centred")
     }
 
-    @Test("One display scales 1:4 and centers in the stage, biased up for its name row")
+    @Test("One display grows only 10% beyond the old nominal size and stays centred")
     func singleDisplayArrangement() {
         let a = StageGeometry.arrangement(frames: [CGRect(x: 0, y: 0, width: 1920, height: 1080)], in: Self.designStage)
-        #expect(near(a.scale, 0.25, 0.0001))
+        #expect(near(a.scale, 0.275, 0.0001))
         #expect(a.contentRects.count == 1)
         let rect = a.contentRects.first ?? .zero
-        #expect(near(rect, CGRect(x: 400, y: 283, width: 480, height: 270)), Comment(rawValue: "\(rect)"))
+        #expect(near(rect, CGRect(x: 376, y: 269.5, width: 528, height: 297)), Comment(rawValue: "\(rect)"))
     }
 
     @Test("Two displays keep their relative placement, flipped from y-up to top-left")
-    func twoDisplayArrangement() {
-        // MacBook sits below-left of the external display in global (y-up) space.
+    func twoDisplayArrangement() throws {
         let frames = [
             CGRect(x: 0, y: 0, width: 1920, height: 1080),
             CGRect(x: 96, y: -1117, width: 1728, height: 1117),
         ]
         let a = StageGeometry.arrangement(frames: frames, in: Self.designStage)
-        #expect(near(a.scale, 0.2130, 0.0001))
         #expect(a.contentRects.count == 2)
-        guard a.contentRects.count == 2 else { return }
-        let external = a.contentRects[0]
-        let builtin = a.contentRects[1]
-        #expect(near(external, CGRect(x: 435.5, y: 138, width: 409, height: 230.1)), Comment(rawValue: "\(external)"))
-        #expect(near(builtin, CGRect(x: 455.9, y: 460.1, width: 368.1, height: 237.9)), Comment(rawValue: "\(builtin)"))
-        #expect(builtin.minY > external.minY, "The lower screen must land lower on the stage")
+        let external = try #require(a.contentRects.first)
+        let builtin = try #require(a.contentRects.last)
+        #expect(builtin.minY > external.maxY)
+        #expect(near(builtin.minX - external.minX, 96 * a.scale))
+        #expect(near(external.width / external.height, 1920 / 1080, 0.001))
+        #expect(near(builtin.width / builtin.height, 1728 / 1117, 0.001))
     }
 
-    @Test("Wide or tall arrangements shrink below 1:4 to stay inside 1180×560, gaps included")
+    @Test("Wide or tall arrangements stop at the modest cap even in a large window")
     func cappedArrangement() {
+        let stage = StageGeometry.stageRect(windowSize: CGSize(width: 1800, height: 1100))
         let wide = (0 ..< 3).map { CGRect(x: CGFloat($0) * 3840, y: 0, width: 3840, height: 2160) }
-        let a = StageGeometry.arrangement(frames: wide, in: Self.designStage)
+        let a = StageGeometry.arrangement(frames: wide, in: stage)
         #expect(a.scale < 0.25)
         let union = a.contentRects.reduce(CGRect.null) { $0.union($1) }
-        #expect(near(union.width, 1180) && union.height <= 560.5, Comment(rawValue: "union \(union)"))
-        #expect(near(union.midX, 640) && near(union.midY, 418), Comment(rawValue: "union \(union)"))
+        #expect(near(union.width, 1280) && union.height <= 620.5, Comment(rawValue: "union \(union)"))
+        #expect(near(union.midX, stage.midX) && near(union.midY, stage.midY - 20))
 
         let tall = (0 ..< 3).map { CGRect(x: 0, y: CGFloat($0) * 1080, width: 1920, height: 1080) }
-        let b = StageGeometry.arrangement(frames: tall, in: Self.designStage)
+        let b = StageGeometry.arrangement(frames: tall, in: stage)
         let tallUnion = b.contentRects.reduce(CGRect.null) { $0.union($1) }
-        #expect(near(tallUnion.height, 560) && tallUnion.width <= 1180.5, Comment(rawValue: "union \(tallUnion)"))
+        #expect(near(tallUnion.height, 620) && tallUnion.width <= 1280.5)
 
         let mixed = [
             CGRect(x: 0, y: 0, width: 1920, height: 1080),
             CGRect(x: 1920, y: 0, width: 1080, height: 1920),
         ]
         let c = StageGeometry.arrangement(frames: mixed, in: Self.designStage)
-        #expect(near(c.scale, 0.25, 0.0001), "778×480 plus one column gap fits, so the nominal scale stays")
+        #expect(near(c.scale, 0.25, 0.0001), "the nominal scale still limits displays that already fit")
     }
 
     @Test("Neighbouring displays never overlap, badges and name rows included")

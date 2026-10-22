@@ -90,7 +90,7 @@ struct EditDeskShelfContinuityTests {
 
     @Test("No chrome fade ever steps more than a tenth, and none of them leaves 0…1")
     func fadesAreContinuous() {
-        let others: [(String, Curve)] = [("shelf hint", HomeHints.shelfHintOpacity), ("search field", LibrarySearchReveal.opacity)]
+        let others: [(String, Curve)] = [("shelf hint", HomeHints.shelfHintOpacity)]
         for (name, curve) in shelfFades + others {
             for p in Self.samples {
                 #expect((0 ... 1).contains(curve(p)), Comment(rawValue: "\(name) at \(p) → \(curve(p))"))
@@ -163,14 +163,5 @@ struct EditDeskShelfContinuityTests {
         #expect(ShelfChromeRide.opacity(0.5) < 0.5)
     }
 
-    @Test("The search field is out of sight on the shelf, rises with the library and is whole there")
-    func searchFieldBelongsToTheLibrary() {
-        let search = LibrarySearchReveal.opacity
-        for (index, p) in Self.samples.enumerated() where index > 0 {
-            #expect(search(p) >= search(Self.samples[index - 1]), Comment(rawValue: "the search field dips at \(p)"))
-        }
-        #expect(search(1) == 0, "the search field shows on the shelf")
-        #expect(search(1.5) > 0, "the search field waits for the landing")
-        #expect(search(2) == 1, "the search field is short of the library")
-    }
+
 }

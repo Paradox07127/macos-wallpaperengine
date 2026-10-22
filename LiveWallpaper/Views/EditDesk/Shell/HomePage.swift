@@ -230,18 +230,26 @@ struct HomePage: View {
 
         func body(content: Content) -> some View {
             content
-                .onChange(of: page.stage.snappedIndex) { page.syncBrowsing() }
+                .onChange(of: page.stage.snappedIndex) {
+                    clearSearchAtOverview()
+                    page.syncBrowsing()
+                }
                 .onChange(of: page.presentedItemID) { page.syncBrowsing() }
                 // The model outlives this view: a browse left open would keep ranking by its old snapshot.
                 .onDisappear { page.library?.endBrowsing() }
                 // Initial too: the model outlives this view, so a query can arrive with a mount on the overview.
                 .onChange(of: page.router.page, initial: true) {
-                    if page.router.page != .library {
-                        page.library?.query = ""
-                    }
+                    clearSearchAtOverview()
                 }
                 // Initial too: rows added while another page showed have no tags read for the kept query.
                 .onChange(of: page.library?.query, initial: true) { Task { await page.library?.loadSearchTags() } }
+        }
+
+        private func clearSearchAtOverview() {
+            // The shelf now has its own visible search control; retain its active query.
+            if page.router.page == .home, page.stage.snappedIndex == 0 {
+                page.library?.query = ""
+            }
         }
     }
 

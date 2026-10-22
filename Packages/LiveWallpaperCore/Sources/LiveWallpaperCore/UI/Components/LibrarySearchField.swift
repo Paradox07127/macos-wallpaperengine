@@ -13,6 +13,8 @@ public struct LibrarySearchField: View {
     private let showsFocusRing: Bool
     private let onSubmit: (() -> Void)?
     private let onClear: (() -> Void)?
+    /// Optional owner focus for an expandable search control; other callers keep local focus.
+    private let focus: FocusState<Bool>.Binding?
 
     @FocusState private var isFocused: Bool
     @State private var width: CGFloat = 0
@@ -27,7 +29,8 @@ public struct LibrarySearchField: View {
         isDisabled: Bool = false,
         showsFocusRing: Bool = false,
         onSubmit: (() -> Void)? = nil,
-        onClear: (() -> Void)? = nil
+        onClear: (() -> Void)? = nil,
+        focus: FocusState<Bool>.Binding? = nil
     ) {
         _text = text
         self.prompt = prompt
@@ -39,6 +42,7 @@ public struct LibrarySearchField: View {
         self.showsFocusRing = showsFocusRing
         self.onSubmit = onSubmit
         self.onClear = onClear
+        self.focus = focus
     }
 
     public var body: some View {
@@ -48,7 +52,7 @@ public struct LibrarySearchField: View {
             TextField(shownPrompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(DesignTokens.Typography.body)
-                .focused($isFocused)
+                .focused(focus ?? $isFocused)
                 .disabled(isDisabled)
                 .onSubmit { onSubmit?() }
                 .accessibilityLabel(Text(prompt))
@@ -78,7 +82,7 @@ public struct LibrarySearchField: View {
         .overlay(Capsule().strokeBorder(DesignTokens.Colors.textPrimary.opacity(0.10), lineWidth: 0.5))
         .contentShape(Capsule())
         .overlay {
-            if showsFocusRing, isFocused {
+            if showsFocusRing, focus?.wrappedValue ?? isFocused {
                 Capsule().strokeBorder(DesignTokens.Colors.accent, lineWidth: 1.5)
             }
         }

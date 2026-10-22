@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-@Suite("WPE engine-assets install: scripts, version parsing, safe prune")
+@Suite("WPE engine-assets installation and update state", .serialized)
 struct WPEEngineAssetsInstallerTests {
     // MARK: - Cross-platform staging (app_update never commits on macOS)
 
@@ -137,6 +137,49 @@ struct WPEEngineAssetsInstallerTests {
 
         #expect(await !installCalled.raised)
         #expect(installer.hasManagedInstall)
+    }
+
+    @Test("A successful download only reports up to date when it includes a usable build ID",
+          arguments: [nil, "", "0", "11"] as [String?])
+    @MainActor
+    func downloadKeepsUnknownVersionDistinctFromUpToDate(buildID: String?) async throws {
+        let (doctor, steamRoot) = try makeDoctorWithInstallOnDisk()
+        let previousBookmark = SettingsManager.shared.loadWPEEngineAssetsBookmark()
+        let previousBuildID = SettingsManager.shared.wpeEngineAssetsManagedBuildID
+        defer {
+            SettingsManager.shared.wpeEngineAssetsManagedBuildID = previousBuildID
+            if let previousBookmark {
+                SettingsManager.shared.saveWPEEngineAssetsBookmark(previousBookmark)
+            } else {
+                SettingsManager.shared.clearWPEEngineAssetsBookmark()
+            }
+            WPEEngineAssetsLibrary.shared.refresh()
+            try? FileManager.default.removeItem(at: steamRoot)
+        }
+        let installer = WPEEngineAssetsInstaller(
+            managedStateForTesting: (hasManagedInstall: true, installedBuildID: nil)
+        )
+        let assetsPath = WPEEngineAssetsLibrary.sharedLibraryInstallRoot(steamRoot: steamRoot)
+            .appendingPathComponent("assets", isDirectory: true).path
+        installer.download(using: doctor) { _, _, _, _ in
+            SteamEngineAssetsResult(outcome: .installed, assetsPath: assetsPath,
+                                    buildID: buildID, diagnosticTail: "")
+        }
+        while installer.isBusy { await Task.yield() }
+
+        #expect(installer.phase == .idle)
+        #expect(installer.hasManagedInstall)
+        let reloaded = WPEEngineAssetsInstaller()
+        #expect(reloaded.hasManagedInstall)
+        if buildID == "11" {
+            #expect(installer.updateCheckOutcome == .upToDate(buildID: "11"))
+            #expect(!installer.updateAvailable)
+            #expect(reloaded.installedBuildID == "11")
+        } else {
+            #expect(installer.updateCheckOutcome == .unableToCompare)
+            #expect(installer.updateAvailable)
+            #expect(reloaded.installedBuildID == nil)
+        }
     }
 
     @Test("A newer public build is reported as available")

@@ -1,76 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ has no `material` or `passes[].textures[]`" : {
-      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ has no `material` or `passes[].textures[]`"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ no tiene `material` ni `passes[].textures[]`"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ に `material` も `passes[].textures[]` もありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 中没有 `material`，也没有 `passes[].textures[]`"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 中沒有 `material`，也沒有 `passes[].textures[]`"
-          }
-        }
-      }
-    },
-    "%@ is not a JSON object" : {
-      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is not a JSON object"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ no es un objeto JSON"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ は JSON オブジェクトではありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 不是 JSON 对象"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 不是 JSON 物件"
-          }
-        }
-      }
-    },
     "A required scene file is missing: %@" : {
       "localizations" : {
         "en" : {
@@ -207,41 +137,6 @@
         }
       }
     },
-    "Built-in WPE layer %@ is not available on macOS" : {
-      "comment" : "Scene asset resolve failure. Placeholder is the layer path.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Built-in WPE layer %@ is not available on macOS"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La capa WPE integrada %@ no está disponible en macOS"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "組み込み WPE レイヤー %@ は macOS では利用できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "内置 WPE 图层 %@ 在 macOS 上不可用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "內建 WPE 圖層 %@ 在 macOS 上無法使用"
-          }
-        }
-      }
-    },
     "Couldn't get exclusive access to the System Wallpaper library." : {
       "comment" : "Error shown when the cross-process manifest lock cannot be taken.",
       "localizations" : {
@@ -277,37 +172,352 @@
         }
       }
     },
-    "Couldn't parse %@ as JSON" : {
-      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
+    "error.render.executor.command_buffer_failed" : {
+      "comment" : "Error shown when a Metal command buffer reports failure.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't parse %@ as JSON"
+            "value" : "WPE Metal command buffer failed."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo interpretar %@ como JSON"
+            "value" : "Ha fallado el búfer de comandos de WPE Metal."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ を JSON として解析できませんでした"
+            "value" : "WPE Metal コマンドバッファーが失敗しました。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法将 %@ 解析为 JSON"
+            "value" : "WPE Metal 命令缓冲区失败。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法將 %@ 解析為 JSON"
+            "value" : "WPE Metal 命令緩衝區失敗。"
+          }
+        }
+      }
+    },
+    "error.render.executor.command_queue_unavailable" : {
+      "comment" : "Error shown when the Metal renderer cannot create or access a command queue.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal command queue is unavailable."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cola de comandos de Metal no está disponible."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal コマンドキューを使用できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 命令队列不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 命令佇列無法使用。"
+          }
+        }
+      }
+    },
+    "error.render.executor.library_unavailable" : {
+      "comment" : "Error shown when the built-in Metal shader library is unavailable.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal built-in shader library is unavailable."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biblioteca de sombreadores integrada de WPE Metal no está disponible."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal の組み込みシェーダーライブラリを使用できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 内置着色器库不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 內建著色器程式庫無法使用。"
+          }
+        }
+      }
+    },
+    "error.render.executor.no_renderable_passes" : {
+      "comment" : "Error shown when the Metal render pipeline has no renderable passes.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal pipeline has no renderable passes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El pipeline de WPE Metal no tiene pasos renderizables."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal パイプラインにレンダリング可能なパスがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 管线没有可渲染的通道。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 管線沒有可渲染的通道。"
+          }
+        }
+      }
+    },
+    "error.render.executor.pipeline_state_build_failed" : {
+      "comment" : "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal pipeline build failed for '%1$@': %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falló la creación del pipeline Metal para '%1$@': %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' の Metal パイプライン構築に失敗しました: %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为“%1$@”构建 Metal 管线失败：%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為「%1$@」建構 Metal 管線失敗：%2$@"
+          }
+        }
+      }
+    },
+    "error.render.executor.pipeline_unavailable" : {
+      "comment" : "Error shown when the Metal renderer cannot create a render pipeline.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal pipeline is unavailable for %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El pipeline de WPE Metal no está disponible para %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 用の WPE Metal パイプラインを使用できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的 WPE Metal 管线不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 管線無法用於 %@。"
+          }
+        }
+      }
+    },
+    "error.texture.format.malformed_payload" : {
+      "comment" : "Error shown when a Wallpaper Engine texture payload is malformed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal texture payload is malformed: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carga de textura de WPE Metal está mal formada: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal テクスチャペイロードの形式が正しくありません: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 纹理数据格式错误：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 紋理承載資料格式錯誤：%@"
+          }
+        }
+      }
+    },
+    "error.texture.format.texture_allocation_failed" : {
+      "comment" : "Error shown when Metal texture allocation fails.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal texture allocation failed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falló la asignación de textura Metal."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal テクスチャの割り当てに失敗しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 纹理分配失败。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 紋理配置失敗。"
+          }
+        }
+      }
+    },
+    "error.texture.format.unsupported_compressed_format" : {
+      "comment" : "Error shown when the current Metal device cannot sample a compressed texture format.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Metal device cannot sample %@ textures."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo Metal no puede muestrear texturas %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Metal デバイスでは %@ テクスチャをサンプリングできません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Metal 设备无法采样 %@ 纹理。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Metal 裝置無法取樣 %@ 紋理。"
+          }
+        }
+      }
+    },
+    "error.texture.format.unsupported_format" : {
+      "comment" : "Error shown when a Wallpaper Engine texture format cannot be mapped to Metal.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal texture format is unsupported: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El formato de textura de WPE Metal no es compatible: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal テクスチャ形式はサポートされていません: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支持此 WPE Metal 纹理格式：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支援 WPE Metal 紋理格式：%@"
           }
         }
       }
@@ -343,6 +553,111 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跟隨 Loomscreen 內選擇的桌布"
+          }
+        }
+      }
+    },
+    "it isn't a Wallpaper Engine project" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest is absent.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it isn't a Wallpaper Engine project"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no es un proyecto de Wallpaper Engine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine のプロジェクトではありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它不是 Wallpaper Engine 项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它不是 Wallpaper Engine 專案"
+          }
+        }
+      }
+    },
+    "its project information can't be read" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest could not be read.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its project information can't be read"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no se puede leer la información del proyecto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクト情報を読み取れません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取它的项目信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取它的專案資訊"
+          }
+        }
+      }
+    },
+    "its project information is damaged" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest is malformed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its project information is damaged"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la información del proyecto está dañada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクト情報が破損しています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的项目信息已损坏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的專案資訊已損毀"
           }
         }
       }
@@ -413,41 +728,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在讀取場景"
-          }
-        }
-      }
-    },
-    "Reference depth exceeded for %@" : {
-      "comment" : "Scene asset resolve failure. Placeholder is the reference path.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reference depth exceeded for %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profundidad de referencia superada para %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ の参照が深すぎます"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 的引用层级过深"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 的參照層級過深"
           }
         }
       }
@@ -1201,231 +1481,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布"
-          }
-        }
-      }
-    },
-    "error.render.executor.command_buffer_failed" : {
-      "comment" : "Error shown when a Metal command buffer reports failure.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "WPE Metal command buffer failed."
-          }
-        }
-      }
-    },
-    "error.render.executor.command_queue_unavailable" : {
-      "comment" : "Error shown when the Metal renderer cannot create or access a command queue.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Metal command queue is unavailable."
-          }
-        }
-      }
-    },
-    "error.render.executor.library_unavailable" : {
-      "comment" : "Error shown when the built-in Metal shader library is unavailable.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "WPE Metal built-in shader library is unavailable."
-          }
-        }
-      }
-    },
-    "error.render.executor.no_renderable_passes" : {
-      "comment" : "Error shown when the Metal render pipeline has no renderable passes.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "WPE Metal pipeline has no renderable passes."
-          }
-        }
-      }
-    },
-    "error.render.executor.pipeline_state_build_failed" : {
-      "comment" : "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input).",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Metal pipeline build failed for '%1$@': %2$@"
-          }
-        }
-      }
-    },
-    "error.render.executor.pipeline_unavailable" : {
-      "comment" : "Error shown when the Metal renderer cannot create a render pipeline.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "WPE Metal pipeline is unavailable for %@."
-          }
-        }
-      }
-    },
-    "error.texture.format.malformed_payload" : {
-      "comment" : "Error shown when a Wallpaper Engine texture payload is malformed.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "WPE Metal texture payload is malformed: %@"
-          }
-        }
-      }
-    },
-    "error.texture.format.texture_allocation_failed" : {
-      "comment" : "Error shown when Metal texture allocation fails.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Metal texture allocation failed."
-          }
-        }
-      }
-    },
-    "error.texture.format.unsupported_compressed_format" : {
-      "comment" : "Error shown when the current Metal device cannot sample a compressed texture format.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "This Metal device cannot sample %@ textures."
-          }
-        }
-      }
-    },
-    "error.texture.format.unsupported_format" : {
-      "comment" : "Error shown when a Wallpaper Engine texture format cannot be mapped to Metal.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "WPE Metal texture format is unsupported: %@"
-          }
-        }
-      }
-    },
-    "it isn't a Wallpaper Engine project" : {
-      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest is absent.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "it isn't a Wallpaper Engine project"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "no es un proyecto de Wallpaper Engine"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine のプロジェクトではありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "它不是 Wallpaper Engine 项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "它不是 Wallpaper Engine 專案"
-          }
-        }
-      }
-    },
-    "its project information can't be read" : {
-      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest could not be read.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "its project information can't be read"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "no se puede leer la información del proyecto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロジェクト情報を読み取れません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法读取它的项目信息"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法讀取它的專案資訊"
-          }
-        }
-      }
-    },
-    "its project information is damaged" : {
-      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest is malformed.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "its project information is damaged"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "la información del proyecto está dañada"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロジェクト情報が破損しています"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "它的项目信息已损坏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "它的專案資訊已損毀"
           }
         }
       }

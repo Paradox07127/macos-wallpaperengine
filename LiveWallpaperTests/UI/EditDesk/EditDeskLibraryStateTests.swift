@@ -69,7 +69,7 @@ struct EditDeskLibraryStateTests {
         }
     }
 
-    /// The overview's shelf has no search field to show the query, so arriving there drops it.
+    /// The resting overview hides the shelf controls, so arriving there drops its query.
     @Test("Arriving at the overview from another page leaves the library's search behind", .timeLimit(.minutes(1)))
     func overviewDropsTheLibrarySearch() async throws {
         let store = BookmarkStore.shared
@@ -206,6 +206,12 @@ struct EditDeskLibraryStateTests {
             library.query = "Nebula"
             let searched = await Self.settle(window) { shelf().isEmpty }
             try #require(searched, Comment(rawValue: "control: the search never filtered — the shelf is \(shelf())"))
+            let stage = try #require(Self.stage(in: window))
+            stage.setProgress(1, animated: false)
+            try #require(await Self.settle(window) { router.page == .home && stage.snappedIndex == 1 })
+            #expect(library.query == "Nebula", "returning to the shelf cleared its visible search")
+            stage.setProgress(2, animated: false)
+            try #require(await Self.settle(window) { router.page == .library && stage.snappedIndex == 2 })
             router.select(.schemes)
             let left = await Self.settle(window) { Self.stage(in: window) == nil }
             try #require(left, "the schemes page never replaced the library")
@@ -459,8 +465,7 @@ struct EditDeskLibraryStateTests {
         return NSPoint(x: leading + widths[index] / 2, y: window.frame.height - DesignTokens.EditDesk.Spacing.topBar / 2)
     }
 
-    /// The search is first in the current toolbar. Its empty field ends one `md` padding before
-    /// the filter row; measure the actual localized `FilterChip`, including its current font/padding.
+    /// Filters are centred independently of search; measure the actual localized chips.
     private static func chipCenter(_ chip: SavedLibraryModel.Chip, after field: NSTextField, bundle: Bundle) -> NSPoint {
         let chips = SavedLibraryModel.Chip.allCases
         let widths = chips.map { chip in
@@ -468,7 +473,8 @@ struct EditDeskLibraryStateTests {
         }
         let fieldRect = field.convert(field.bounds, to: nil)
         let index = chips.firstIndex(of: chip) ?? 0
-        let leading = fieldRect.maxX + DesignTokens.Spacing.md + DesignTokens.Spacing.sm
+        let groupWidth = widths.reduce(0, +) + DesignTokens.Spacing.sm * CGFloat(chips.count - 1)
+        let leading = (field.window?.contentView?.bounds.midX ?? 640) - groupWidth / 2
             + widths[..<index].reduce(0, +) + DesignTokens.Spacing.sm * CGFloat(index)
         return NSPoint(x: leading + widths[index] / 2, y: fieldRect.midY)
     }

@@ -64,7 +64,10 @@ final class WPEEngineAssetsLibrary {
         } catch {
             let message = "Failed to save Wallpaper Engine assets access: \(error.localizedDescription)"
             Logger.error(message, category: .fileAccess)
-            lastError = message
+            lastError = String(
+                localized: "Couldn't save access to the Wallpaper Engine assets. Choose the folder again to grant access.",
+                bundle: .appLanguage, comment: "Engine-assets bookmark creation failed; technical details are logged separately."
+            )
             return false
         }
     }
@@ -266,7 +269,10 @@ extension WPEEngineAssetsLibrary {
             Logger.error(message, category: .fileAccess)
             isAuthorized = false
             engineRootDisplayName = nil
-            lastError = message
+            lastError = String(
+                localized: "Couldn't access the linked Wallpaper Engine assets. Choose the folder again to restore access.",
+                bundle: .appLanguage, comment: "Engine-assets bookmark resolution failed; technical details are logged separately."
+            )
             return nil
         }
     }

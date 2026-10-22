@@ -9178,67 +9178,73 @@
         }
       }
     },
-    "Assets linked; version unknown. Update to download and identify the current build." : {
+    "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version." : {
       "comment" : "Managed assets remain usable but have no comparable build ID; Update downloads a known current build.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Assets linked; version unknown. Update to download and identify the current build."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recursos vinculados; versión desconocida. Actualiza para descargar e identificar la compilación actual."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リソースはリンク済みですが、バージョンは不明です。更新すると最新ビルドをダウンロードし、バージョンを記録します。"
+            "value" : "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "资源已关联，版本未知。更新可下载当前版本并记录版本信息。"
+            "value" : "Wallpaper Engine 共享资源已关联，但无法确认其已安装版本。可以继续使用，也可以点按“更新”下载当前版本。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "資源已連結，版本未知。更新可下載目前版本並記錄版本資訊。"
+            "value" : "Wallpaper Engine 共用資源已連結，但無法確認其已安裝版本。可以繼續使用，也可以按一下「更新」下載目前版本。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットはリンク済みですが、インストール済みのバージョンを確認できません。そのまま使用するか、「更新」で現在のバージョンをダウンロードできます。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados, pero no se pudo determinar la versión instalada. Puedes seguir usándolos o elegir Actualizar para descargar la versión actual."
           }
         }
       }
     },
-    "Assets version unknown" : {
+    "Wallpaper Engine assets version unavailable" : {
       "comment" : "Engine-assets update check version-unknown headline.",
       "localizations" : {
-        "es" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Versión de los recursos desconocida"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アセットのバージョンが不明"
+            "value" : "Wallpaper Engine assets version unavailable"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "资源版本未知"
+            "value" : "无法确认 Wallpaper Engine 资源版本"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "資源版本未知"
+            "value" : "無法確認 Wallpaper Engine 資源版本"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットのバージョンを確認できません"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo determinar la versión de los recursos de Wallpaper Engine"
           }
         }
       }
@@ -13164,7 +13170,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "啟動時檢查素材更新"
+            "value" : "啟動時檢查資源更新"
           }
         }
       }
@@ -15509,19 +15515,19 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「アップデート」をクリックして最新アセットをダウンロードし、再リンクします。"
+            "value" : "「更新」をクリックして最新の Wallpaper Engine 共有アセットをダウンロードし、リンクします。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点按“更新”下载并重新链接最新资源。"
+            "value" : "点按“更新”下载并关联最新的 Wallpaper Engine 共享资源。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按一下「更新」以下載並重新連結最新資源。"
+            "value" : "按一下「更新」以下載並連結最新的 Wallpaper Engine 共用資源。"
           }
         }
       }
@@ -19645,38 +19651,38 @@
         }
       }
     },
-    "Couldn't remove the downloaded assets." : {
+    "Couldn't unlink the Wallpaper Engine assets." : {
       "comment" : "Engine-assets removal failed for an unclassified reason.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't remove the downloaded assets."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudieron eliminar los recursos descargados."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードした素材を削除できませんでした。"
+            "value" : "Couldn't unlink the Wallpaper Engine assets."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法移除下载的资源。"
+            "value" : "无法解除 Wallpaper Engine 资源关联。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法移除下載的素材。"
+            "value" : "無法解除 Wallpaper Engine 資源連結。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットのリンクを解除できませんでした。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron desvincular los recursos de Wallpaper Engine."
           }
         }
       }
@@ -21519,38 +21525,38 @@
         }
       }
     },
-    "Delete the downloaded Wallpaper Engine assets and unlink" : {
+    "Stop using the linked Wallpaper Engine assets" : {
       "comment" : "Tooltip for removing downloaded Wallpaper Engine payload and removing linkage.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete the downloaded Wallpaper Engine assets and unlink"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar los recursos descargados de Wallpaper Engine y desvincular"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みの Wallpaper Engine アセットを削除してリンク解除"
+            "value" : "Stop using the linked Wallpaper Engine assets"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除已下载的 Wallpaper Engine 资源并解除关联"
+            "value" : "停止使用已关联的 Wallpaper Engine 共享资源"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除已下載的 Wallpaper Engine 資源並取消關聯"
+            "value" : "停止使用已連結的 Wallpaper Engine 共用資源"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンク済みの Wallpaper Engine アセットの使用を停止"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de usar los recursos vinculados de Wallpaper Engine"
           }
         }
       }
@@ -21748,38 +21754,38 @@
         }
       }
     },
-    "Deletes the downloaded assets from this Mac. They can be downloaded again." : {
+    "Loomscreen will stop using these Wallpaper Engine assets. Files in your Steam library will be kept. Scene wallpapers may have missing textures or effects until assets are linked again." : {
       "comment" : "Confirmation for removing the app-managed Wallpaper Engine assets, not a user-linked external installation.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deletes the downloaded assets from this Mac. They can be downloaded again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elimina los recursos descargados de este Mac. Se pueden descargar de nuevo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この Mac にダウンロードしたリソースを削除します。再ダウンロードできます。"
+            "value" : "Loomscreen will stop using these Wallpaper Engine assets. Files in your Steam library will be kept. Scene wallpapers may have missing textures or effects until assets are linked again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从本机删除已下载的资源，之后可重新下载。"
+            "value" : "Loomscreen 将停止使用这些 Wallpaper Engine 共享资源，Steam 库中的文件会保留。重新关联资源前，场景壁纸可能缺少贴图或特效。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除這台 Mac 上下載的資源，之後可重新下載。"
+            "value" : "Loomscreen 將停止使用這些 Wallpaper Engine 共用資源，Steam 收藏庫中的檔案會保留。重新連結資源前，場景桌布可能缺少材質或特效。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen はこれらの Wallpaper Engine アセットの使用を停止します。Steam ライブラリ内のファイルは保持されます。アセットを再度リンクするまで、シーン壁紙のテクスチャやエフェクトが欠ける場合があります。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen dejará de usar estos recursos de Wallpaper Engine. Los archivos de tu biblioteca de Steam se conservarán. Hasta que vuelvas a vincular los recursos, pueden faltar texturas o efectos en los fondos de escena."
           }
         }
       }
@@ -23871,67 +23877,73 @@
         }
       }
     },
-    "Downloaded assets linked and up to date." : {
+    "Wallpaper Engine assets are linked and up to date." : {
       "comment" : "Engine-assets settings status when downloaded assets are current.",
       "localizations" : {
-        "es" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recursos descargados vinculados y actualizados."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みアセットをリンク済みで、最新です。"
+            "value" : "Wallpaper Engine assets are linked and up to date."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已链接下载的资源，且为最新版本。"
+            "value" : "Wallpaper Engine 共享资源已关联，且为最新版本。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已連結下載的資源，且為最新版本。"
+            "value" : "Wallpaper Engine 共用資源已連結，且為最新版本。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットはリンク済みで、最新です。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados y actualizados."
           }
         }
       }
     },
-    "Downloaded assets linked. %@" : {
+    "Wallpaper Engine assets are linked. %@" : {
       "comment" : "Engine-assets settings status when the update check fails; %@ is why it failed.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Downloaded assets linked. %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recursos descargados vinculados. %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードした素材をリンクしました。%@"
+            "value" : "Wallpaper Engine assets are linked. %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已链接下载的资源。%@"
+            "value" : "Wallpaper Engine 共享资源已关联。%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已連結下載的素材。%@"
+            "value" : "Wallpaper Engine 共用資源已連結。%@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットはリンク済みです。%@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados. %@"
           }
         }
       }
@@ -31316,13 +31328,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "获取资源"
+            "value" : "获取引擎资源"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取得素材"
+            "value" : "取得引擎資源"
           }
         }
       }
@@ -32618,7 +32630,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在這個專案和你已連結的 Wallpaper Engine 素材裡都找不到圖像圖層。"
+            "value" : "在這個專案和你已連結的 Wallpaper Engine 資源裡都找不到圖像圖層。"
           }
         }
       }
@@ -32654,7 +32666,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在這個專案裡找不到圖像圖層。它們通常來自 Wallpaper Engine 的共享素材。"
+            "value" : "在這個專案裡找不到圖像圖層。它們通常來自 Wallpaper Engine 的共享資源。"
           }
         }
       }
@@ -36242,31 +36254,37 @@
         }
       }
     },
-    "Linked for extra scene coverage." : {
+    "Wallpaper Engine shared assets are linked and ready for scene wallpapers." : {
       "comment" : "Engine-assets download success toast subtitle.",
       "localizations" : {
-        "es" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vinculado para cubrir más escenas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リンクされ、より多くのシーンに対応できます。"
+            "value" : "Wallpaper Engine shared assets are linked and ready for scene wallpapers."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已链接，可覆盖更多场景。"
+            "value" : "Wallpaper Engine 共享资源已关联，可供场景壁纸使用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已連結，可涵蓋更多場景。"
+            "value" : "Wallpaper Engine 共用資源已連結，可供場景桌布使用。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットをリンクしました。シーン壁紙で使用できます。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados y listos para los fondos de escena."
           }
         }
       }
@@ -46111,7 +46129,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟工作坊設定頁，下載或連結 Wallpaper Engine 素材"
+            "value" : "開啟工作坊設定頁，下載或連結 Wallpaper Engine 資源"
           }
         }
       }
@@ -53392,38 +53410,38 @@
         }
       }
     },
-    "Removal failed" : {
+    "Unlink failed" : {
       "comment" : "Engine-assets removal failure toast headline.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Removal failed"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Error al eliminar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "削除に失敗しました"
+            "value" : "Unlink failed"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除失败"
+            "value" : "解除关联失败"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除失敗"
+            "value" : "解除連結失敗"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンク解除に失敗しました"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al desvincular"
           }
         }
       }
@@ -54073,31 +54091,37 @@
         }
       }
     },
-    "Remove Wallpaper Engine assets?" : {
+    "Unlink Wallpaper Engine assets?" : {
       "comment" : "Confirmation title for removing downloaded engine assets.",
       "localizations" : {
-        "es" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Eliminar los recursos de Wallpaper Engine?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine のアセットを削除しますか？"
+            "value" : "Unlink Wallpaper Engine assets?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除 Wallpaper Engine 资源？"
+            "value" : "解除 Wallpaper Engine 资源关联？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除 Wallpaper Engine 資源？"
+            "value" : "解除 Wallpaper Engine 資源連結？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットのリンクを解除しますか？"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desvincular los recursos de Wallpaper Engine?"
           }
         }
       }
@@ -61309,7 +61333,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先前往設定 › 工作坊設定 Wallpaper Engine 素材，再重試此桌布。"
+            "value" : "請先前往設定 › 工作坊設定 Wallpaper Engine 資源，再重試此桌布。"
           }
         }
       }
@@ -62053,38 +62077,38 @@
         }
       }
     },
-    "Show assets in Finder" : {
+    "Show Wallpaper Engine assets in Finder" : {
       "comment" : "Accessibility label for the reveal-in-Finder button.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show assets in Finder"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar recursos en el Finder"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アセットを Finder で表示"
+            "value" : "Show Wallpaper Engine assets in Finder"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在访达中显示资源"
+            "value" : "在访达中显示 Wallpaper Engine 资源"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Finder 中顯示素材"
+            "value" : "在 Finder 中顯示 Wallpaper Engine 資源"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットを Finder で表示"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar los recursos de Wallpaper Engine en el Finder"
           }
         }
       }
@@ -62985,7 +63009,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Finder 中顯示 Wallpaper Engine 素材資料夾"
+            "value" : "在 Finder 中顯示 Wallpaper Engine 資源資料夾"
           }
         }
       }
@@ -65342,13 +65366,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 已响应，但无法从其回复中读取 Wallpaper Engine 的版本号。"
+            "value" : "Steam 已响应，但无法从回复中读取 Wallpaper Engine 的构建编号。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 已回應，但無法從其回覆中讀取 Wallpaper Engine 的版本號。"
+            "value" : "Steam 已回應，但無法從回覆中讀取 Wallpaper Engine 的組建編號。"
           }
         }
       }
@@ -70772,35 +70796,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載逾時。請重試。"
-          }
-        }
-      }
-    },
-    "The downloaded assets don't record a build number. Click Update to download the current build and record it." : {
-      "comment" : "Engine-assets update check version-unknown subtitle.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los recursos descargados no registran un número de compilación. Haz clic en Actualizar para descargar la compilación actual y registrarla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みのアセットにビルド番号が記録されていません。「更新」をクリックして現在のビルドをダウンロードし、記録してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下载的资源没有记录版本号。点击“更新”下载当前版本并记录。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下載的資源沒有記錄版本號。按一下「更新」下載目前版本並加以記錄。"
           }
         }
       }
@@ -77902,31 +77897,37 @@
         }
       }
     },
-    "Update available on Steam. Current downloaded assets are still linked." : {
+    "A Wallpaper Engine update is available on Steam. Your linked assets remain in use." : {
       "comment" : "Engine-assets settings status when an update is available.",
       "localizations" : {
-        "es" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Actualización disponible en Steam. Los recursos descargados actuales siguen vinculados."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam にアップデートがあります。現在のダウンロード済みアセットは引き続きリンクされています。"
+            "value" : "A Wallpaper Engine update is available on Steam. Your linked assets remain in use."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 上有可用更新。当前下载的资源仍已链接。"
+            "value" : "Steam 上有 Wallpaper Engine 更新。已关联的共享资源仍可继续使用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 上有可用更新。目前下載的資源仍已連結。"
+            "value" : "Steam 上有 Wallpaper Engine 更新。已連結的共用資源仍可繼續使用。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam に Wallpaper Engine の更新があります。リンク済みの共有アセットは引き続き使用できます。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una actualización de Wallpaper Engine en Steam. Los recursos compartidos vinculados siguen en uso."
           }
         }
       }
@@ -80706,25 +80707,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recursos de Wallpaper Engine"
+            "value" : "Recursos compartidos de Wallpaper Engine"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine アセット"
+            "value" : "Wallpaper Engine 共有アセット"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine 资源"
+            "value" : "Wallpaper Engine 共享资源"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine 資源"
+            "value" : "Wallpaper Engine 共用資源"
           }
         }
       }
@@ -80789,7 +80790,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未準備 Wallpaper Engine 素材"
+            "value" : "尚未準備 Wallpaper Engine 資源"
           }
         }
       }
@@ -84036,6 +84037,111 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟設定 › 工作坊 › Steam 連線，選擇「設定 SteamCMD」。Loomscreen 會在安裝前顯示下載大小和位置。已經安裝？選擇「自動尋找」或「選擇 SteamCMD」。"
+          }
+        }
+      }
+    },
+    "Unlink" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlink"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除关联"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除連結"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンク解除"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desvincular"
+          }
+        }
+      }
+    },
+    "Couldn't save access to the Wallpaper Engine assets. Choose the folder again to grant access." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save access to the Wallpaper Engine assets. Choose the folder again to grant access."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存 Wallpaper Engine 资源的访问权限。请重新选择文件夹并授权。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存 Wallpaper Engine 資源的存取權限。請重新選擇資料夾並授權。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットへのアクセス権を保存できませんでした。フォルダを再度選択してアクセスを許可してください。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar el acceso a los recursos de Wallpaper Engine. Vuelve a elegir la carpeta para autorizar el acceso."
+          }
+        }
+      }
+    },
+    "Couldn't access the linked Wallpaper Engine assets. Choose the folder again to restore access." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't access the linked Wallpaper Engine assets. Choose the folder again to restore access."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法访问已关联的 Wallpaper Engine 资源。请重新选择文件夹以恢复访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法存取已連結的 Wallpaper Engine 資源。請重新選擇資料夾以恢復存取權限。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンク済みの Wallpaper Engine アセットにアクセスできませんでした。フォルダを再度選択してアクセス権を復元してください。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo acceder a los recursos vinculados de Wallpaper Engine. Vuelve a elegir la carpeta para restablecer el acceso."
           }
         }
       }

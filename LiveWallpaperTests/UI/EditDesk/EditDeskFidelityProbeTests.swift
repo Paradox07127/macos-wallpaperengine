@@ -10,6 +10,9 @@ import Testing
 // through NSHostingView + cacheDisplay and measures the resulting bitmap.
 // Glass (`glassEffect`, `NSVisualEffectView`) does not composite offscreen;
 // content behind glass requires on-device measurement.
+// cacheDisplay can also add vertical spurs at the bounds of rounded shape strokes
+// (Capsule and RoundedRectangle reproduced 2026-10-22). These captures establish
+// layout, not stroke/material fidelity; confirm those through another render path.
 
 // MARK: - Harness
 

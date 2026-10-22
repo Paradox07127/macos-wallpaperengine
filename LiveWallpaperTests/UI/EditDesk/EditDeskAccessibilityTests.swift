@@ -3,6 +3,7 @@ import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import SwiftUI
+import Observation
 import Testing
 
 /// WP 6.4 §4: what VoiceOver is handed by the views this milestone added. Read off a live AX tree
@@ -52,44 +53,80 @@ struct EditDeskAccessibilityTests {
         #expect(await events.next() == .displayTapped(1))
     }
 
-    /// The filter row's search field stays mounted on the shelf, faded out, so the edit a return
-    /// swipe leaves behind has to end there rather than keep the keys typed over the shelf.
-    @Test("The library's search field gives up the keyboard once it is too faint to click", arguments: [1.0, 1.4])
-    func fadedSearchFieldEndsItsEdit(progress: Double) async throws {
-        // 1.4: still drawn, but under the row's click threshold.
-        #expect(LibrarySearchReveal.opacity(progress) <= ShelfChromeRide.interactiveOpacity)
+    @Observable final class SearchState {
+        var text = ""
+    }
+
+    @Test("Adaptive search expands, focuses, keeps a visible query and exits through Escape")
+    func adaptiveSearchFollowsWindowAndEditing() async throws {
         let stage = EditDeskStageModel()
-        stage.setProgress(2, animated: false)
-        let host = NSHostingView(rootView: LibrarySearchField(text: .constant(""), prompt: "Search by name")
-            .modifier(LibrarySearchReveal(stage: stage)))
+        stage.reduceMotion = true
+        stage.setProgress(1, animated: false)
+        let state = SearchState()
+        let host = NSHostingView(rootView: AdaptiveLibrarySearch(
+            text: Binding(get: { state.text }, set: { state.text = $0 }),
+            prompt: "Search by name", shortPrompt: "Search", stage: stage
+        ).frame(width: 300, height: 60, alignment: .leading))
         let window = NSWindow(
-            contentRect: CGRect(x: -30000, y: -30000, width: 320, height: 60), styleMask: [.titled],
-            backing: .buffered, defer: false
+            contentRect: CGRect(x: -30000, y: -30000, width: 300, height: 60),
+            styleMask: [.titled], backing: .buffered, defer: false
         )
         window.isReleasedWhenClosed = false
         window.contentView = host
+        window.makeKeyAndOrderFront(nil)
         defer {
+            window.makeFirstResponder(nil)
             window.contentView = nil
             window.close()
         }
-        host.layoutSubtreeIfNeeded()
         func editableField(in view: NSView) -> NSTextField? {
-            if let field = view as? NSTextField, field.isEditable {
-                return field
-            }
+            if let field = view as? NSTextField, field.isEditable { return field }
             return view.subviews.lazy.compactMap(editableField).first
         }
-        let field = try #require(editableField(in: host))
-        #expect(window.makeFirstResponder(field))
-        try #require(field.currentEditor() != nil, "control: the field never took the keyboard")
-
-        stage.setProgress(progress, animated: false)
-        let deadline = ContinuousClock.now + .seconds(1)
-        while field.currentEditor() != nil, ContinuousClock.now < deadline {
-            host.layoutSubtreeIfNeeded()
-            try await Task.sleep(for: .milliseconds(10))
+        func settle(_ condition: () -> Bool) async -> Bool {
+            let deadline = ContinuousClock.now + .seconds(2)
+            repeat {
+                host.layoutSubtreeIfNeeded()
+                if condition() { return true }
+                try? await Task.sleep(for: .milliseconds(10))
+            } while ContinuousClock.now < deadline
+            return condition()
         }
-        #expect(field.currentEditor() == nil, "the faded field still takes the keys typed over the shelf")
+        host.layoutSubtreeIfNeeded()
+        #expect(editableField(in: host) == nil, "the empty shelf should show the search button")
+        stage.setProgress(2, animated: false)
+        stage.report(stageSize: CGSize(width: 1440, height: 960))
+        try #require(await settle { editableField(in: host) != nil }, "the wide library did not expand search")
+        stage.report(stageSize: StageGeometry.minimumWindow)
+        try #require(await settle { editableField(in: host) == nil }, "the narrow idle field did not collapse")
+
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try #require(NSEvent.mouseEvent(
+                with: type, location: NSPoint(x: 14, y: 30), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+            ))
+            window.sendEvent(event)
+        }
+        try #require(await settle { editableField(in: host)?.currentEditor() != nil },
+                 "clicking the search icon did not expand and focus its field")
+        let field = try #require(editableField(in: host))
+        let editor = try #require(field.currentEditor() as? NSTextView)
+        editor.insertText("blue", replacementRange: NSRange(location: NSNotFound, length: 0))
+        try #require(await settle { state.text == "blue" })
+        stage.report(stageSize: CGSize(width: 1440, height: 960))
+        stage.report(stageSize: StageGeometry.minimumWindow)
+        #expect(editableField(in: host)?.stringValue == "blue", "resizing hid the active query")
+        let editing = try #require(field.currentEditor() as? NSTextView)
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "\u{1b}",
+            charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53
+        ))
+        // Feed the native field editor's key interpretation directly: an offscreen test
+        // window cannot become the system's key window while another app is active.
+        editing.interpretKeyEvents([escape])
+        #expect(await settle { state.text.isEmpty && editableField(in: host) == nil },
+                "Escape left query \(state.text), field \(String(describing: editableField(in: host)?.stringValue))")
     }
 }
 #endif

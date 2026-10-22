@@ -16,7 +16,8 @@ enum StageGeometry {
 
     /// Points of `NSScreen.frame` per stage point before the cap applies.
     static let nominalDisplayScale: CGFloat = 1 / 4
-    static let arrangementMaxSize = CGSize(width: 1180, height: 560)
+    // A modest increase over 1180×560; retain the nominal scale instead of filling the stage.
+    static let arrangementMaxSize = CGSize(width: 1280, height: 620)
     /// Clear space inserted between neighbouring displays. The row gap also has to clear the upper
     /// display's name row and the lower one's type badge, which is why it dwarfs the column gap.
     static let displayColumnGap: CGFloat = 28
@@ -345,8 +346,9 @@ enum StageGeometry {
             width: min(arrangementMaxSize.width, stageRect.width - 2 * cardRowMinLeading),
             height: min(arrangementMaxSize.height, stageRect.height - badgeOverhang - externalNameDrop - 48)
         )
+        // A lone display may grow only 10% beyond the former nominal size.
         let scale = max(0.02, min(
-            nominalDisplayScale,
+            frames.count == 1 ? nominalDisplayScale * 1.1 : nominalDisplayScale,
             (room.width - gapX) / union.width,
             (room.height - gapY) / union.height
         ))

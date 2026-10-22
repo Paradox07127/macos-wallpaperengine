@@ -102,11 +102,9 @@ struct TopBarBudgetTests {
     }
 
     @MainActor
-    @Test("At 1040 the filter row fits its chips, the search field at its floor, sort with any filter named, and add in all five languages")
+    @Test("At 1040 the compact filter row fits its chips, search button, sort with any filter named, and add in all five languages")
     func filterRowFitsAt1040() throws {
         let available = StageGeometry.minimumWindow.width - 2 * DesignTokens.EditDesk.Spacing.gutter
-        // Laid out at its ideal width, the field can still give back everything above its floor.
-        let give = DesignTokens.LibraryFilterBar.searchIdealWidth - DesignTokens.LibraryFilterBar.searchMinWidth
         #expect(
             Self.filterRow(language: "es", sort: .recentlyUsed).width > Self.filterRow(language: "en", sort: .recentlyUsed).width,
             "control: the row did not lay out in Spanish, so every language below measured English"
@@ -117,7 +115,7 @@ struct TopBarBudgetTests {
         )
         for language in Self.languages {
             let widths = Self.sortOrders.flatMap { sort in Self.filters.map { Self.filterRow(language: language, sort: sort, filter: $0).width } }
-            let needed = try #require(widths.max()) - give
+            let needed = try #require(widths.max())
             print("FILTERROW 1040/\(language) = needs \(needed) of \(available)")
             #expect(needed <= available, Comment(rawValue: "\(language): the row needs \(needed)pt of \(available)"))
         }
@@ -133,14 +131,17 @@ struct TopBarBudgetTests {
             return view.subviews.lazy.compactMap(textField).first
         }
         return try AppLanguageOverride.with(language) {
+            let stage = EditDeskStageModel()
+            stage.report(stageSize: CGSize(width: windowWidth, height: 820))
+            stage.setProgress(2, animated: false)
             let row = HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
                 LibraryChipsRow(
                     chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: "\($0)", title: HomePage.chipTitle($0)) },
                     selection: .constant("\(SavedLibraryModel.Chip.aerials)"),
-                    searchText: .constant(""),
+                    searchText: .constant("a"),
                     searchPrompt: "Search by name or tag",
                     searchShortPrompt: "Search",
-                    stage: EditDeskStageModel(),
+                    stage: stage,
                     sort: .constant(.recentlyUsed),
                     filter: .constant(nil),
                     onImport: {}
