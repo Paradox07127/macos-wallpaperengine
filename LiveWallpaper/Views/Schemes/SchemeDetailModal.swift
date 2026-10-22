@@ -37,7 +37,8 @@ struct SchemeDetailModal: View {
     let windowSize: CGSize
     var onPrevious: (() -> Void)?
     var onNext: (() -> Void)?
-    let applyTo: @MainActor (CGDirectDisplayID) -> Void
+    /// Receives the scheme on screen, which lags `scheme` while the next cover loads.
+    let applyTo: @MainActor (ScreenScheme, CGDirectDisplayID) -> Void
     let onDismiss: () -> Void
 
     @Environment(\.displayScale) private var displayScale
@@ -45,16 +46,23 @@ struct SchemeDetailModal: View {
     /// nil until the first cover read finishes; across pages it keeps the previous scheme's until the next one lands.
     @State private var artwork: LoadedArtwork?
     @State private var isNavigatingForward = true
-    @State private var location = LibraryContentLocation.unknown
 
     private var locale: Locale {
         AppLanguagePreference.current.locale
     }
 
+    private var shown: ScreenScheme {
+        artwork?.scheme ?? scheme
+    }
+
+    private var location: LibraryContentLocation {
+        artwork?.location ?? .unknown
+    }
+
     var body: some View {
         EditDeskModalChrome(
             windowSize: windowSize,
-            title: scheme.name,
+            title: shown.name,
             actions: headerActions,
             onDismiss: onDismiss,
             onTargetShortcut: applyToShortcut,
@@ -62,13 +70,15 @@ struct SchemeDetailModal: View {
             onNext: navigate(onNext, forward: true)
         ) { _ in
             WallpaperDetailLayout(
-                facts: SchemeDetailRows.facts(for: scheme, now: Date(), locale: locale),
+                facts: SchemeDetailRows.facts(for: shown, now: Date(), locale: locale),
                 previewSize: previewSize,
-                scrollResetID: scheme.id.uuidString,
+                scrollResetID: shown.id.uuidString,
                 preview: { preview },
                 sidebar: { sidebar },
                 status: { EmptyView() },
-                buttons: { ModalDisplayButtons(targets: targets, canApply: location.isAvailable, applyTo: applyTo) }
+                buttons: {
+                    ModalDisplayButtons(targets: targets, canApply: location.isAvailable, applyTo: { [shown] id in applyTo(shown, id) })
+                }
             )
             .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: previewSize)
         }
@@ -84,7 +94,7 @@ struct SchemeDetailModal: View {
 
     private func applyToShortcut(_ index: Int) {
         guard location.isAvailable, let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
-        applyTo(target.id)
+        applyTo(shown, target.id)
     }
 
     private func navigate(_ step: (() -> Void)?, forward: Bool) -> (() -> Void)? {
@@ -97,14 +107,13 @@ struct SchemeDetailModal: View {
     }
 
     private func load() async {
-        location = .unknown
-        let resolved = await SchemeArtwork.location(for: scheme)
+        let requested = scheme
+        let resolved = await SchemeArtwork.location(for: requested)
         guard !Task.isCancelled else { return }
-        location = resolved
-        let image = await SchemeArtwork.image(for: scheme)
+        let image = await SchemeArtwork.image(for: requested)
         guard !Task.isCancelled else { return }
         let loaded = LoadedArtwork(
-            schemeID: scheme.id, iconName: scheme.iconName,
+            scheme: requested, location: resolved,
             image: image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         )
         // The first cover lands while the modal is still opening; resizing then would relayout mid-animation.
@@ -123,7 +132,7 @@ struct SchemeDetailModal: View {
     }
 
     private var previewID: UUID {
-        artwork?.schemeID ?? scheme.id
+        shown.id
     }
 
     private var previewShape: RoundedRectangle {
@@ -150,7 +159,7 @@ struct SchemeDetailModal: View {
                 .resizable()
                 .scaledToFit()
         } else {
-            Image(systemName: artwork?.iconName ?? scheme.iconName)
+            Image(systemName: shown.iconName)
                 .font(DesignTokens.EditDesk.Typography.modalTitle)
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
         }
@@ -159,7 +168,7 @@ struct SchemeDetailModal: View {
     // MARK: Right column
 
     private var sidebar: some View {
-        ForEach(SchemeDetailRows.make(for: scheme, locale: locale)) { section in
+        ForEach(SchemeDetailRows.make(for: shown, locale: locale)) { section in
             WallpaperDetailSection(title: Text(verbatim: section.title)) {
                 if section.kind == .wallpaper, !location.isAvailable {
                     InlineNoticeBanner(
@@ -175,8 +184,8 @@ struct SchemeDetailModal: View {
 }
 
 private struct LoadedArtwork {
-    let schemeID: UUID
-    let iconName: String
+    let scheme: ScreenScheme
+    let location: LibraryContentLocation
     /// nil = the scheme has no cover; the preview draws its icon.
     let image: CGImage?
 }

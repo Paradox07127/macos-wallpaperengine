@@ -75,7 +75,7 @@ struct SchemesPage: View {
             windowSize: stageSize,
             onPrevious: details.neighbour(-1),
             onNext: details.neighbour(1),
-            applyTo: { id in
+            applyTo: { scheme, id in
                 if let screen = screenManager.screens.first(where: { $0.id == id }) {
                     details.requestApply(scheme, screen)
                 }
