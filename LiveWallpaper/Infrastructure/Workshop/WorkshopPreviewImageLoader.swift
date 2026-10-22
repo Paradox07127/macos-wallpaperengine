@@ -98,11 +98,20 @@ final class WorkshopPreviewImageLoader {
         await loadCachedAsset(url, size: size)?.asset
     }
 
+    /// Memory cache only; never starts a load.
+    func cachedAsset(_ url: URL, size: WorkshopPreviewSize) -> WorkshopPreviewAsset? {
+        assetCache.object(forKey: Self.cacheKey(url, size: size) as NSString)?.asset
+    }
+
+    private static func cacheKey(_ url: URL, size: WorkshopPreviewSize) -> String {
+        "\(size.rawValue)|\(url.absoluteString)"
+    }
+
     private func loadCachedAsset(
         _ url: URL,
         size: WorkshopPreviewSize
     ) async -> CachedWorkshopPreviewAsset? {
-        let cacheKey = "\(size.rawValue)|\(url.absoluteString)"
+        let cacheKey = Self.cacheKey(url, size: size)
         if let cached = assetCache.object(forKey: cacheKey as NSString) {
             PreviewSignpost.event("workshop.cacheHit")
             return cached

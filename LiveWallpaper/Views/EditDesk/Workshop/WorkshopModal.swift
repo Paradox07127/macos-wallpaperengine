@@ -114,7 +114,8 @@ struct WorkshopModal: View {
                 previewSize: .hero,
                 isBlurred: shouldBlurPreview,
                 contentMode: .fit,
-                onImageSizeChange: { previewPixels = $0 }
+                onImageSizeChange: { previewPixels = $0 },
+                seed: .tile
             )
             .accessibilityHidden(shouldBlurPreview)
             .id(item.id)

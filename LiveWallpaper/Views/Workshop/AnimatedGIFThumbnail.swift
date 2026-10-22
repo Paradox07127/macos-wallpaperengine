@@ -69,11 +69,21 @@ struct AnimatedGIFThumbnail: View {
         contentMode: ContentMode = .fill,
         onImageSizeChange: @escaping @MainActor (CGSize?) -> Void = { _ in },
         isHovered: Binding<Bool> = .constant(false),
+        // Used only while the hero has no cached poster: show this size's cached poster first.
+        seed: WorkshopPreviewSize? = nil,
         controller: GIFAnimationController = GIFAnimationController(),
         loadAsset: @escaping @MainActor (URL, WorkshopPreviewSize) async -> WorkshopPreviewAsset? = { url, size in
             await WorkshopPreviewImageLoader.shared.loadAsset(url, size: size)
         }
     ) {
+        // Installed before the first render so a cache hit never shows the spinner; never reports a size.
+        if controller.displayedFrame == nil, let url {
+            let cache = WorkshopPreviewImageLoader.shared
+            if let cached = cache.cachedAsset(url, size: previewSize)
+                ?? seed.flatMap({ cache.cachedAsset(url, size: $0) }) {
+                controller.setAsset(cached)
+            }
+        }
         self.url = url
         self.playbackMode = playbackMode
         self.showsPlayingBadge = showsPlayingBadge

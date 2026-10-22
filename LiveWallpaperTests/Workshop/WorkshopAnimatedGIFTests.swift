@@ -477,6 +477,43 @@ struct MountedGIFHostVisibilityTests {
         await GIFTestFixtures.waitUntil { controller.isAnimating }
         #expect(controller.isAnimating, "An immediate cache hit still needs a fresh host visibility result")
     }
+
+    @Test("A hero without a cached poster renders the cached tile poster first and reports only the hero size")
+    func heroStartsFromCachedTilePoster() async throws {
+        let url = try #require(URL(string: "https://images.steamusercontent.com/ugc/\(UUID().uuidString).png"))
+        let tile = try #require(WorkshopAnimatedGIF.make(from: GIFTestFixtures.png(width: 16, height: 9)))
+        let hero = try #require(WorkshopAnimatedGIF.make(from: GIFTestFixtures.png(width: 64, height: 36)))
+        let loader = WorkshopPreviewImageLoader.shared
+        let key = "\(WorkshopPreviewSize.tile.rawValue)|\(url.absoluteString)" as NSString
+        loader.assetCache.setObject(CachedWorkshopPreviewAsset(asset: tile), forKey: key)
+        defer { loader.assetCache.removeObject(forKey: key) }
+        let controller = GIFAnimationController()
+        var publishedSizes: [CGSize?] = []
+        var release: CheckedContinuation<WorkshopPreviewAsset?, Never>?
+        let thumbnail = AnimatedGIFThumbnail(
+            url: url, playbackMode: .autoPlay, previewSize: .hero, isBlurred: true,
+            onImageSizeChange: { publishedSizes.append($0) }, seed: .tile, controller: controller,
+            loadAsset: { _, _ in await withCheckedContinuation { release = $0 } }
+        )
+        #expect(controller.displayedFrame?.width == 16, "The first render would show the spinner instead of the cached tile poster")
+
+        let host = NSHostingView(rootView: thumbnail.environment(\._accessibilityReduceMotion, false))
+        let window = VisibilityWindow(contentRect: CGRect(x: -30000, y: -30000, width: 120, height: 100),
+                                      styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil; controller.stop(); window.close() }
+        host.layoutSubtreeIfNeeded()
+        await GIFTestFixtures.waitUntil { release != nil }
+        let continuation = try #require(release)
+        #expect(controller.displayedFrame?.width == 16)
+        #expect(publishedSizes.isEmpty, "A seeded poster must not resize the preview")
+
+        continuation.resume(returning: hero)
+        await GIFTestFixtures.waitUntil { controller.displayedFrame?.width == 64 }
+        #expect(controller.displayedFrame?.width == 64)
+        #expect(publishedSizes == [CGSize(width: 64, height: 36)])
+    }
 }
 
 @Suite("GIF controller stale frame task", .serialized)
