@@ -99,7 +99,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
         // otherwise fall through to the hidden overview under the page.
         .background { Color.clear.contentShape(Rectangle()).allowsHitTesting(heroVisible) }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: section)
+        .animation(reduceMotion ? .easeInOut(duration: 0.12) : DesignTokens.Motion.disclosure, value: section)
         .onAppear { setChromeVisible(!returning) }
         .onChange(of: returning) { _, returning in setChromeVisible(!returning) }
         .accessibilityElement(children: .contain)
@@ -197,7 +197,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     }
 
     private func setChromeVisible(_ visible: Bool) {
-        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) { chromeVisible = visible }
+        withAnimation(DesignTokens.Motion.detailChrome(reduceMotion: reduceMotion)) { chromeVisible = visible }
     }
 }
 
@@ -213,6 +213,6 @@ extension AnyTransition {
 
 extension Animation {
     static func detailSwitch(reduceMotion: Bool) -> Animation {
-        reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.25)
+        DesignTokens.Motion.navigationStep(reduceMotion: reduceMotion)
     }
 }

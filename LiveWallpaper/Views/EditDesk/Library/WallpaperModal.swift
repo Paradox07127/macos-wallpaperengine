@@ -320,7 +320,7 @@ struct WallpaperModal: View {
 /// Previous / next in the detail modals: the preview is keyed by the shown item and swaps with this.
 enum ModalPageMotion {
     static func animation(reduceMotion: Bool) -> Animation {
-        reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.25)
+        DesignTokens.Motion.navigationStep(reduceMotion: reduceMotion)
     }
 
     /// The incoming preview enters from the side the navigation is heading.

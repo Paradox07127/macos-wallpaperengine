@@ -143,7 +143,7 @@ struct EditDeskToastHost: View {
             }
         }
         .padding(.top, Self.newestTopInset)
-        .animation(reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.4, dampingFraction: 0.82), value: center.toasts.map(\.id))
+        .animation(reduceMotion ? DesignTokens.Motion.reducedMotionFade : .spring(response: 0.4, dampingFraction: 0.82), value: center.toasts.map(\.id))
         .task(id: center.nextExpiry) {
             while let deadline = center.nextExpiry {
                 do {

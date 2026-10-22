@@ -13,6 +13,7 @@ struct WorkshopProbeRow: View {
     /// Distinguishes "the user has not touched this row" from "the user closed
     /// it": a failure auto-expands once, and stays closed if they close it.
     @State private var didAutoExpand = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
@@ -24,7 +25,7 @@ struct WorkshopProbeRow: View {
             }
         }
         .padding(.vertical, DesignTokens.Spacing.xxs)
-        .animation(.easeInOut(duration: 0.18), value: isExpanded)
+        .animation(reduceMotion ? DesignTokens.Motion.reducedMotionFade : DesignTokens.Motion.disclosure, value: isExpanded)
         .animation(.easeInOut(duration: 0.18), value: report.status)
         // Include initial status because a probe can finish before the view appears.
         .onChange(of: report.status, initial: true) { _, status in

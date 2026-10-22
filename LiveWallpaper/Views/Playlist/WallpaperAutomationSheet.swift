@@ -280,7 +280,7 @@ struct WallpaperAutomationSheet: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: reduceMotion ? 0 : 0.18), value: mode)
+            .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: mode)
 
             SheetFooterBar(
                 primaryTitle: saveTitle,

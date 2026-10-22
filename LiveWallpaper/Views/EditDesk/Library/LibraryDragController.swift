@@ -54,7 +54,7 @@ final class LibraryDragController {
         stopWatchingEscape()
         cancelled = false
         self.payload = payload
-        withAnimation(DesignTokens.motion(reduceMotion, .spring(response: 0.25, dampingFraction: 0.82))) {
+        withAnimation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.dragSettle)) {
             self.point = point
         }
         target = dropTarget(at: point)
@@ -104,7 +104,7 @@ final class LibraryDragController {
         stopWatchingEscape()
         endTask?.cancel()
         endTask = nil
-        withAnimation(DesignTokens.motion(reduceMotion, .spring(response: 0.25, dampingFraction: 0.82))) {
+        withAnimation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.dragSettle)) {
             point = nil
             target = nil
             payload = nil

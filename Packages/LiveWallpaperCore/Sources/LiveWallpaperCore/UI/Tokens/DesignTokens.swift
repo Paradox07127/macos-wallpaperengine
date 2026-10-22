@@ -405,16 +405,44 @@ public enum DesignTokens {
         public static let enterDuration: TimeInterval = 0.4
         public static let exitDuration: TimeInterval = 0.2
 
+        /// The generic fade that stands in for movement under Reduce Motion.
+        public static let reducedMotionFade: Animation = .linear(duration: 0.15)
+
+        /// Hover, press, highlight and selection fades on a single control.
+        public static let feedback: Animation = .easeOut(duration: 0.15)
+
+        /// Crossfade between content states of one region (empty ↔ grid, error ↔ results).
+        public static let stateChange: Animation = .easeOut(duration: exitDuration)
+
+        /// Expand / collapse, and switching segmented content shown in the same place.
+        public static let disclosure: Animation = .easeInOut(duration: 0.22)
+
+        /// The display detail's chrome, and the home layers it covers, showing or hiding.
+        public static func detailChrome(reduceMotion: Bool) -> Animation {
+            .easeOut(duration: reduceMotion ? 0.12 : 0.24)
+        }
+
+        /// Previous / next paging: the modal preview, the detail page's display switch.
+        public static func navigationStep(reduceMotion: Bool) -> Animation {
+            reduceMotion ? reducedMotionFade : .easeOut(duration: 0.25)
+        }
+
+        /// The selection capsule of a segmented control.
+        public static let selection: Animation = .snappy(duration: 0.18)
+
+        /// A drag ghost appearing, settling back, or missing its drop.
+        public static let dragSettle: Animation = .spring(response: 0.25, dampingFraction: 0.82)
+
         public static func modalPresentation(reduceMotion: Bool) -> Animation {
-            reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.82)
+            reduceMotion ? reducedMotionFade : .spring(response: 0.45, dampingFraction: 0.82)
         }
 
         public static func modalDismissal(reduceMotion: Bool) -> Animation {
-            reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: exitDuration)
+            reduceMotion ? reducedMotionFade : .easeOut(duration: exitDuration)
         }
 
         public static func pageSwitch(reduceMotion: Bool) -> Animation {
-            reduceMotion ? .linear(duration: 0.15) : .easeInOut(duration: 0.22)
+            reduceMotion ? reducedMotionFade : .easeInOut(duration: 0.22)
         }
 
         /// Deliberately longer than `exitDuration`, which is tuned for widget-sized

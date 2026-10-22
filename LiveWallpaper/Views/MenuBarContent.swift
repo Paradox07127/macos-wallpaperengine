@@ -840,9 +840,11 @@ private struct VolumeControlRow: View {
 
 /// For buttons that don't already go through `.adaptiveGlassButton` (which delivers its own native press feedback).
 private struct MenuBarPressFeedbackStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1.0)
             .opacity(configuration.isPressed ? 0.85 : 1.0)
             .animation(.snappy(duration: 0.12), value: configuration.isPressed)
     }

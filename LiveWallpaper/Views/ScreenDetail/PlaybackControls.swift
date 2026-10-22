@@ -433,6 +433,9 @@ struct PlaybackControls: View {
     /// Mute dead zone on the volume slider (avoids leaking 1–2% from a stray drag).
     static let audioDeadZone: Double = 0.04
 
+    /// The lock-screen confirmation tick showing and clearing.
+    private static let lockScreenTickAnimation: Animation = .snappy(duration: 0.25)
+
     private func audioLevelLabel(isMuted: Bool, percent: Int) -> some View {
         if isMuted {
             Text("Muted", comment: "Audio level display when the wallpaper is muted")
@@ -618,17 +621,17 @@ struct PlaybackControls: View {
                     guard captured else {
                         // Bumping the generation already invalidated the previous run's clear-timer,
                         // so this attempt has to put the tick away itself.
-                        withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {
+                        withAnimation(DesignTokens.motion(reduceMotion, Self.lockScreenTickAnimation)) {
                             lockScreenExtracted = false
                         }
                         return
                     }
-                    withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {
+                    withAnimation(DesignTokens.motion(reduceMotion, Self.lockScreenTickAnimation)) {
                         lockScreenExtracted = true
                     }
                     try? await Task.sleep(for: .seconds(2))
                     guard generation == lockScreenFeedbackGeneration else { return }
-                    withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {
+                    withAnimation(DesignTokens.motion(reduceMotion, Self.lockScreenTickAnimation)) {
                         lockScreenExtracted = false
                     }
                 }

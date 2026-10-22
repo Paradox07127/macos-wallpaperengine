@@ -106,7 +106,7 @@ struct OverlayWorkspace: View {
 
     /// Shared by the strip's panels and the add drawer.
     static func panelAnimation(reduceMotion: Bool) -> Animation {
-        reduceMotion ? .linear(duration: 0.15) : .easeInOut(duration: 0.22)
+        reduceMotion ? DesignTokens.Motion.reducedMotionFade : DesignTokens.Motion.disclosure
     }
 
     /// Reduce Motion fades in place instead of sliding down.

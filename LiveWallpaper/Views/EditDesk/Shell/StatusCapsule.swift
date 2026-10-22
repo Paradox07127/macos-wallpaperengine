@@ -273,7 +273,7 @@ struct StatusCapsule: View {
                                 return .handled
                             }
                             .onAppear { panelFocused = true }
-                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
                     }
                 }
                 .background(StatusPanelDismissMonitor(

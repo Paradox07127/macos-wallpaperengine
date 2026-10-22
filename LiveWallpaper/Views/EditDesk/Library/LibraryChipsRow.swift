@@ -136,7 +136,7 @@ struct AdaptiveLibrarySearch: View {
                     .accessibilityLabel(Text(prompt))
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isExpanded)
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: isExpanded)
         .onChange(of: focused) { _, hasFocus in
             if !hasFocus, text.isEmpty { requested = false }
         }

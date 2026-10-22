@@ -113,7 +113,7 @@ struct ShelfDropHighlight: View {
             }
             .opacity(stage.shelfDropTargeted ? 1 : 0)
             // Inside the placement below, so only the fade animates: the band follows the shelf frame by frame.
-            .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.18), value: stage.shelfDropTargeted)
+            .animation(reduceMotion ? DesignTokens.Motion.reducedMotionFade : DesignTokens.Motion.feedback, value: stage.shelfDropTargeted)
             .frame(height: StageGeometry.cardSize.height + 2 * DesignTokens.EditDesk.Spacing.s12)
             .padding(.horizontal, DesignTokens.EditDesk.Spacing.gutter)
             .frame(maxHeight: .infinity, alignment: .top)

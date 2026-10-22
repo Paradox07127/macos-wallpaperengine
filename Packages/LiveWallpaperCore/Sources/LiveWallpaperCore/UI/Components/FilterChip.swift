@@ -53,8 +53,8 @@ public struct FilterChip: View {
         }
         .buttonStyle(FilterChipPressStyle(reduceMotion: reduceMotion))
         .onHover { isHovered = $0 }
-        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isSelected)
-        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovered)
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: isSelected)
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: isHovered)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -65,6 +65,6 @@ private struct FilterChipPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
-            .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: configuration.isPressed)
+            .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: configuration.isPressed)
     }
 }

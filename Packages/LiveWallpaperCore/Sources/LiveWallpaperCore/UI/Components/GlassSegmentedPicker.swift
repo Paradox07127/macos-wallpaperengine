@@ -56,7 +56,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     private func segment(_ value: Value) -> some View {
         let isSelected = selection == value
         return Button {
-            withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.18))) {
+            withAnimation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.selection)) {
                 selection = value
             }
         } label: {

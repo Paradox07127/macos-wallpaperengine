@@ -9,6 +9,7 @@ struct WorkshopAPIKeySection: View {
     @State private var model: SteamWebAPIKeyEntryModel
     @State private var isEditing = false
     @State private var pendingDestructive: PendingDestructive?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(services: WorkshopServices) {
         self.services = services
@@ -28,7 +29,7 @@ struct WorkshopAPIKeySection: View {
                     .fixedSize()
             }
             // Keep modifiers on the row so Form recognizes the Section.
-            .animation(.easeInOut(duration: 0.18), value: isEditing)
+            .animation(reduceMotion ? DesignTokens.Motion.reducedMotionFade : DesignTokens.Motion.disclosure, value: isEditing)
             .onChange(of: services.hasWebAPIKey, initial: true) { _, hasKey in
                 isEditing = !hasKey
             }

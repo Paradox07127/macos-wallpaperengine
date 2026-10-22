@@ -112,11 +112,11 @@ struct InspectorResizeHandle: View {
                     radius: isClosingArmed ? 7 : 5, x: 0, y: 2
                 )
                 .opacity(isActive ? 0.95 : 0)
-                .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.16)), value: isClosingArmed)
+                .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: isClosingArmed)
         }
         .frame(width: Self.hitAreaWidth)
         .frame(maxHeight: .infinity)
-        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.16)), value: isActive)
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: isActive)
     }
 
     private var resizeGesture: some Gesture {

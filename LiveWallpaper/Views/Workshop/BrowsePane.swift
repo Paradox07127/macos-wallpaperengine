@@ -241,7 +241,7 @@ struct BrowsePane: View {
     }
 
     private var phaseAnimation: Animation? {
-        DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.exitDuration))
+        DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange)
     }
 
     private var content: some View {

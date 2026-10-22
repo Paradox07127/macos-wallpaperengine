@@ -70,8 +70,6 @@ struct DisplayFloatLayer: View {
     /// false drops the All Displays tile and its divider, for a payload that only goes to one display at a time.
     var showsAllDisplays = true
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     private var isScrolling: Bool {
         FloatLayerGeometry.needsScroll(count: targets.count)
     }
@@ -171,7 +169,7 @@ struct DisplayFloatLayer: View {
                 .opacity(applyAllHighlighted ? 1 : 0)
         }
         .shadow(color: applyAllHighlighted ? DesignTokens.EditDesk.Colors.dropHighlightGlow : .clear, radius: 30)
-        .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.18), value: applyAllHighlighted)
+        .animation(DesignTokens.Motion.feedback, value: applyAllHighlighted)
         .allowsHitTesting(false)
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(EditDeskCoordinateSpace.name)) } action: {
             onApplyAllFrame($0)
@@ -187,8 +185,6 @@ private struct FloatDisplayThumbnail: View {
     let target: ModalDisplayTarget
     let isHighlighted: Bool
     let onTargetFrame: (FloatTargetFrame) -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         artwork
@@ -206,7 +202,7 @@ private struct FloatDisplayThumbnail: View {
             }
             .shadow(color: isHighlighted ? DesignTokens.EditDesk.Colors.dropHighlightGlow : .clear, radius: 30)
             // The highlight is colour only, so Reduce Motion keeps a fade rather than snapping.
-            .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.18), value: isHighlighted)
+            .animation(DesignTokens.Motion.feedback, value: isHighlighted)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(EditDeskCoordinateSpace.name)) } action: {
                 onTargetFrame(FloatTargetFrame(id: target.id, rect: $0))
             }

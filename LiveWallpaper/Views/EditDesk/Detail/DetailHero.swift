@@ -195,7 +195,7 @@ struct DetailHero<HUD: View>: View {
         // Keep the buttons in keyboard/VoiceOver navigation even while their paint is hidden.
         .opacity(hovered || transportFocused ? 1 : 0.001)
         .allowsHitTesting(hovered || transportFocused)
-        .animation(.easeOut(duration: reduceMotion ? 0 : 0.16), value: hovered || transportFocused)
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: hovered || transportFocused)
         .accessibilityElement(children: .contain)
     }
 
