@@ -7,8 +7,8 @@ import Testing
 @Suite("Workshop browse pagination metadata", .serialized)
 @MainActor
 struct BrowsePaginationMetadataTests {
-    @Test("A full keyed page with one shell still offers the next page")
-    func keyedShellPageKeepsNext() async throws {
+    @Test("A full keyed page with one shell still offers the next page", arguments: [false, true])
+    func keyedShellPageKeepsNext(hugeTotal: Bool) async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.pagination.keyedShell")
         defer { suite.discard() }
         let directory = FileManager.default.temporaryDirectory
@@ -22,6 +22,7 @@ struct BrowsePaginationMetadataTests {
         let cache = WorkshopQueryCache(directoryURL: directory.appendingPathComponent("cache"))
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [KeyedShellPageStub.self]
+        config.httpAdditionalHeaders = ["X-Test-Huge-Total": hugeTotal ? "1" : "0"]
         let service = WorkshopQueryService(
             keychain: keychain, cache: cache, session: URLSession(configuration: config), countIssuedRequest: {}
         )
@@ -34,7 +35,12 @@ struct BrowsePaginationMetadataTests {
         #expect(model.lastError == nil)
         #expect(model.items.count == 49, "the shell never reaches the grid")
         #expect(model.lastFetchedRawItemCount == 50, "Steam sent a full page")
-        #expect(model.totalPages == nil, "no total in the response")
+        if hugeTotal {
+            #expect(model.totalAvailable == Int.max)
+            #expect(model.totalPages == 1000, "only fetchable pages are advertised")
+        } else {
+            #expect(model.totalPages == nil, "no total in the response")
+        }
         #expect(model.canGoNextPage)
     }
 
@@ -165,14 +171,15 @@ struct BrowsePaginationMetadataTests {
 }
 
 /// QueryFiles answered with 50 entries — 49 public items and one private shell
-/// — and no `total`; anything else (persona lookup) gets an empty players list.
+/// — optionally with a huge `total`; persona lookup gets an empty players list.
 private final class KeyedShellPageStub: URLProtocol, @unchecked Sendable {
-    private static func queryFilesJSON() -> Data {
+    private static func queryFilesJSON(hugeTotal: Bool) -> Data {
         var entries = (1 ... 49).map { index -> String in
             #"{"publishedfileid":"\#(1000 + index)","result":1,"title":"Item \#(index)","visibility":0,"banned":false,"tags":[{"tag":"Scene","display_name":"Scene"}]}"#
         }
         entries.insert(#"{"publishedfileid":"2000","result":15}"#, at: 7)
-        return Data(#"{"response":{"publishedfiledetails":[\#(entries.joined(separator: ","))]}}"#.utf8)
+        let total = hugeTotal ? "\"total\":\(Int.max)," : ""
+        return Data(#"{"response":{\#(total)"publishedfiledetails":[\#(entries.joined(separator: ","))]}}"#.utf8)
     }
 
     override static func canInit(with _: URLRequest) -> Bool {
@@ -186,7 +193,7 @@ private final class KeyedShellPageStub: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         let url = request.url!
         let body = url.path.contains("QueryFiles")
-            ? Self.queryFilesJSON()
+            ? Self.queryFilesJSON(hugeTotal: request.value(forHTTPHeaderField: "X-Test-Huge-Total") == "1")
             : Data(#"{"response":{"players":[]}}"#.utf8)
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

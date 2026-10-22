@@ -97,13 +97,13 @@ struct VideoWallpaperWindowTests {
         #expect(currentPlayer.player == nil)
         for sharing: NSWindow.SharingType in [.none, .readOnly] {
             screen.applyCapturePolicy(sharing)
-            #expect(currentWindow.sharingType == sharing)
+            #expect(CaptureSharingTestHost.hasWindowServerSharingType(sharing, on: currentWindow))
             #expect(currentPlayer.playbackWindow === currentWindow)
             if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 #expect(oldPlayer.isCleanedUp)
             } else {
                 #expect(!oldPlayer.isCleanedUp)
-                #expect(oldWindow.sharingType == sharing)
+                #expect(CaptureSharingTestHost.hasWindowServerSharingType(sharing, on: oldWindow))
             }
         }
     }
@@ -121,15 +121,15 @@ struct VideoWallpaperWindowTests {
         player.installPlaybackWindowForTesting(window)
         let session = VideoWallpaperSession(player: player)
         defer { session.cleanup() }
-        #expect(window.sharingType == .readOnly)
+        #expect(CaptureSharingTestHost.hasWindowServerSharingType(.readOnly, on: window))
 
         WallpaperCapturePolicy.allowsScreenCapture = false
         session.show()
-        #expect(window.sharingType == .none)
+        #expect(CaptureSharingTestHost.hasWindowServerSharingType(.none, on: window))
         #expect(player.playbackWindow === window)
         WallpaperCapturePolicy.allowsScreenCapture = true
         player.orderWindowBack()
-        #expect(window.sharingType == .readOnly)
+        #expect(CaptureSharingTestHost.hasWindowServerSharingType(.readOnly, on: window))
         #expect(player.playbackWindow === window)
     }
 
@@ -142,9 +142,9 @@ struct VideoWallpaperWindowTests {
         screen.installRuntimeSession(session)
         defer { screen.resetRuntimeSession() }
         screen.applyCapturePolicy(.none)
-        #expect(window.sharingType == .none)
+        #expect(CaptureSharingTestHost.hasWindowServerSharingType(.none, on: window))
         screen.applyCapturePolicy(.readOnly)
-        #expect(window.sharingType == .readOnly)
+        #expect(CaptureSharingTestHost.hasWindowServerSharingType(.readOnly, on: window))
     }
 }
 
@@ -202,12 +202,12 @@ struct CaptureSharingAppKitControlTests {
     func directWindowSharingControl(wallpaper: Bool) {
         let window: NSWindow = wallpaper
             ? VideoWallpaperWindow(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-            : NSWindow(contentRect: NSRect(x: 0, y: 0, width: 32, height: 32), styleMask: .borderless, backing: .buffered, defer: false)
+            : NSWindow(contentRect: TestHostWindowParking.parkedFrame(NSRect(x: 0, y: 0, width: 32, height: 32)), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         for sharing: NSWindow.SharingType in [.readOnly, .none, .readOnly] {
             window.sharingType = sharing
-            #expect(window.sharingType == sharing)
+            #expect(CaptureSharingTestHost.hasWindowServerSharingType(sharing, on: window))
         }
     }
 }
@@ -215,6 +215,36 @@ struct CaptureSharingAppKitControlTests {
 /// Gate only the known ad-hoc host condition: unknown signing information must
 /// still run the assertions, so a failed lookup cannot silently waive a regression.
 enum CaptureSharingTestHost {
+    /// AppKit's getter can remain `.none` after the server has accepted `.readOnly` (also reproduced
+    /// in a signed standalone App). Read the actual owned window's server state, never a cached request.
+    /// This validates policy delivery, not exclusion from modern ScreenCaptureKit capture.
+    @MainActor
+    static func hasWindowServerSharingType(_ expected: NSWindow.SharingType, on window: NSWindow) -> Bool {
+        let wasVisible = window.isVisible
+        if !wasVisible {
+            window.orderBack(nil)
+        }
+        defer {
+            if !wasVisible {
+                window.orderOut(nil)
+            }
+        }
+        let number = CGWindowID(window.windowNumber)
+        let deadline = Date().addingTimeInterval(0.5)
+        repeat {
+            let rows = CGWindowListCopyWindowInfo(.optionIncludingWindow, number) as? [[String: Any]]
+            if let row = rows?.first(where: {
+                ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == number
+                    && ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == ProcessInfo.processInfo.processIdentifier
+            }), let state = row[kCGWindowSharingState as String] as? NSNumber,
+               state.uintValue == expected.rawValue {
+                return true
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        } while Date() < deadline
+        return false
+    }
+
     static var isAdHocSigned: Bool {
         var code: SecCode?
         var staticCode: SecStaticCode?

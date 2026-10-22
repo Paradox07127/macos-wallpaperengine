@@ -83,7 +83,7 @@ struct WallpaperEngineImportServiceTests {
         #expect(!config.physicalPixelLayout)
     }
 
-    @Test("Packaged web imports in place from scene.pkg without extracting to wpe-cache")
+    @Test("Packaged web imports with source-folder metadata and its index entry")
     func packagedWebImportsInPlaceWithoutExtraction() async throws {
         let fixture = try makeFixture(type: .web, entryFile: "index.html", pkgEntries: [
             PackageEntrySpec("index.html", Array("<html><body>hi</body></html>".utf8)),
@@ -110,8 +110,6 @@ struct WallpaperEngineImportServiceTests {
         #expect(origin.cacheRelativePath == nil)
         #expect(origin.resourceLocation == .sourceFolder)
         #expect(origin.entryFile == "index.html")
-        let extractedDir = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
-        #expect(!FileManager.default.fileExists(atPath: extractedDir.path))
     }
 
     @Test("WallpaperContent.video round-trips packageEntryName and decodes legacy payloads")
@@ -185,7 +183,7 @@ struct WallpaperEngineImportServiceTests {
         #expect(origin.originalType == .application)
     }
 
-    @Test("Packaged video imports in place from scene.pkg without extracting to wpe-cache")
+    @Test("Packaged video keeps its package entry and source-folder metadata")
     func packagedVideoImportsInPlaceWithoutExtraction() async throws {
         let fixture = try makeFixture(type: .video, entryFile: "video.mp4", pkgEntries: [
             PackageEntrySpec("video.mp4", [0x01, 0x02, 0x03])
@@ -202,11 +200,9 @@ struct WallpaperEngineImportServiceTests {
         #expect(origin.cacheRelativePath == nil)
         #expect(origin.resourceLocation == .sourceFolder)
         #expect(origin.entryFile == "video.mp4")
-        let extractedDir = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
-        #expect(!FileManager.default.fileExists(atPath: extractedDir.path))
     }
 
-    @Test("Failed source import keeps an in-place descriptor without extracting a cache")
+    @Test("Failed source import keeps an in-place descriptor")
     func failedSceneRetainsSourceDescriptor() async throws {
         let fixture = try makeFixture(type: .scene, entryFile: "scene.json", pkgEntries: nil)
         defer { fixture.cleanup() }
@@ -217,8 +213,6 @@ struct WallpaperEngineImportServiceTests {
         }
         #expect(descriptor.assetStorage == .sourceDirectory)
         #expect(origin.entryFile == "scene.json")
-        let extractedDir = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
-        #expect(!FileManager.default.fileExists(atPath: extractedDir.path))
     }
 
     @Test("Scene with scene.pkg + valid scene.json + image asset returns ready scene content")
@@ -270,7 +264,7 @@ struct WallpaperEngineImportServiceTests {
         #expect(origin.resourceLocation == .cache)
     }
 
-    @Test("Packaged scene imports in place (.packageSource) without extracting the payload")
+    @Test("Packaged scene imports with packageSource storage")
     func packagedSceneImportsInPlaceWithoutExtraction() async throws {
         let pngBytes = try makeFixturePNG(width: 4, height: 4)
         let sceneJSON = """
@@ -308,9 +302,6 @@ struct WallpaperEngineImportServiceTests {
         }
         #expect(descriptor.assetStorage == .packageSource(fileName: "scene.pkg"))
         #expect(descriptor.capabilityTier == .imageOnly)
-
-        let sceneCache = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
-        #expect(!FileManager.default.fileExists(atPath: sceneCache.path))
     }
 
     @Test(
@@ -395,8 +386,6 @@ struct WallpaperEngineImportServiceTests {
         #expect(descriptor.assetStorage == .sourceDirectory)
         #expect(origin.cacheRelativePath == "wpe-cache/\(fixture.workshopID)")
         #expect(origin.resourceLocation == .cache)
-        let sceneCache = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
-        #expect(!FileManager.default.fileExists(atPath: sceneCache.path))
     }
 
     @Test("A particle object alongside a resolvable image does not downgrade the scene")
@@ -993,7 +982,6 @@ struct WallpaperEngineImportServiceTests {
         } else {
             guard case .unsupported = result else { Issue.record("Expected unsupported producer, got \(result)"); return }
         }
-        #expect(!FileManager.default.fileExists(atPath: fixture.cacheURL.appendingPathComponent(fixture.workshopID).path))
     }
 
     private func makeFixture(
@@ -1008,7 +996,6 @@ struct WallpaperEngineImportServiceTests {
         let fileManager = FileManager.default
         let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let folderURL = rootURL.appendingPathComponent("workshop", isDirectory: true)
-        let cacheURL = rootURL.appendingPathComponent("cache", isDirectory: true)
         try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
 
         let workshopID = workshopIDOverride ?? "3351072238"
@@ -1043,7 +1030,6 @@ struct WallpaperEngineImportServiceTests {
         return ImportFixture(
             rootURL: rootURL,
             folderURL: folderURL,
-            cacheURL: cacheURL,
             workshopID: workshopID,
             service: service
         )
@@ -1117,7 +1103,6 @@ struct WallpaperEngineImportServiceTests {
 private struct ImportFixture {
     let rootURL: URL
     let folderURL: URL
-    let cacheURL: URL
     let workshopID: String
     let service: WallpaperEngineImportService
 

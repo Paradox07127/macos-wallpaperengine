@@ -126,16 +126,16 @@ struct WPESoundRuntimeTests {
         #expect(sound.visibleField.resolvedValue)
         #expect(sound.visible == false) // hidden ancestor is folded into the initial gate
 
-        let volumeBinding = try #require(document.propertyBindings["musicVolume"]?.first)
+        let volumeBinding = try #require(WPEParityUserProperties.bindings(document: document)["musicVolume"]?.first)
         #expect(volumeBinding.target == .soundObject(id: "7"))
         #expect(volumeBinding.kind == .volume)
         #expect(volumeBinding.action == .incremental)
-        let visibleBinding = try #require(document.propertyBindings["musicEnabled"]?.first)
-        #expect(visibleBinding.target == .soundObject(id: "7"))
-        #expect(visibleBinding.kind == .visible)
-        #expect(visibleBinding.action == .incremental)
-        #expect(!WPEScenePropertyPatch(
-            bindingsByProperty: document.propertyBindings,
+        let visibleBinding = try #require(WPEParityUserProperties.bindings(document: document)["musicEnabled"]?.first)
+        #expect(visibleBinding.target == .objectResource(objectID: "7", field: "visible"))
+        #expect(visibleBinding.kind == .resource)
+        #expect(visibleBinding.action == .reload)
+        #expect(WPEScenePropertyPatch(
+            bindingsByProperty: WPEParityUserProperties.bindings(document: document),
             oldValues: ["musicVolume": .number(0.25), "musicEnabled": .bool(true)],
             newValues: ["musicVolume": .number(0.75), "musicEnabled": .bool(false)]
         ).requiresReload)

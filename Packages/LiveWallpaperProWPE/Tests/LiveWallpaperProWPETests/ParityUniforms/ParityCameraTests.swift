@@ -8,22 +8,10 @@ enum ParityCameraFixture {
         try WPESceneDocumentParser.parse(data: Data(json.utf8), userValues: [:])
     }
 
-    /// Scene 3660962877 from the HLSL capture: 3840×2160, V = I, object 935 rotated −90°.
-    static func scene3660962877() throws -> WPESceneDocument {
-        try captured("3660962877")
-    }
-
-    static func captured(_ sceneID: String) throws -> WPESceneDocument {
-        guard let directory = ProcessInfo.processInfo.environment["WPE_HLSL_CAPTURE_DIR"] else {
-            throw XCTSkip("Set WPE_HLSL_CAPTURE_DIR to the capture directory containing scene-sources/")
-        }
-        let url = URL(fileURLWithPath: directory).appendingPathComponent("scene-sources/\(sceneID)/scene.json")
-        return try WPESceneDocumentParser.parse(data: Data(contentsOf: url), userValues: [:])
-    }
 }
 
 final class ParityCameraTests: XCTestCase {
-    private let canvas = SIMD2<Float>(3840, 2160)
+    let canvas = SIMD2<Float>(3840, 2160)
 
     func testActiveCameraUsesLastVisibleObjectAndItsParentWorld() throws {
         let document = try ParityCameraFixture.document(json: """
@@ -106,26 +94,15 @@ final class ParityCameraTests: XCTestCase {
         XCTAssertEqual(selected.zoom, 2)
     }
 
-    private func assertEqual(_ lhs: simd_float4x4, _ rhs: simd_float4x4, accuracy: Float = 1e-5,
+    func assertEqual(_ lhs: simd_float4x4, _ rhs: simd_float4x4, accuracy: Float = 1e-5,
                              file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(simd_almost_equal_elements(lhs, rhs, accuracy), "\(lhs) != \(rhs)", file: file, line: line)
     }
 
-    private func camera(renderTarget: SIMD2<Float>, alignment: WPEParityCameraAlignment = .noCrop,
+    func camera(renderTarget: SIMD2<Float>, alignment: WPEParityCameraAlignment = .noCrop,
                         zoom: Float = 1) -> WPEParityCamera {
         WPEParityCamera(eye: .zero, center: SIMD3(0, 0, -1), up: SIMD3(0, 1, 0), size: canvas,
                         renderTargetSize: renderTarget, zoom: zoom, alignment: alignment)
-    }
-
-    func testFixtureCameraIsIdentityViewAndCanvasOrtho() throws {
-        let camera = try WPEParityCamera(document: ParityCameraFixture.scene3660962877(),
-                                         renderTargetSize: canvas)
-        assertEqual(camera.view, matrix_identity_float4x4)
-        XCTAssertEqual(camera.bounds, SIMD4(0, 3840, 0, 2160))
-        let expected = simd_float4x4(rows: [
-            SIMD4(2.0 / 3840, 0, 0, -1), SIMD4(0, 2.0 / 2160, 0, -1), SIMD4(0, 0, 1.0 / 4000, 0.5), SIMD4(0, 0, 0, 1),
-        ])
-        assertEqual(camera.projection, expected)
     }
 
     func testOrthoMapsDepthToZeroOne() {
@@ -180,12 +157,6 @@ final class ParityCameraTests: XCTestCase {
         XCTAssertEqual(zoomed * SIMD4<Float>(960, 540, 0, 1), SIMD4(-1, -1, 0.5, 1))
     }
 
-    func testDocumentZoomMultipliesCameraZoom() throws {
-        let document = try ParityCameraFixture.scene3660962877()
-        let camera = WPEParityCamera(document: document, renderTargetSize: canvas, cameraZoom: 3)
-        XCTAssertEqual(camera.zoom, 3)
-    }
-
     func testEyePositionAddsHalfCanvas() {
         var camera = camera(renderTarget: canvas)
         camera.eye = SIMD3(10, -20, 0)
@@ -235,23 +206,6 @@ final class ParityCameraTests: XCTestCase {
     }
 
     /// 3509243656 has `"orthogonalprojection": null`: lookAt V and FUN_14009a360's reversed-depth perspective.
-    func testPerspectiveScene3509243656UsesGeneralFovNearFar() throws {
-        let document = try ParityCameraFixture.captured("3509243656")
-        let camera = WPEParityCamera(document: document, renderTargetSize: SIMD2(1920, 1080))
-        XCTAssertEqual(camera.scenePerspective, WPEParityScenePerspective(fov: 50, near: 0.0099999998, far: 10000))
-        XCTAssertNil(camera.parallaxAmount)
-        // Camera object 443 replaces the JSON camera: eye = W.col3, center = eye − W.col2, up = W.col1
-        // (1401891a0.c:85-104).
-        assertEqual(camera.view, WPEParityCamera.translation(SIMD3(0, 0, -6)))
-        assertEqual(camera.projection, simd_float4x4(rows: [
-            SIMD4(1.20628514, 0, 0, 0), SIMD4(0, 2.14450692, 0, 0), SIMD4(0, 0, 1.000001e-6, 0.01000001),
-            SIMD4(0, 0, -1, 0),
-        ]))
-        XCTAssertEqual(camera.eyePosition, SIMD3(0, 0, 6))
-        var mirrored = camera
-        mirrored.alignment.flipHorizontal = true
-        XCTAssertEqual(mirrored.projection.columns.0.x, -1.20628514, accuracy: 1e-5)
-    }
 
     func testPerspectiveDepthIsReversed() {
         let projection = WPEParityCamera.perspective(fovY: 1, aspect: 1, near: 5, far: 15000)

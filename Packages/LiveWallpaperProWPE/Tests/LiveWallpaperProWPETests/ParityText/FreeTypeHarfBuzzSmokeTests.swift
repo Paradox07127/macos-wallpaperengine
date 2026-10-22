@@ -4,13 +4,7 @@ import Foundation
 import XCTest
 
 final class FreeTypeHarfBuzzSmokeTests: XCTestCase {
-    private static let fontPath: String = {
-        let assets = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-                "Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets"
-            )
-        return assets.appendingPathComponent("fonts/NotoSans-Regular.ttf").path
-    }()
+    private static let fontPath = PackageTestAssets.fonts.appendingPathComponent("NotoSans-Regular.ttf").path
 
     func testVendoredVersions() throws {
         var library: FT_Library?
@@ -28,10 +22,98 @@ final class FreeTypeHarfBuzzSmokeTests: XCTestCase {
         XCTAssertEqual(harfBuzzVersion, "14.2.0")
     }
 
-    func testShapeAndRenderWPEAssetFont() throws {
-        guard FileManager.default.fileExists(atPath: Self.fontPath) else {
-            throw XCTSkip("Wallpaper Engine assets font not installed at \(Self.fontPath)")
+    func testColorGlyphCallbackKeepsItsOwnUserData() throws {
+        var colorToken: UInt8 = 1
+        var clipToken: UInt8 = 2
+        try withUnsafeMutablePointer(to: &colorToken) { colorData in
+            try withUnsafeMutablePointer(to: &clipToken) { clipData in
+                for installsClip in [false, true] {
+                    let funcs = try XCTUnwrap(hb_paint_funcs_create())
+                    defer { hb_paint_funcs_destroy(funcs) }
+                    hb_paint_funcs_set_color_glyph_func(funcs, { _, paintData, glyph, _, userData in
+                        paintData == userData && glyph == 42 ? 1 : 0
+                    }, colorData, nil)
+                    if installsClip {
+                        hb_paint_funcs_set_push_clip_glyph_func(funcs, { _, _, _, _, _ in }, clipData, nil)
+                    }
+                    XCTAssertEqual(hb_paint_color_glyph(funcs, colorData, 42, hb_font_get_empty()), 1)
+                }
+            }
         }
+    }
+
+    func testCPALVersionOnePaletteTypesUse32BitWireValues() throws {
+        _ = try Data(contentsOf: URL(fileURLWithPath: Self.fontPath))
+        let sourceBlob = try XCTUnwrap(hb_blob_create_from_file_or_fail(Self.fontPath))
+        defer { hb_blob_destroy(sourceBlob) }
+        let source = try XCTUnwrap(hb_face_create(sourceBlob, 0))
+        defer { hb_face_destroy(source) }
+        var tableCount = hb_face_get_table_tags(source, 0, nil, nil)
+        var tags = [hb_tag_t](repeating: 0, count: Int(tableCount))
+        tags.withUnsafeMutableBufferPointer {
+            _ = hb_face_get_table_tags(source, 0, &tableCount, $0.baseAddress)
+        }
+        // CPAL v1: one color per palette, three uint32 palette types [1, 2, 3].
+        let cpal: [UInt8] = [
+            0, 1, 0, 1, 0, 3, 0, 3, 0, 0, 0, 30,
+            0, 0, 0, 1, 0, 2,
+            0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 0,
+            0x11, 0x22, 0x33, 0xFF, 0x44, 0x55, 0x66, 0xFF, 0x77, 0x88, 0x99, 0xFF,
+            0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3,
+        ]
+        var library: FT_Library?
+        XCTAssertEqual(FT_Init_FreeType(&library), 0)
+        let lib = try XCTUnwrap(library)
+        defer { FT_Done_FreeType(lib) }
+
+        for truncated in [false, true] {
+            let builder = try XCTUnwrap(hb_face_builder_create())
+            defer { hb_face_destroy(builder) }
+            for tag in tags {
+                let table = try XCTUnwrap(hb_face_reference_table(source, tag))
+                defer { hb_blob_destroy(table) }
+                XCTAssertNotEqual(hb_face_builder_add_table(builder, tag, table), 0)
+            }
+            let payload = truncated ? Array(cpal.dropLast()) : cpal
+            let paletteBlob = try payload.withUnsafeBytes { bytes in
+                try XCTUnwrap(hb_blob_create(
+                    bytes.baseAddress?.assumingMemoryBound(to: CChar.self),
+                    UInt32(bytes.count), HB_MEMORY_MODE_DUPLICATE, nil, nil
+                ))
+            }
+            defer { hb_blob_destroy(paletteBlob) }
+            XCTAssertNotEqual(hb_face_builder_add_table(builder, 0x4350_414C, paletteBlob), 0)
+            let sfnt = try XCTUnwrap(hb_face_reference_blob(builder))
+            defer { hb_blob_destroy(sfnt) }
+            var byteCount: UInt32 = 0
+            let bytes = try XCTUnwrap(hb_blob_get_data(sfnt, &byteCount))
+            var faceOut: FT_Face?
+            XCTAssertEqual(FT_New_Memory_Face(
+                lib, UnsafeRawPointer(bytes).assumingMemoryBound(to: FT_Byte.self), FT_Long(byteCount), 0, &faceOut
+            ), 0)
+            let face = try XCTUnwrap(faceOut)
+            defer { FT_Done_Face(face) }
+            var data = FT_Palette_Data()
+            XCTAssertEqual(FT_Palette_Data_Get(face, &data), 0)
+            if truncated {
+                XCTAssertNil(data.palette_flags, "Reject a palette-types array missing its last byte")
+                continue
+            }
+            XCTAssertEqual(data.num_palettes, 3)
+            XCTAssertEqual(data.num_palette_entries, 1)
+            let flags = try XCTUnwrap(data.palette_flags)
+            XCTAssertEqual(Array(UnsafeBufferPointer(start: flags, count: 3)), [1, 2, 3])
+            for (index, blue) in [UInt8(0x11), 0x44, 0x77].enumerated() {
+                var colors: UnsafeMutablePointer<FT_Color>?
+                XCTAssertEqual(FT_Palette_Select(face, FT_UShort(index), &colors), 0)
+                let color = try XCTUnwrap(colors).pointee
+                XCTAssertEqual([color.blue, color.green, color.red, color.alpha], [blue, blue + 0x11, blue + 0x22, 0xFF])
+            }
+        }
+    }
+
+    func testShapeAndRenderWPEAssetFont() throws {
+        _ = try Data(contentsOf: URL(fileURLWithPath: Self.fontPath))
         let fontData = try Data(contentsOf: URL(fileURLWithPath: Self.fontPath))
 
         var library: FT_Library?

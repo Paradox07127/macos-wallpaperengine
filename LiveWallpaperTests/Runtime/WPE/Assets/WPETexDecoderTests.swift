@@ -8,7 +8,7 @@ import Testing
 import UniformTypeIdentifiers
 @testable import LiveWallpaper
 
-@Suite("WPETexDecoder — container + RGBA8888")
+@Suite("WPETexDecoder — container + texture payload")
 struct WPETexDecoderTests {
     private static let officialFlag0x40Fixtures: [(name: String, tailBits: UInt32, sha256: String)] = [
         ("lutx32_daisy.tex", 0xFF30_B1C5, "28151a832fee1ffa0cc18c2081c49639ceaf82a7b60b3063e355fb12c75ae352"),
@@ -32,7 +32,7 @@ struct WPETexDecoderTests {
 
     @Test("Empty data fails with truncatedBlock at offset 0")
     func emptyDataTruncated() {
-        let result = WPETexDecoder().decode(data: Data())
+        let result = WPETexDecoder().extractTexturePayload(data: Data())
         guard case .failure(.truncatedBlock(_, let offset)) = result else {
             Issue.record("Expected truncatedBlock failure, got \(result)")
             return
@@ -40,30 +40,11 @@ struct WPETexDecoderTests {
         #expect(offset == 0)
     }
 
-    @Test("RG88 alphaChannelPriority expands to luminance+alpha (R,R,R,G)")
-    func rg88AlphaChannelPriorityExpandsToLuminanceAlpha() throws {
-        let input = Data([200, 50, 10, 255])
-
-        let normal = try WPETexPixelDecoder.decodeRG88(input, width: 2, height: 1, mipmap: 0)
-        #expect(
-            Array(normal.pixels) == [200, 50, 0, 255, 10, 255, 0, 255],
-            "default RG88 must stay (R, G, 0, 255) so normal maps read .xy correctly"
-        )
-
-        let glow = try WPETexPixelDecoder.decodeRG88(
-            input, width: 2, height: 1, mipmap: 0, alphaChannelPriority: true
-        )
-        #expect(
-            Array(glow.pixels) == [200, 200, 200, 50, 10, 10, 10, 255],
-            "alphaChannelPriority RG88 must expand to (R, R, R, G) = luminance + alpha"
-        )
-    }
-
     @Test("Unknown container magic surfaces unsupportedContainer")
     func unknownContainerMagic() {
         var buffer = Data()
         appendMagic(&buffer, magic: "FAKE9999")
-        let result = WPETexDecoder().decode(data: buffer)
+        let result = WPETexDecoder().extractTexturePayload(data: buffer)
         guard case .failure(.unsupportedContainer(let magic)) = result else {
             Issue.record("Expected unsupportedContainer, got \(result)")
             return
@@ -75,7 +56,7 @@ struct WPETexDecoderTests {
     func missingInfoBlock() {
         var buffer = Data()
         appendMagic(&buffer, magic: "TEXV0005")
-        let result = WPETexDecoder().decode(data: buffer)
+        let result = WPETexDecoder().extractTexturePayload(data: buffer)
         guard case .failure(.missingInfoBlock) = result else {
             Issue.record("Expected missingInfoBlock, got \(result)")
             return
@@ -87,7 +68,7 @@ struct WPETexDecoderTests {
         var buffer = Data()
         appendMagic(&buffer, magic: "TEXV0005")
         appendMagic(&buffer, magic: "WHAT0001")
-        let result = WPETexDecoder().decode(data: buffer)
+        let result = WPETexDecoder().extractTexturePayload(data: buffer)
         guard case .failure(.unsupportedBlock(let magic)) = result else {
             Issue.record("Expected unsupportedBlock, got \(result)")
             return
@@ -109,19 +90,7 @@ struct WPETexDecoderTests {
         #expect(info.containerVersion == 5)
     }
 
-    // MARK: - RGBA8888 round-trip
-
-    @Test("Decode of synthetic RGBA8888 returns a CGImage with correct dimensions")
-    func decodeRGBA8888RoundTrip() throws {
-        let buffer = makeRGBA8888TestImage(width: 4, height: 4)
-        let result = WPETexDecoder().decode(data: buffer)
-        guard case .success(let image) = result else {
-            Issue.record("Expected decode success, got \(result)")
-            return
-        }
-        #expect(image.width == 4)
-        #expect(image.height == 4)
-    }
+    // MARK: - Authored texture payload
 
     @Test("Single-frame static .tex decodes its full authored size")
     func singleFrameStaticDecodesFullSize() throws {
@@ -139,23 +108,10 @@ struct WPETexDecoderTests {
 
     }
 
-    @Test("Decode accepts TEXB0003 PNG-backed texture")
-    func decodeTEXB0003PNGBackedTexture() throws {
-        let buffer = makeTEXB0003PNGBackedImage()
-        let result = WPETexDecoder().decode(data: buffer)
-        guard case .success(let image) = result else {
-            Issue.record("Expected decode success for PNG-backed layout, got \(result)")
-            return
-        }
-
-        #expect(image.width == 1)
-        #expect(image.height == 1)
-    }
-
     @Test("Unknown format code surfaces unsupportedFormat with the offending code")
     func unsupportedFormatCode() {
         let buffer = makeImage(width: 2, height: 2, formatCode: 99, payload: Data(count: 16))
-        let result = WPETexDecoder().decode(data: buffer)
+        let result = WPETexDecoder().extractTexturePayload(data: buffer)
         guard case .failure(.unsupportedFormat(let code)) = result else {
             Issue.record("Expected unsupportedFormat, got \(result)")
             return
@@ -181,29 +137,14 @@ struct WPETexDecoderTests {
             decompressedByteCount: raw.count
         )
 
-        let result = WPETexDecoder().decode(data: buffer)
-        guard case .success(let image) = result else {
+        let result = WPETexDecoder().extractTexturePayload(data: buffer)
+        guard case let .success(payload) = result else {
             Issue.record("Expected decode success after LZ4 inflate, got \(result)")
             return
         }
-        #expect(image.width == width)
-        #expect(image.height == height)
-    }
-
-    @Test("MP4-backed TEXB payload is rejected instead of decoded as raw RGBA")
-    func mp4PayloadIsUnsupportedAnimation() {
-        let buffer = makeImage(
-            width: 1,
-            height: 1,
-            formatCode: WPETexFormat.rgba8888.rawValue,
-            payload: mp4HeaderPayload()
-        )
-
-        let result = WPETexDecoder().decode(data: buffer)
-        guard case .failure(.unsupportedAnimation) = result else {
-            Issue.record("Expected unsupportedAnimation for MP4-backed TEXB payload, got \(result)")
-            return
-        }
+        #expect(payload.largestMipmap?.width == width)
+        #expect(payload.largestMipmap?.height == height)
+        #expect(payload.largestMipmap?.bytes == raw)
     }
 
     @Test("Encoded PNG + TEXS animation extracts an animation track with per-frame sub-rects")
@@ -337,9 +278,6 @@ struct WPETexDecoderTests {
             #expect(payload.animationTrack == nil)
             #expect(payload.videoPayload == nil)
             #expect(payload.hasAnimationFrames == false)
-            #expect(throws: WPETexDecodeError.unsupportedTextureDimension(depth: 4)) {
-                _ = try WPETexDecoder().decode(data: data).get()
-            }
         }
     }
 
@@ -590,57 +528,6 @@ struct WPETexDecoderTests {
         return buffer
     }
 
-    private func makeTEXB0003PNGBackedImage() -> Data {
-        let payload = onePixelPNG()
-        var buffer = Data()
-        appendMagic(&buffer, magic: "TEXV0005")
-        appendMagic(&buffer, magic: "TEXI0001")
-        appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
-        appendUInt32(&buffer, 2)
-        appendInt32(&buffer, 1)
-        appendInt32(&buffer, 1)
-        appendInt32(&buffer, 1)
-        appendInt32(&buffer, 1)
-        appendInt32(&buffer, 0)
-
-        appendMagic(&buffer, magic: "TEXB0003")
-        appendInt32(&buffer, 1)
-        appendInt32(&buffer, 13)
-        appendInt32(&buffer, 1)
-        appendInt32(&buffer, 1)
-        appendInt32(&buffer, 1)
-        appendUInt32(&buffer, 0)
-        appendUInt32(&buffer, 0)
-        appendUInt32(&buffer, UInt32(payload.count))
-        buffer.append(payload)
-        return buffer
-    }
-
-    private func onePixelPNG() -> Data {
-        Data([
-            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-            0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-            0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-            0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
-            0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0,
-            0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99,
-            0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
-            0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
-        ])
-    }
-
-    private func mp4HeaderPayload() -> Data {
-        Data([
-            0x00, 0x00, 0x00, 0x18,
-            0x66, 0x74, 0x79, 0x70,
-            0x6d, 0x70, 0x34, 0x32,
-            0x00, 0x00, 0x00, 0x00,
-            0x6d, 0x70, 0x34, 0x32,
-            0x69, 0x73, 0x6f, 0x6d
-        ])
-    }
-
     private func appendMagic(_ data: inout Data, magic: String) {
         data.append(contentsOf: magic.utf8)
         data.append(0x00)
@@ -869,13 +756,10 @@ struct WPETexDecoderTests {
 extension WPETexDecoderTests {
     // MARK: - TEXB0004 conditional variants
 
-    @Test("TEXB0004 conditional-variant table parses and the base image still decodes")
+    @Test("TEXB0004 conditional-variant table parses and the base payload remains available")
     func conditionalVariantTexB0004DecodesBaseImage() throws {
         let png = twoByTwoPNGAtlas()
         let buffer = makeConditionalVariantTexB0004(png: png)
-
-        let image = try WPETexDecoder().decode(data: buffer).get()
-        #expect(image.width == 4 && image.height == 4)
 
         let metadata = try WPETexDecoder().extractRawMetadata(data: buffer).get()
         #expect(metadata.bitmap.frames.count == 1)

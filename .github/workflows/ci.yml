@@ -5,8 +5,8 @@ name: CI
 # AdaptiveGlass.swift (now LiveWallpaperCore/UI/Components) uses macOS 26 SDK APIs
 # (glassEffect / GlassEffectContainer / .buttonStyle(.glass)) that do not exist
 # in the macOS 15.x SDKs shipped with Xcode 16.x — #available gates the
-# runtime, not the compile. This workflow pins Xcode 27.0 on the `xcode-27`
-# image, matching the local shipping toolchain exactly.
+# runtime, not the compile. This workflow uses the selected Xcode on the
+# `xcode-27` image; each job reports its toolchain before building.
 #
 # No secrets, no signing, no publishing — pure compile/test gate.
 
@@ -29,19 +29,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Xcode 27.0 beta == the toolchain shipping builds use locally. Seeds change
-  # weekly, so this tracks major.minor only — no build number is pinned anywhere.
-  # Only the `xcode-27` image label carries it (macOS 26.5 host); that image is
-  # marked "preview" upstream, so expect occasional queueing. Pinned through the
-  # stable symlink rather than /Applications/Xcode_27_beta_4.app, whose name
-  # changes with every seed. The "Verify toolchain" step lists what is installed
-  # so the pin can be bumped in one place.
-  DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
-
 jobs:
   build:
-    name: Build ${{ matrix.sku }} (${{ matrix.scheme }})
+    name: Build Debug ${{ matrix.sku }} (${{ matrix.scheme }})
     runs-on: xcode-27
     timeout-minutes: 45
     strategy:
@@ -60,7 +50,7 @@ jobs:
 
       - name: Verify toolchain
         run: |
-          ls -d /Applications/Xcode*.app
+          xcode-select -p
           xcodebuild -version
           xcodebuild -showsdks | grep -i macos
 
@@ -71,6 +61,8 @@ jobs:
         run: xcodebuild SWIFT_EMIT_LOC_STRINGS=NO -downloadComponent MetalToolchain
 
       - name: Build ${{ matrix.scheme }}
+        # Hosted compilation has no private shader SDK inputs. Actual Pro
+        # Release archives retain the SDK preflight in the release gate.
         run: |
           set -o pipefail
           if command -v xcbeautify >/dev/null 2>&1; then
@@ -81,6 +73,7 @@ jobs:
           xcodebuild build \
             -project LiveWallpaper.xcodeproj \
             -scheme '${{ matrix.scheme }}' \
+            -configuration Debug \
             -destination 'platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData-${{ matrix.sku }}" \
             CODE_SIGNING_ALLOWED=NO \
@@ -190,8 +183,8 @@ jobs:
     # Opt-in only (Actions tab -> CI -> Run workflow -> check the box).
     # The LiveWallpaperTests bundle is large and some tests touch
     # Metal/display; reliability on virtualized hosted runners is unproven.
-    # Signing: no Apple cert on the runner, so force ad-hoc manual signing —
-    # same approach scripts/release-app.sh uses for release archives.
+    # Signing: no Apple cert on the runner, so tests use ad-hoc manual signing.
+    # Shipping archives use Apple Development signing on the packaging Mac.
     name: App unit tests (Pro scheme, opt-in)
     if: github.event_name == 'workflow_dispatch' && inputs.run-app-tests
     runs-on: xcode-27

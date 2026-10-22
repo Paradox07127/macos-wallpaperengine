@@ -6,9 +6,7 @@ import XCTest
 final class ParityTextPlannerTests: XCTestCase {
     static func makePlanner() throws -> WPEParityTextPlanner {
         let font = ParityFontChainTests.assetsRoot.appendingPathComponent(ParityFontChainTests.notoSans)
-        guard FileManager.default.fileExists(atPath: font.path) else {
-            throw XCTSkip("Wallpaper Engine assets fonts not installed at \(font.path)")
-        }
+        _ = try Data(contentsOf: font)
         return WPEParityTextPlanner(assets: WPEParityProgramAssets(sources: [.directory(ParityFontChainTests.assetsRoot)]))
     }
 

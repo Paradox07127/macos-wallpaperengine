@@ -14,10 +14,6 @@ struct WPEVertexOut {
     float2 uv;
 };
 
-struct WPESolidUniforms {
-    float4 color;
-};
-
 struct WPEPresentUniforms {
     float2 ndcScale;
     float2 uvScale;
@@ -48,14 +44,6 @@ struct WPEVideoYCbCrUniforms {
     out.position = float4(positions[vertexID], 0.0, 1.0);
     out.uv = uvs[vertexID];
     return out;
-}
-
-[[fragment]] half4 wpe_solidcolor_fragment(
-    WPEVertexOut in [[stage_in]],
-    constant WPESolidUniforms& uniforms [[buffer(0)]]
-) {
-    (void)in;
-    return half4(wpe_attachment_output(float4(half4(uniforms.color))));
 }
 
 [[vertex]] WPEVertexOut wpe_present_vertex(

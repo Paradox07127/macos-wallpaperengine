@@ -86,16 +86,7 @@ extension GeneralSettingsView {
         let summary = ConfigurationPorter.apply(bundle)
         pendingImportBundle = nil
 
-        postSettingsNotificationAsync(.dockVisibilityDidChange)
-        postSettingsNotificationAsync(.globalShortcutsDidChange)
-        postSettingsNotificationAsync(.weatherLocationPreferenceDidChange)
-        postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)
-        screenManager.handleGlobalSettingsChanged()
-        screenManager.resetAllWallpaperSessions()
-        undo?.removeAll()
-        screenManager.refreshScreens(preserveRuntimeSessions: false)
-
-        let settings = SettingsManager.shared.loadGlobalSettings()
+        let settings = reloadAfterSettingsReplacement()
         globalPauseOnBattery = settings.globalPauseOnBattery
         startOnLogin = settings.startOnLogin
         preservePlaybackOnLock = settings.preservePlaybackOnLock

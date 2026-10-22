@@ -194,6 +194,7 @@ struct ShelfGridFlightTests {
                     strayed.append(index)
                 }
             }
+            try #require(hardest != nil, Comment(rawValue: "\(run.label): no card was sampled arriving at its tile"))
             if let hardest {
                 #expect(
                     hardest.step <= 0.5,

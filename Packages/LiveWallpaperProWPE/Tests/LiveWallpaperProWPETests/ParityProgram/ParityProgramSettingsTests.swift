@@ -1,22 +1,9 @@
-import Darwin
 import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
 
 final class ParityProgramSettingsTests: XCTestCase {
     /// Real MDL meshes, rather than a JSON key named `model`, select Main's BACKBUFFER_MS route.
-    func testLoadedMDLModelsUseOneSampleCountForCombosSceneAndPost() throws {
-        let (document, assets) = try modelFixture()
-        for requested in [1, 2, 4, 8, 3, 16] {
-            let scene = WPEParityProgramScene(document: document, assets: assets,
-                                              settings: .init(bloom: false, msaaSampleCount: requested,
-                                                              colorCorrection: .init(wecE: true, wecBrs: 75)))
-            XCTAssertEqual(scene.models["112"]?.meshes.count, 1, "fixture must load Earth's MDL")
-            XCTAssertEqual(scene.models["114"]?.meshes.count, 1, "fixture must load the cloud MDL")
-            let expected = [2, 4, 8].contains(requested) ? requested : 1
-            try assertSampleRoute(scene, expected: expected)
-        }
-    }
 
     func testSerializedNullModelDoesNotEnableMSAAForAnImageLayer() throws {
         for requested in [2, 4, 8] {
@@ -90,7 +77,7 @@ final class ParityProgramSettingsTests: XCTestCase {
         }
     }
 
-    private func assertSampleRoute(_ scene: WPEParityProgramScene, expected: Int,
+    func assertSampleRoute(_ scene: WPEParityProgramScene, expected: Int,
                                    file: StaticString = #filePath, line: UInt = #line) throws {
         XCTAssertEqual(scene.engineFlags.backbufferMSAA, expected > 1, file: file, line: line)
         XCTAssertEqual(scene.scene.msaaSamples, expected, file: file, line: line)
@@ -141,21 +128,4 @@ final class ParityProgramSettingsTests: XCTestCase {
         XCTAssertGreaterThan(postDraws, 0, "fixture must exercise the post target after resolve", file: file, line: line)
     }
 
-    private func modelFixture() throws -> (WPESceneDocument, WPEParityProgramAssets) {
-        let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
-        let steam = home.appendingPathComponent("Library/Application Support/Steam/steamapps")
-        let package = steam.appendingPathComponent("workshop/content/431960/3437487219/scene.pkg")
-        let engine = ProcessInfo.processInfo.environment["WPE_ASSETS_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? steam.appendingPathComponent("common/wallpaper_engine/assets")
-        guard FileManager.default.fileExists(atPath: package.path),
-              FileManager.default.fileExists(atPath: engine.appendingPathComponent("materials/util").path) else {
-            throw XCTSkip("Needs Workshop 3437487219 and original WPE assets (WPE_ASSETS_DIR)")
-        }
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parity-settings-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        try ParityProgramPuppetTests.unpack(package, into: root)
-        let document = try WPESceneDocumentParser.parse(data: Data(contentsOf: root.appendingPathComponent("scene.json")),
-                                                        userValues: [:])
-        return (document, WPEParityProgramAssets(sceneDirectory: root, assetRoots: [engine]))
-    }
 }

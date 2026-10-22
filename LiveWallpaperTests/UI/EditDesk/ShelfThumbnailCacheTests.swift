@@ -227,14 +227,13 @@ struct ShelfThumbnailCacheTests {
 
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
-        let scale = CGFloat(bitmap.pixelsWide) / size.width
+        let pixels = try ProbeImage(cgImage: #require(bitmap.cgImage), viewWidth: size.width)
         let blank = (0 ..< count).filter { index in
             let frame = DesignTokens.LibraryGrid.tileFrame(
                 index: index, size: .small, aspect: .wide, fitting: size.width, tileAspectRatio: StageGeometry.cardAspectRatio
             )
-            let pixel = bitmap.colorAt(x: Int(frame.midX * scale), y: Int((frame.minY + frame.height * 0.3) * scale))
-            let color = pixel?.usingColorSpace(.sRGB)
-            return !(color.map { $0.redComponent > 0.8 && $0.greenComponent < 0.3 && $0.blueComponent < 0.3 } ?? false)
+            let color = pixels.rgb(px: Int(frame.midX * pixels.scale), Int((frame.minY + frame.height * 0.3) * pixels.scale))
+            return !(CGFloat(color.r) / 255 > 0.8 && CGFloat(color.g) / 255 < 0.3 && CGFloat(color.b) / 255 < 0.3)
         }
         #expect(blank.isEmpty, Comment(rawValue: "tiles \(blank) show the placeholder while the cache holds \(cached) of \(count)"))
     }
@@ -321,11 +320,11 @@ struct ShelfThumbnailCacheTests {
             host.layoutSubtreeIfNeeded()
             let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
-            let scale = CGFloat(bitmap.pixelsWide) / size.width
+            let pixels = try ProbeImage(cgImage: #require(bitmap.cgImage), viewWidth: size.width)
             return indices.filter { index in
                 let point = samplePoint(index)
-                let color = bitmap.colorAt(x: Int(point.x * scale), y: Int(point.y * scale))?.usingColorSpace(.sRGB)
-                return color.map { $0.redComponent > 0.8 && $0.greenComponent < 0.3 && $0.blueComponent < 0.3 } ?? false
+                let color = pixels.rgb(px: Int(point.x * pixels.scale), Int(point.y * pixels.scale))
+                return CGFloat(color.r) / 255 > 0.8 && CGFloat(color.g) / 255 < 0.3 && CGFloat(color.b) / 255 < 0.3
             }
         }
 

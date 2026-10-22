@@ -1142,11 +1142,6 @@ final_reordering_syllable_indic (const hb_ot_shape_plan_t *plan,
       if (is_halant (info[new_pos]) &&
 	  info[new_pos].indic_position() != POS_PRE_M)
       {
-#if 0 // See comment above
-	/* -> If ZWJ or ZWNJ follow this halant, position is moved after it. */
-	if (new_pos + 1 < end && is_joiner (info[new_pos + 1]))
-	  new_pos++;
-#endif
 	if (new_pos + 1 < end)
 	{
 	  /* -> If ZWJ follows this halant, matra is NOT repositioned after this halant. */
@@ -1480,18 +1475,6 @@ decompose_indic (const hb_ot_shape_normalize_context_t *c,
     case 0x0B94u  : return false; /* TAMIL LETTER AU */
 
 
-    /*
-     * Decompose split matras that don't have Unicode decompositions.
-     */
-
-#if 0
-    /* Gujarati */
-    /* This one has no decomposition in Unicode, but needs no decomposition either. */
-    /* case 0x0AC9u  : return false; */
-
-    /* Oriya */
-    case 0x0B57u  : *a = no decomp, -> RIGHT; return true;
-#endif
   }
 
   return (bool) c->unicode->decompose (ab, a, b);

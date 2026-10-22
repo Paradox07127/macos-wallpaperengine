@@ -29,11 +29,6 @@
 FT_BEGIN_HEADER
 
 
-  /* The following structures must be defined by the hinter */
-  typedef struct T1_Size_Hints_   T1_Size_Hints;
-  typedef struct T1_Glyph_Hints_  T1_Glyph_Hints;
-
-
   /**************************************************************************
    *
    * @Type:
@@ -54,22 +49,6 @@ FT_BEGIN_HEADER
    *   A handle to a Type 1 glyph slot object.
    */
   typedef struct T1_GlyphSlotRec_*  T1_GlyphSlot;
-
-
-  /**************************************************************************
-   *
-   * @Type:
-   *   T1_CharMap
-   *
-   * @Description:
-   *   A handle to a Type 1 character mapping object.
-   *
-   * @Note:
-   *   The Type 1 format doesn't use a charmap but an encoding table.
-   *   The driver is responsible for making up charmap objects
-   *   corresponding to these tables.
-   */
-  typedef struct T1_CharMapRec_*   T1_CharMap;
 
 
   /**************************************************************************

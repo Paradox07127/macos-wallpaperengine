@@ -575,24 +575,7 @@
                                 FT_UInt    num_coords,
                                 FT_Fixed*  coords )
   {
-    FT_Error                 error;
-    FT_Service_MultiMasters  service;
-
-
-    /* check of `face' delayed to `ft_face_get_mm_service' */
-
-    if ( !coords )
-      return FT_THROW( Invalid_Argument );
-
-    error = ft_face_get_mm_service( face, &service );
-    if ( !error )
-    {
-      error = FT_ERR( Invalid_Argument );
-      if ( service->get_mm_blend )
-        error = service->get_mm_blend( face, num_coords, coords );
-    }
-
-    return error;
+    return FT_Get_MM_Blend_Coordinates( face, num_coords, coords );
   }
 
 

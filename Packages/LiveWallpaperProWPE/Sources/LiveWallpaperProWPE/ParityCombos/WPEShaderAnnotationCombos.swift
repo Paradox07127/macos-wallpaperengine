@@ -57,7 +57,8 @@ public struct WPEShaderAnnotationCombos: Sendable {
         return Int32(line[range])
     }
 
-    private static func json(_ text: String) -> [String: Any]? {
+    /// Combo, sampler and material-uniform annotations share the same trailing-text tolerance.
+    static func json(_ text: String) -> [String: Any]? {
         func decode(_ value: String) -> [String: Any]? {
             (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any]
         }

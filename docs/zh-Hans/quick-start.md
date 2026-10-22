@@ -80,7 +80,7 @@
 2. **SteamCMD** —— 下载走 Valve 的命令行工具，用你自己的 Steam 账号；有缓存登录的账号会被自动发现并列出。工具尚未就绪时，**SteamCMD** 那一行提供**设置 SteamCMD**、**自动查找**和**选择 SteamCMD**；就绪后换成**更改**、**自动查找**和**设置 SteamCMD**：
    - **设置 SteamCMD** —— 显示下载大小和安装位置，点击**下载并安装**后由 Loomscreen 装一份原生支持 Apple Silicon 的托管副本，无需 Rosetta 转译。Loomscreen 会拉取 Valve 的包清单，把每个下载文件与清单里的 SHA-256 对校，解包，只有当二进制的代码签名与团队标识确实是 Valve 的才保留结果。任何一步失败都会回滚，不动你原来的配置。
    - **自动查找** —— 找出已有安装（Homebrew、`/usr/local/bin` 等），自动启动可信副本完成检查和准备。已有 Homebrew 安装仍可识别；在 Apple Silicon 上，Homebrew 初次下载的 SteamCMD 需要 Rosetta 转译，请在终端手动运行 `steamcmd +quit`，让 SteamCMD 完成自更新，再选择**自动查找**。内置安装无需此步骤。若本机的信任或启动问题导致无法使用，会提供应用内的**下载并安装**恢复，保留现有安装。连接器忙碌或超时可再次点按**自动查找**重试。
-   - **选择 SteamCMD**（就绪后是**更改**）—— 自己指定一个二进制。它照样要过同样的签名与校验和门禁，而且是**每次运行**都过，不只是你选它的那一次。
+   - **选择 SteamCMD**（就绪后是**更改**）—— 自己指定一个二进制。每次执行前都会检查 Valve 签名与隔离状态，SteamCMD 自更新后也会重新检查。
    - 按钮旁的 `⋯` 菜单只在有可撤回的操作时出现：**忘记我选择的 SteamCMD** 会回到自动查找；**删除 Loomscreen 安装的那份**会在你确认后删除托管副本。
 3. **Steam Web API key** —— 用于 API 浏览、作者资料和预设列表；公共浏览与按链接下载可在没有 key 时使用。在 [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey) 申请。新 key 保存到登录钥匙串；旧文件 key 在钥匙串访问成功后迁移。
 4. **引擎资源** —— 场景会引用 Wallpaper Engine 的共享资源；Loomscreen 通过 SteamCMD 一次性下载，并可在启动时检查更新（**设置 → 创意工坊**）。

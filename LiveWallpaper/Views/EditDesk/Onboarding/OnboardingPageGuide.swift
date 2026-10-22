@@ -275,7 +275,9 @@ struct PageGuideAnchorKey: PreferenceKey {
 extension View {
     func pageGuideTarget(_ target: PageGuideTarget?) -> some View {
         transformAnchorPreference(key: PageGuideAnchorKey.self, value: .bounds) { anchors, anchor in
-            if let target { anchors[target] = anchor }
+            if let target {
+                anchors[target] = anchor
+            }
         }
     }
 }

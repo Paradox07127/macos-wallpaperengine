@@ -681,9 +681,6 @@ struct CmapSubtableFormat4
     accel.init (this, subtable_data_size);
     return accel.get_glyph_func (&accel, codepoint, glyph);
   }
-  bool get_glyph (hb_codepoint_t codepoint, hb_codepoint_t *glyph) const
-  { return false; }
-
   void collect_unicodes (hb_set_t *out, unsigned int subtable_data_size) const
   {
     accelerator_t accel;

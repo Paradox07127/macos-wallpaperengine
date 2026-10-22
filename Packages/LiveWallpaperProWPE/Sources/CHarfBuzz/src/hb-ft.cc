@@ -1366,11 +1366,7 @@ hb_ft_font_changed (hb_font_t *font)
   hb_font_set_scale (font,
 		     (int) (((uint64_t) ft_face->size->metrics.x_scale * (uint64_t) ft_face->units_per_EM + (1u<<15)) >> 16),
 		     (int) (((uint64_t) ft_face->size->metrics.y_scale * (uint64_t) ft_face->units_per_EM + (1u<<15)) >> 16));
-#if 0 /* hb-ft works in no-hinting model */
-  hb_font_set_ppem (font,
-		    ft_face->size->metrics.x_ppem,
-		    ft_face->size->metrics.y_ppem);
-#endif
+  /* hb-ft works in no-hinting model. */
 
 #if defined(HAVE_FT_GET_VAR_BLEND_COORDINATES) && !defined(HB_NO_VAR)
   FT_MM_Var *mm_var = nullptr;

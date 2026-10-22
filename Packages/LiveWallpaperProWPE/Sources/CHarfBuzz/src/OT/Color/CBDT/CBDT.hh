@@ -312,16 +312,6 @@ struct IndexSubtable
     }
   }
 
-  bool get_extents (hb_glyph_extents_t *extents HB_UNUSED, bool scale HB_UNUSED) const
-  {
-    switch (u.header.indexFormat)
-    {
-    case 2: case 5: /* TODO */
-    case 1: case 3: case 4: /* Variable-metrics formats do not have metrics here. */
-    default:return (false);
-    }
-  }
-
   bool
   get_image_data (unsigned int idx, unsigned int *offset,
 		  unsigned int *length, unsigned int *format) const
@@ -508,9 +498,6 @@ struct IndexSubtableRecord
     lastGlyphIndex = gid;
     return num_missing;
   }
-
-  bool get_extents (hb_glyph_extents_t *extents, const void *base, bool scale) const
-  { return (base+offsetToSubtable).get_extents (extents, scale); }
 
   bool get_image_data (unsigned int  gid,
 		       const void   *base,
@@ -846,9 +833,6 @@ struct CBDT
       const IndexSubtableRecord *subtable_record = strike.find_table (glyph, cblc, &base);
       if (!subtable_record || !strike.ppemX || !strike.ppemY)
 	return false;
-
-      if (subtable_record->get_extents (extents, base, scale))
-	return true;
 
       unsigned int image_offset = 0, image_length = 0, image_format = 0;
       if (!subtable_record->get_image_data (glyph, base, &image_offset, &image_length, &image_format))

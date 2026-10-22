@@ -144,9 +144,6 @@
       if ( !glyph_index )
         goto Exit;
 
-      if ( !glyph_index )
-        goto Exit;
-
       FT_TRACE5(( "standard character: U+%04lX (glyph index %lu)\n",
                   ch, glyph_index ));
 
@@ -710,10 +707,6 @@
         FT_TRACE5(( "delta: %ld", delta1 ));
         if ( delta2 < 32 )
           delta2 = 0;
-#if 0
-        else if ( delta2 < 64 )
-          delta2 = 32 + ( ( ( delta2 - 32 ) + 16 ) & ~31 );
-#endif
         else
           delta2 = FT_PIX_ROUND( delta2 );
         FT_TRACE5(( "/%ld\n", delta2 ));
@@ -1760,7 +1753,6 @@
 
   Exit:
 
-#if 1
     if ( !AF_LATIN_HINTS_DO_STEM_ADJUST( hints ) )
     {
       if ( delta > AF_LIGHT_MODE_MAX_DELTA_ABS )
@@ -1768,7 +1760,6 @@
       else if ( delta < -AF_LIGHT_MODE_MAX_DELTA_ABS )
         delta = -AF_LIGHT_MODE_MAX_DELTA_ABS;
     }
-#endif
 
     cur_pos1 += delta;
 
@@ -1941,89 +1932,12 @@
 
       if ( dim != AF_DIMENSION_VERT && !anchor )
       {
-
-#if 0
-        if ( fixedpitch )
-        {
-          AF_Edge     left  = edge;
-          AF_Edge     right = edge_limit - 1;
-          AF_EdgeRec  left1, left2, right1, right2;
-          FT_Pos      target, center1, center2;
-          FT_Pos      delta1, delta2, d1, d2;
-
-
-          while ( right > left && !right->link )
-            right--;
-
-          left1  = *left;
-          left2  = *left->link;
-          right1 = *right->link;
-          right2 = *right;
-
-          delta  = ( ( ( hinter->pp2.x + 32 ) & -64 ) - hinter->pp2.x ) / 2;
-          target = left->opos + ( right->opos - left->opos ) / 2 + delta - 16;
-
-          delta1  = delta;
-          delta1 += af_hint_normal_stem( hints, left, left->link,
-                                         delta1, 0 );
-
-          if ( left->link != right )
-            af_hint_normal_stem( hints, right->link, right, delta1, 0 );
-
-          center1 = left->pos + ( right->pos - left->pos ) / 2;
-
-          if ( center1 >= target )
-            delta2 = delta - 32;
-          else
-            delta2 = delta + 32;
-
-          delta2 += af_hint_normal_stem( hints, &left1, &left2, delta2, 0 );
-
-          if ( delta1 != delta2 )
-          {
-            if ( left->link != right )
-              af_hint_normal_stem( hints, &right1, &right2, delta2, 0 );
-
-            center2 = left1.pos + ( right2.pos - left1.pos ) / 2;
-
-            d1 = center1 - target;
-            d2 = center2 - target;
-
-            if ( FT_ABS( d2 ) < FT_ABS( d1 ) )
-            {
-              left->pos       = left1.pos;
-              left->link->pos = left2.pos;
-
-              if ( left->link != right )
-              {
-                right->link->pos = right1.pos;
-                right->pos       = right2.pos;
-              }
-
-              delta1 = delta2;
-            }
-          }
-
-          delta               = delta1;
-          right->link->flags |= AF_EDGE_DONE;
-          right->flags       |= AF_EDGE_DONE;
-        }
-        else
-
-#endif /* 0 */
-
-          delta = af_hint_normal_stem( hints, edge, edge2, 0,
-                                       AF_DIMENSION_HORZ );
+        delta = af_hint_normal_stem( hints, edge, edge2, 0,
+                                     AF_DIMENSION_HORZ );
       }
       else
         af_hint_normal_stem( hints, edge, edge2, delta, dim );
 
-#if 0
-      printf( "stem (%d,%d) adjusted (%.1f,%.1f)\n",
-               edge - edges, edge2 - edges,
-               (double)( edge->pos - edge->opos ) / 64,
-               (double)( edge2->pos - edge2->opos ) / 64 );
-#endif
 
       anchor = edge;
       edge->flags  |= AF_EDGE_DONE;

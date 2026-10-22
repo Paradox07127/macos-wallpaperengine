@@ -361,7 +361,9 @@ final class SteamCMDDoctorService {
             }
             // A reached verdict is the answer. Falling through to locate/bind on a negative one would bind a path just proved unable to launch.
             guard diagnosis.isUsable, let resolved = diagnosis.canonicalPath else {
-                for kind in Self.binaryProbeKinds { _ = reportUnboundBinaryProbe(kind) }
+                for kind in Self.binaryProbeKinds {
+                    _ = reportUnboundBinaryProbe(kind)
+                }
                 return false
             }
             return (try? await bindResolvedBinary(resolved)) != nil
@@ -582,7 +584,9 @@ final class SteamCMDDoctorService {
     }
 
     func runAll() async {
-        if !hasBoundBinary { await autoDetectBinary() }
+        if !hasBoundBinary {
+            await autoDetectBinary()
+        }
         beginProbeRun()
         state = .probing
         for kind in DoctorProbeKind.allCases {
@@ -592,7 +596,9 @@ final class SteamCMDDoctorService {
     }
 
     func runProbe(_ kind: DoctorProbeKind) async {
-        if !hasBoundBinary, Self.binaryProbeKinds.contains(kind) { await autoDetectBinary() }
+        if !hasBoundBinary, Self.binaryProbeKinds.contains(kind) {
+            await autoDetectBinary()
+        }
         beginProbeRun()
         state = .probing
         await performProbe(kind)
@@ -600,7 +606,9 @@ final class SteamCMDDoctorService {
     }
 
     private func performProbe(_ kind: DoctorProbeKind) async {
-        if reportUnboundBinaryProbe(kind) { return }
+        if reportUnboundBinaryProbe(kind) {
+            return
+        }
         setProbe(kind, status: .running)
         switch kind {
         case .binaryIdentity: await runBinaryIdentityProbe()

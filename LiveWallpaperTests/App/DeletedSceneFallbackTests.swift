@@ -57,10 +57,8 @@ struct DeletedSceneFallbackTests {
             manager.configurationStore.remove(for: screen.id)
         }
         manager.automationOrchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: manager.configurationStore, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { manager.saveConfiguration($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: manager.configurationStore, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { manager.saveConfiguration($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { manager.bumpTransition(for: $0) },
             isCurrentTransition: { manager.isCurrentTransition($0, for: $1) },
             prepareAutomation: { screen, proposed, _, intended in
@@ -226,11 +224,11 @@ struct DeletedSceneFallbackTests {
         }
     }
 
-    @Test("A row the user picks while the replacement prepares is not overwritten")
+    @Test("The next wallpaper the user requests while replacement prepares is not overwritten")
     func explicitPickDuringReplacementWins() async throws {
         let (a, b, c) = (Self.makeItem("A"), Self.makeItem("B"), Self.makeItem("C"))
         try await Self.withManager(seeding: Self.seededPlaylist([a, b, c]), deleting: a) { manager, screen in
-            manager.playPlaylistEntry(at: 2, for: screen)
+            manager.advancePlaylist(for: screen)
             await Self.settle { false }
             Self.expectSaved(c, in: manager, for: screen, cursor: 2)
         }

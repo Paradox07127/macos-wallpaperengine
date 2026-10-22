@@ -436,19 +436,6 @@
     if ( charcode < 0 || charcode > 255 )
       return -1;
 
-#if 0
-    /* retrieve cffload from list of current modules */
-    FT_Service_CFFLoad  cffload;
-
-
-    FT_FACE_FIND_GLOBAL_SERVICE( face, cffload, CFF_LOAD );
-    if ( !cffload )
-    {
-      FT_ERROR(( "cff_lookup_glyph_by_stdcharcode:"
-                 " the `cffload' module is not available\n" ));
-      return FT_THROW( Unimplemented_Feature );
-    }
-#endif
 
     cffload = (FT_Service_CFFLoad)cff->cffload;
 

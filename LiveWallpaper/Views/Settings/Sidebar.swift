@@ -72,7 +72,9 @@ struct SettingsSidebar: View {
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
                 .onChange(of: selection, initial: true) { _, destination in
-                    if let destination { proxy.scrollTo(destination, anchor: .center) }
+                    if let destination {
+                        proxy.scrollTo(destination, anchor: .center)
+                    }
                 }
             }
         }

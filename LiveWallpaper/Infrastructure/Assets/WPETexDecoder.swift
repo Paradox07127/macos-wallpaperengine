@@ -38,23 +38,6 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    #if DEBUG
-    func decode(data: Data) -> Result<CGImage, WPETexDecodeError> {
-        decode(span: WPEMappedByteSpan(data: data))
-    }
-    #endif
-
-    func decode(span: WPEMappedByteSpan) -> Result<CGImage, WPETexDecodeError> {
-        do {
-            let parsed = try parse(span: span)
-            return try .success(makeCGImage(from: parsed))
-        } catch let error as WPETexDecodeError {
-            return .failure(error)
-        } catch {
-            return .failure(.decodeFailed(mipmap: 0, detail: error.localizedDescription))
-        }
-    }
-
     func extractRawMetadata(data: Data) -> Result<WPETexRawMetadata, WPETexDecodeError> {
         extractRawMetadata(span: WPEMappedByteSpan(data: data))
     }
@@ -701,80 +684,6 @@ struct WPETexDecoder: Sendable {
     }
 
     // MARK: - Pixel dispatch
-
-    private func makeCGImage(from parsed: ParsedTex) throws -> CGImage {
-        guard !parsed.info.isVolume else {
-            throw WPETexDecodeError.unsupportedTextureDimension(depth: parsed.info.depth)
-        }
-        guard let mip = parsed.bitmap.largestMipmap else {
-            throw WPETexDecodeError.missingBitmapBlock
-        }
-        if parsed.bitmap.isVideoPayload || looksLikeMP4Payload(mip.payload) {
-            throw WPETexDecodeError.unsupportedAnimation
-        }
-        guard let format = parsed.info.format, !format.requiresRawPayload else {
-            throw WPETexDecodeError.unsupportedFormat(code: parsed.info.textureFormatCode)
-        }
-        if parsed.bitmap.usesEncodedImagePayload {
-            let imageBytes = try inflateIfNeeded(
-                payload: mip.payload,
-                expectedByteCount: nil,
-                decompressedByteCount: mip.decompressedByteCount,
-                isCompressed: mip.isCompressed,
-                mipmap: mip.index
-            )
-            return try makeEncodedCGImage(from: imageBytes, mipmap: mip.index, info: parsed.info)
-        }
-
-        let expected = format.expectedByteCount(width: mip.width, height: mip.height)
-        let pixelBytes: Data = try inflateIfNeeded(
-            payload: mip.payload,
-            expectedByteCount: expected,
-            decompressedByteCount: mip.decompressedByteCount,
-            isCompressed: mip.isCompressed,
-            mipmap: mip.index
-        )
-
-        let decoded: DecodedRGBAImage
-        switch format {
-        case .rgba8888:
-            decoded = try WPETexPixelDecoder.decodeRGBA8888(
-                pixelBytes,
-                width: mip.width,
-                height: mip.height,
-                mipmap: mip.index
-            )
-        case .r8:
-            decoded = try WPETexPixelDecoder.decodeR8(
-                pixelBytes,
-                width: mip.width,
-                height: mip.height,
-                mipmap: mip.index
-            )
-        case .rg88:
-            // RG88 = LUMINANCE_ALPHA glow (matches Metal rg8Unorm swizzle).
-            let alphaChannelPriority = parsed.info.isRG88LuminanceAlpha
-            decoded = try WPETexPixelDecoder.decodeRG88(
-                pixelBytes,
-                width: mip.width,
-                height: mip.height,
-                mipmap: mip.index,
-                alphaChannelPriority: alphaChannelPriority
-            )
-        case .dxt1, .dxt3, .dxt5, .bc7:
-            decoded = try WPETexMetalTranscoder.transcode(
-                pixelBytes,
-                format: format,
-                width: mip.width,
-                height: mip.height,
-                mipmap: mip.index
-            )
-        case .rgba1010102, .rg16Float, .r16Float, .rgba16Float, .rgba16Float15, .r32Float,
-             .rgba16Unorm, .rgba16Unorm18, .rgba16Snorm, .rgba16Snorm20:
-            throw WPETexDecodeError.unsupportedFormat(code: format.rawValue)
-        }
-        return try decoded.makeCGImage()
-    }
 
     private func looksLikeMP4Payload(_ span: WPEMappedByteSpan) -> Bool {
         guard span.count >= 12 else { return false }

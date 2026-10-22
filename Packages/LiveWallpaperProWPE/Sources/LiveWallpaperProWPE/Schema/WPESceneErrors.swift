@@ -68,14 +68,6 @@ public struct WPESceneDiagnostic: Equatable, Sendable {
     public enum Severity: String, Sendable, Equatable {
         case info
         case warning
-
-        /// Callers must not pick a log level of their own: `LogFileSink` admits `warning` to the user's runtime log, so hard-coding it would publish every `info` note as a user-visible warning. Exhaustive on purpose — a new case must choose a level.
-        public var logLevel: Logger.Level {
-            switch self {
-            case .info: return .info
-            case .warning: return .warning
-            }
-        }
     }
 
     public let severity: Severity

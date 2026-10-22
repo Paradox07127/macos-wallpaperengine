@@ -245,7 +245,7 @@
       NULL,    /* module-specific interface */
 
       cid_driver_init,          /* FT_Module_Constructor  module_init   */
-      cid_driver_done,          /* FT_Module_Destructor   module_done   */
+      NULL,                     /* FT_Module_Destructor   module_done   */
       cid_get_interface         /* FT_Module_Requester    get_interface */
     },
 

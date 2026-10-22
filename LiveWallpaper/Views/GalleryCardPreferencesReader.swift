@@ -28,6 +28,21 @@ extension View {
     func providesGalleryCardPreferences() -> some View {
         modifier(GalleryCardPreferencesReader())
     }
+
+    @MainActor
+    func matureContentConfirmation(isPresented: Binding<Bool>, onConfirm: @escaping () -> Void) -> some View {
+        alert("Show mature content?", isPresented: isPresented) {
+            Button(role: .cancel) {} label: { Text("Cancel") }
+            Button(role: .destructive) {
+                MatureContentSettings.confirm()
+                onConfirm()
+            } label: {
+                Text("I am 18 or older")
+            }
+        } message: {
+            Text("This wallpaper is tagged Mature and may contain explicit adult content. By revealing it you confirm you are at least 18 years old, or of legal age in your region.")
+        }
+    }
 }
 
 enum MatureContentSettings {

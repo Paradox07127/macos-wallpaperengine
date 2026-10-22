@@ -272,10 +272,6 @@
   tt_get_sfnt_checksum( TT_Face    face,
                         FT_UShort  i )
   {
-#if 0 /* if we believe the written value, use following part. */
-    if ( face->dir_tables[i].CheckSum )
-      return face->dir_tables[i].CheckSum;
-#endif
 
     if ( !face->goto_table )
       return 0;
@@ -1331,25 +1327,6 @@
 #endif /* !TT_USE_BYTECODE_INTERPRETER */
 
     return FT_Err_Ok;
-  }
-
-
-  /**************************************************************************
-   *
-   * @Function:
-   *   tt_driver_done
-   *
-   * @Description:
-   *   Finalize a given TrueType driver.
-   *
-   * @Input:
-   *   driver ::
-   *     A handle to the target TrueType driver.
-   */
-  FT_LOCAL_DEF( void )
-  tt_driver_done( FT_Module  ttdriver )     /* TT_Driver */
-  {
-    FT_UNUSED( ttdriver );
   }
 
 

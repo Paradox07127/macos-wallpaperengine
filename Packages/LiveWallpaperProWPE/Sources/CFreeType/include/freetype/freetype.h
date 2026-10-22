@@ -4342,28 +4342,17 @@ FT_BEGIN_HEADER
    *   FreeType error code.  0~means success.
    *
    * @example:
-   *   Here is an example that sets three properties.  You must define
-   *   `FT_CONFIG_OPTION_SUBPIXEL_RENDERING` to make the LCD filter examples
-   *   work.
+   *   Here is an example that sets two properties.
    *
    *   ```
-   *     FT_Parameter         property1;
-   *     FT_Bool              darken_stems = 1;
+   *     FT_Bool       darken_stems = 1;
+   *     FT_Int32      random_seed = 314159265;
+   *     FT_Parameter  properties[2] = {
+   *                     { FT_PARAM_TAG_STEM_DARKENING, &darken_stems },
+   *                     { FT_PARAM_TAG_RANDOM_SEED, &random_seed }
+   *                   };
    *
-   *     FT_Parameter         property2;
-   *     FT_Int32             random_seed = 314159265;
-   *
-   *     FT_Parameter         properties[2] = { property1,
-   *                                            property2 };
-   *
-   *
-   *     property1.tag  = FT_PARAM_TAG_STEM_DARKENING;
-   *     property1.data = &darken_stems;
-   *
-   *     property2.tag  = FT_PARAM_TAG_RANDOM_SEED;
-   *     property2.data = &random_seed;
-   *
-   *     FT_Face_Properties( face, 3, properties );
+   *     FT_Face_Properties( face, 2, properties );
    *   ```
    *
    *   The next example resets a single property to its default value.

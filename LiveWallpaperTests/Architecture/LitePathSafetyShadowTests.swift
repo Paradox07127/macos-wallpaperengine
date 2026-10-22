@@ -8,7 +8,6 @@ struct LitePathSafetyShadowTests {
 
     private static let sharedFunctions = [
         "isSafeRelativePath",
-        "isSafeCacheRelativePath",
         "contains",
         "resourceURL",
         "containedResourceURL",

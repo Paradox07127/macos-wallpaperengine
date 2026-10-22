@@ -148,16 +148,6 @@
   }
 
 
-  FT_BASE_DEF( FT_Int )
-  ft_validator_run( FT_Validator  valid )
-  {
-    /* This function doesn't work!  None should call it. */
-    FT_UNUSED( valid );
-
-    return -1;
-  }
-
-
   FT_BASE_DEF( void )
   ft_validator_error( FT_Validator  valid,
                       FT_Error      error )
@@ -428,7 +418,6 @@
     {
     case FT_RENDER_MODE_MONO:
       pixel_mode = FT_PIXEL_MODE_MONO;
-#if 1
       /* x */
 
       /* undocumented but confirmed: bbox values get rounded;    */
@@ -465,9 +454,6 @@
       }
 
       break;
-#else
-      goto Adjust;
-#endif
 
     case FT_RENDER_MODE_LCD:
       pixel_mode = FT_PIXEL_MODE_LCD;
@@ -2349,12 +2335,6 @@
            ( header[0x54] << 16 ) |
            ( header[0x55] <<  8 ) |
              header[0x56];
-#if 0
-    rlen = ( header[0x57] << 24 ) |
-           ( header[0x58] << 16 ) |
-           ( header[0x59] <<  8 ) |
-             header[0x5A];
-#endif /* 0 */
     offset = 128 + ( ( dlen + 127 ) & ~127 );
 
     return IsMacResource( library, stream, offset, face_index, aface );
@@ -3173,7 +3153,6 @@
   {
     /* Compute root ascender, descender, test height, and max_advance */
 
-#ifdef GRID_FIT_METRICS
     metrics->ascender    = FT_PIX_CEIL( FT_MulFix( face->ascender,
                                                    metrics->y_scale ) );
 
@@ -3185,19 +3164,6 @@
 
     metrics->max_advance = FT_PIX_ROUND( FT_MulFix( face->max_advance_width,
                                                     metrics->x_scale ) );
-#else /* !GRID_FIT_METRICS */
-    metrics->ascender    = FT_MulFix( face->ascender,
-                                      metrics->y_scale );
-
-    metrics->descender   = FT_MulFix( face->descender,
-                                      metrics->y_scale );
-
-    metrics->height      = FT_MulFix( face->height,
-                                      metrics->y_scale );
-
-    metrics->max_advance = FT_MulFix( face->max_advance_width,
-                                      metrics->x_scale );
-#endif /* !GRID_FIT_METRICS */
   }
 
 
@@ -5606,31 +5572,12 @@
     }
 
     /* Close all other modules in the library */
-#if 1
     /* XXX Modules are removed in the reversed order so that  */
     /* type42 module is removed before truetype module.  This */
     /* avoids double free in some occasions.  It is a hack.   */
     while ( library->num_modules > 0 )
       FT_Remove_Module( library,
                         library->modules[library->num_modules - 1] );
-#else
-    {
-      FT_UInt  n;
-
-
-      for ( n = 0; n < library->num_modules; n++ )
-      {
-        FT_Module  module = library->modules[n];
-
-
-        if ( module )
-        {
-          Destroy_Module( module );
-          library->modules[n] = NULL;
-        }
-      }
-    }
-#endif
 
     FT_FREE( library );
 

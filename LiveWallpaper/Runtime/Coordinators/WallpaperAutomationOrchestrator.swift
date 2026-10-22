@@ -16,16 +16,8 @@ struct AutomaticSwitchMark: Equatable {
 final class WallpaperAutomationOrchestrator {
     private let configurationStore: WallpaperConfigurationStore
     private let automationCoordinator: WallpaperAutomationCoordinator
-    private let playableVideoLoader: any PlayableVideoLoading
     private let screensProvider: @MainActor () -> [Screen]
     private let saveConfiguration: @MainActor (ScreenConfiguration) -> Void
-    private let recordBookmarkDisplayName: @MainActor (Data, String?) -> Void
-    private let setupPreparedVideoPlayback: @MainActor (
-        URL,
-        Screen,
-        ScreenConfiguration,
-        @MainActor @escaping () -> Bool
-    ) -> Void
     private let restoreProposedConfiguration: @MainActor (
         Screen,
         ScreenConfiguration
@@ -46,25 +38,13 @@ final class WallpaperAutomationOrchestrator {
     private let now: @MainActor () -> Date
     private var isMonitoring = false
     private var isSuspendedForUserAbsence = false
-    private struct PendingValidation {
-        let generation: Int
-        let task: Task<Void, Never>
-    }
-    private var validationTasksByScreen: [CGDirectDisplayID: PendingValidation] = [:]
+    private var validationTasksByScreen: [CGDirectDisplayID: Task<Void, Never>] = [:]
 
     init(
         configurationStore: WallpaperConfigurationStore,
         automationCoordinator: WallpaperAutomationCoordinator,
-        playableVideoLoader: any PlayableVideoLoading,
         screensProvider: @MainActor @escaping () -> [Screen],
         saveConfiguration: @MainActor @escaping (ScreenConfiguration) -> Void,
-        recordBookmarkDisplayName: @MainActor @escaping (Data, String?) -> Void,
-        setupPreparedVideoPlayback: @MainActor @escaping (
-            URL,
-            Screen,
-            ScreenConfiguration,
-            @MainActor @escaping () -> Bool
-        ) -> Void,
         restoreProposedConfiguration: @MainActor @escaping (
             Screen,
             ScreenConfiguration
@@ -82,11 +62,8 @@ final class WallpaperAutomationOrchestrator {
     ) {
         self.configurationStore = configurationStore
         self.automationCoordinator = automationCoordinator
-        self.playableVideoLoader = playableVideoLoader
         self.screensProvider = screensProvider
         self.saveConfiguration = saveConfiguration
-        self.recordBookmarkDisplayName = recordBookmarkDisplayName
-        self.setupPreparedVideoPlayback = setupPreparedVideoPlayback
         self.restoreProposedConfiguration = restoreProposedConfiguration
         self.bumpTransition = bumpTransition
         self.isCurrentTransition = isCurrentTransition
@@ -100,68 +77,16 @@ final class WallpaperAutomationOrchestrator {
 
     // MARK: - Playlist
 
-    /// Keeps the active bookmark when only playlist order changed.
-    func replacePlaylist(ordered: [Data], primary: Data, for screen: Screen) {
-        guard let primaryIndex = ordered.firstIndex(of: primary) else { return }
-        let existing = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)
-        var config = existing ?? ScreenConfiguration(
-            screenID: screen.id,
-            videoBookmarkData: primary
-        ).applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
-
-        let oldCombined = config.combinedPlaylist
-        let oldCursor = config.playlistCursorIndex ?? 0
-        let oldActive: Data? = oldCombined.indices.contains(oldCursor) ? oldCombined[oldCursor] : config.videoBookmarkData
-
-        let primaryChanged = config.savedVideoBookmarkData != primary
-        // Deleted playing bookmark: reload so the player swaps to the new cursor.
-        let activeWasRemoved = oldActive.map { !ordered.contains($0) } ?? false
-        let extras = ordered.enumerated().compactMap { idx, b -> Data? in
-            idx == primaryIndex ? nil : b
-        }
-        config.savedVideoBookmarkData = primary
-        config.playlistBookmarks = extras.isEmpty ? nil : extras
-        config.playlistPrimaryIndex = primaryIndex
-
-        if primaryChanged {
-            config.playlistCursorIndex = primaryIndex
-            config.activeWallpaper = .video(bookmarkData: primary)
-        } else {
-            let resolved = PlaylistPolicy.resolveCursor(activeBookmark: oldActive, in: ordered)
-            config.playlistCursorIndex = resolved
-            if resolved < ordered.count {
-                config.activeWallpaper = .video(bookmarkData: ordered[resolved])
-            }
-        }
-        if existing == nil || primaryChanged || activeWasRemoved {
-            restoreProposedConfiguration(screen, config)
-        } else {
-            saveConfiguration(config)
-        }
-    }
-
-    func playPlaylistEntry(at index: Int, for screen: Screen) {
-        guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        if let queue = config.wallpaperQueue {
-            guard queue.indices.contains(index) else { return }
-            applyEntry(queue[index], cursor: index, for: screen)
-            return
-        }
-        let combined = config.combinedPlaylist
-        guard index >= 0, index < combined.count else { return }
-        applyCursor(index, combined: combined, screen: screen, label: "jumping")
-    }
-
     func previewEntry(_ entry: WallpaperQueueEntry, for screen: Screen) {
         guard !isSuspendedForUserAbsence,
               let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
-        validationTasksByScreen.removeValue(forKey: screen.id)?.task.cancel()
+        validationTasksByScreen.removeValue(forKey: screen.id)?.cancel()
         automaticSelections[screen.id] = nil
         restoreProposedConfiguration(screen, config.applyingAutomationEntry(entry))
     }
 
     func cancelAutomaticSelection(for screenID: CGDirectDisplayID) {
-        validationTasksByScreen.removeValue(forKey: screenID)?.task.cancel()
+        validationTasksByScreen.removeValue(forKey: screenID)?.cancel()
         automaticSelections[screenID] = nil
     }
 
@@ -226,67 +151,6 @@ final class WallpaperAutomationOrchestrator {
             ? queue.indices.filter { $0 != current }.shuffled()
             : (1 ..< queue.count).map { (current - $0 + queue.count) % queue.count }
         startAutomaticSelection(indices.map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
-    }
-
-    private func applyCursor(
-        _ cursor: Int,
-        combined: [Data],
-        screen: Screen,
-        label: String
-    ) {
-        guard !isSuspendedForUserAbsence else { return }
-        guard cursor < combined.count else { return }
-        let targetBookmark = combined[cursor]
-
-        guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-            targetBookmark,
-            target: .transient
-        ) else { return }
-        let url = resolved.url
-        let resolvedBookmark = resolved.bookmarkData
-        recordBookmarkDisplayName(resolvedBookmark, url.lastPathComponent)
-
-        let screenID = screen.id
-        validationTasksByScreen[screenID]?.task.cancel()
-        let generation = bumpTransition(screenID)
-        let videoLoader = playableVideoLoader
-
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.clearValidationTask(for: screenID, generation: generation) }
-            do {
-                try Task.checkCancellation()
-                guard !self.isSuspendedForUserAbsence else { return }
-                try await videoLoader.validatePlayableVideo(at: url)
-                try Task.checkCancellation()
-                guard !self.isSuspendedForUserAbsence,
-                      self.isCurrentTransition(generation, screenID),
-                      let liveScreen = self.screensProvider().first(where: { $0.id == screenID }),
-                      var liveConfig = self.configurationStore.get(for: screenID) else { return }
-                liveConfig.playlistCursorIndex = cursor
-                liveConfig.activeWallpaper = .video(bookmarkData: resolvedBookmark)
-                if resolved.didRefresh {
-                    PlaylistPolicy.refreshLegacyBookmark(at: cursor, in: &liveConfig, with: resolvedBookmark)
-                }
-                Logger.info("Playlist: \(label) to \(url.lastPathComponent) (cursor \(cursor)) for screen \(screenID)", category: .screenManager)
-                self.setupPreparedVideoPlayback(
-                    url,
-                    liveScreen,
-                    liveConfig,
-                    { [weak self] in
-                        self?.isSuspendedForUserAbsence == false
-                    }
-                )
-            } catch is CancellationError {
-                return
-            } catch {
-                Logger.error("Playlist \(label) failed for screen \(screenID): \(error.localizedDescription)", category: .screenManager)
-            }
-        }
-        validationTasksByScreen[screenID] = PendingValidation(
-            generation: generation,
-            task: task
-        )
     }
 
     func updateAutomation(
@@ -360,7 +224,7 @@ final class WallpaperAutomationOrchestrator {
             startAutomaticSelection(candidates, source: source, for: screen)
             return
         }
-        validationTasksByScreen[screen.id]?.task.cancel()
+        validationTasksByScreen[screen.id]?.cancel()
         validationTasksByScreen[screen.id] = nil
         var proposed = config.applyingAutomationEntry(entry)
         if let cursor {
@@ -405,7 +269,7 @@ final class WallpaperAutomationOrchestrator {
             return
         }
         let screenID = screen.id
-        validationTasksByScreen[screenID]?.task.cancel()
+        validationTasksByScreen[screenID]?.cancel()
         automaticSelectionSerial &+= 1
         let serial = automaticSelectionSerial
         automaticSelections[screenID] = serial
@@ -480,7 +344,7 @@ final class WallpaperAutomationOrchestrator {
             }
             onExhausted?()
         }
-        validationTasksByScreen[screenID] = PendingValidation(generation: serial, task: task)
+        validationTasksByScreen[screenID] = task
     }
 
     // MARK: - Schedule
@@ -564,7 +428,7 @@ final class WallpaperAutomationOrchestrator {
         guard isMonitoring else { return }
         let live = Set(screensProvider().map(\.id))
         for id in Array(validationTasksByScreen.keys) where !live.contains(id) {
-            validationTasksByScreen.removeValue(forKey: id)?.task.cancel()
+            validationTasksByScreen.removeValue(forKey: id)?.cancel()
             automaticSelections[id] = nil
             _ = bumpTransition(id)
         }
@@ -589,20 +453,12 @@ final class WallpaperAutomationOrchestrator {
         startCoordinator(runInitialScheduleCheck: true)
     }
 
-    private func clearValidationTask(
-        for screenID: CGDirectDisplayID,
-        generation: Int
-    ) {
-        guard validationTasksByScreen[screenID]?.generation == generation else { return }
-        validationTasksByScreen[screenID] = nil
-    }
-
     private func cancelValidationTasks() {
         let pending = Array(validationTasksByScreen.values)
         validationTasksByScreen.removeAll()
         automaticSelections.removeAll()
         for validation in pending {
-            validation.task.cancel()
+            validation.cancel()
         }
     }
 }

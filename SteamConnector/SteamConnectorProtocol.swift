@@ -2017,7 +2017,9 @@ struct SteamCMDDiagnosis: Codable, Equatable, Sendable {
     /// A busy connector or a timeout needs a retry, not another installation.
     var needsInAppSetup: Bool {
         guard unavailableReason == nil, canonicalPath != nil, !isUsable else { return false }
-        if signature?.isValveSigned != true || isQuarantined { return true }
+        if signature?.isValveSigned != true || isQuarantined {
+            return true
+        }
         return launch?.outcome == .couldNotSpawn || launch?.outcome == .exitedNonZero
     }
 

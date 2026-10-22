@@ -8,9 +8,9 @@ unset LIVEWALLPAPER_EXTERNAL_FIXTURES TEST_RUNNER_LIVEWALLPAPER_EXTERNAL_FIXTURE
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-DERIVED_DATA="${DERIVED_DATA:-/tmp/LiveWallpaperFastAppContracts}"
-RESULT_BUNDLE="${RESULT_BUNDLE:-/tmp/LiveWallpaperFastAppContracts-$$.xcresult}"
-DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+DERIVED_DATA="${DERIVED_DATA:-${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/LiveWallpaperFastAppContracts}"
+RESULT_BUNDLE="${RESULT_BUNDLE:-${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/LiveWallpaperFastAppContracts-$$.xcresult}"
+DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 export DEVELOPER_DIR
 
 usage() {

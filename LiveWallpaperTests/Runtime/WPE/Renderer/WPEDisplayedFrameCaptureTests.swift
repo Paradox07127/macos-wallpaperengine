@@ -201,8 +201,8 @@ struct WPEDisplayedFrameCaptureTests {
         let executor = stack.executor
         stack.layer.pixelFormat = .rgba16Float
         WPEDisplayHDROutput.apply(to: stack.layer, hdrOutputEnabled: true)
-        let library = try #require(device.makeDefaultLibrary())
-        executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device, library: library)
+        _ = try #require(device.makeDefaultLibrary())
+        executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device)
         let presented = try executor.present(texture: source, layer: stack.layer, fitMode: .stretch, colorTransfer: .linear)
         try #require(presented)
         try #require(executor.lastPresentPass?.usedMetalFX == true)
@@ -294,9 +294,9 @@ struct WPEDisplayedFrameCaptureTests {
     private static func captureMetalFX(_ stack: CaptureStack, source: MTLTexture,
                                        transfer: WPEPresentColorTransfer) async throws -> [UInt8] {
         let device = try #require(stack.layer.device)
-        let library = try #require(device.makeDefaultLibrary())
+        _ = try #require(device.makeDefaultLibrary())
         let executor = stack.executor
-        executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device, library: library)
+        executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device)
         let didPresent = try executor.present(texture: source, layer: stack.layer, fitMode: .stretch, colorTransfer: transfer)
         try #require(didPresent)
         let pass = try #require(executor.lastPresentPass)

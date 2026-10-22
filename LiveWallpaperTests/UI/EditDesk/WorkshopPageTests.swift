@@ -116,7 +116,9 @@ struct WorkshopPageSourceTests {
         )
         let page = try RepositoryRoot.source(Self.page)
         #expect(page.contains("steamCMDReady: doctor.isBinaryPresumedReady"))
-        #expect(page.contains("onLocateSteamCMD: { setupController.autoDetectBinary() }"))
+        #expect(page.contains(
+            "onLocateSteamCMD: { setupController.autoDetectBinary(onNeedsSetup: { isShowingInstallConsent = true }) }"
+        ))
     }
 
     @Test("While SteamCMD installs, uninstalls or is being located, both setup rows wait")

@@ -151,34 +151,12 @@ struct WPEProjectCustomSettingsCard: View {
             .wpeAuthorLabelHelp(titleHelp)
         case .combo:
             let currentValue = ValueLogic.value(for: property, in: values)
-            let optionsCoverCurrent = property.options.contains { $0.value == currentValue }
             SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: title) {
-                if property.options.isEmpty {
-                    Text(verbatim: currentValue.stringValue)
-                        .font(DesignTokens.Typography.code)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker("", selection: valueBinding(for: property)) {
-                        if !optionsCoverCurrent {
-                            Text(verbatim: "·  \(currentValue.stringValue)")
-                                .tag(currentValue)
-                        }
-                        ForEach(property.options) { option in
-                            Text(verbatim: translator.displayText(for: option.displayLabel))
-                                .tag(option.value)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    // Author labels are unbounded: `.fixedSize()` would demand the longest one and
-                    // push the column past the panel, but merely compressible loses the row to
-                    // `SettingRow`'s `layoutPriority(1)` title — match it, and `minWidth` keeps it clickable.
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(minWidth: 96, alignment: .trailing)
-                    .layoutPriority(1)
-                    .accessibilityLabel(title)
-                }
+                WPEProjectComboPicker(
+                    property: property, currentValue: currentValue,
+                    selection: valueBinding(for: property), title: title,
+                    displayLabel: translator.displayText(for:)
+                )
             }
             .wpeAuthorLabelHelp(titleHelp)
         case .color:

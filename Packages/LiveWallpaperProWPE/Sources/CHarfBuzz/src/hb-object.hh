@@ -100,18 +100,6 @@ struct hb_lockable_set_t
     return !!item;
   }
 
-  template <typename T>
-  item_t *find_or_insert (T v, lock_t &l)
-  {
-    l.lock ();
-    item_t *item = items.find (v);
-    if (!item) {
-      item = items.push (v);
-    }
-    l.unlock ();
-    return item;
-  }
-
   void fini (lock_t &l)
   {
     if (!items.length)

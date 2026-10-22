@@ -69,7 +69,6 @@
 
     FT_Long       cur_max;      /* current maximum allocated size */
 
-    FT_UInt32     hash;
     FT_MemSource  link;
 
   } FT_MemSourceRec;
@@ -450,7 +449,6 @@
     node->cur_max = 0;
 
     node->link = NULL;
-    node->hash = hash;
     *pnode     = node;
 
   Exit:
@@ -710,12 +708,6 @@
     if ( new_size == cur_size )
       return block;
 
-    /* the following is valid according to ANSI C */
-#if 0
-    if ( !block || !cur_size )
-      ft_mem_debug_panic( "trying to reallocate NULL in (%s:%ld)",
-                          file_name, line_no );
-#endif
 
     /* while the following is allowed in ANSI C also, we abort since */
     /* such case should be handled by FreeType.                      */

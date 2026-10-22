@@ -203,12 +203,8 @@ enum SteamLibraryWriter {
         guard SteamLibraryPaths.isSafeWorkshopID(workshopID) else { throw WriteError.outsideAllowedSubtree }
         let parent = try openDirectory(root: steamRoot, components: ["steamapps", "workshop"], create: true)
         defer { close(parent) }
-        let lock = openat(parent, ".loomscreen-publication.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
-        guard lock >= 0 else { throw WriteError.symbolicLinkRejected }
+        let lock = try privateLock(parent: parent, name: ".loomscreen-publication.lock")
         defer { close(lock) }
-        var info = stat()
-        guard fstat(lock, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
-              info.st_nlink == 1, info.st_uid == getuid() else { throw WriteError.symbolicLinkRejected }
         while flock(lock, LOCK_EX | LOCK_NB) != 0 {
             guard errno == EWOULDBLOCK, !isCancelled() else { throw CancellationError() }
             usleep(50000)

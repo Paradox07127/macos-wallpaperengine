@@ -3,7 +3,7 @@
   "tag": "v1.13",
   "commit": "1874bcf7d9624ccc85b4bc9a85d78116f690f35b",
   "license": "MIT",
-  "scope": "Unmodified core, no ext, standalone, PNG, SVG, Skia, or OpenMP",
+  "scope": "Selected v1.13 generation/correction core; no ext, standalone, PNG, SVG export, Skia, OpenMP, BMP/TIFF/RGBA/FL32 file exporters, optional raster/sign-correction, field reconstruction/error estimation, or textual shape I/O",
   "files": [
     {
       "path": "LICENSE.txt",
@@ -12,8 +12,8 @@
     },
     {
       "path": "msdfgen.h",
-      "bytes": 5448,
-      "sha256": "40828d93b444f462fd5a72c484c2e90c0eeebf9e26e7818ab12f488304600db7"
+      "bytes": 5172,
+      "sha256": "8cbbb75c4c554b2311658571d077d8ea1c4855bde66e3c9f2d20b8b05c64c14e"
     },
     {
       "path": "core/Bitmap.h",
@@ -216,16 +216,6 @@
       "sha256": "4fa00f069cf4a6723d93e2c7d4f7f03375313a49a9ee7f3ba6161ac633cd5569"
     },
     {
-      "path": "core/export-svg.cpp",
-      "bytes": 2519,
-      "sha256": "4daeb56e410f6069067a8b045e1c2e4065c3cfe27d2806cd122714d04f770892"
-    },
-    {
-      "path": "core/export-svg.h",
-      "bytes": 210,
-      "sha256": "5da7b2a65549042b8918c5cf4acba1881966ae02305ec1791582f9ddc1e17b3f"
-    },
-    {
       "path": "core/generator-config.h",
       "bytes": 3202,
       "sha256": "4d1ea0078cc6c8f6e1bf042b68bbc558bf1f6c00a6080d68501d65169af5e1fb"
@@ -249,86 +239,10 @@
       "path": "core/pixel-conversion.hpp",
       "bytes": 229,
       "sha256": "e4b554a2ac6a4531c6f76de3ee94d167d0aad9742925b622869366b22b05b8e9"
-    },
-    {
-      "path": "core/rasterization.cpp",
-      "bytes": 5398,
-      "sha256": "2ab95dceab93981d1dcdaa82789076714630719dd690dbd6f4a85e2d08e3bfd1"
-    },
-    {
-      "path": "core/rasterization.h",
-      "bytes": 2054,
-      "sha256": "41eb37394f5eea1416d1b677b8648b0c65815a3c9a45b033bb00cc436c29e1d8"
-    },
-    {
-      "path": "core/render-sdf.cpp",
-      "bytes": 8354,
-      "sha256": "5ab16c94d8ea2f125f7c00413785484dad08bcc0fb119571c8699fb20f4c4c98"
-    },
-    {
-      "path": "core/render-sdf.h",
-      "bytes": 1343,
-      "sha256": "07c678bc9e4c4421a293bc9a70127d2ecc77fef88f9af7ecd0d39f730aaae9fb"
-    },
-    {
-      "path": "core/save-bmp.cpp",
-      "bytes": 7243,
-      "sha256": "d103763348afe7ff595de613ccf9c808264a28df68dcc2b290137212f5881202"
-    },
-    {
-      "path": "core/save-bmp.h",
-      "bytes": 536,
-      "sha256": "cf23809cdb2ad4618a70655258d29bad73d72d066e91ce452c3e6fa3765f35f8"
-    },
-    {
-      "path": "core/save-fl32.cpp",
-      "bytes": 1331,
-      "sha256": "daa596b156de36a3d25e1a6b692ae9f6c2f9cc2eeb426ac2e9c00935739f7343"
-    },
-    {
-      "path": "core/save-fl32.h",
-      "bytes": 254,
-      "sha256": "584695710a255ca2546185911333a53edd6c98a64f4c172af4fbe0034fda22e5"
-    },
-    {
-      "path": "core/save-rgba.cpp",
-      "bytes": 4354,
-      "sha256": "1ea2fc15508fd0b36f0c56177f2523ace83fe3d073762a69d85928e542be7e89"
-    },
-    {
-      "path": "core/save-rgba.h",
-      "bytes": 582,
-      "sha256": "061779f816a477d801700b90f1f20b7f4997378a11d408950321df1f5b24ed85"
-    },
-    {
-      "path": "core/save-tiff.cpp",
-      "bytes": 6428,
-      "sha256": "8ebfa485d3ca5831a57c186d8a86f77056811f0111f25f715b56146e09a2189d"
-    },
-    {
-      "path": "core/save-tiff.h",
-      "bytes": 374,
-      "sha256": "38c6dab0616e11d10863f43574d07fda1d31eb49ce7a36cc7c512a122e465f37"
-    },
-    {
-      "path": "core/sdf-error-estimation.cpp",
-      "bytes": 9692,
-      "sha256": "964149c9af25715fa3d7f26eb835977d5f5f343d5b03c127a0a0a3ab5cb5a6c0"
-    },
-    {
-      "path": "core/sdf-error-estimation.h",
-      "bytes": 2920,
-      "sha256": "d5d007778db9808b99ff2202aabdbc0044638c3a5dd11cf1b378400936cc1917"
-    },
-    {
-      "path": "core/shape-description.cpp",
-      "bytes": 11396,
-      "sha256": "b320ae0d46b607e016610285db3bb140ac930e00f9352fb3067bd505d2c52a36"
-    },
-    {
-      "path": "core/shape-description.h",
-      "bytes": 437,
-      "sha256": "e67ced119337f78ccdad1806b6df77316af2ce0f79f45c63c4010db0751e2281"
     }
+  ],
+  "local_changes": [
+    "Removed unused file-export implementation/header pairs and their private msdfgen.h includes; retained algorithms are unmodified.",
+    "Removed unused private ancillary rasterization/sign-correction, SDF reconstruction/error-estimation, and textual shape I/O pairs plus umbrella includes after complete source/consumer closure review; active field generation/error correction and shared geometry remain byte-identical."
   ]
 }

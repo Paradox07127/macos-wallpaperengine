@@ -7,7 +7,7 @@ import Testing
 struct WPEHistoryTests {
     @Test("Record pushes to front")
     func recordPushesToFront() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(makeEntry("1"))
             manager.recordWPEImport(makeEntry("2"))
@@ -19,7 +19,7 @@ struct WPEHistoryTests {
 
     @Test("Duplicate moves to front")
     func duplicateMovesToFront() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             let lastUsedAt = Date(timeIntervalSince1970: 50)
             manager.recordWPEImport(makeEntry("1"))
@@ -49,7 +49,7 @@ struct WPEHistoryTests {
             return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: Double(workshopID) ?? 0))
         }
 
-        try withIsolatedGlobalSettings {
+        try TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             let steamFolder = "steamapps/workshop/content/431960/3159206868"
             manager.recordWPEImport(try entry("2585024298", inFolder: steamFolder))
@@ -57,7 +57,7 @@ struct WPEHistoryTests {
             #expect(manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID) == ["3159206868"])
         }
         // Control: outside Steam's layout a numeric folder name says nothing about the item, so two ids stay two entries.
-        try withIsolatedGlobalSettings {
+        try TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(try entry("2585024298", inFolder: "loose/3159206868"))
             manager.recordWPEImport(try entry("3159206868", inFolder: "loose/3159206868"))
@@ -81,7 +81,7 @@ struct WPEHistoryTests {
             return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: Double(workshopID) ?? 0))
         }
 
-        try withIsolatedGlobalSettings {
+        try TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             try manager.recordWPEImport(entry("100", inFolder: "200"))
             try manager.recordWPEImport(entry("200", inFolder: "300"))
@@ -106,7 +106,7 @@ struct WPEHistoryTests {
             return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: importedAt))
         }
 
-        try withIsolatedGlobalSettings {
+        try TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             try manager.recordWPEImport(entry(inFolder: "steamapps/workshop/content/431960/2585024298", importedAt: 1))
             try manager.recordWPEImport(entry(inFolder: "Wallpapers/edit", importedAt: 2))
@@ -114,7 +114,7 @@ struct WPEHistoryTests {
             #expect(recent.map(\.origin.steamFolderItemID) == [nil, "2585024298"])
         }
         // Control: two local copies of one manifest id stay one entry.
-        try withIsolatedGlobalSettings {
+        try TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             try manager.recordWPEImport(entry(inFolder: "Wallpapers/edit", importedAt: 1))
             try manager.recordWPEImport(entry(inFolder: "Wallpapers/edit-again", importedAt: 2))
@@ -142,7 +142,7 @@ struct WPEHistoryTests {
             return WPEHistoryEntry(origin: origin, importedAt: Date(timeIntervalSince1970: importedAt))
         }
 
-        try withIsolatedGlobalSettings {
+        try TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             let steam = try folder("steamapps/workshop/content/431960/2585024298")
             let local = try folder("Wallpapers/edit")
@@ -153,7 +153,7 @@ struct WPEHistoryTests {
             try FileManager.default.removeItem(at: steam)
             #expect(manager.conflictingWPEImport(workshopID: "2585024298", sourceFolder: local) == nil, "an entry whose folder is gone is relinked, not defended")
         }
-        try withIsolatedGlobalSettings {
+        try TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             try manager.recordWPEImport(entry(in: folder("Wallpapers/a"), importedAt: 2))
             let other = try folder("Wallpapers/b")
@@ -194,7 +194,7 @@ struct WPEHistoryTests {
 
     @Test("Keeps every import past 200, newest first")
     func keepsEveryImportNewestFirst() {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             let total = 201
             for index in 0..<total {
@@ -221,7 +221,7 @@ struct WPEHistoryTests {
 
     @Test("Re-import keeps the previously measured size")
     func reimportPreservesSize() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(makeEntry("1", sizeBytes: 4096))
             manager.recordWPEImport(makeEntry("1", title: "Reactivated"))
@@ -234,7 +234,7 @@ struct WPEHistoryTests {
 
     @Test("updateWPEImportSize backfills once and never overwrites")
     func updateSizeBackfillsOnce() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(makeEntry("1"))
             #expect(manager.loadGlobalSettings().recentWPEImports.first?.sizeBytes == nil)
@@ -260,34 +260,6 @@ struct WPEHistoryTests {
         let decoded = try JSONDecoder().decode(WPEHistoryEntry.self, from: data)
         #expect(decoded.sizeBytes == nil)
         #expect(decoded.origin.workshopID == "7")
-    }
-
-    private func withIsolatedGlobalSettings(_ body: () throws -> Void) rethrows {
-        let defaults = UserDefaults.standard
-        let keys = [
-            "screenConfigurations",
-            "globalSettings",
-            "AerialsLibrary.DirectoryBookmark",
-            "WallpaperBookmarks.v1",
-            "TrustedHTMLHosts.v1",
-        ]
-        let previousValues = keys.reduce(into: [String: Any]()) { result, key in
-            result[key] = defaults.object(forKey: key)
-        }
-
-        SettingsManager.shared.cleanAllSettings(applyLoginSetting: false)
-        defer {
-            SettingsManager.shared.cleanAllSettings(applyLoginSetting: false)
-            for key in keys {
-                if let value = previousValues[key] {
-                    defaults.set(value, forKey: key)
-                } else {
-                    defaults.removeObject(forKey: key)
-                }
-            }
-        }
-
-        try body()
     }
 
     private func makeEntry(

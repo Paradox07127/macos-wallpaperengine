@@ -170,7 +170,9 @@ final class WorkshopSetupController {
             // this one is out, and its late "not found" would overwrite that.
             if !found, !doctor.hasBoundBinary {
                 setupError = Self.autoDetectFailureMessage(for: doctor.lastAutoDetectDiagnosis)
-                if doctor.lastAutoDetectDiagnosis?.needsInAppSetup == true { onNeedsSetup() }
+                if doctor.lastAutoDetectDiagnosis?.needsInAppSetup == true {
+                    onNeedsSetup()
+                }
             }
         }
     }

@@ -29,22 +29,6 @@
 FT_BEGIN_HEADER
 
 
-  /* The following structures must be defined by the hinter */
-  typedef struct CID_Size_Hints_   CID_Size_Hints;
-  typedef struct CID_Glyph_Hints_  CID_Glyph_Hints;
-
-
-  /**************************************************************************
-   *
-   * @Type:
-   *   CID_Driver
-   *
-   * @Description:
-   *   A handle to a Type 1 driver object.
-   */
-  typedef struct CID_DriverRec_*  CID_Driver;
-
-
   /**************************************************************************
    *
    * @Type:
@@ -65,22 +49,6 @@ FT_BEGIN_HEADER
    *   A handle to a Type 1 glyph slot object.
    */
   typedef struct CID_GlyphSlotRec_*  CID_GlyphSlot;
-
-
-  /**************************************************************************
-   *
-   * @Type:
-   *   CID_CharMap
-   *
-   * @Description:
-   *   A handle to a Type 1 character mapping object.
-   *
-   * @Note:
-   *   The Type 1 format doesn't use a charmap but an encoding table.
-   *   The driver is responsible for making up charmap objects
-   *   corresponding to these tables.
-   */
-  typedef struct CID_CharMapRec_*  CID_CharMap;
 
 
   /**************************************************************************
@@ -141,9 +109,6 @@ FT_BEGIN_HEADER
 
   FT_LOCAL( FT_Error )
   cid_driver_init( FT_Module  driver );
-
-  FT_LOCAL( void )
-  cid_driver_done( FT_Module  driver );
 
 
 FT_END_HEADER

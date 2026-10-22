@@ -37,7 +37,7 @@ enum WPEParityProgramConstants {
                   let typeRange = Range(match.range(at: 1), in: text),
                   let nameRange = Range(match.range(at: 2), in: text),
                   let comment = text.range(of: "//"),
-                  let json = annotation(String(text[comment.upperBound...])),
+                  let json = WPEShaderAnnotationCombos.json(String(text[comment.upperBound...])),
                   let material = json["material"] as? String else { continue }
             let type = text[typeRange]
             let name = String(text[nameRange])
@@ -120,16 +120,5 @@ enum WPEParityProgramConstants {
     private static func numbers(_ text: String) -> [Double]? {
         let values = text.split { $0.isWhitespace || $0 == "," }.compactMap { Double($0) }
         return values.isEmpty ? nil : values
-    }
-
-    private static func annotation(_ text: String) -> [String: Any]? {
-        func decode(_ value: String) -> [String: Any]? {
-            (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any]
-        }
-        if let result = decode(text) {
-            return result
-        }
-        guard let end = text.lastIndex(of: "}") else { return nil }
-        return decode(String(text[...end]))
     }
 }

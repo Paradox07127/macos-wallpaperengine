@@ -108,16 +108,8 @@ struct BrowseCard: View, Equatable {
         }
         .accessibilityAction(named: Text("Copy link")) { copy(item.steamCommunityURL.absoluteString) }
         .accessibilityAction(named: Text("Copy ID")) { copy(String(item.id)) }
-        .alert("Show mature content?", isPresented: $showingAgeConfirm) {
-            Button(role: .cancel) {} label: { Text("Cancel") }
-            Button(role: .destructive) {
-                MatureContentSettings.confirm()
-                markRevealed()
-            } label: {
-                Text("I am 18 or older")
-            }
-        } message: {
-            Text("This wallpaper is tagged Mature and may contain explicit adult content. By revealing it you confirm you are at least 18 years old, or of legal age in your region.")
+        .matureContentConfirmation(isPresented: $showingAgeConfirm) {
+            markRevealed()
         }
     }
 

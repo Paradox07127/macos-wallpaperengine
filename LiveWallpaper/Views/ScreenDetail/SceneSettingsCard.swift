@@ -467,36 +467,17 @@ struct SceneSettingsRows: View {
             .wpeAuthorLabelHelp(titleHelp)
         case .combo:
             let currentValue = ValueLogic.value(for: property, in: values)
-            let optionsCoverCurrent = property.options.contains { $0.value == currentValue }
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
                 verbatimTitle: title,
                 titleBadge: changedBadge
             ) {
-                if property.options.isEmpty {
-                    Text(verbatim: currentValue.stringValue)
-                        .font(DesignTokens.Typography.code)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker("", selection: valueBinding(for: property)) {
-                        if !optionsCoverCurrent {
-                            Text(verbatim: "·  \(currentValue.stringValue)")
-                                .tag(currentValue)
-                        }
-                        ForEach(property.options) { option in
-                            Text(verbatim: translator.displayText(for: option.displayLabel))
-                                .tag(option.value)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(minWidth: 96, alignment: .trailing)
-                    .layoutPriority(1)
-                    .accessibilityLabel(title)
-                }
+                WPEProjectComboPicker(
+                    property: property, currentValue: currentValue,
+                    selection: valueBinding(for: property), title: title,
+                    displayLabel: translator.displayText(for:)
+                )
             }
             .wpeAuthorLabelHelp(titleHelp)
         case .color:

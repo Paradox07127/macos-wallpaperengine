@@ -69,8 +69,7 @@ extension ScreenManager {
     }
 
     func failWallpaperAttempt(
-        _ id: UUID, for screen: Screen, cause: WallpaperFailureCause, stage: WallpaperFailureStage, diagnostics: String = "",
-        missingResources: [WallpaperFailureMissingResource] = []
+        _ id: UUID, for screen: Screen, cause: WallpaperFailureCause, stage: WallpaperFailureStage, diagnostics: String = ""
     ) {
         guard let attempt = wallpaperLoads.attempt(for: screen), attempt.id == id else { return }
         let sourceURL = attempt.sourceURL ?? attempt.origin
@@ -82,8 +81,7 @@ extension ScreenManager {
             previousWallpaper: screen.runtimeSession == nil ? nil : wallpaperOriginTitle(for: screen) ?? wallpaperDisplayName(for: screen),
             timestamp: Date(), diagnostics: LogPrivacyRedactor.scrub(diagnostics),
             wallpaperType: attempt.configuration?.wallpaperType ?? (attempt.origin?.originalType == .scene ? .scene : nil),
-            sourceURL: sourceURL, sourceBookmark: attempt.origin?.sourceFolderBookmark, missingDependencyIDs: attempt.origin?.missingDependencyIDs ?? [],
-            missingResources: missingResources
+            sourceURL: sourceURL, sourceBookmark: attempt.origin?.sourceFolderBookmark
         )
         wallpaperLoads.update(id, for: screen) {
             $0.phase = .failed

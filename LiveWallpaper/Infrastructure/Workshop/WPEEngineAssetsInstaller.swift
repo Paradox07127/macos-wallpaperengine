@@ -390,9 +390,9 @@ final class WPEEngineAssetsInstaller {
 
     private func performRemove(attempt: UUID) async {
         do {
-            try await operationCoordinator.withOperation(.assetsMutation) { [weak self] lease in
+            try await operationCoordinator.withOperation(.assetsMutation) { [weak self] _ in
                 guard let self else { return }
-                try await commitRemove(attempt: attempt, operationLease: lease)
+                try await commitRemove(attempt: attempt)
             }
         } catch {
             guard currentAttempt == attempt else { return }
@@ -404,17 +404,10 @@ final class WPEEngineAssetsInstaller {
                 return
             }
             // Every other exit from this actor calls fail; returning the phase to idle here would make a refused removal look like it had never been asked for.
-            let message = if case SteamCMDDoctorOperationError.nestedConflict = error {
-                String(
-                    localized: "Another Steam operation is running. Try again when it finishes.",
-                    bundle: .appLanguage, comment: "Engine-assets removal refused because another SteamCMD operation holds the lease."
-                )
-            } else {
-                String(
-                    localized: "Couldn't remove the downloaded assets.",
-                    bundle: .appLanguage, comment: "Engine-assets removal failed for an unclassified reason."
-                )
-            }
+            let message = String(
+                localized: "Couldn't remove the downloaded assets.",
+                bundle: .appLanguage, comment: "Engine-assets removal failed for an unclassified reason."
+            )
             fail(message, headline: String(
                 localized: "Removal failed",
                 bundle: .appLanguage, comment: "Engine-assets removal failure toast headline."
@@ -422,13 +415,9 @@ final class WPEEngineAssetsInstaller {
         }
     }
 
-    private func commitRemove(
-        attempt: UUID,
-        operationLease lease: SteamCMDDoctorOperationLease
-    ) async throws {
+    private func commitRemove(attempt: UUID) async throws {
         guard currentAttempt == attempt else { return }
         // Unlink bookmark/marker only; Steam owns the install files.
-        _ = lease
         SettingsManager.shared.clearWPEEngineAssetsBookmark()
         SettingsManager.shared.wpeEngineAssetsManagedBuildID = nil
         hasManagedInstall = false

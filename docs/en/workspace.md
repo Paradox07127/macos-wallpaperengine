@@ -29,10 +29,10 @@ that a new source loaded successfully.
 | Wallpaper Library | Browse imported/saved content, Apple Aerials and installed Workshop content supported by your edition |
 | Schemes | Save and restore a whole setup for one display |
 | Workshop — Pro | Browse online items, like them for later, download and inspect community presets |
-| System Wallpaper — macOS 26+ | Publish supported videos for selection in macOS Wallpaper settings |
+| System Wallpaper — macOS 26+ | Publish videos, recorded scene/web copies and Pro live scenes for selection in macOS Wallpaper settings |
 | Settings | Change app-wide defaults, performance rules, integrations and maintenance settings |
 
-**System Wallpaper** has its own video-only provider. Its publishing status is
+**System Wallpaper** has its own provider. Its publishing status is
 separate from a wallpaper running inside Loomscreen and from the wallpaper
 currently selected by macOS.
 

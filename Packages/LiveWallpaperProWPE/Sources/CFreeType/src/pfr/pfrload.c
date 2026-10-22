@@ -1022,14 +1022,8 @@
                          ? PFR_NEXT_SHORT( p )
                          : phy_font->standard_advance;
 
-#if 0
-        cur->ascii     = ( flags & PFR_PHY_ASCII_CODE )
-                         ? PFR_NEXT_BYTE( p )
-                         : 0;
-#else
         if ( flags & PFR_PHY_ASCII_CODE )
           p += 1;
-#endif
         cur->gps_size  = ( flags & PFR_PHY_2BYTE_GPS_SIZE )
                          ? PFR_NEXT_USHORT( p )
                          : PFR_NEXT_BYTE( p );

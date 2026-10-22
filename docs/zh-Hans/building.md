@@ -13,6 +13,29 @@
   没有它，编译 `.metal` 着色器会失败并报
   `cannot execute tool 'metal' due to missing Metal Toolchain`。
 
+## Pro 渲染集成需要的着色器编译 SDK
+
+离线检查和 hosted 应用分片无需运行时着色器编译 SDK：
+
+```sh
+make fast contracts lint test-packages test-app-hosted
+```
+
+本地 Metal 门禁、完整 Pro 测试和 Release/RC 构建需要真正编译着色器。
+按 [WPEShaderCompiler](../../WPEShaderCompiler/README.md) 准备固定版本的 DXC/Metal Shader Converter 输入后运行：
+
+```sh
+WPE_SHADER_TOOLCHAIN_ROOT=build/wpe-shader-toolchain-inputs \
+  bash WPEShaderCompiler/build.sh --check-inputs
+make verify WPE_SHADER_TOOLCHAIN_ROOT=build/wpe-shader-toolchain-inputs
+```
+
+这是与 Xcode Metal 组件类似的构建 SDK 前提，独立于 Workshop 素材。
+渲染门禁在启动测试前校验全部输入哈希，并通过 Xcode build setting 显式传入路径。
+缺输入会失败并提示准备方法，不跳过断言。普通 Debug 构建可以省略 SDK，
+但不能用这样的应用证明真实着色器编译已通过。干净检出不含被忽略的 SDK staging 目录，
+不要把开发者的绝对路径写入源码。
+
 ## 克隆并打开
 
 ```bash
@@ -52,9 +75,26 @@ Metal 层需要本地图形与签名环境；它不是无硬件检查，也**不
 Pro/Lite Debug/Release 链接矩阵、archive 冒烟和发布/签名检查。
 共用构建存储时串行执行 scheme；独立任务必须使用不同 DerivedData。
 
-支持的出货与 CI 工具链为 Xcode 27.0。`make` 默认使用
-`/Applications/Xcode.app/Contents/Developer`，安装位置不同时设置 `DEVELOPER_DIR`。
+支持的出货与 CI 工具链为 Xcode 27.0。本地命令使用 `xcode-select -p` 选择的工具链，
+可用 `DEVELOPER_DIR` 显式覆盖。
 当前 target 与包见[架构说明](architecture.md)；Video/Web 测试位于应用 target。
+
+## 真实 producer 与 Workshop 语料验收
+
+`make test-packages` 和 RC 的包回归只用仓库内固定输入或手写输入。
+字体来自固定的上游版本，许可与来源记录放在
+`Packages/LiveWallpaperProWPE/Tests/Fixtures/TextAssets/fonts`；无需安装 Steam、
+订阅 Workshop 或配置本机 oracle 目录。Swift Testing 和 XCTest 都必须零失败、零跳过。
+必选命令会清除从 shell 继承的外部语料开关。
+
+真实 producer/oracle 断言保留在包的 `ExternalCorpus` 源码组中。
+单独运行 `make test-packages-corpus`，显式提供 `WPE_WORKSHOP_ROOT`
+（内部为 `<Workshop ID>/scene.pkg`）、`WPE_ASSETS_DIR`、`WPE_HLSL_CAPTURE_DIR`
+及对应用例使用的 `LOOMSCREEN_WPE_*_ORACLE_DIR`。路径可相对于检出目录。
+该入口额外编译语料用例，同时运行必选用例；输入缺失、损坏或不兼容都应失败。
+它不会下载素材，也不会将未执行的语料记作通过。只诊断单个用例时可运行
+`LIVEWALLPAPER_EXTERNAL_FIXTURES=1 swift test --package-path Packages/LiveWallpaperProWPE --filter WPEWorkshopMdlTests`；
+筛选后的结果只证明所选用例，不能算整套语料验收通过。
 
 ## 测试工作流
 

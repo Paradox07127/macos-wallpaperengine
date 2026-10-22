@@ -601,7 +601,7 @@ struct GIFAnimationControllerTests {
         #expect(controller.isAnimating == false)
     }
 
-    @Test("Stopping within the 250 ms debounce window starts no playback")
+    @Test("Stopping before the queued play task starts leaves playback inactive")
     func debounceCancellation() async {
         let controller = GIFAnimationController()
         controller.setAsset(GIFTestFixtures.animatedAsset(frameCount: 3))

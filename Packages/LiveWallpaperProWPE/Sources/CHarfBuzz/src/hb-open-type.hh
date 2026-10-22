@@ -2048,14 +2048,6 @@ struct TupleValues
     public:
     void add_to (hb_array_t<float> out, float scale = 1.0f)
     {
-#ifndef HB_OPTIMIZE_SIZE
-      // The following branch is supposed to speed things up by avoiding
-      // the multiplication in _add_to<> if scale is 1.0f.
-      // But in practice it seems to bloat the code and slow things down.
-      if (false && scale == 1.0f)
-        _add_to<false> (out);
-      else
-#endif
         _add_to<true> (out, scale);
     }
   };

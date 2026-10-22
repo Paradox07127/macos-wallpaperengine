@@ -1502,7 +1502,6 @@ struct cff1
     HB_INTERNAL bool subset (hb_subset_context_t *c) const;
     HB_INTERNAL bool serialize (hb_serialize_context_t *c,
 				struct cff1_subset_plan &plan) const;
-    HB_INTERNAL bool get_seac_components (hb_codepoint_t glyph, hb_codepoint_t *base, hb_codepoint_t *accent) const;
 
     mutable CFF::cff_subset_accelerator_t* cff_accelerator = nullptr;
 

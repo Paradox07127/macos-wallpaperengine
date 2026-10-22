@@ -37,16 +37,6 @@ FT_BEGIN_HEADER
                        FT_ULong   length );
 
 
-#if 0  /* unused until we support pure CFF fonts */
-
-  /* Compute the maximum advance width of a font through quick parsing */
-  FT_LOCAL( FT_Error )
-  cff_compute_max_advance( TT_Face  face,
-                           FT_Int*  max_advance );
-
-#endif /* 0 */
-
-
   FT_LOCAL( FT_Error )
   cff_slot_load( CFF_GlyphSlot  glyph,
                  CFF_Size       size,

@@ -426,23 +426,6 @@ struct cs_opset_t : opset_t<ARG>
     OPSET::flush_args_and_op (op, env, param);
   }
 
-  static bool is_number_op (op_code_t op)
-  {
-    switch (op)
-    {
-      case OpCode_shortint:
-      case OpCode_fixedcs:
-      case OpCode_TwoBytePosInt0: case OpCode_TwoBytePosInt1:
-      case OpCode_TwoBytePosInt2: case OpCode_TwoBytePosInt3:
-      case OpCode_TwoByteNegInt0: case OpCode_TwoByteNegInt1:
-      case OpCode_TwoByteNegInt2: case OpCode_TwoByteNegInt3:
-	return true;
-
-      default:
-	/* 1-byte integer */
-	return (OpCode_OneByteIntFirst <= op) && (op <= OpCode_OneByteIntLast);
-    }
-  }
 
   protected:
   typedef opset_t<ARG>  SUPER;

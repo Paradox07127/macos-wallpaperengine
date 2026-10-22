@@ -393,6 +393,7 @@ struct ShelfGridHandoffTests {
                     }
                 }
                 #expect(missing.isEmpty, Comment(rawValue: "\(label): the grid draws tiles \(missing) the stage has no card for"))
+                try #require(worst != nil, Comment(rawValue: "\(label): no whole tile had a stage card to measure"))
                 if let worst {
                     #expect(
                         worst.offset <= 0.5,
@@ -678,6 +679,7 @@ struct ShelfGridHandoffTests {
                 let drawn = stage.cardLayers[model.shelfItems[index].id]?.thumbnail.contents as AnyObject?
                 return (index, drawn === image ? image : nil)
             }
+            try #require(!cards.isEmpty, Comment(rawValue: "\(label): no visible grid cards were available for the picture handoff"))
             let request = try #require(host.library.visibleItems.first?.thumbnail)
             let tilePixels = LibraryGridTile.Thumbnail(
                 request, tileWidth: StageGeometry.gridCellSize(windowWidth: size.width, size: model.gridTileSize).width,

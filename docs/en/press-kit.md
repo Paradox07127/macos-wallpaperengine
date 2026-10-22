@@ -60,7 +60,7 @@ wallpaper, place your widgets and save the setup for later.
 | Privacy | No Loomscreen account or usage telemetry; optional online features contact their own services |
 | Performance | Power-aware rules and configurable frame-rate ceilings; efficiency claims require measured evidence |
 | Intel | Lite ships an Intel slice that remains untested on Intel hardware; Pro requires Apple Silicon |
-| System Wallpaper | macOS 26+, video only, subject to provider compatibility; excludes app scenes, web and overlays |
+| System Wallpaper | macOS 26+, subject to provider compatibility; videos and recorded scene/web copies, plus Pro live scenes; excludes live web and app overlays |
 
 Use current app captures for screenshots and recordings. Demo HTML and design
 mockups illustrate an idea; they do not establish shipped product behavior.

@@ -173,7 +173,6 @@ struct WPESceneParityMediaInput: Sendable {
 /// `@unchecked Sendable`: every queue and loaded-consumer identity is accessed inside `lock`.
 final class WPESceneMediaEventMailbox: @unchecked Sendable {
     private let lock = NSLock()
-    private var pending: [WPESceneMediaEvent] = []
     private var pendingParity: [WPESceneParityMediaInput] = []
     private var parityGeneration: Int?
 
@@ -223,22 +222,6 @@ final class WPESceneMediaEventMailbox: @unchecked Sendable {
         parityGeneration = nil
         pendingParity.removeAll(keepingCapacity: true)
     }
-
-    func post(_ events: [WPESceneMediaEvent]) {
-        guard !events.isEmpty else { return }
-        lock.lock()
-        defer { lock.unlock() }
-        pending.append(contentsOf: events)
-    }
-
-    func drain() -> [WPESceneMediaEvent] {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !pending.isEmpty else { return [] }
-        let events = pending
-        pending.removeAll(keepingCapacity: true)
-        return events
-    }
 }
 
 @MainActor
@@ -258,7 +241,6 @@ final class WPESceneMediaEventDispatcher {
     private let id = UUID()
     private let source: any WPENowPlayingEventSource
     private let now: @MainActor () -> Double
-    private var gate = WPESceneMediaDiffGate()
     private var palette = WPEMediaArtworkPaletteCache()
     private var lastOrdinal: UInt64?
     private var isSubscribed = false
@@ -350,7 +332,7 @@ final class WPESceneMediaEventDispatcher {
         return publishParity(state: latest, isReplay: true)
     }
 
-    func start() {
+    private func start() {
         guard !isSubscribed else { return }
         isSubscribed = true
         // `subscribe` replays the current state synchronously, which is what
@@ -381,16 +363,7 @@ final class WPESceneMediaEventDispatcher {
         }
         lastOrdinal = ordinal
         latest = state
-        if parity != nil {
-            _ = publishParity(state: state, isReplay: false)
-            return
-        }
-        let snapshot = WPESceneMediaSnapshot(
-            state,
-            thumbnail: palette.thumbnail(for: state.artwork),
-            timeline: WPESceneMediaTimeline.interpolated(from: state, now: now())
-        )
-        mailbox.post(gate.events(for: snapshot))
+        _ = publishParity(state: state, isReplay: false)
     }
 
     @discardableResult

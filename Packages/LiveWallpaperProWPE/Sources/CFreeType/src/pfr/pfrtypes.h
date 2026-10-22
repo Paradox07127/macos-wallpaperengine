@@ -192,9 +192,6 @@ FT_BEGIN_HEADER
 #define PFR_KERN_INDEX( g1, g2 )                          \
           ( ( (FT_UInt32)(g1) << 16 ) | (FT_UInt16)(g2) )
 
-#define PFR_KERN_PAIR_INDEX( pair )                        \
-          PFR_KERN_INDEX( (pair)->glyph1, (pair)->glyph2 )
-
 #define PFR_NEXT_KPAIR( p )  ( p += 2,                              \
                                ( (FT_UInt32)p[-2] << 16 ) | p[-1] )
 
@@ -273,15 +270,6 @@ FT_BEGIN_HEADER
 #define PFR_GLYPH_IS_COMPOUND  0x80U
 
 
-  /* controlled coordinate */
-  typedef struct  PFR_CoordRec_
-  {
-    FT_UInt  org;
-    FT_UInt  cur;
-
-  } PFR_CoordRec, *PFR_Coord;
-
-
   typedef struct  PFR_SubGlyphRec_
   {
     FT_Fixed   x_scale;
@@ -304,10 +292,6 @@ FT_BEGIN_HEADER
   {
     FT_Byte           format;
 
-#if 0
-    FT_UInt           num_x_control;
-    FT_UInt           num_y_control;
-#endif
     FT_UInt           max_xy_control;
     FT_Pos*           x_control;
     FT_Pos*           y_control;

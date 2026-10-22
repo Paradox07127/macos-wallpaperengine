@@ -123,10 +123,10 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         let requested = WallpaperCapturePolicy.windowSharingType
         XCTAssertEqual(requested, .readOnly)
         controller.applyCapturePolicy(requested)
-        XCTAssertEqual(
-            controller.debugWindowSharingType(screenID: screenID), .readOnly,
-            "a policy change did not reach a live overlay; actual raw value: "
-                + "\(String(describing: controller.debugWindowSharingType(screenID: screenID)?.rawValue))"
+        let window = try XCTUnwrap(controller.debugWindow(screenID: screenID))
+        XCTAssertTrue(
+            CaptureSharingTestHost.hasWindowServerSharingType(.readOnly, on: window),
+            "a policy change did not reach the live overlay's WindowServer state"
         )
     }
 

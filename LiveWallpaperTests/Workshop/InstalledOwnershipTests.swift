@@ -644,8 +644,7 @@ private final class WorkshopInstalledLibraryStoreProbe {
             makeMetadataService: { [weak self] in
                 self?.makeMetadataService() ?? SteamWorkshopMetadataService()
             },
-            now: { [weak self] in self?.now ?? .distantPast },
-            prefetchPreviewURLs: { _ in }
+            now: { [weak self] in self?.now ?? .distantPast }
         )
     }
 }

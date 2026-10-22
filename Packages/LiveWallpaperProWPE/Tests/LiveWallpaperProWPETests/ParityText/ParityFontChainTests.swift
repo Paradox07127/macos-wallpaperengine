@@ -4,8 +4,7 @@ import Foundation
 import XCTest
 
 final class ParityFontChainTests: XCTestCase {
-    static let assetsRoot = URL(fileURLWithPath: NSHomeDirectory())
-        .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+    static let assetsRoot = PackageTestAssets.root
     static let notoSans = "fonts/NotoSans-Regular.ttf"
 
     /// Hand-authored SFNT with a single raw BGRA CBLC/CBDT strike at 100 ppem and no outlines. U+0041 maps to
@@ -24,12 +23,10 @@ final class ParityFontChainTests: XCTestCase {
     AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
     """
 
-    /// A library reading only the WPE assets root; skips when Wallpaper Engine is not installed.
+    /// Read the pinned, OFL-licensed test font; missing repository fixtures are failures.
     static func makeLibrary() throws -> WPEParityFontLibrary {
         let font = assetsRoot.appendingPathComponent(notoSans)
-        guard FileManager.default.fileExists(atPath: font.path) else {
-            throw XCTSkip("Wallpaper Engine assets fonts not installed at \(assetsRoot.path)")
-        }
+        _ = try Data(contentsOf: font)
         let assets = WPEParityProgramAssets(sources: [.directory(assetsRoot)])
         return WPEParityFontLibrary(assets: assets)
     }

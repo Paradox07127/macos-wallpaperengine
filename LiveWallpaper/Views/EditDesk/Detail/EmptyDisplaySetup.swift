@@ -16,7 +16,7 @@ struct EmptyDisplaySetup: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
                 if showsWebSetup {
-                    HTMLEmptyState(screen: screen, config: .default, apply: applyWebSource)
+                    HTMLEmptyState(apply: applyWebSource)
                         .frame(width: min(540, proxy.size.width - 64), height: min(380, proxy.size.height - 100))
                         .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.sheet))
                         .overlay(alignment: .topLeading) {

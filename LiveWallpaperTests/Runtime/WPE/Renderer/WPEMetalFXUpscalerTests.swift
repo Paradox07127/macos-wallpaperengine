@@ -103,11 +103,11 @@ struct WPEMetalFXUpscalerTests {
         )
     }
 
-    @Test("encodeIfEligible encodes an eligible frame and declines center")
+    @Test("The product presenter encodes an eligible upscale and declines center")
     func encodeIfEligibleCoversProductionPath() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         guard MTLFXSpatialScalerDescriptor.supportsDevice(device) else { return }
-        let library = try #require(device.makeDefaultLibrary())
+        _ = try #require(device.makeDefaultLibrary())
         let queue = try #require(device.makeCommandQueue())
 
         let probeDescriptor = MTLFXSpatialScalerDescriptor()
@@ -135,20 +135,22 @@ struct WPEMetalFXUpscalerTests {
             "scene-output usage no longer satisfies the scaler's input requirement"
         )
         let source = try makeTexture(2880, 1620, usage: probe.colorTextureUsage)
-        // `.renderTarget` for the alpha-fix pass the scaler itself does not require.
+        // `.renderTarget` for the product terminal presentation pass.
         let output = try makeTexture(3840, 2160, usage: probe.outputTextureUsage.union(.renderTarget))
 
-        let upscaler = WPEMetalFXSpatialUpscaler(device: device, library: library)
+        let upscaler = WPEMetalFXSpatialUpscaler(device: device)
+        let presenter = try WPEMetalPresenter(device: device)
+        presenter.metalFXUpscaler = upscaler
         let commandBuffer = try #require(queue.makeCommandBuffer())
 
-        #expect(try upscaler.encodeIfEligible(
-            source: source, drawableTexture: output, fitMode: .stretch, commandBuffer: commandBuffer
+        #expect(try presenter.encodeUpscaledPresent(
+            source: source, target: output, fitMode: .stretch, colorTransfer: .authored, into: commandBuffer
         ))
 
         // `center` keeps source pixels 1:1; the return value IS the contract - on false
         // the caller runs the classic present pass.
-        #expect(try upscaler.encodeIfEligible(
-            source: source, drawableTexture: output, fitMode: .center, commandBuffer: commandBuffer
+        #expect(try presenter.encodeUpscaledPresent(
+            source: source, target: output, fitMode: .center, colorTransfer: .authored, into: commandBuffer
         ) == false)
 
         commandBuffer.commit()

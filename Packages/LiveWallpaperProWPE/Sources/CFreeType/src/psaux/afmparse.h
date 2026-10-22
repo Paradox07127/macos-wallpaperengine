@@ -43,9 +43,7 @@ FT_BEGIN_HEADER
 
   enum  AFM_ValueType_
   {
-    AFM_VALUE_TYPE_STRING,
-    AFM_VALUE_TYPE_NAME,
-    AFM_VALUE_TYPE_FIXED,   /* real number */
+    AFM_VALUE_TYPE_FIXED = 2,   /* real number */
     AFM_VALUE_TYPE_INTEGER,
     AFM_VALUE_TYPE_BOOL,
     AFM_VALUE_TYPE_INDEX    /* glyph index */
@@ -57,7 +55,6 @@ FT_BEGIN_HEADER
     enum AFM_ValueType_  type;
     union
     {
-      char*     s;
       FT_Fixed  f;
       FT_Int    i;
       FT_UInt   u;
@@ -74,10 +71,9 @@ FT_BEGIN_HEADER
                         AFM_Value   vals,
                         FT_Int      n );
 
-  /* read the next key from the next line or column */
+  /* read the next key from the next line */
   FT_LOCAL( char* )
   afm_parser_next_key( AFM_Parser  parser,
-                       FT_Bool     line,
                        FT_Offset*  len );
 
 FT_END_HEADER

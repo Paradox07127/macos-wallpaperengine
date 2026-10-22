@@ -29,13 +29,6 @@ FT_BEGIN_HEADER
 #  endif
 #endif
 
-  /* Fix compiler warning with sgi compiler. */
-#if defined( __sgi ) && !defined( __GNUC__ )
-#  if defined( _COMPILER_VERSION ) && ( _COMPILER_VERSION >= 730 )
-#    pragma set woff 3505
-#  endif
-#endif
-
   /* Newer compilers warn for fall-through case statements. */
 #ifndef FALL_THROUGH
 #  if ( defined( __STDC_VERSION__ ) && __STDC_VERSION__ > 201710L ) || \

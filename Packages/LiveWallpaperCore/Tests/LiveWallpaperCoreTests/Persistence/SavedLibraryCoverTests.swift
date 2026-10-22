@@ -93,7 +93,7 @@ struct SavedLibraryCoverTests {
     }
 
     @Test("A bookmark archived before covers existed still decodes")
-    func bookmarkWithoutCoverDecodes() {
+    func bookmarkWithoutCoverDecodes() throws {
         let json = """
         {
           "id": "\(UUID().uuidString)",
@@ -102,8 +102,8 @@ struct SavedLibraryCoverTests {
           "content": {"video": {"bookmarkData": "CQ=="}}
         }
         """
-        let decoded = try? JSONDecoder().decode(WallpaperBookmark.self, from: Data(json.utf8))
-        #expect(decoded?.coverFileName == nil)
+        let decoded = try JSONDecoder().decode(WallpaperBookmark.self, from: Data(json.utf8))
+        #expect(decoded.coverFileName == nil)
     }
 
     // MARK: - Stores

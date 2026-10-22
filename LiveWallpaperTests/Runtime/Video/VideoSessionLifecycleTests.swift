@@ -51,35 +51,6 @@ struct VideoSessionLifecycleTests {
         ))
     }
 
-    // MARK: - ScreenManager wiring: power changes flow through the injected monitor
-
-    @Test("ScreenManager subscribes the injected PowerMonitoring publisher and reacts to changes")
-    func screenManagerReactsToInjectedPowerMonitorEvents() async throws {
-        guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
-            Issue.record("No NSScreen available for ScreenManager wiring test")
-            return
-        }
-        let originalConfigurations = SettingsManager.shared.loadConfigurations()
-        defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
-
-        let powerMonitor = FakePowerMonitor(initialPowerSource: .external)
-        _ = ScreenManager(startupOptions: ScreenManagerStartupOptions(
-            restoreSavedWallpapers: false,
-            startAutomation: false,
-            powerMonitor: powerMonitor,
-            fullScreenDetector: FakeFullScreenDetector(),
-            playableVideoLoader: FakePlayableVideoLoader(),
-            displayRegistry: FakeDisplayRegistry(screens: [screen]),
-            featureCatalog: FeatureCatalog(capabilities: .pro)
-        ))
-
-        let baselineReadCount = powerMonitor.currentPowerSourceReadCount
-        powerMonitor.send(.battery(level: 0.10))
-        try await Task.sleep(for: .milliseconds(20))
-
-        #expect(powerMonitor.currentPowerSourceReadCount >= baselineReadCount)
-    }
-
     // MARK: - VideoWallpaperSession intent state machine (single authority)
 
     @Test("Policy profiles never mutate intent; manual play/pause own it")

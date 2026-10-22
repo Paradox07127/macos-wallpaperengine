@@ -40,14 +40,6 @@ FT_BEGIN_HEADER
                    FT_Byte*   limit,
                    FT_Long    power_ten );
 
-#if 0
-  FT_LOCAL( FT_UInt )
-  PS_Conv_StringDecode( FT_Byte**  cursor,
-                        FT_Byte*   limit,
-                        FT_Byte*   buffer,
-                        FT_Offset  n );
-#endif
-
   FT_LOCAL( FT_UInt )
   PS_Conv_ASCIIHexDecode( FT_Byte**  cursor,
                           FT_Byte*   limit,

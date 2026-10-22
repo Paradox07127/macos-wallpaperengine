@@ -528,8 +528,7 @@ private final class HistoryProbe {
             loadLastUpdateCheckEpoch: { 0 },
             saveLastUpdateCheckEpoch: { _ in },
             makeMetadataService: { SteamWorkshopMetadataService() },
-            now: { .distantPast },
-            prefetchPreviewURLs: { _ in }
+            now: { .distantPast }
         )
     }
 

@@ -173,10 +173,8 @@ struct WallpaperManualSwitchGroupTests {
         }
         let store = WallpaperConfigurationStore(persistence: ManualSwitchGroupTestPersistence(configurations))
         return WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { screens },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("HTML entries must not set up video playback") },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { screens },
+            saveConfiguration: { store.save($0) },
             restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { screen, _, _, _ in

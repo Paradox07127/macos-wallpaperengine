@@ -316,10 +316,8 @@ struct ScreenManagerCoordinationTests {
             var availabilityChecks = 0
             var resumeAvailability: CheckedContinuation<Bool, Never>?
             manager.automationOrchestrator = WallpaperAutomationOrchestrator(
-                configurationStore: manager.configurationStore, automationCoordinator: WallpaperAutomationCoordinator(),
-                playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-                saveConfiguration: { manager.configurationStore.save($0) }, recordBookmarkDisplayName: { _, _ in },
-                setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+                configurationStore: manager.configurationStore, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+                saveConfiguration: { manager.configurationStore.save($0) }, restoreProposedConfiguration: { _, _ in },
                 bumpTransition: { manager.bumpTransition(for: $0) },
                 isCurrentTransition: { manager.isCurrentTransition($0, for: $1) },
                 prepareAutomation: { _, _, _, _ in

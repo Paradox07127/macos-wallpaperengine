@@ -21,7 +21,7 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(doctor.lastExecutedBinaryPath == nil)
         #expect(controller.setupError == SteamCMDDoctorService.setupRequiredMessage)
         await doctor.runProbe(.binaryIdentity)
-        guard case .red(let message, _) = doctor.probes[.binaryIdentity]?.status else {
+        guard case let .red(message, _) = doctor.probes[.binaryIdentity]?.status else {
             Issue.record("The refused discovery must remain visible in diagnostics"); return
         }
         #expect(message == SteamCMDDoctorService.setupRequiredMessage)
@@ -90,7 +90,7 @@ struct SteamCMDDoctorLifecycleTests {
                           isQuarantined: quarantined, launch: launch, unavailableReason: nil, rejectedExisting: [])
     }
 
-    @Test("Three download leases coexist while an update waits for every lease to end")
+    @Test("Three download leases coexist while an exclusive asset mutation waits for every lease to end")
     func threeDownloadsAndExclusiveUpdate() async throws {
         let coordinator = SteamCMDDoctorOperationCoordinator()
         let starts = (0 ..< 3).map { _ in AF12Latch() }
@@ -109,7 +109,7 @@ struct SteamCMDDoctorLifecycleTests {
         }
         let updateStarted = AF12Latch()
         let update = Task {
-            try await coordinator.withOperation(.appUpdate) { lease in
+            try await coordinator.withOperation(.assetsMutation) { lease in
                 await updateStarted.signal()
                 return lease
             }
@@ -139,7 +139,7 @@ struct SteamCMDDoctorLifecycleTests {
         let secondLeaseBox = AF12LeaseBox()
 
         let firstTask = Task {
-            try await coordinator.withOperation(.appUpdate) { lease in
+            try await coordinator.withOperation(.assetsMutation) { lease in
                 await firstStarted.signal()
                 await releaseFirst.wait()
                 return lease
@@ -181,7 +181,7 @@ struct SteamCMDDoctorLifecycleTests {
         let release = AF12Latch()
 
         let first = Task {
-            try await coordinator.withOperation(.appUpdate) { lease in
+            try await coordinator.withOperation(.assetsMutation) { lease in
                 await started.signal()
                 await release.wait()
                 return lease
@@ -212,7 +212,7 @@ struct SteamCMDDoctorLifecycleTests {
         let durableState = AF12StringBox()
 
         let publisher = Task {
-            try await coordinator.withOperation(.appUpdate) { _ in
+            try await coordinator.withOperation(.assetsMutation) { _ in
                 await commitStarted.signal()
                 await allowPublication.wait()
                 await durableState.set("published-and-marked")
@@ -222,7 +222,7 @@ struct SteamCMDDoctorLifecycleTests {
         publisher.cancel()
 
         let successor = Task {
-            try await coordinator.withOperation(.appUpdate) { _ in
+            try await coordinator.withOperation(.assetsMutation) { _ in
                 await successorStarted.signal()
                 return await durableState.value
             }
@@ -235,27 +235,6 @@ struct SteamCMDDoctorLifecycleTests {
         await allowPublication.signal()
         try await publisher.value
         #expect(try await successor.value == "published-and-marked")
-    }
-
-    @Test("same operation inherits its lease while cross-kind nesting fails closed")
-    func nestedOperationRules() async throws {
-        let coordinator = SteamCMDDoctorOperationCoordinator()
-        let inherited = try await coordinator.withOperation(.appUpdate) { outer in
-            try await coordinator.withOperation(.appUpdate, inheriting: outer) { inner in
-                #expect(inner == outer)
-                return inner
-            }
-        }
-        #expect(inherited.generation == 1)
-
-        do {
-            _ = try await coordinator.withOperation(.appUpdate) { outer in
-                try await coordinator.withOperation(.workshopDownload, inheriting: outer) { $0 }
-            }
-            Issue.record("cross-kind nested operation unexpectedly entered")
-        } catch let error as SteamCMDDoctorOperationError {
-            #expect(error == .nestedConflict(active: .appUpdate, requested: .workshopDownload))
-        }
     }
 
     private static func inspection(

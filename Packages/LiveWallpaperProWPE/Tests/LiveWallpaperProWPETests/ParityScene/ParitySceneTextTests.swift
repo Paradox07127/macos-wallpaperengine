@@ -163,7 +163,16 @@ final class ParitySceneTextTests: XCTestCase {
         ]
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
                                                         userValues: [:])
-        let assets = WPEParityProgramAssets(sources: [.directory(ParityFontChainTests.assetsRoot)])
+        // Authored material/shader declarations are inputs; the product must bind its live color and atlas.
+        let declarations: [String: Data] = [
+            "materials/fonts/basefont.json": Data(#"{"passes":[{"shader":"font-probe","blending":"translucent"}]}"#.utf8),
+            "shaders/font-probe.vert": Data("void main() {}".utf8),
+            "shaders/font-probe.frag": Data("uniform vec4 g_Color4;\nvoid main() {}".utf8),
+        ]
+        let assets = WPEParityProgramAssets(sources: [
+            .lookup(ParityFontChainTests.assetsRoot) { declarations[$0] },
+            .directory(ParityFontChainTests.assetsRoot),
+        ])
         let program = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
         guard case let .text(text)? = program.scene.objects.first?.kind else { return XCTFail("no text object") }
         XCTAssertNotNil(program.textAtlases[text.atlasKey])
@@ -200,6 +209,8 @@ final class ParitySceneTextTests: XCTestCase {
         let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scene),
                                                         userValues: [:])
         let assets = WPEParityProgramAssets(sources: [.directory(ParityFontChainTests.assetsRoot)])
+        let robotoFace = try XCTUnwrap(WPEParityFontLibrary(assets: assets).chain(fontPath: roboto, pointSize: 32).faces.first)
+        XCTAssertEqual(robotoFace.familyName, "Roboto Mono", "fixture must exercise a second real font")
         let program = WPEParityProgramScene(document: document, assets: assets, settings: WPEParityProgramSettings())
         XCTAssertNil(program.textPreparationFailure)
         var texts: [String: WPEParitySceneText] = [:]

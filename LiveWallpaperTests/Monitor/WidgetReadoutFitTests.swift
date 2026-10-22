@@ -128,7 +128,7 @@ final class WidgetReadoutFitTests: XCTestCase {
         // Read from the widget, never retyped: a slot narrowed there has to move
         // this test, and the floor is only real if the row actually declares it.
         let source = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/MemoryWidgetView.swift")
-        let row = try XCTUnwrap(Self.topProcessRowBody(in: source),
+        let row = try XCTUnwrap(Self.declarationBody("struct MemoryTopProcessRow", in: source),
                                 "MemoryWidgetView no longer declares MemoryTopProcessRow")
         let floor = try XCTUnwrap(Self.scaleFloor(in: row),
                                   "MemoryTopProcessRow lost its minimumScaleFactor; nothing shrinks these columns")
@@ -150,26 +150,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         XCTAssertGreaterThan(width(gibText, slotFont), gibSlot,
                              "control: if this column stopped overflowing, the floor below is untested")
         XCTAssertGreaterThanOrEqual(gibSlot / width(gibText, slotFont), floor)
-    }
-
-    private static func topProcessRowBody(in source: String) -> String? {
-        guard let start = source.range(of: "struct MemoryTopProcessRow") else { return nil }
-        var depth = 0
-        var index = start.lowerBound
-        var seenOpen = false
-        while index < source.endIndex {
-            if source[index] == "{" {
-                depth += 1
-                seenOpen = true
-            } else if source[index] == "}" {
-                depth -= 1
-                if seenOpen, depth == 0 {
-                    return String(source[start.lowerBound ... index])
-                }
-            }
-            index = source.index(after: index)
-        }
-        return nil
     }
 
     private static func scaleFloor(in body: String) -> CGFloat? {

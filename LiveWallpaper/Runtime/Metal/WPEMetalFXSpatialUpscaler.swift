@@ -7,8 +7,6 @@ import MetalFX
 
 final class WPEMetalFXSpatialUpscaler {
 
-    enum EncodingError: Error { case alphaFixEncoderUnavailable, outputCopyEncoderUnavailable }
-
     static let renderScaleDefaultsKey = "WPEMetalFXRenderScale"
 
     /// Missing/unset = 1.0 (off). Clamped to [0.25, 1.0]. Read live so the settings picker takes effect on the next session rebuild; consumers capture it at load/executor init, never per frame.
@@ -71,9 +69,9 @@ final class WPEMetalFXSpatialUpscaler {
         )
     }
 
-    static func makeIfEnabled(device: MTLDevice, library: MTLLibrary) -> WPEMetalFXSpatialUpscaler? {
+    static func makeIfEnabled(device: MTLDevice) -> WPEMetalFXSpatialUpscaler? {
         guard isExperimentEnabled else { return nil }
-        return WPEMetalFXSpatialUpscaler(device: device, library: library)
+        return WPEMetalFXSpatialUpscaler(device: device)
     }
 
     enum FallbackReason: String, Equatable {
@@ -168,25 +166,22 @@ final class WPEMetalFXSpatialUpscaler {
     }
 
     private let device: MTLDevice
-    private let library: MTLLibrary
     private var cachedScaler: (key: ScalerKey, scaler: MTLFXSpatialScaler)?
     private var cachedPrivateOutput: MTLTexture?
     /// Capped, not one-shot: a nil from `makeSpatialScaler` can be transient
     /// resource pressure, so a key gets a few tries before it is written off.
     private var failedAttempts: [ScalerKey: Int] = [:]
     private static let maxCreationAttempts = 3
-    private var alphaFixPipelines: [UInt: MTLRenderPipelineState] = [:]
     private var didLogActivation = false
     /// Reasons already reported. A session can hit several distinct ones and
     /// each is worth a line; repeats are not.
     private var reportedFallbacks: Set<FallbackReason> = []
 
-    init(device: MTLDevice, library: MTLLibrary) {
+    init(device: MTLDevice) {
         self.device = device
-        self.library = library
     }
 
-    /// `failedAttempts`/`alphaFixPipelines` stay: both are tiny and expensive to relearn.
+    /// `failedAttempts` stays: it is tiny and expensive to relearn.
     func releaseCachedScaler() {
         cachedScaler = nil
         cachedPrivateOutput = nil
@@ -198,7 +193,7 @@ final class WPEMetalFXSpatialUpscaler {
         drawableTexture: MTLTexture,
         fitMode: WPEPresentFitMode,
         commandBuffer: MTLCommandBuffer,
-        encodeOutput: ((MTLTexture) throws -> Void)? = nil
+        encodeOutput: (MTLTexture) throws -> Void
     ) throws -> Bool {
         if let rejection = Self.preScalerRejection(
             fitMode: fitMode,
@@ -219,7 +214,7 @@ final class WPEMetalFXSpatialUpscaler {
         }
         // A product consumer applies the native terminal transfer after scaling. Keep the intermediate in
         // the input's color domain; MetalFX rejects mixed sRGB/non-sRGB input and output formats.
-        let outputFormat = encodeOutput == nil ? drawableTexture.pixelFormat : source.pixelFormat
+        let outputFormat = source.pixelFormat
         let key = ScalerKey(
             inputWidth: source.width,
             inputHeight: source.height,
@@ -259,16 +254,9 @@ final class WPEMetalFXSpatialUpscaler {
         guard source.usage.isSuperset(of: scaler.colorTextureUsage),
               !drawableTexture.isFramebufferOnly,
               let output = privateOutput(for: drawableTexture, format: outputFormat,
-                                         usage: scaler.outputTextureUsage, alwaysStage: encodeOutput != nil)
+                                         usage: scaler.outputTextureUsage)
         else {
             noteFallback(.usageMismatch, source: source, drawable: drawableTexture)
-            return false
-        }
-        // Wallpaper window is transparent; present fragment writes A=1. Resolve
-        // the alpha-fix pipeline before encoding so a miss falls back cleanly.
-        let alphaFix = encodeOutput == nil ? alphaFixPipeline(for: outputFormat) : nil
-        guard encodeOutput != nil || alphaFix != nil else {
-            noteFallback(.scalerCreationFailed, source: source, drawable: drawableTexture)
             return false
         }
         scaler.colorTexture = source
@@ -280,19 +268,7 @@ final class WPEMetalFXSpatialUpscaler {
             scaler.outputTexture = nil
         }
         scaler.encode(commandBuffer: commandBuffer)
-        if let encodeOutput {
-            try encodeOutput(output)
-        } else if let alphaFix {
-            try encodeAlphaFix(pipeline: alphaFix, drawableTexture: output, commandBuffer: commandBuffer)
-            if output !== drawableTexture {
-                guard let blit = commandBuffer.makeBlitCommandEncoder() else {
-                    throw EncodingError.outputCopyEncoderUnavailable
-                }
-                blit.label = "metalfx-outputCopy"
-                blit.copy(from: output, to: drawableTexture)
-                blit.endEncoding()
-            }
-        }
+        try encodeOutput(output)
         if !didLogActivation {
             didLogActivation = true
             Logger.notice(
@@ -305,17 +281,12 @@ final class WPEMetalFXSpatialUpscaler {
         return true
     }
 
-    /// MetalFX requires a private output; macOS drawables can use shared storage.
-    /// Keep one target on this executor's serial queue and copy only for those drawables.
+    /// MetalFX requires a private output sampled by the terminal presentation pass.
+    /// Keep one target on this executor's serial queue.
     private func privateOutput(for drawable: MTLTexture, format: MTLPixelFormat,
-                               usage: MTLTextureUsage, alwaysStage: Bool) -> MTLTexture? {
+                               usage: MTLTextureUsage) -> MTLTexture? {
         var required = usage.union(.renderTarget)
-        if alwaysStage {
-            required.insert(.shaderRead)
-        }
-        if !alwaysStage, drawable.storageMode == .private {
-            return drawable.usage.isSuperset(of: required) ? drawable : nil
-        }
+        required.insert(.shaderRead)
         if let cached = cachedPrivateOutput, cached.width == drawable.width, cached.height == drawable.height,
            cached.pixelFormat == format, cached.usage.isSuperset(of: required) {
             return cached
@@ -329,42 +300,6 @@ final class WPEMetalFXSpatialUpscaler {
         texture?.label = "metalfx.privateOutput"
         cachedPrivateOutput = texture
         return texture
-    }
-
-    private func alphaFixPipeline(for format: MTLPixelFormat) -> MTLRenderPipelineState? {
-        if let cached = alphaFixPipelines[format.rawValue] { return cached }
-        guard let vertex = library.makeFunction(name: "wpe_fullscreen_vertex"),
-              let fragment = try? WPEMetalColorOutput.fragment(library: library, name: "wpe_solidcolor_fragment", format: format) else { return nil }
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = vertex
-        descriptor.fragmentFunction = fragment
-        descriptor.colorAttachments[0].pixelFormat = format
-        descriptor.colorAttachments[0].isBlendingEnabled = false
-        descriptor.colorAttachments[0].writeMask = .alpha
-        guard let state = try? device.makeRenderPipelineState(descriptor: descriptor) else { return nil }
-        alphaFixPipelines[format.rawValue] = state
-        return state
-    }
-
-    private func encodeAlphaFix(
-        pipeline: MTLRenderPipelineState,
-        drawableTexture: MTLTexture,
-        commandBuffer: MTLCommandBuffer
-    ) throws {
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = drawableTexture
-        pass.colorAttachments[0].loadAction = .load
-        pass.colorAttachments[0].storeAction = .store
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
-            throw EncodingError.alphaFixEncoderUnavailable
-        }
-        encoder.applyTraceLabel("metalfx-alphaFix")
-        WPEFrameOccupancyMeter.count(.presentEncoder)
-        encoder.setRenderPipelineState(pipeline)
-        var uniforms = WPESolidUniforms(color: SIMD4<Float>(0, 0, 0, 1))
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESolidUniforms>.stride, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        encoder.endEncoding()
     }
 
     private func noteFallback(_ reason: FallbackReason, source: MTLTexture, drawable: MTLTexture) {

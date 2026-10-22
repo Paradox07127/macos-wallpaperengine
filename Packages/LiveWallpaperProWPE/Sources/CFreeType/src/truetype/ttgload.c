@@ -231,23 +231,6 @@
       left_bearing  = (FT_Short)incr_metrics.bearing_x;
       advance_width = (FT_UShort)incr_metrics.advance;
 
-#if 0
-
-      /* GWW: Do I do the same for vertical metrics? */
-      incr_metrics.bearing_x = 0;
-      incr_metrics.bearing_y = loader->top_bearing;
-      incr_metrics.advance   = loader->vadvance;
-
-      error = face->root.internal->incremental_interface->funcs->get_glyph_metrics(
-                face->root.internal->incremental_interface->object,
-                glyph_index, TRUE, &incr_metrics );
-      if ( error )
-        goto Exit;
-
-      top_bearing    = (FT_Short)incr_metrics.bearing_y;
-      advance_height = (FT_UShort)incr_metrics.advance;
-
-#endif /* 0 */
 
       loader->left_bearing = left_bearing;
       loader->advance      = advance_width;
@@ -1091,36 +1074,10 @@
 #endif
       {
 
-#if 0
 
         /********************************************************************
          *
-         * This algorithm is what Apple documents.  But it doesn't work.
-         */
-        int  a = subglyph->transform.xx > 0 ?  subglyph->transform.xx
-                                            : -subglyph->transform.xx;
-        int  b = subglyph->transform.yx > 0 ?  subglyph->transform.yx
-                                            : -subglyph->transform.yx;
-        int  c = subglyph->transform.xy > 0 ?  subglyph->transform.xy
-                                            : -subglyph->transform.xy;
-        int  d = subglyph->transform.yy > 0 ?  subglyph->transform.yy
-                                            : -subglyph->transform.yy;
-        int  m = a > b ? a : b;
-        int  n = c > d ? c : d;
-
-
-        if ( a - b <= 33 && a - b >= -33 )
-          m *= 2;
-        if ( c - d <= 33 && c - d >= -33 )
-          n *= 2;
-        x = FT_MulFix( x, m );
-        y = FT_MulFix( y, n );
-
-#else /* 1 */
-
-        /********************************************************************
-         *
-         * This algorithm is a guess and works much better than the above.
+         * Scale component offsets using transform vector lengths.
          */
         FT_Fixed  mac_xscale = FT_Hypot( subglyph->transform.xx,
                                          subglyph->transform.xy );
@@ -1131,7 +1088,6 @@
         x = FT_MulFix( x, mac_xscale );
         y = FT_MulFix( y, mac_yscale );
 
-#endif /* 1 */
 
       }
 

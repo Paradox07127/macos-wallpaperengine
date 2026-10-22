@@ -56,6 +56,10 @@ export WPE_SHADER_TOOLCHAIN_ROOT="$PWD/build/wpe-shader-toolchain-inputs"
 bash WPEShaderCompiler/build.sh "$PWD/build/wpe-shaderc"
 ```
 
+`build.sh --check-inputs` verifies only the pinned SDK inputs without invoking the compiler.
+The Metal/full-app/RC gates use this preflight; package/offline app checks do not require
+the SDK. These build inputs are independent of external Workshop test corpora.
+
 Omitting the output directory uses ignored `WPEShaderCompiler/build/`. Build
 output records the compiler/SDK versions and source, pin-list and output hashes.
 The fixed recipe is C++17, `-O2 -Wall -Wextra -Werror -arch arm64

@@ -1,5 +1,4 @@
 #if !LITE_BUILD
-import CoreGraphics
 import Foundation
 import LiveWallpaperProWPE
 
@@ -70,20 +69,6 @@ struct WPEMultiRootResourceResolver: Sendable {
         }
         return try resolveWithFallbacks(relativePath: relativePath) { resolver, path in
             try resolver.data(relativePath: path)
-        }
-    }
-
-    func resolveImage(
-        relativePath: String,
-        maxSourceEdge: Int? = nil
-    ) throws -> SceneResourceResolver.ResolvedImage {
-        if let dependency = Self.dependencyReference(relativePath) {
-            return try resolveDependency(dependency: dependency) { resolver, path in
-                try resolver.resolveImage(relativePath: path, maxSourceEdge: maxSourceEdge)
-            }
-        }
-        return try resolveWithFallbacks(relativePath: relativePath) { resolver, path in
-            try resolver.resolveImage(relativePath: path, maxSourceEdge: maxSourceEdge)
         }
     }
 

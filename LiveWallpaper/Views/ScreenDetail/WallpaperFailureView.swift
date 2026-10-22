@@ -239,10 +239,10 @@ struct WallpaperAttemptPreview: View {
     let attempt: WallpaperLoadAttempt
     /// Also run by Cancel, for an apply still waiting on this preparation.
     var onCancel: (() -> Void)?
-    /// The Edit Desk's apply path, which records a change for undo; nil imports straight into the display.
-    var apply: ((ApplyIntent) -> Void)?
-    /// The Edit Desk's clear path, which records it for undo; nil clears straight away.
-    var clearWallpaper: (() -> Void)?
+    /// The Edit Desk's apply path, which records a change for undo.
+    var apply: (ApplyIntent) -> Void
+    /// The Edit Desk's clear path, which records it for undo.
+    var clearWallpaper: () -> Void
     @Environment(ScreenManager.self) private var screenManager
     @State private var pendingDestructive: PendingDestructive?
     @State private var detailsFor: WallpaperFailureSnapshot?
@@ -281,12 +281,7 @@ struct WallpaperAttemptPreview: View {
         #else
         return {
             guard let url = WPEFolderPicker.chooseImportFolder() else { return }
-            if let apply {
-                apply(.wpeProjectFolder(url))
-                return
-            }
-            screenManager.resetRotationClock(for: screen)
-            Task { @MainActor in await screenManager.importWallpaperEngineProject(at: url, for: screen) }
+            apply(.wpeProjectFolder(url))
         }
         #endif
     }
@@ -299,11 +294,7 @@ struct WallpaperAttemptPreview: View {
             pendingDestructive = PendingDestructive(
                 .clearCurrentWallpaper(displayName: screen.name)
             ) {
-                if let clearWallpaper {
-                    clearWallpaper()
-                } else {
-                    screenManager.clearWallpaperForScreen(screen)
-                }
+                clearWallpaper()
                 // Drops the failed attempt too, otherwise the page the user just
                 // escaped from stays on screen describing a wallpaper that is
                 // no longer assigned to anything.

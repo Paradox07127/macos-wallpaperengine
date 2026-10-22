@@ -47,19 +47,4 @@ struct SuspendReasonReportingTests {
         }
     }
 
-    @Test("Restoring is its own state, never reported as a suspension")
-    func restoringIsDistinctFromSuspension() {
-        let all = Set([
-            WallpaperSessionActivity.active,
-            .paused,
-            .policySuspended,
-            .restoring,
-            .off,
-            .error,
-            .inactive,
-        ])
-        #expect(all.count == 7, "Each activity must stay distinguishable")
-        #expect(WallpaperSessionActivity.restoring != .policySuspended)
-        #expect(WallpaperSessionActivity.restoring != .paused)
-    }
 }

@@ -251,7 +251,7 @@ struct HTMLBookmarkPersistenceTests {
         await TestScratch.discard(root, flushing: manager)
     }
 
-    @Test("A dead source bookmark is relocated by workshop id and persisted through the owner")
+    @Test("A dead source bookmark is relocated by workshop id for the session without persistence")
     @MainActor
     func wpeRuntimeRelocatesDeadBookmark() throws {
         let root = try Self.makeTempDirectory()

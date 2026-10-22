@@ -76,10 +76,6 @@ FT_BEGIN_HEADER
                  FTC_GQuery   gquery,
                  FTC_Cache    cache );
 
-#if 0
-  FT_LOCAL( FT_ULong )
-  FTC_SNode_Weight( FTC_SNode  inode );
-#endif
 
   /* */
 

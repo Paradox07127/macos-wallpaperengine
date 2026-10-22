@@ -78,13 +78,13 @@ struct WPESceneDocumentParserTests {
         let hidden = try WPESceneDocumentParser.parse(data: data, userValues: ["xme": .bool(false)])
         #expect(hidden.imageObjects.first?.visible == false)
 
-        let visibleBinding = try #require(hidden.propertyBindings["xme"]?.first)
+        let visibleBinding = try #require(WPEParityUserProperties.bindings(document: hidden)["xme"]?.first)
         #expect(visibleBinding.target == .imageObject(id: "64"))
         #expect(visibleBinding.kind == .visible)
         #expect(visibleBinding.action == .incremental)
 
         let patch = WPEScenePropertyPatch(
-            bindingsByProperty: hidden.propertyBindings,
+            bindingsByProperty: WPEParityUserProperties.bindings(document: hidden),
             oldValues: ["xme": .bool(true)],
             newValues: ["xme": .bool(false)]
         )
@@ -137,12 +137,12 @@ struct WPESceneDocumentParserTests {
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
         let document = try WPESceneDocumentParser.parse(data: data, userValues: ["quality": .number(1)])
-        let binding = try #require(document.propertyBindings["quality"]?.first)
+        let binding = try #require(WPEParityUserProperties.bindings(document: document)["quality"]?.first)
 
-        #expect(binding.kind == .combo)
+        #expect(binding.kind == .resource)
         #expect(binding.action == .reload)
         #expect(WPEScenePropertyPatch(
-            bindingsByProperty: document.propertyBindings,
+            bindingsByProperty: WPEParityUserProperties.bindings(document: document),
             oldValues: ["quality": .number(0)],
             newValues: ["quality": .number(1)]
         ).requiresReload)
@@ -262,8 +262,8 @@ struct WPESceneDocumentParserTests {
         #expect(document.general.zoomField.userBindings == [
             WPESceneAuthoredUserBinding(propertyKey: "zoomGain")
         ])
-        #expect(document.propertyBindings["zoomGain"]?.contains {
-            $0.target == .generalField(name: "zoom") && $0.action == .reload
+        #expect(WPEParityUserProperties.bindings(document: document)["zoomGain"]?.contains {
+            $0.target == .generalField(name: "zoom.scriptproperties.gain") && $0.action == .reload
         } == true)
         #expect(document.camera == WPESceneCamera.defaultCamera)
         #expect(document.diagnostics.contains {
@@ -314,7 +314,7 @@ struct WPESceneDocumentParserTests {
         #expect(document.general.cameraShake.amplitude.resolvedValue == 1.75)
         #expect(document.general.cameraShake.speed.resolvedValue == 3.25)
         #expect(document.general.cameraShake.roughness.script != nil)
-        #expect(document.propertyBindings["overrideFOV"]?.contains {
+        #expect(WPEParityUserProperties.bindings(document: document)["overrideFOV"]?.contains {
             $0.target == .generalField(name: "perspectiveoverridefov")
         } == true)
         #expect(document.camera == WPESceneCamera.defaultCamera)
@@ -363,7 +363,7 @@ struct WPESceneDocumentParserTests {
         #expect(document.general.gravity.direction.resolvedValue == SIMD3<Double>(0, -0.75, 0.25))
         #expect(document.general.gravity.strength.seed == 223)
         #expect(document.general.gravity.strength.resolvedValue == 111.5)
-        #expect(document.propertyBindings["gravityStrength"]?.contains {
+        #expect(WPEParityUserProperties.bindings(document: document)["gravityStrength"]?.contains {
             $0.target == .generalField(name: "gravitystrength") && $0.kind == .general
         } == true)
         #expect(document.camera == WPESceneCamera.defaultCamera)
@@ -404,8 +404,8 @@ struct WPESceneDocumentParserTests {
         #expect(directional.angles == SIMD3<Double>(7, 8, 9))
         #expect(directional.cascadeDistances == SIMD3<Double>(0.3, 0.4, 8))
         #expect(!directional.visible)
-        #expect(document.propertyBindings["lightRadius"]?.contains {
-            $0.target == .lightObject(id: "433") && $0.kind == .uniform && $0.action == .reload
+        #expect(WPEParityUserProperties.bindings(document: document)["lightRadius"]?.contains {
+            $0.target == .objectResource(objectID: "433", field: "radius") && $0.kind == .resource && $0.action == .incremental
         } == true)
         #expect(document.diagnostics.contains {
             $0.message.contains("Light object Point") && $0.message.contains("are preserved")
@@ -1129,22 +1129,20 @@ struct WPESceneDocumentParserTests {
         #expect(off.scriptProperties["delimiter"] == .string(":"),
                 "literal siblings must survive the same pass")
 
-        let binding = try #require(offDocument.propertyBindings["newproperty8"]?.first)
-        #expect(binding.target == .scriptProperty(.init(
-            objectID: "531",
-            role: .textContent,
-            propertyName: "showSeconds"
-        )))
+        let binding = try #require(WPEParityUserProperties.bindings(document: offDocument)["newproperty8"]?.first)
+        #expect(binding.target == .objectResource(
+            objectID: "531", field: "text.scriptproperties.showSeconds"
+        ))
         #expect(binding.kind == .scriptProperty)
         #expect(binding.action == .incremental,
-                "typed provenance is an incremental candidate; renderer preflight remains authoritative")
+                "the live scriptproperty watcher updates the existing script binding")
         let patch = WPEScenePropertyPatch(
-            bindingsByProperty: offDocument.propertyBindings,
+            bindingsByProperty: WPEParityUserProperties.bindings(document: offDocument),
             oldValues: ["newproperty8": .bool(false)],
             newValues: ["newproperty8": .bool(true)]
         )
         #expect(!patch.requiresReload,
-                "the typed script target reaches renderer preflight instead of masquerading as direct visibility")
+                "a bound scriptproperty does not remount the scene")
     }
 
     @Test("Effect shader constants carry their SceneScript (corpus scene 2955378002)")
@@ -1781,7 +1779,7 @@ struct WPESceneDocumentParserTests {
         let data = try styleSelectorSceneData()
         let document = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(1)])
 
-        let bindings = try #require(document.propertyBindings["newproperty14"])
+        let bindings = try #require(WPEParityUserProperties.bindings(document: document)["newproperty14"])
         #expect(bindings.count == 2)
         for binding in bindings {
             #expect(binding.kind == .visible)
@@ -1791,7 +1789,7 @@ struct WPESceneDocumentParserTests {
         #expect(bindings.contains { $0.target == .imageObject(id: "269") && $0.condition == "1" })
         #expect(bindings.contains { $0.target == .imageObject(id: "488") && $0.condition == "2" })
         let patch = WPEScenePropertyPatch(
-            bindingsByProperty: document.propertyBindings,
+            bindingsByProperty: WPEParityUserProperties.bindings(document: document),
             oldValues: ["newproperty14": .number(1)],
             newValues: ["newproperty14": .number(2)]
         )
@@ -1812,7 +1810,7 @@ struct WPESceneDocumentParserTests {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [])
         let hidden = try WPESceneDocumentParser.parse(data: data, userValues: ["toggle": .bool(false)])
         #expect(hidden.imageObjects.first?.visible == false)
-        #expect(hidden.propertyBindings["toggle"]?.first?.target == .imageObject(id: "7"))
+        #expect(WPEParityUserProperties.bindings(document: hidden)["toggle"]?.first?.target == .imageObject(id: "7"))
     }
 
     @Test("Child image object adds parent-local Y in scene-up coordinates")

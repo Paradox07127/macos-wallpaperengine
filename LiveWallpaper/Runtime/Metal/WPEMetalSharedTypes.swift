@@ -65,10 +65,6 @@ enum WPEMetalTextureLimits {
     }
 }
 
-struct WPESolidUniforms {
-    var color: SIMD4<Float>
-}
-
 enum WPEPresentFitMode: Equatable {
     case stretch
     case contain

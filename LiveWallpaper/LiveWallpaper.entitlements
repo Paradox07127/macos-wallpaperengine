@@ -21,9 +21,8 @@
 	    on every AVPlayer init to log playback codec/format usage statistics.
 	    A sandboxed app without this mach-lookup exception trips a runtime
 	    PRECONDITION FAILURE (visible in Console) — playback continues fine,
-	    but it spams the log on every video swap. Whitelisting this single
-	    system service costs no privacy (it ships nothing user-identifying)
-	    and silences the noise.
+	    but it spams the log on every video swap. This exception permits
+	    lookup of that single system service.
 	-->
 	<key>com.apple.security.exception.mach-lookup.global-name</key>
 	<array>

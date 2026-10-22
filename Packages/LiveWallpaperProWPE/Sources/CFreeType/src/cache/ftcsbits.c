@@ -317,17 +317,6 @@
   }
 
 
-#if 0
-
-  FT_LOCAL_DEF( FT_Offset )
-  FTC_SNode_Weight( FTC_SNode  snode )
-  {
-    return ftc_snode_weight( FTC_NODE( snode ), NULL );
-  }
-
-#endif /* 0 */
-
-
   FT_LOCAL_DEF( FT_Bool )
   ftc_snode_compare( FTC_Node    ftcsnode,
                      FT_Pointer  ftcgquery,

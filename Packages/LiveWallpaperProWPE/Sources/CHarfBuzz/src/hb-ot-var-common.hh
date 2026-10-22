@@ -224,8 +224,6 @@ struct TupleVariationHeader
     DEFINE_SIZE_STATIC (2);
   };
 
-  hb_array_t<const F2DOT14> get_all_tuples (unsigned axis_count) const
-  { return StructAfter<UnsizedArrayOf<F2DOT14>> (tupleIndex).as_array ((has_peak () + has_intermediate () * 2) * axis_count); }
   const F2DOT14* get_all_tuples_base (unsigned axis_count) const
   { return StructAfter<UnsizedArrayOf<F2DOT14>> (tupleIndex).arrayZ; }
   const F2DOT14* get_peak_tuple (unsigned axis_count) const

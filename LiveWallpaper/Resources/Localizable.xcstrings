@@ -880,13 +880,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 个星标"
+            "value" : "%@ 星"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 個星號"
+            "value" : "%@ 星"
           }
         }
       }
@@ -4839,42 +4839,6 @@
         }
       }
     },
-    "A texture or image file is corrupted and cannot be decoded." : {
-      "comment" : "Wallpaper Engine fallback diagnostic when a texture decode fails because the file is corrupt.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A texture or image file is corrupted and cannot be decoded."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un archivo de textura o imagen está dañado y no se puede descodificar."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "テクスチャまたは画像ファイルが破損しているため、デコードできません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "纹理或图像文件已损坏，无法解码。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "紋理或影像檔案已損毀，無法解碼。"
-          }
-        }
-      }
-    },
     "A video copy cannot keep web clocks, calendars or live data accurate. Disable those elements before recording." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4991,7 +4955,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acerca de %@"
+            "value" : "Unos %@"
           }
         },
         "ja" : {
@@ -7127,100 +7091,6 @@
         }
       }
     },
-    "All %@ time-based wallpaper rules will be cleared. The current wallpaper stays applied." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All %@ time-based wallpaper rules will be cleared. The current wallpaper stays applied."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se borrarán todas las reglas de fondo de pantalla basadas en la hora de %@. El fondo de pantalla actual se mantiene."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間ベースの壁紙ルール %@ 件がすべてクリアされます。現在の壁紙はそのままです。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全部 %@ 条基于时间的壁纸规则将被清除。当前壁纸保持应用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全部 %@ 條依時間的桌布規則將被清除。目前桌布維持套用。"
-          }
-        }
-      }
-    },
-    "All %lld time-based wallpaper rules will be cleared. The current wallpaper stays applied." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld time-based wallpaper rule will be cleared. The current wallpaper stays applied."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "All %lld time-based wallpaper rules will be cleared. The current wallpaper stays applied."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Se borrará %lld regla de fondo de pantalla basada en la hora. El fondo de pantalla actual se mantiene."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Se borrarán las %lld reglas de fondo de pantalla basadas en la hora. El fondo de pantalla actual se mantiene."
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "時間ベースの壁紙ルール %lld 件がすべてクリアされます。現在の壁紙はそのままです。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全部 %lld 条基于时间的壁纸规则将被清除。当前壁纸保持应用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全部 %lld 條依時間的桌布規則將被清除。目前桌布維持套用。"
-          }
-        }
-      }
-    },
     "ALL DISKS" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8608,42 +8478,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "套用專案資料夾"
-          }
-        }
-      }
-    },
-    "Apply this overlay to every other display?" : {
-      "comment" : "Confirmation title for copying one overlay to the other displays.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply this overlay to every other display?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Aplicar esta superposición a todas las demás pantallas?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このオーバーレイを他のすべてのディスプレイに適用しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把这个叠加层应用到其他所有显示器？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把這個疊加層套用到其他所有顯示器？"
           }
         }
       }
@@ -11927,42 +11761,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "氣泡"
-          }
-        }
-      }
-    },
-    "Building render graph" : {
-      "comment" : "Scene load progress: building the render graph.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Building render graph"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Generando el grafo de renderizado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "レンダーグラフを構築中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在构建渲染图"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在建構渲染圖"
           }
         }
       }
@@ -22398,62 +22196,6 @@
         }
       }
     },
-    "Diagnostic copied" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diagnóstico copiado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "診断情報をコピーしました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "诊断信息已复制"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "診斷資訊已拷貝"
-          }
-        }
-      }
-    },
-    "Diagnostic copied to clipboard. Secrets are already redacted." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diagnóstico copiado al portapapeles. Los secretos ya están ocultos."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "診断情報をクリップボードにコピーしました。秘密情報はすでに秘匿されています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "诊断信息已复制到剪贴板。密钥已被遮蔽。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "診斷資訊已拷貝到剪貼簿。金鑰已被遮蔽。"
-          }
-        }
-      }
-    },
     "Diagnostic Log" : {
       "localizations" : {
         "es" : {
@@ -22610,77 +22352,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "差值"
-          }
-        }
-      }
-    },
-    "Disable Schedule" : {
-      "extractionState" : "manual",
-      "generatesSymbol" : false,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disable Schedule"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desactivar programación"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールを無効化"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "禁用计划"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停用排程"
-          }
-        }
-      }
-    },
-    "Disable schedule?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disable schedule?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Desactivar la programación?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールを無効にしますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "禁用计划吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要停用排程嗎？"
           }
         }
       }
@@ -27168,42 +26839,6 @@
         }
       }
     },
-    "error.render.executor.missing_texture" : {
-      "comment" : "Error shown when the Metal renderer cannot find a required texture.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal executor is missing texture %@."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al ejecutor de WPE Metal le falta la textura %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal エグゼキューターにテクスチャ %@ がありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal 执行器缺少纹理 %@。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal 執行器缺少紋理 %@。"
-          }
-        }
-      }
-    },
     "error.render.executor.no_renderable_passes" : {
       "comment" : "Error shown when the Metal render pipeline has no renderable passes.",
       "localizations" : {
@@ -27305,510 +26940,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "WPE Metal 管線無法用於 %@。"
-          }
-        }
-      }
-    },
-    "error.render.executor.render_target_dimensions_exceed_device_limit" : {
-      "comment" : "Error shown when a Wallpaper Engine render target is larger than Metal allows on the current GPU.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal render target '%1$@' is %2$lldx%3$lld, exceeding this device's %4$lldx%5$lld 2D texture limit."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El destino de renderizado de WPE Metal '%1$@' mide %2$lldx%3$lld y supera el límite de textura 2D de este dispositivo (%4$lldx%5$lld)."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal のレンダーターゲット「%1$@」は %2$lldx%3$lld で、このデバイスの 2D テクスチャ制限 %4$lldx%5$lld を超えています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal 渲染目标“%1$@”为 %2$lldx%3$lld，超过此设备的 %4$lldx%5$lld 2D 纹理限制。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal 渲染目標「%1$@」為 %2$lldx%3$lld，超過此裝置的 %4$lldx%5$lld 2D 紋理限制。"
-          }
-        }
-      }
-    },
-    "error.render.executor.render_target_exceeds_limit_reason" : {
-      "comment" : "Scene failure reason. Placeholders are the target name, its width and height, then the device texture limit twice.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "render target '%@' is %lldx%lld, exceeding this device's %lldx%lld Metal texture limit"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "el destino de renderizado '%@' mide %lldx%lld y supera el límite de textura Metal de este dispositivo (%lldx%lld)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "レンダーターゲット「%@」は %lld×%lld で、このデバイスの Metal テクスチャ上限 %lld×%lld を超えています"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染目标“%@”尺寸为 %lld×%lld，超出该设备的 Metal 纹理上限 %lld×%lld"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染目標「%@」尺寸為 %lld×%lld，超出該裝置的 Metal 紋理上限 %lld×%lld"
-          }
-        }
-      }
-    },
-    "error.render.executor.shader_translator_unavailable" : {
-      "comment" : "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE shader '%1$@' is unsupported by the Metal renderer: %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El sombreador WPE '%1$@' no es compatible con el renderizador Metal: %2$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE シェーダー「%1$@」は Metal レンダラーでサポートされていません: %2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 渲染器不支持 WPE 着色器“%1$@”：%2$@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 渲染器不支援 WPE 著色器「%1$@」：%2$@"
-          }
-        }
-      }
-    },
-    "error.render.executor.unsupported_shader" : {
-      "comment" : "Error shown when the Metal renderer does not support a shader.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal executor does not support shader %@."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El ejecutor de WPE Metal no admite el sombreador %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal エグゼキューターはシェーダー %@ をサポートしていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal 执行器不支持着色器 %@。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE Metal 執行器不支援著色器 %@。"
-          }
-        }
-      }
-    },
-    "error.render.executor.unsupported_shader_reason" : {
-      "comment" : "Reason line shown when a workshop scene shader cannot run on the Metal renderer. Placeholder is the shader name.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "shader '%@' unsupported by Metal renderer"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sombreador '%@' no compatible con el renderizador Metal"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シェーダー '%@' は Metal レンダラーでは使用できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "着色器 '%@' 不受 Metal 渲染器支持"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "著色器 '%@' 不受 Metal 渲染器支援"
-          }
-        }
-      }
-    },
-    "error.render.graph.file_missing" : {
-      "comment" : "Error shown when a Wallpaper Engine render graph asset is missing.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE graph asset missing: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Falta el recurso de grafo WPE: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE グラフアセットが見つかりません: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 渲染图资源缺失：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 渲染圖資源遺失：%@"
-          }
-        }
-      }
-    },
-    "error.render.graph.invalid_json" : {
-      "comment" : "Error shown when a Wallpaper Engine render graph asset is invalid JSON.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE graph asset is not valid JSON: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El recurso de grafo WPE no es JSON válido: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE グラフアセットは有効な JSON ではありません: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 渲染图资源不是有效的 JSON：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 渲染圖資源不是有效的 JSON：%@"
-          }
-        }
-      }
-    },
-    "error.render.graph.malformed_effect" : {
-      "comment" : "Error shown when a Wallpaper Engine effect has no renderable passes.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE effect has no renderable passes: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El efecto WPE no tiene pasos renderizables: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE エフェクトにレンダリング可能なパスがありません: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 效果没有可渲染的通道：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 特效沒有可渲染的通道：%@"
-          }
-        }
-      }
-    },
-    "error.render.graph.malformed_material" : {
-      "comment" : "Error shown when a Wallpaper Engine material has no renderable passes.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE material has no renderable passes: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El material WPE no tiene pasos renderizables: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE マテリアルにレンダリング可能なパスがありません: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 材质没有可渲染的通道：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 材質沒有可渲染的通道：%@"
-          }
-        }
-      }
-    },
-    "error.render.graph.material_unresolved" : {
-      "comment" : "Error shown when a Wallpaper Engine material cannot be resolved for an image reference.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Could not resolve WPE material for image reference: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo resolver el material WPE de la referencia de imagen: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画像参照の WPE マテリアルを解決できませんでした: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法解析图像引用的 WPE 材质：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法解析影像參照的 WPE 材質：%@"
-          }
-        }
-      }
-    },
-    "error.render.pipeline.include_cycle" : {
-      "comment" : "Error shown when a Wallpaper Engine shader include cycle is detected.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE shader include cycle detected at %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ciclo de include de sombreador WPE detectado en %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ で WPE シェーダーの include 循環が検出されました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 %@ 处检测到 WPE 着色器 include 循环"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 %@ 偵測到 WPE 著色器 include 循環"
-          }
-        }
-      }
-    },
-    "error.render.pipeline.include_missing" : {
-      "comment" : "Error shown when a Wallpaper Engine shader include file is missing.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE shader include %1$@ requested by %2$@ is missing"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Falta el include de sombreador WPE %1$@ solicitado por %2$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ が要求した WPE シェーダー include %1$@ が見つかりません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ 请求的 WPE 着色器包含文件 %1$@ 缺失"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ 要求的 WPE 著色器 include 檔案 %1$@ 遺失"
-          }
-        }
-      }
-    },
-    "error.render.pipeline.invalid_source_encoding" : {
-      "comment" : "Error shown when a Wallpaper Engine shader source file is not UTF-8.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE shader source is not UTF-8: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El código fuente del sombreador WPE no está en UTF-8: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE シェーダーソースは UTF-8 ではありません: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 着色器源码不是 UTF-8：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 著色器原始碼不是 UTF-8：%@"
-          }
-        }
-      }
-    },
-    "error.render.pipeline.shader_missing" : {
-      "comment" : "Error shown when a Wallpaper Engine shader source file is missing.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE shader %1$@ is missing %2$@ source at %3$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al sombreador WPE %1$@ le falta el código fuente %2$@ en %3$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE シェーダー %1$@ は %3$@ に %2$@ ソースがありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 着色器 %1$@ 在 %3$@ 缺少 %2$@ 源码"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "WPE 著色器 %1$@ 在 %3$@ 缺少 %2$@ 原始碼"
           }
         }
       }
@@ -28065,42 +27196,6 @@
         }
       }
     },
-    "error.scene.load_diagnostic.legacy_unsupported_texture" : {
-      "comment" : "Diagnostic shown when a scene image layer uses a legacy unsupported texture format.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The image format used by '%@' is no longer supported."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El formato de imagen usado por '%@' ya no es compatible."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」で使用されている画像形式は現在サポートされていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@”使用的图像格式已不再支持。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」使用的影像格式已不再支援。"
-          }
-        }
-      }
-    },
     "error.scene.load_diagnostic.material_unresolved" : {
       "comment" : "Diagnostic shown when a scene layer uses an unresolved material or rendering feature. First placeholder is the layer name, second is which feature.",
       "extractionState" : "manual",
@@ -28241,42 +27336,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景快取目錄遺失。"
-          }
-        }
-      }
-    },
-    "error.scene.rendering.metal_unsupported" : {
-      "comment" : "Error shown when the Metal scene renderer cannot stage a scene because of a Metal-specific gap (shader translator, unsupported target, etc.).",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal renderer cannot stage this scene: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El renderizador Metal no puede preparar esta escena: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal レンダラーはこのシーンを描画できません: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 渲染器无法呈现此场景：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 渲染器無法呈現此場景：%@"
           }
         }
       }
@@ -37594,42 +36653,6 @@
         }
       }
     },
-    "Loading particle systems" : {
-      "comment" : "Scene load progress: building particle systems.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loading particle systems"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargando sistemas de partículas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "パーティクルシステムを読み込み中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在加载粒子系统"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在載入粒子系統"
-          }
-        }
-      }
-    },
     "Loading presets" : {
       "comment" : "Accessibility label for the presets placeholder rows while loading.",
       "localizations" : {
@@ -37696,78 +36719,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在讀取設定…"
-          }
-        }
-      }
-    },
-    "Loading text pipeline" : {
-      "comment" : "Scene load progress: building the text rendering pipeline.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loading text pipeline"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargando pipeline de texto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "テキストパイプラインを読み込み中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在加载文字管线"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在載入文字管線"
-          }
-        }
-      }
-    },
-    "Loading textures" : {
-      "comment" : "Scene load progress: uploading textures.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loading textures"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cargando texturas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "テクスチャを読み込み中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在加载贴图"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在載入貼圖"
           }
         }
       }
@@ -40827,114 +39778,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將合併（現有項目會保留）："
-          }
-        }
-      }
-    },
-    "Metal pipeline '%@' rejected (likely stage_in mismatch): %@" : {
-      "comment" : "Scene failure reason. Placeholders are the pipeline name and the Metal error.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal pipeline '%@' rejected (likely stage_in mismatch): %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pipeline de Metal '%@' rechazada (probable desajuste de stage_in): %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal パイプライン「%@」が拒否されました（stage_in の不一致の可能性）: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 管线“%@”被拒绝（可能是 stage_in 不匹配）：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 管線「%@」被拒絕（可能是 stage_in 不匹配）：%@"
-          }
-        }
-      }
-    },
-    "Metal pipeline for \"%@\" failed to build: %@" : {
-      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal pipeline for \"%@\" failed to build: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo crear la pipeline de Metal de \"%@\": %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」の Metal パイプラインをビルドできませんでした: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@”的 Metal 管线构建失败：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」的 Metal 管線建置失敗：%@"
-          }
-        }
-      }
-    },
-    "Metal renderer failed." : {
-      "comment" : "Scene load diagnostic fallback when the Metal executor error carries no description.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal renderer failed."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Falló el renderizador Metal."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal レンダラーが失敗しました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 渲染器执行失败。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal 渲染器執行失敗。"
           }
         }
       }
@@ -44255,42 +43098,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未儲存此項目的存取權限。請重新選擇。"
-          }
-        }
-      }
-    },
-    "No saved videos" : {
-      "comment" : "Empty candidate list in Add to System Wallpaper; Choose Files remains available.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No saved videos"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay vídeos guardados"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存済みのビデオはありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无已保存的视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚無已儲存的影片"
           }
         }
       }
@@ -48912,36 +47719,6 @@
         }
       }
     },
-    "Paste into a GitHub issue — secrets are already redacted." : {
-      "comment" : "A description of the content of a diagnostic.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pega en un issue de GitHub — los secretos ya están ocultos."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub issue に貼り付けてください — 秘密情報はすでに秘匿されています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "粘贴到 GitHub issue——敏感信息已遮蔽。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "貼上到 GitHub issue——敏感資訊已遮蔽。"
-          }
-        }
-      }
-    },
     "Paste URL" : {
       "localizations" : {
         "en" : {
@@ -52187,42 +50964,6 @@
         }
       }
     },
-    "Previous-frame effects (motion blur, feedback) are not yet supported." : {
-      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Previous-frame effects (motion blur, feedback) are not yet supported."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los efectos de fotograma anterior (desenfoque de movimiento, feedback) aún no son compatibles."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前のフレームを参照する効果（モーションブラー、フィードバック）はまだサポートされていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚不支持依赖上一帧的效果（动态模糊、反馈）。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚不支援依賴上一幀的效果（動態模糊、回饋）。"
-          }
-        }
-      }
-    },
     "previous-frame texture unavailable for this pass — no prior frame was rendered for its target" : {
       "comment" : "Scene failure reason.",
       "extractionState" : "manual",
@@ -54757,41 +53498,6 @@
         }
       }
     },
-    "Remove & Clear" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove & Clear"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar y borrar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "削除して消去"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除并清除"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除並清除"
-          }
-        }
-      }
-    },
     "Remove access to the Wallpaper Engine install folder" : {
       "comment" : "Tooltip for removing folder read access.",
       "extractionState" : "manual",
@@ -55162,41 +53868,6 @@
         }
       }
     },
-    "Remove Slot" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove Slot"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar franja"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スロットを削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除时段"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除時段"
-          }
-        }
-      }
-    },
     "Remove SteamCMD" : {
       "comment" : "Confirm button that removes the SteamCMD copy that Loomscreen installed.",
       "extractionState" : "manual",
@@ -55263,41 +53934,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除 Loomscreen 安裝的那份"
-          }
-        }
-      }
-    },
-    "Remove the last playlist item?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove the last playlist item?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Eliminar el último elemento de la playlist?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最後のプレイリスト項目を削除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除播放列表中的最后一项吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要移除播放列表中的最後一個項目嗎？"
           }
         }
       }
@@ -55397,76 +54033,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請從網址中移除使用者名稱和密碼。"
-          }
-        }
-      }
-    },
-    "Remove this playlist item?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove this playlist item?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Eliminar este elemento de la playlist?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このプレイリスト項目を削除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除此播放列表项吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要移除此播放列表項目嗎？"
-          }
-        }
-      }
-    },
-    "Remove this schedule slot?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove this schedule slot?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Eliminar esta franja de programación?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このスケジュールスロットを削除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除此计划时段吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要移除此排程時段嗎？"
           }
         }
       }
@@ -55939,78 +54505,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "透過 Rec.709 將 HDR 內容渲染為 SDR。會停用畫格速率限制。"
-          }
-        }
-      }
-    },
-    "Render target \"%@\" is %lldx%lld, exceeding this device's %lldx%lld Metal texture limit." : {
-      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Render target \"%@\" is %lldx%lld, exceeding this device's %lldx%lld Metal texture limit."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El destino de renderizado \"%@\" mide %lldx%lld y supera el límite de textura Metal de este dispositivo de %lldx%lld."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "レンダーターゲット「%@」は %lld×%lld で、このデバイスの Metal テクスチャ上限 %lld×%lld を超えています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染目标“%@”尺寸为 %lld×%lld，超出该设备的 Metal 纹理上限 %lld×%lld。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染目標「%@」尺寸為 %lld×%lld，超出該裝置的 Metal 紋理上限 %lld×%lld。"
-          }
-        }
-      }
-    },
-    "Render target \"%@\" is not produced by any pass." : {
-      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Render target \"%@\" is not produced by any pass."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El destino de renderizado \"%@\" no lo produce ningún pase."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "レンダーターゲット「%@」はどのパスからも出力されていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染目标“%@”未被任何渲染通道产出。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染目標「%@」未被任何渲染通道產出。"
           }
         }
       }
@@ -60722,42 +59216,6 @@
         }
       }
     },
-    "Scene contains no renderable passes." : {
-      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scene contains no renderable passes."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La escena no contiene pases renderizables."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンにレンダリング可能なパスがありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景中没有可渲染的通道。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "場景中沒有可渲染的通道。"
-          }
-        }
-      }
-    },
     "Scene Custom Settings" : {
       "comment" : "Title of a group box that shows the custom settings of a scene.",
       "isCommentAutoGenerated" : true,
@@ -63154,78 +61612,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "著色器「%@」：%@"
-          }
-        }
-      }
-    },
-    "Shader \"%@\" is not supported by the Metal renderer yet." : {
-      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shader \"%@\" is not supported by the Metal renderer yet."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El shader \"%@\" aún no es compatible con el renderizador Metal."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シェーダー「%@」は Metal レンダラーではまだサポートされていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "着色器“%@”尚不受 Metal 渲染器支持。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "著色器「%@」尚不受 Metal 渲染器支援。"
-          }
-        }
-      }
-    },
-    "Shader \"%@\" needs the WPE GLSL translator: %@" : {
-      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shader \"%@\" needs the WPE GLSL translator: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El shader \"%@\" necesita el traductor GLSL de WPE: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シェーダー「%@」には WPE GLSL トランスレーターが必要です: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "着色器“%@”需要 WPE GLSL 转译器：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "著色器「%@」需要 WPE GLSL 轉譯器：%@"
           }
         }
       }
@@ -72018,41 +70404,6 @@
         }
       }
     },
-    "The %@ slot will be removed. Wallpapers outside this window keep their schedules." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The %@ slot will be removed. Wallpapers outside this window keep their schedules."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se eliminará el intervalo %@. Los fondos de pantalla fuera de esta ventana conservan su programación."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ の枠が削除されます。この時間外の壁紙のスケジュールは維持されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将移除 %@ 时段。此时段外的壁纸仍保留各自的计划。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將移除 %@ 時段。此時段外的桌布仍保留各自的排程。"
-          }
-        }
-      }
-    },
     "The archive contains a symbolic link that escapes the install directory: %@" : {
       "comment" : "Managed SteamCMD install error. Placeholder is the symlink path.",
       "extractionState" : "manual",
@@ -72731,41 +71082,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "項目選單可顯示或移除 macOS 副本。移除系統副本與清除顯示器的動態桌布不同，請先閱讀確認說明。"
-          }
-        }
-      }
-    },
-    "The item will be removed from the playlist. Other displays using this video keep their copy." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The item will be removed from the playlist. Other displays using this video keep their copy."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El elemento se eliminará de la playlist. Las demás pantallas que usen este vídeo conservan su copia."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "項目はプレイリストから削除されます。この動画を使う他のディスプレイのコピーは残ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该项将从播放列表移除。其他使用此视频的显示器会保留各自副本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "該項目將從播放列表移除。其他使用此影片的顯示器會保留各自副本。"
           }
         }
       }
@@ -75769,41 +74085,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此檔案太大，無法匯入（%lld 位元組）。設定備份通常遠小於 10 MB。"
-          }
-        }
-      }
-    },
-    "This is the only wallpaper in the playlist. Removing it will clear the wallpaper on %@." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This is the only wallpaper in the playlist. Removing it will clear the wallpaper on %@."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este es el único fondo de pantalla de la playlist. Al eliminarlo, se quitará el fondo de pantalla de %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレイリスト内の唯一の壁紙です。削除すると %@ の壁紙がクリアされます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这是播放列表中唯一的壁纸。移除后将清除 %@ 上的壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這是播放列表中唯一的桌布。移除後將清除 %@ 上的桌布。"
           }
         }
       }

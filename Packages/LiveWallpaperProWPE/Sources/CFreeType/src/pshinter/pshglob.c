@@ -78,55 +78,6 @@
   }
 
 
-#if 0
-
-  /* org_width is in font units, result in device pixels, 26.6 format */
-  FT_LOCAL_DEF( FT_Pos )
-  psh_dimension_snap_width( PSH_Dimension  dimension,
-                            FT_Int         org_width )
-  {
-    FT_UInt  n;
-    FT_Pos   width     = FT_MulFix( org_width, dimension->scale_mult );
-    FT_Pos   best      = 64 + 32 + 2;
-    FT_Pos   reference = width;
-
-
-    for ( n = 0; n < dimension->stdw.count; n++ )
-    {
-      FT_Pos  w;
-      FT_Pos  dist;
-
-
-      w = dimension->stdw.widths[n].cur;
-      dist = width - w;
-      if ( dist < 0 )
-        dist = -dist;
-      if ( dist < best )
-      {
-        best      = dist;
-        reference = w;
-      }
-    }
-
-    if ( width >= reference )
-    {
-      width -= 0x21;
-      if ( width < reference )
-        width = reference;
-    }
-    else
-    {
-      width += 0x21;
-      if ( width > reference )
-        width = reference;
-    }
-
-    return width;
-  }
-
-#endif /* 0 */
-
-
   /*************************************************************************/
   /*************************************************************************/
   /*****                                                               *****/
@@ -447,12 +398,6 @@
         /* round scaled reference position */
         zone->cur_ref = FT_PIX_ROUND( zone->cur_ref );
 
-#if 0
-        if ( zone->cur_ref > zone->cur_top )
-          zone->cur_ref -= 64;
-        else if ( zone->cur_ref < zone->cur_bottom )
-          zone->cur_ref += 64;
-#endif
       }
     }
 

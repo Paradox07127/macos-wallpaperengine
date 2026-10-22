@@ -1,0 +1,8 @@
+{
+  "url": "https://raw.githubusercontent.com/googlefonts/RobotoMono/111eb14e367888c9374da4da0b018e72cf8ac46d/fonts/ttf/RobotoMono-Regular.ttf",
+  "commit": "111eb14e367888c9374da4da0b018e72cf8ac46d",
+  "sha256": "af0bff7599c3df3831755c16e39b3c496df74b8c8d8a1161b14dc8461be17cb4",
+  "license": "OFL-1.1",
+  "license_url": "https://raw.githubusercontent.com/googlefonts/RobotoMono/111eb14e367888c9374da4da0b018e72cf8ac46d/OFL.txt",
+  "purpose": "Test-only second font for the existing mixed-font field admission guard."
+}

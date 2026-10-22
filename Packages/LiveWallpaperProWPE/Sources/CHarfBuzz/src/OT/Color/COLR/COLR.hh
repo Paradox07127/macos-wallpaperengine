@@ -2176,39 +2176,6 @@ struct COLR
     }
 #endif
 
-    bool is_valid () { return colr.get_blob ()->length; }
-
-    void closure_glyphs (hb_codepoint_t glyph,
-			 hb_set_t *related_ids /* OUT */) const
-    { colr->closure_glyphs (glyph, related_ids); }
-
-    void closure_V0palette_indices (const hb_set_t *glyphs,
-				    hb_set_t *palettes /* OUT */) const
-    { colr->closure_V0palette_indices (glyphs, palettes); }
-
-    void closure_forV1 (hb_set_t *glyphset,
-                        hb_set_t *layer_indices,
-                        hb_set_t *palette_indices,
-                        hb_set_t *variation_indices,
-                        hb_set_t *delta_set_indices) const
-    { colr->closure_forV1 (glyphset, layer_indices, palette_indices, variation_indices, delta_set_indices); }
-
-    bool has_var_store () const
-    { return colr->has_var_store (); }
-
-    const ItemVariationStore &get_var_store () const
-    { return colr->get_var_store (); }
-    const ItemVariationStore *get_var_store_ptr () const
-    { return colr->get_var_store_ptr (); }
-
-    bool has_delta_set_index_map () const
-    { return colr->has_delta_set_index_map (); }
-
-    const DeltaSetIndexMap &get_delta_set_index_map () const
-    { return colr->get_delta_set_index_map (); }
-    const DeltaSetIndexMap *get_delta_set_index_map_ptr () const
-    { return colr->get_delta_set_index_map_ptr (); }
-
     private:
 
     hb_colr_scratch_t *acquire_scratch () const

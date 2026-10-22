@@ -1,5 +1,4 @@
 import Foundation
-import Testing
 
 /// Derived from `browse_trend7_p1.html` (provenance in `Fixtures/workshop/README.md`).
 /// Its SSR payload is three escape layers deep, so a JSON quote appears as `\\\"`.
@@ -116,30 +115,5 @@ enum WorkshopBrowseFixture {
         let hits = page.components(separatedBy: target).count - 1
         guard hits == 1 else { throw ReplacementMiss(target: target, hits: hits) }
         return page.replacingOccurrences(of: target, with: replacement)
-    }
-}
-
-@Suite("Workshop browse fixture derivation")
-struct WorkshopBrowseFixtureTests {
-    @Test("A replacement must hit exactly once")
-    func replacementHitsExactlyOnce() throws {
-        let page = try WorkshopBrowseFixture.base()
-        #expect(throws: WorkshopBrowseFixture.ReplacementMiss.self) {
-            try WorkshopBrowseFixture.replacing("no such fragment in the page", with: "x", in: page)
-        }
-        #expect(throws: WorkshopBrowseFixture.ReplacementMiss.self) {
-            try WorkshopBrowseFixture.replacing("filedetails/?id=", with: "x", in: page)
-        }
-        let derived = try WorkshopBrowseFixture.replacing(#"\\\"total_pages\\\":1000,"#, with: #"\\\"total_pages\\\":3,"#, in: page)
-        #expect(derived.components(separatedBy: #"\\\"total_pages\\\":3,"#).count == 2)
-        #expect(!derived.contains(#"\\\"total_pages\\\":1000,"#))
-    }
-
-    @Test("The no-SSR page drops the whole script and keeps the grid")
-    func noSSRPageDropsScript() throws {
-        let page = try WorkshopBrowseFixture.withoutSSRScript()
-        #expect(!page.contains("window.SSR"))
-        #expect(!page.contains("<script"))
-        #expect(page.components(separatedBy: "filedetails/?id=").count - 1 == 60)
     }
 }

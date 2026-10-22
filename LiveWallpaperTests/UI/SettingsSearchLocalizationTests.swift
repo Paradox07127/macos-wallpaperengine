@@ -37,12 +37,8 @@ struct SettingsSearchLocalizationTests {
         }
     }
 
-    @Test("The English key stays searchable in every language", arguments: languages)
-    func englishKeyStaysSearchable(language: String) throws {
-        // The index no longer varies by language; resolving the bundle still asserts
-        // that this language ships at all.
-        _ = try bundle(for: language)
-
+    @Test("The English key stays searchable in the shared index")
+    func englishKeyStaysSearchable() {
         for item in SettingsNavigation.allItems {
             #expect(item.searchableText().localizedCaseInsensitiveContains(item.title))
         }

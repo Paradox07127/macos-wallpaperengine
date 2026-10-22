@@ -47,12 +47,10 @@
 #include "hb-ot-layout-gsub-table.hh"
 #include "hb-ot-layout-gpos-table.hh"
 #include "hb-ot-layout-base-table.hh"
-#include "hb-ot-layout-jstf-table.hh" // Just so we compile it; unused otherwise.
 #include "hb-ot-name-table.hh"
 #include "hb-ot-os2-table.hh"
 
 #include "hb-aat-layout-morx-table.hh"
-#include "hb-aat-layout-opbd-table.hh" // Just so we compile it; unused otherwise.
 
 using OT::Layout::GSUB;
 using OT::Layout::GPOS;

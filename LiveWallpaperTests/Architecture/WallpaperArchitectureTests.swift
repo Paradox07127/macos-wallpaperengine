@@ -824,31 +824,6 @@ private final class CapturingURLSchemeTask: NSObject, WKURLSchemeTask, @unchecke
 @Suite("WallpaperAutomationCoordinator")
 @MainActor
 struct WallpaperAutomationCoordinatorTests {
-    @Test("Legacy reorder safely recovers an invalid stored cursor", arguments: [-1, Int.min, Int.max])
-    func legacyReorderRecoversInvalidCursor(cursor: Int) throws {
-        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
-        let primary = Data([1]), other = Data([2])
-        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: primary, playlistBookmarks: [other])
-        configuration.playlistCursorIndex = cursor
-        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([configuration]))
-        let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Reorder must not rebuild playback") },
-            restoreProposedConfiguration: { _, _ in Issue.record("Retained active bookmark must not reload") },
-            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
-            prepareAutomation: { _, _, _, _ in
-                Issue.record("Retained active bookmark must not reload")
-                return .cancelled
-            }
-        )
-        orchestrator.replacePlaylist(ordered: [other, primary], primary: primary, for: screen)
-        #expect(store.get(for: screen.id)?.playlistCursorIndex == 1)
-        #expect(store.get(for: screen.id)?.activeWallpaper == .video(bookmarkData: primary))
-        #expect(store.get(for: screen.id)?.combinedPlaylist == [other, primary])
-    }
-
     @Test("Universal queue navigation reaches the product restore path for every wallpaper type")
     func universalQueueRoutesAllTypes() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
@@ -864,10 +839,8 @@ struct WallpaperAutomationCoordinatorTests {
         let store = WallpaperConfigurationStore(persistence: persistence)
         var restored: [WallpaperContent] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Universal entries must use the common product restore path") },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
             restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, _, intended in
@@ -908,10 +881,8 @@ struct WallpaperAutomationCoordinatorTests {
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         var restored: [WallpaperContent] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Queue entries must use the common product restore path") },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
             restoreProposedConfiguration: { _, proposed in
                 restored.append(proposed.activeWallpaper)
                 store.save(proposed)
@@ -957,10 +928,8 @@ struct WallpaperAutomationCoordinatorTests {
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         var restored: [WallpaperContent] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Queue entries must use the common product restore path") },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
             restoreProposedConfiguration: { _, proposed in
                 restored.append(proposed.activeWallpaper)
                 store.save(proposed)
@@ -1007,10 +976,8 @@ struct WallpaperAutomationCoordinatorTests {
         var restored: [WallpaperContent] = []
         var marks: [AutomaticSwitchMark.Source] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Shuffle must use the common restore path") },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
             restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, source, intended in
@@ -1128,10 +1095,8 @@ struct WallpaperAutomationCoordinatorTests {
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         var attempts: [String] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, _, intended in
                 guard intended() else { return .cancelled }
@@ -1185,10 +1150,8 @@ struct WallpaperAutomationCoordinatorTests {
         initial.wallpaperQueue = entries
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, _, _, intended in intended() ? result : .cancelled },
             libraryEntryAvailable: { _ in available }
@@ -1215,10 +1178,8 @@ struct WallpaperAutomationCoordinatorTests {
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         var checkedBookmarks: [Data] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, _, intended in
                 guard intended() else { return .cancelled }
@@ -1263,10 +1224,8 @@ struct WallpaperAutomationCoordinatorTests {
         let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
         var checkedBookmarks: [Data] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, _, intended in
                 guard intended() else { return .cancelled }
@@ -1301,10 +1260,8 @@ struct WallpaperAutomationCoordinatorTests {
         var pending: CheckedContinuation<WallpaperPreparationResult, Never>?
         let hold = OSAllocatedUnfairLock(initialState: false)
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, _, intended in
                 attempts += 1
@@ -1518,10 +1475,8 @@ struct WallpaperAutomationCoordinatorTests {
         restore: @escaping @MainActor (Screen, ScreenConfiguration) -> Void
     ) -> WallpaperAutomationOrchestrator {
         WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: restore,
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: restore,
             bumpTransition: bump, isCurrentTransition: { _, _ in true }, now: clock,
             prepareAutomation: { screen, proposed, source, intended in
                 guard intended() else { return .cancelled }
@@ -2125,16 +2080,8 @@ struct WallpaperAutomationAbsenceTests {
         let orchestrator = WallpaperAutomationOrchestrator(
             configurationStore: store,
             automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: loader,
             screensProvider: { [screen] },
             saveConfiguration: { _ in },
-            recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, beforeCommit in
-                preparationCount += 1
-                if beforeCommit() {
-                    commitCount += 1
-                }
-            },
             restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in
                 transitionGeneration += 1
@@ -2143,13 +2090,23 @@ struct WallpaperAutomationAbsenceTests {
             isCurrentTransition: { generation, _ in
                 generation == transitionGeneration
             },
-            prepareAutomation: { _, _, _, _ in
-                Issue.record("Picking a legacy playlist row validates through the video loader")
-                return .cancelled
+            prepareAutomation: { _, _, _, intended in
+                preparationCount += 1
+                guard intended() else { return .cancelled }
+                commitCount += 1
+                return .ready
+            },
+            libraryEntryAvailable: { _ in
+                do {
+                    try await loader.validatePlayableVideo(at: targetURL)
+                    return true
+                } catch {
+                    return false
+                }
             }
         )
 
-        orchestrator.playPlaylistEntry(at: 1, for: screen)
+        orchestrator.advancePlaylist(for: screen)
         for _ in 0..<50 where await loader.pendingValidationCount == 0 {
             await Task.yield()
         }
@@ -2202,10 +2159,8 @@ struct WallpaperAutomationAbsenceTests {
         var clock = t0
         var rotations = 0
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: coordinator,
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: store, automationCoordinator: coordinator, screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true }, now: { clock },
             prepareAutomation: { _, proposed, _, intended in
                 guard intended() else { return .cancelled }
@@ -2701,23 +2656,6 @@ struct FullScreenDetectorAdaptivePollingTests {
 @Suite("PlaylistPolicy")
 struct PlaylistPolicyTests {
 
-    @Test("Refreshing a legacy bookmark keeps reordered primary and every other item", arguments: [0, 1, 2, 3], [0, 1, 2, 3])
-    func bookmarkRefreshHonorsPrimaryPosition(primary: Int, cursor: Int) {
-        var configuration = ScreenConfiguration(
-            screenID: 1, videoBookmarkData: Data([1]),
-            playlistBookmarks: [Data([2]), Data([3]), Data([4])]
-        )
-        configuration.playlistPrimaryIndex = primary
-        let original = configuration.combinedPlaylist
-        let refreshed = Data([99])
-        PlaylistPolicy.refreshLegacyBookmark(at: cursor, in: &configuration, with: refreshed)
-        var expected = original
-        expected[cursor] = refreshed
-        #expect(configuration.combinedPlaylist == expected)
-        #expect(configuration.playlistPrimaryIndex == primary)
-        #expect(configuration.savedVideoBookmarkData == (cursor == primary ? refreshed : Data([1])))
-    }
-
     @Test("Playlist rotation waits until configured interval elapses")
     func playlistRotationInterval() {
         let lastRotation = Date(timeIntervalSince1970: 100)
@@ -2732,18 +2670,6 @@ struct PlaylistPolicyTests {
             lastRotation: lastRotation,
             rotationMinutes: 1
         ))
-    }
-
-    // MARK: - resolveCursor (used by WallpaperAutomationOrchestrator.replacePlaylist after reorder)
-
-    @Test("resolveCursor preserves the active bookmark or falls back to zero", arguments: [
-        (Data([0x01]), [Data([0x02]), Data([0x01]), Data([0x03])], 1),
-        (Data([0x99]), [Data([0x01]), Data([0x02])], 0),
-        (nil, [Data([0x01]), Data([0x02])], 0),
-        (Data([0x01]), [], 0),
-    ] as [(Data?, [Data], Int)])
-    func resolveCursor(active: Data?, combined: [Data], expected: Int) {
-        #expect(PlaylistPolicy.resolveCursor(activeBookmark: active, in: combined) == expected)
     }
 }
 

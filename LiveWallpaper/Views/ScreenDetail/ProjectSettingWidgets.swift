@@ -19,6 +19,41 @@ enum WPEPropertyRowIcon {
     }
 }
 
+struct WPEProjectComboPicker: View {
+    let property: WallpaperEngineProjectPropertySchema.Property
+    let currentValue: WallpaperEngineProjectPropertyValue
+    @Binding var selection: WallpaperEngineProjectPropertyValue
+    let title: String
+    let displayLabel: (String) -> String
+
+    var body: some View {
+        if property.options.isEmpty {
+            Text(verbatim: currentValue.stringValue)
+                .font(DesignTokens.Typography.code)
+                .foregroundStyle(.secondary)
+        } else {
+            Picker("", selection: $selection) {
+                if !property.options.contains(where: { $0.value == currentValue }) {
+                    Text(verbatim: "·  \(currentValue.stringValue)")
+                        .tag(currentValue)
+                }
+                ForEach(property.options) { option in
+                    Text(verbatim: displayLabel(option.displayLabel))
+                        .tag(option.value)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            // Match the row title's priority while letting unbounded author labels truncate.
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(minWidth: 96, alignment: .trailing)
+            .layoutPriority(1)
+            .accessibilityLabel(title)
+        }
+    }
+}
+
 /// Author-supplied strings (`.group` header / `.text` body) already routed
 /// through the `project.json` localization map at parse time.
 struct WPEProjectTextBlock: View {

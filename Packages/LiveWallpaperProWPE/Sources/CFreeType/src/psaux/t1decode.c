@@ -264,10 +264,6 @@
   {
     FT_Error     error;
     FT_Int       bchar_index, achar_index;
-#if 0
-    FT_Int       n_base_points;
-    FT_Outline*  base = decoder->builder.base;
-#endif
     FT_Vector    left_bearing, advance;
 
 #ifdef FT_CONFIG_OPTION_INCREMENTAL
@@ -1071,14 +1067,6 @@
           known_othersubr_result_cnt = 1;
           break;
 
-#if 0
-        case 26:
-          /* <val> mark <idx> ==> set BuildCharArray[cvi( <idx> )] = <val>, */
-          /*                      leave mark on T1 stack                    */
-          /* <val> <idx>      ==> set BuildCharArray[cvi( <idx> )] = <val>  */
-          XXX which routine has left its mark on the (PostScript) stack?;
-          break;
-#endif
 
         case 27:
           /* <res1> <res2> <val1> <val2> 4 27 callothersubr pop */
@@ -1622,17 +1610,6 @@
           /* Distiller handle this situation by silently ignoring   */
           /* the inappropriate `setcurrentpoint' instruction.  So   */
           /* we do the same.                                        */
-#if 0
-
-          if ( decoder->flex_state != 1 )
-          {
-            FT_ERROR(( "t1_decoder_parse_charstrings:"
-                       " unexpected `setcurrentpoint'\n" ));
-            goto Syntax_Error;
-          }
-          else
-            ...
-#endif
 
           x = top[0];
           y = top[1];

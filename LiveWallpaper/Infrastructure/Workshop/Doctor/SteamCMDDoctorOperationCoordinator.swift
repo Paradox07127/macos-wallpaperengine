@@ -2,16 +2,8 @@
 import Foundation
 
 enum SteamCMDDoctorOperationKind: String, Sendable {
-    case appUpdate
     case assetsMutation
     case workshopDownload
-}
-
-enum SteamCMDDoctorOperationError: Error, Equatable, Sendable {
-    case nestedConflict(
-        active: SteamCMDDoctorOperationKind,
-        requested: SteamCMDDoctorOperationKind
-    )
 }
 
 struct SteamCMDDoctorOperationLease: Equatable, Sendable {
@@ -29,20 +21,8 @@ actor SteamCMDDoctorOperationCoordinator {
 
     func withOperation<T: Sendable>(
         _ kind: SteamCMDDoctorOperationKind,
-        inheriting inherited: SteamCMDDoctorOperationLease? = nil,
         _ operation: @Sendable (SteamCMDDoctorOperationLease) async throws -> T
     ) async throws -> T {
-        if let inherited {
-            guard inherited.kind == kind else {
-                throw SteamCMDDoctorOperationError.nestedConflict(
-                    active: inherited.kind,
-                    requested: kind
-                )
-            }
-            guard activeLeases[inherited.id] == inherited else { throw CancellationError() }
-            return try await operation(inherited)
-        }
-
         let permits = kind == .workshopDownload ? 1 : SteamCMDDownloadLimits.maximumConcurrent
         try await gate.acquire(permits: permits)
         do {
@@ -124,7 +104,7 @@ final class AsyncSemaphore: @unchecked Sendable {
         ready.forEach { $0.resume() }
     }
 
-    /// Called under lock; strict FIFO prevents an update being starved by downloads.
+    /// Called under lock; strict FIFO prevents an exclusive operation being starved by downloads.
     private func takeReadyWaiters() -> [CheckedContinuation<Void, Error>] {
         var ready: [CheckedContinuation<Void, Error>] = []
         while let first = waiters.first, permits >= first.permits {

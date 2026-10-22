@@ -89,12 +89,6 @@ FT_BEGIN_HEADER
                  FTC_GQuery   gquery,
                  FTC_Cache    cache );
 
-#if 0
-  /* can be used as @FTC_Node_WeightFunc */
-  FT_LOCAL( FT_ULong )
-  FTC_INode_Weight( FTC_INode  inode );
-#endif
-
 
  /* */
 

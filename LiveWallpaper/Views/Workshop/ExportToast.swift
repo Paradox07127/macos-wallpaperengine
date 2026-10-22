@@ -20,13 +20,8 @@ struct ExportToast: View {
                             .font(DesignTokens.Typography.bodyEmphasized)
                             .foregroundStyle(DesignTokens.Colors.Status.active)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Diagnostic copied")
-                            .font(DesignTokens.Typography.bodyEmphasized)
-                        Text("Paste into a GitHub issue — secrets are already redacted.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text("Copied")
+                        .font(DesignTokens.Typography.bodyEmphasized)
                 }
                 .padding(.horizontal, DesignTokens.Spacing.cardInset)
                 .padding(.vertical, 10)
@@ -42,7 +37,7 @@ struct ExportToast: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isStaticText)
-                .accessibilityLabel(Text("Diagnostic copied to clipboard. Secrets are already redacted."))
+                .accessibilityLabel(Text("Copied"))
             }
         }
         .animation(.easeOut(duration: 0.2), value: isPresented)

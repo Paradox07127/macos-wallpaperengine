@@ -228,6 +228,11 @@ struct EditDeskLibraryStateTests {
     /// `body` also gets whether the nav pill offers Workshop.
     /// Opens on the overview and clicks through to the library: no launch navigation lands on it.
     private func withLibraryWindow(_ body: @MainActor (NSWindow, Bool) async throws -> Void) async throws {
+        // This scenario starts after the welcome tour; otherwise its overlay consumes the navigation click.
+        let defaults = UserDefaults.appScoped()
+        let onboarding = defaults.object(forKey: OnboardingProgress.storageKey)
+        OnboardingProgress(defaults: defaults, legacyDefaults: .standard, workshopAvailable: false).markTourPresented()
+        defer { defaults.set(onboarding, forKey: OnboardingProgress.storageKey) }
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
             startAutomation: false,

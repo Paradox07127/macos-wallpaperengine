@@ -33,8 +33,6 @@ final class ApplicationLifecycleController {
         let task = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: delay)
-            } catch is CancellationError {
-                return
             } catch {
                 return
             }

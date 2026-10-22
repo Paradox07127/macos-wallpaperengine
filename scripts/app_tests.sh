@@ -5,13 +5,36 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 run_package_tests() {
+  # A developer's shell cannot turn required regression into a local corpus run.
+  if [[ "$mode" == "packages-corpus" ]]; then
+    export LIVEWALLPAPER_EXTERNAL_FIXTURES=1
+    # SwiftPM starts tests in the package directory. Resolve caller-supplied
+    # relative roots before crossing that working-directory boundary.
+    while IFS= read -r key; do
+      case "$key" in
+        WPE_WORKSHOP_ROOT|WPE_ASSETS_DIR|WPE_HLSL_CAPTURE_DIR|LOOMSCREEN_WPE_*_ORACLE_DIR)
+          value="${!key}"
+          if [[ -n "$value" && "$value" != /* ]]; then
+            export "$key=$ROOT/$value"
+          fi
+          ;;
+      esac
+    done < <(compgen -e)
+  else
+    unset LIVEWALLPAPER_EXTERNAL_FIXTURES TEST_RUNNER_LIVEWALLPAPER_EXTERNAL_FIXTURES
+  fi
   if [[ $# -lt 2 ]]; then
     echo "Usage: scripts/app_tests.sh packages <scratch-root> <package>..." >&2
+    exit 64
+  fi
+  if [[ "$mode" == "packages-corpus" && ( $# -ne 2 || "$2" != "LiveWallpaperProWPE" ) ]]; then
+    echo "ERROR: packages-corpus requires exactly the LiveWallpaperProWPE package." >&2
     exit 64
   fi
   scratch_root="$1"
   shift
   mkdir -p "$scratch_root"
+  scratch_root="$(cd "$scratch_root" && pwd)"
   for package in "$@"; do
     # Names, not arbitrary paths: products and logs stay below this run's scratch.
     if ! [[ "$package" =~ ^[A-Za-z][A-Za-z0-9]*$ ]]; then
@@ -32,7 +55,11 @@ run_package_tests() {
       tail -80 "$package_log" >&2
       exit "$package_status"
     fi
-    python3 scripts/validate_package_tests.py "$swift_testing_result"
+    validation_args=("$swift_testing_result" --xctest-log "$package_log")
+    if [[ "$mode" == "packages-corpus" ]]; then
+      validation_args+=(--require-suite WPEWorkshopMdlTests)
+    fi
+    python3 scripts/validate_package_tests.py "${validation_args[@]}"
   done
 }
 
@@ -40,12 +67,20 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/app_tests.sh packages <scratch-root> <package>...
+  scripts/app_tests.sh packages-corpus <scratch-root> LiveWallpaperProWPE
   scripts/app_tests.sh full [--without-building] [--hosted] [--slowest N] [--dry-run]
   scripts/app_tests.sh suites <Suite>... [--without-building] [--hosted] [--slowest N] [--dry-run]
 
 Environment:
-  DERIVED_DATA   Persistent build location (default: /tmp/LiveWallpaperAppTests)
-  RESULT_BUNDLE  Fresh .xcresult path; defaults to a unique /tmp path
+  DERIVED_DATA   Persistent build location (default: system temporary directory/LiveWallpaperAppTests)
+  RESULT_BUNDLE  Fresh .xcresult path; defaults to a unique system temporary path
+
+packages is self-contained. packages-corpus additionally compiles ExternalCorpus:
+  WPE_WORKSHOP_ROOT  Directory containing <Workshop ID>/scene.pkg
+  WPE_ASSETS_DIR     Wallpaper Engine assets directory
+  WPE_HLSL_CAPTURE_DIR and LOOMSCREEN_WPE_*_ORACLE_DIR: pinned oracle inputs
+Missing/invalid corpus inputs and skipped cases fail acceptance. Nothing is downloaded.
+All fixture paths are explicit and may be relative to the repository root.
 
 --hosted uses Pro ad-hoc manual signing while retaining entitlements.
 EOF
@@ -59,13 +94,13 @@ fi
 shift
 
 case "$mode" in
-  packages)
+  packages|packages-corpus)
     run_package_tests "$@"
     exit 0
     ;;
   full|suites) ;;
   *)
-    echo "ERROR: mode must be 'packages', 'full' or 'suites'." >&2
+    echo "ERROR: mode must be 'packages', 'packages-corpus', 'full' or 'suites'." >&2
     usage >&2
     exit 64
     ;;
@@ -129,8 +164,9 @@ if ! [[ "$slowest" =~ ^[0-9]+$ ]]; then
   exit 64
 fi
 
-derived_data="${DERIVED_DATA:-/tmp/LiveWallpaperAppTests}"
-result_bundle="${RESULT_BUNDLE:-/tmp/LiveWallpaperAppTests-${mode}-$(date +%Y%m%d-%H%M%S)-$$.xcresult}"
+temporary_root="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}"
+derived_data="${DERIVED_DATA:-${temporary_root%/}/LiveWallpaperAppTests}"
+result_bundle="${RESULT_BUNDLE:-${temporary_root%/}/LiveWallpaperAppTests-${mode}-$(date +%Y%m%d-%H%M%S)-$$.xcresult}"
 minimum_test_count=1
 label="LiveWallpaper full app tests"
 selectors=()
@@ -184,6 +220,19 @@ if [[ ${#selectors[@]} -gt 0 ]]; then
   command+=("${selectors[@]}")
 fi
 command+=("$action" SWIFT_EMIT_LOC_STRINGS=NO)
+# Full product tests compile real scene shaders. Their SDK is a declared build
+# dependency; failing early must not turn these assertions into skipped cases.
+if [[ "$mode" == "full" ]]; then
+  WPE_SHADER_TOOLCHAIN_ROOT="${WPE_SHADER_TOOLCHAIN_ROOT:-$ROOT/build/wpe-shader-toolchain-inputs}"
+  if [[ "$dry_run" == "0" && "$action" == "test" ]]; then
+    WPE_SHADER_TOOLCHAIN_ROOT="$WPE_SHADER_TOOLCHAIN_ROOT" bash WPEShaderCompiler/build.sh --check-inputs
+  fi
+fi
+if [[ -n "${WPE_SHADER_TOOLCHAIN_ROOT:-}" ]]; then
+  toolchain_root="$WPE_SHADER_TOOLCHAIN_ROOT"
+  [[ "$toolchain_root" == /* ]] || toolchain_root="$ROOT/$toolchain_root"
+  command+=("WPE_SHADER_TOOLCHAIN_ROOT=$toolchain_root")
+fi
 if [[ "$hosted" == "1" ]]; then
   command+=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual)
 fi

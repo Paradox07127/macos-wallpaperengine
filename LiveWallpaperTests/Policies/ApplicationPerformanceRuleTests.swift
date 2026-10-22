@@ -118,15 +118,43 @@ struct ApplicationPerformanceRuleTests {
 
     @Test("A frontmost neverPause exception vetoes discretionary pauses but not safety ones")
     func neverPauseVetoesDiscretionaryOnly() {
-        let settings = GlobalSettings(pauseOnFullScreen: true)
-        #expect(WallpaperPolicyEngine.performanceProfile(
-            inputs: .test(isHiddenByFullScreen: true, isFrontmostExcludedByRule: true),
-            settings: settings
-        ) == .quality)
-        #expect(WallpaperPolicyEngine.performanceProfile(
-            inputs: .test(thermalState: .critical, isFrontmostExcludedByRule: true),
-            settings: settings
-        ) == .suspended)
+        let vetoed = WallpaperPolicyEngine.decision(
+            inputs: WallpaperPolicyInputs(
+                powerSource: .battery(level: 0.4),
+                isHiddenByFullScreen: true,
+                isWindowOccluding: false,
+                isApplicationRuleActive: true,
+                thermalState: .nominal,
+                isUserAbsent: false,
+                memoryPressureLevel: .normal,
+                isLowPowerMode: true,
+                isFrontmostExcludedByRule: true
+            ),
+            settings: GlobalSettings(
+                globalPauseOnBattery: true,
+                pauseOnFullScreen: true,
+                pauseInLowPowerMode: true
+            )
+        )
+        #expect(vetoed.profile == WallpaperPerformanceProfile.quality, "neverPause must veto every discretionary reason at once")
+        #expect(vetoed.suspendReasons.isEmpty)
+
+        let safety = WallpaperPolicyEngine.decision(
+            inputs: WallpaperPolicyInputs(
+                powerSource: .external,
+                isHiddenByFullScreen: false,
+                isWindowOccluding: false,
+                isApplicationRuleActive: true,
+                thermalState: .critical,
+                isUserAbsent: false,
+                memoryPressureLevel: .normal,
+                isLowPowerMode: false,
+                isFrontmostExcludedByRule: true
+            ),
+            settings: GlobalSettings()
+        )
+        #expect(safety.profile == .suspended)
+        #expect(safety.suspendReasons == [.thermal])
     }
 
     @Test("GlobalSettings defaults to no rules and round-trips through Codable")

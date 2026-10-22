@@ -417,30 +417,6 @@ DECLARE_NULL_INSTANCE (hb_unicode_funcs_t);
 	  FLAG (HB_UNICODE_GENERAL_CATEGORY_UPPERCASE_LETTER)))
 
 /*
- * Ranges, used for bsearch tables.
- */
-
-struct hb_unicode_range_t
-{
-  static int
-  cmp (const void *_key, const void *_item)
-  {
-    hb_codepoint_t cp = *((hb_codepoint_t *) _key);
-    const hb_unicode_range_t *range = (hb_unicode_range_t *) _item;
-
-    if (cp < range->start)
-      return -1;
-    else if (cp <= range->end)
-      return 0;
-    else
-      return +1;
-  }
-
-  hb_codepoint_t start;
-  hb_codepoint_t end;
-};
-
-/*
  * Emoji.
  */
 

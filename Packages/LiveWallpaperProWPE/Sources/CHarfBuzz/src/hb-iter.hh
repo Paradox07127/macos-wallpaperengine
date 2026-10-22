@@ -437,15 +437,6 @@ struct
   { return hb_map_iter_factory_t<Proj, hb_function_sortedness_t::RETAINS_SORTING> (f); }
 }
 HB_FUNCOBJ (hb_map_retains_sorting);
-struct
-{
-  template <typename Proj>
-  hb_map_iter_factory_t<Proj, hb_function_sortedness_t::SORTED>
-  operator () (Proj&& f) const
-  { return hb_map_iter_factory_t<Proj, hb_function_sortedness_t::SORTED> (f); }
-}
-HB_FUNCOBJ (hb_map_sorted);
-
 template <typename Iter, typename Pred, typename Proj,
 	 hb_requires (hb_is_iterator (Iter))>
 struct hb_filter_iter_t :
@@ -867,19 +858,6 @@ struct
 }
 HB_FUNCOBJ (hb_take);
 
-struct
-{ HB_PARTIALIZE(2);
-  template <typename Iter,
-	    hb_requires (hb_is_iterator (Iter))>
-  auto operator () (Iter it, unsigned count) const HB_AUTO_RETURN
-  (
-    + hb_iota (it, hb_add (count))
-    | hb_map (hb_take (count))
-    | hb_take ((hb_len (it) + count - 1) / count)
-  )
-}
-HB_FUNCOBJ (hb_chop);
-
 /* hb_sink() */
 
 template <typename Sink>
@@ -923,42 +901,6 @@ struct
   }
 }
 HB_FUNCOBJ (hb_drain);
-
-/* hb_unzip(): unzip and sink to two sinks. */
-
-template <typename Sink1, typename Sink2>
-struct hb_unzip_t
-{
-  hb_unzip_t (Sink1 s1, Sink2 s2) : s1 (s1), s2 (s2) {}
-
-  template <typename Iter,
-	    hb_requires (hb_is_iterator (Iter))>
-  void operator () (Iter it)
-  {
-    for (; it; ++it)
-    {
-      const auto &v = *it;
-      s1 << v.first;
-      s2 << v.second;
-    }
-  }
-
-  private:
-  Sink1 s1;
-  Sink2 s2;
-};
-struct
-{
-  template <typename Sink1, typename Sink2> hb_unzip_t<Sink1, Sink2>
-  operator () (Sink1&& s1, Sink2&& s2) const
-  { return hb_unzip_t<Sink1, Sink2> (s1, s2); }
-
-  template <typename Sink1, typename Sink2> hb_unzip_t<Sink1&, Sink2&>
-  operator () (Sink1 *s1, Sink2 *s2) const
-  { return hb_unzip_t<Sink1&, Sink2&> (*s1, *s2); }
-}
-HB_FUNCOBJ (hb_unzip);
-
 
 /* hb-all, hb-any, hb-none. */
 

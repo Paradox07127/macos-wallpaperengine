@@ -557,7 +557,7 @@ FT_BEGIN_HEADER
    *     If this flag is not set, no points are loaded.
    *
    *   no_recurse ::
-   *     Set but not used.
+   *     Controls composite glyph recursion.
    *
    *   metrics_only ::
    *     A boolean indicating that we only want to compute the metrics of a
@@ -824,7 +824,7 @@ FT_BEGIN_HEADER
    *     If this flag is not set, no points are loaded.
    *
    *   no_recurse ::
-   *     Set but not used.
+   *     Controls composite glyph recursion.
    *
    *   metrics_only ::
    *     A boolean indicating that we only want to compute the metrics of a
@@ -871,24 +871,6 @@ FT_BEGIN_HEADER
   /*************************************************************************/
   /*************************************************************************/
 
-#if 0
-
-  /**************************************************************************
-   *
-   * T1_MAX_SUBRS_CALLS details the maximum number of nested sub-routine
-   * calls during glyph loading.
-   */
-#define T1_MAX_SUBRS_CALLS  8
-
-
-  /**************************************************************************
-   *
-   * T1_MAX_CHARSTRING_OPERANDS is the charstring stack's capacity.  A
-   * minimum of 16 is required.
-   */
-#define T1_MAX_CHARSTRINGS_OPERANDS  32
-
-#endif /* 0 */
 
 
   typedef struct  T1_Decoder_ZoneRec_
@@ -1098,7 +1080,7 @@ FT_BEGIN_HEADER
    *     If this flag is not set, no points are loaded.
    *
    *   no_recurse ::
-   *     Set but not used.
+   *     Controls composite glyph recursion.
    *
    *   metrics_only ::
    *     A boolean indicating that we only want to compute the metrics of a

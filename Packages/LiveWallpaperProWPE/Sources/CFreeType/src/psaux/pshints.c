@@ -460,15 +460,6 @@
         /* minimum counter constraint doesn't apply when adjacent edges */
         /* are synthetic                                                */
         /* TODO: doesn't seem a big effect; for now, reduce the code    */
-#if 0
-        if ( i == 0                                        ||
-             cf2_hint_isSynthetic( &hintmap->edge[i - 1] ) )
-          downMinCounter = 0;
-
-        if ( j >= hintmap->count - 1                       ||
-             cf2_hint_isSynthetic( &hintmap->edge[j + 1] ) )
-          upMinCounter = 0;
-#endif
 
         /* is there room to move up?                                    */
         /* there is if we are at top of array or the next edge is at or */
@@ -1137,9 +1128,6 @@
 
     glyphpath->fractionalTranslation = *fractionalTranslation;
 
-#if 0
-    glyphpath->hShift = hShift;       /* for fauxing */
-#endif
 
     glyphpath->hStemHintArray = hStemHintArray;
     glyphpath->vStemHintArray = vStemHintArray;

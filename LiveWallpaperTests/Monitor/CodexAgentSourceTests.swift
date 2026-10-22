@@ -399,8 +399,7 @@ struct CodexAgentSourceTests {
     private static func model(
         id: String,
         eventTime: Date,
-        eventType: String,
-        tokens: MonitorTokenTotals = .zero
+        eventType: String
     ) -> CodexSessionModel {
         var model = CodexSessionModel()
         model.ingest(line(
@@ -413,24 +412,6 @@ struct CodexAgentSourceTests {
             type: "event_msg",
             payload: #"{"type": "\#(eventType)"}"#
         ))
-        if tokens != .zero {
-            model.ingest(line(
-                timestamp: isoString(eventTime),
-                type: "event_msg",
-                payload: """
-                {
-                  "type": "token_count",
-                  "info": {
-                    "total_token_usage": {
-                      "input_tokens": \(tokens.input),
-                      "cached_input_tokens": \(tokens.cacheRead),
-                      "output_tokens": \(tokens.output)
-                    }
-                  }
-                }
-                """
-            ))
-        }
         return model
     }
 

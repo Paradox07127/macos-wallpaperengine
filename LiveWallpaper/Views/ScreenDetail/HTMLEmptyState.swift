@@ -6,12 +6,8 @@ import SwiftUI
 /// `icon → text → buttons → extra`, so "Choose Local File" in `secondary` would
 /// sit ABOVE the address bar, and a composite field cannot live in that Button.
 struct HTMLEmptyState: View {
-    var screen: Screen
-    var config: HTMLConfig
-    /// Hands the chosen source to the caller's apply path; nil sets it on `screen` directly.
-    var apply: ((HTMLSource) -> Void)?
-
-    @Environment(ScreenManager.self) private var screenManager
+    /// Hands the chosen source to the caller's apply path.
+    let apply: (HTMLSource) -> Void
 
     @State private var urlInput: String = ""
     @FocusState private var addressFieldFocused: Bool
@@ -143,11 +139,7 @@ struct HTMLEmptyState: View {
     }
 
     private func use(_ source: HTMLSource) {
-        if let apply {
-            apply(source)
-        } else {
-            screenManager.setHTMLWallpaper(source: source, config: config, for: screen)
-        }
+        apply(source)
     }
 
     private func pasteFromClipboard() {

@@ -71,18 +71,10 @@ struct DetailPresetsSection: View {
             searchText = ""
             isExpanded = false
         }
-        .alert("Show mature content?", isPresented: $showingAgeConfirm) {
-            Button(role: .cancel) {} label: { Text("Cancel") }
-            Button(role: .destructive) {
-                MatureContentSettings.confirm()
-                if let id = pendingRevealID {
-                    reveal(id)
-                }
-            } label: {
-                Text("I am 18 or older")
+        .matureContentConfirmation(isPresented: $showingAgeConfirm) {
+            if let id = pendingRevealID {
+                reveal(id)
             }
-        } message: {
-            Text("This wallpaper is tagged Mature and may contain explicit adult content. By revealing it you confirm you are at least 18 years old, or of legal age in your region.")
         }
     }
 

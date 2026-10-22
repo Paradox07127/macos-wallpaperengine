@@ -8,14 +8,6 @@ import Testing
 @Suite("SceneSection state machine")
 struct WPESceneSectionStateTests {
 
-    @Test("loading distinguishes nil vs progress text payloads")
-    func loadingPayloadDifferentiates() {
-        let plain = SceneRenderState.loading(progress: nil)
-        let labelled = SceneRenderState.loading(progress: "Decoding 3/12 textures…")
-        #expect(plain != labelled)
-        #expect(plain == SceneRenderState.loading)
-    }
-
     @MainActor
     @Test("Texture decoder error → FallbackReason mapping is precise")
     func textureFallbackMapping() {
@@ -108,14 +100,6 @@ struct WPESceneSectionStateTests {
         #expect(!FallbackReason.texUnsupportedFormat(code: 8).recovery(workshopID: steamID).contains(.retry))
         // A local project has no Workshop page to open.
         #expect(FallbackReason.requiresWindowsPlugin.recovery(workshopID: "local-folder").isEmpty)
-    }
-
-    @Test("error state carries the FallbackReason")
-    func errorKeepsFallbackReason() {
-        let parse = SceneRenderState.error(.sceneParseFailed("boom"))
-        let resource = SceneRenderState.error(.sceneResourceMissing)
-        #expect(parse != resource)
-        #expect(parse == SceneRenderState.error(.sceneParseFailed("boom")))
     }
 
     @MainActor

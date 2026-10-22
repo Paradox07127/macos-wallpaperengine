@@ -44,31 +44,6 @@
 #include "pserror.h"
 
 
-  /* Define CF2_IO_FAIL as 1 to enable random errors and random */
-  /* value errors in I/O.                                       */
-#define CF2_IO_FAIL  0
-
-
-#if CF2_IO_FAIL
-
-  /* set the .00 value to a nonzero probability */
-  static int
-  randomError2( void )
-  {
-    /* for region buffer ReadByte (interp) function */
-    return (double)rand() / RAND_MAX < .00;
-  }
-
-  /* set the .00 value to a nonzero probability */
-  static CF2_Int
-  randomValue()
-  {
-    return (double)rand() / RAND_MAX < .00 ? rand() : 0;
-  }
-
-#endif /* CF2_IO_FAIL */
-
-
   /* Region Buffer                                      */
   /*                                                    */
   /* Can be constructed from a copied buffer managed by */
@@ -81,17 +56,7 @@
   {
     if ( buf->ptr < buf->end )
     {
-#if CF2_IO_FAIL
-      if ( randomError2() )
-      {
-        CF2_SET_ERROR( buf->error, Invalid_Stream_Operation );
-        return 0;
-      }
-
-      return *(buf->ptr)++ + randomValue();
-#else
       return *(buf->ptr)++;
-#endif
     }
     else
     {

@@ -127,28 +127,31 @@ struct WPEMdlVertexFormatTests {
         #expect(WPEParityScenePuppet.indices(of: narrow) == [5, 6, 7])
     }
 
-    @Test("Workshop puppets with normals and tangents decode unit normals",
-          .enabled(if: WPEMdlVertexFormatTests.workshopFixturesPresent,
-                   "Requires Workshop 3647999330 and 2370640409 scene.pkg fixtures"))
-    func workshopNormals() throws {
-        for (scene, path, format) in [("3647999330", "models/RW_puppet.mdl", UInt32(0x181000E)),
-                                      ("2370640409", "models/10_puppet.mdl", UInt32(0x180000F))] {
-            let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-                "Library/Application Support/Steam/steamapps/workshop/content/431960/\(scene)/scene.pkg"
-            )
-            let package = try Data(contentsOf: url)
-            let data = try #require(PackageEntries.entries(package)[path])
-            let mesh = try #require(WPEMdlParser.parse(data: data).meshes.first)
-            #expect(mesh.vertexFormat == format)
-            #expect(mesh.vertices.allSatisfy { abs(simd_length($0.normal) - 1) < 1e-3 }, "\(scene) \(path)")
+    @Test("Both puppet position layouts preserve authored unit normals and tangents",
+          arguments: [UInt32(0x181000E), UInt32(0x180000F)])
+    func authoredNormals(format: UInt32) throws {
+        var vertex = Data()
+        vertex.le([11, 22, 33] as [Float])
+        if format == 0x181000E {
+            vertex.le([1] as [Float])
         }
-    }
-
-    private static var workshopFixturesPresent: Bool {
-        ["3647999330", "2370640409"].allSatisfy {
-            FileManager.default.fileExists(atPath: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-                "Library/Application Support/Steam/steamapps/workshop/content/431960/\($0)/scene.pkg"
-            ).path)
+        vertex.le([0.6, 0.8, 0] as [Float])
+        vertex.le([0, 0, 1, -1] as [Float])
+        vertex.le([2, 1, 0, 0] as [Int32])
+        vertex.le([0.75, 0.25, 0, 0] as [Float])
+        vertex.le([0.25, 0.75] as [Float])
+        let mesh = try #require(WPEMdlParser.parse(data: mdl(format: format, flags: 0x1000, vertex: vertex)).meshes.first)
+        #expect(mesh.vertexFormat == format)
+        let stream = try #require(mesh.vertexStream)
+        #expect(stream.data == vertex + vertex + vertex)
+        #expect(mesh.vertices.count == 3)
+        for parsed in mesh.vertices {
+            #expect(parsed.position == SIMD3(11, 22, 33))
+            #expect(parsed.normal == SIMD3(0.6, 0.8, 0))
+            #expect(abs(simd_length(parsed.normal) - 1) < 1e-3)
+            #expect(parsed.uv == SIMD2(0.25, 0.75))
+            #expect(parsed.skinBlendIndices == SIMD4(2, 1, 0, 0))
+            #expect(parsed.skinBlendWeights == SIMD4(0.75, 0.25, 0, 0))
         }
     }
 

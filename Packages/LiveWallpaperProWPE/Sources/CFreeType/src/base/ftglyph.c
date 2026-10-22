@@ -817,13 +817,9 @@
       goto Exit;
     bitmap = (FT_BitmapGlyph)b;
 
-#if 1
     /* if `origin' is set, translate the glyph image */
     if ( origin )
       FT_Glyph_Transform( glyph, NULL, origin );
-#else
-    FT_UNUSED( origin );
-#endif
 
     /* prepare dummy slot for rendering */
     error = clazz->glyph_prepare( glyph, &dummy );
@@ -840,7 +836,6 @@
     }
 #endif
 
-#if 1
     if ( !destroy && origin )
     {
       FT_Vector  v;
@@ -850,7 +845,6 @@
       v.y = -origin->y;
       FT_Glyph_Transform( glyph, NULL, &v );
     }
-#endif
 
     if ( error )
       goto Exit;

@@ -93,7 +93,7 @@ struct WorkshopPreviewDiskCacheTests {
         let payloadA = Data(repeating: 0xAA, count: 4_000_000)
         let payloadB = Data(repeating: 0xBB, count: 8_000_000)
 
-        let observed = await withTaskGroup(of: [Data].self) { group in
+        let observed = await withTaskGroup(of: (sampleCount: Int, invalidSamples: [String]).self) { group in
             for index in 0..<24 {
                 group.addTask {
                     if index.isMultiple(of: 2) {
@@ -101,29 +101,36 @@ struct WorkshopPreviewDiskCacheTests {
                     } else {
                         await writerB.store(payloadB, for: Fixtures.url, size: .tile)
                     }
-                    return []
+                    return (0, [])
                 }
             }
-            for reader in readers {
+            for (readerIndex, reader) in readers.enumerated() {
                 group.addTask {
-                    var seen: [Data] = []
-                    for _ in 0..<400 {
+                    var sampleCount = 0
+                    var invalidSamples: [String] = []
+                    for sampleIndex in 0 ..< 400 {
                         if let sample = await reader.data(for: Fixtures.url, size: .tile) {
-                            seen.append(sample)
+                            sampleCount += 1
+                            if sample != payloadA, sample != payloadB {
+                                invalidSamples.append("reader \(readerIndex), sample \(sampleIndex)")
+                            }
                         }
                     }
-                    return seen
+                    return (sampleCount, invalidSamples)
                 }
             }
-            var all: [Data] = []
-            for await batch in group { all.append(contentsOf: batch) }
-            return all
+            var sampleCount = 0
+            var invalidSamples: [String] = []
+            for await batch in group {
+                sampleCount += batch.sampleCount
+                invalidSamples.append(contentsOf: batch.invalidSamples)
+            }
+            return (sampleCount: sampleCount, invalidSamples: invalidSamples)
         }
 
-        // `!isEmpty` is load-bearing: a torn read is dropped rather than returned,
-        // so zero samples would satisfy the next line while proving nothing.
-        #expect(!observed.isEmpty)
-        #expect(observed.allSatisfy { $0 == payloadA || $0 == payloadB })
+        // Require a real read, then check every complete byte sequence before releasing it.
+        #expect(observed.sampleCount > 0)
+        #expect(observed.invalidSamples.isEmpty)
 
         let settled = try #require(await readers[0].data(for: Fixtures.url, size: .tile))
         #expect(settled == payloadA || settled == payloadB)

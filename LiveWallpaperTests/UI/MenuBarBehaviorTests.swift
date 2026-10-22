@@ -74,7 +74,7 @@ struct MenuBarBehaviorTests {
 
     @Test("Removing a known WPE import drops it from the recents list")
     func removingKnownImportDropsIt() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(makeEntry("alpha"))
             manager.recordWPEImport(makeEntry("beta"))
@@ -88,7 +88,7 @@ struct MenuBarBehaviorTests {
 
     @Test("Removing an unknown WPE import is a no-op (no notification posted)")
     func removingUnknownImportIsNoOp() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(makeEntry("alpha"))
 
@@ -105,7 +105,7 @@ struct MenuBarBehaviorTests {
 
     @Test("Removing every entry leaves the recents list empty")
     func removingAllEntriesEmptiesList() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let manager = SettingsManager.shared
             manager.recordWPEImport(makeEntry("one"))
             manager.recordWPEImport(makeEntry("two"))
@@ -118,7 +118,7 @@ struct MenuBarBehaviorTests {
 
     @Test("Recording an import posts a wpeHistoryDidChange notification")
     func recordingImportPostsNotification() throws {
-        withIsolatedGlobalSettings {
+        TestScratch.withCleanGlobalSettings {
             let observer = NotificationObserver(name: .wpeHistoryDidChange)
             defer { observer.detach() }
 
@@ -126,34 +126,6 @@ struct MenuBarBehaviorTests {
 
             #expect(observer.callCount == 1)
         }
-    }
-
-    private func withIsolatedGlobalSettings(_ body: () throws -> Void) rethrows {
-        let defaults = UserDefaults.standard
-        let keys = [
-            "screenConfigurations",
-            "globalSettings",
-            "AerialsLibrary.DirectoryBookmark",
-            "WallpaperBookmarks.v1",
-            "TrustedHTMLHosts.v1",
-        ]
-        let previousValues = keys.reduce(into: [String: Any]()) { result, key in
-            result[key] = defaults.object(forKey: key)
-        }
-
-        SettingsManager.shared.cleanAllSettings(applyLoginSetting: false)
-        defer {
-            SettingsManager.shared.cleanAllSettings(applyLoginSetting: false)
-            for key in keys {
-                if let value = previousValues[key] {
-                    defaults.set(value, forKey: key)
-                } else {
-                    defaults.removeObject(forKey: key)
-                }
-            }
-        }
-
-        try body()
     }
 
     private func makeEntry(

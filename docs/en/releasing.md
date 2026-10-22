@@ -51,14 +51,14 @@ For a reproducible verification run, keep all transient products outside the
 repository:
 
 ```sh
-DERIVED_DATA=/tmp/LoomscreenReleaseCandidate-arm64 \
+DERIVED_DATA="$(mktemp -d -t LoomscreenReleaseCandidate)" \
   scripts/release_candidate_check.sh
 ```
 
-The Pro and Lite smoke archives default to
-`/tmp/LoomscreenReleaseCandidate-arm64ProRelease/LiveWallpaper-LinkMatrix.xcarchive`
-and
-`/tmp/LoomscreenReleaseCandidate-arm64LiteRelease/Loomscreen-LinkMatrix.xcarchive`.
+The Pro and Lite smoke archives use a fresh system temporary directory per run,
+which the script removes after validation. The required gate needs no personal
+Workshop library; external producer/oracle acceptance runs separately as described
+in [Building](building.md#external-producer-and-workshop-acceptance).
 They are ad-hoc signed only to exercise the real archive/signing path. Pro must
 contain exactly arm64; Lite must contain arm64 and may additionally carry
 x86_64, since Lite ships universal for Intel Macs. Both need valid nested

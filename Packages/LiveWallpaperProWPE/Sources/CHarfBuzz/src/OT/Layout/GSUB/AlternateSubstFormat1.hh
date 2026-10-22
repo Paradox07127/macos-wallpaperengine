@@ -92,25 +92,6 @@ struct AlternateSubstFormat1_2
     return_trace ((this+alternateSet[index]).apply (c));
   }
 
-  bool serialize (hb_serialize_context_t *c,
-                  hb_sorted_array_t<const HBGlyphID16> glyphs,
-                  hb_array_t<const unsigned int> alternate_len_list,
-                  hb_array_t<const HBGlyphID16> alternate_glyphs_list)
-  {
-    TRACE_SERIALIZE (this);
-    if (unlikely (!c->extend_min (this))) return_trace (false);
-    if (unlikely (!alternateSet.serialize (c, glyphs.length))) return_trace (false);
-    for (unsigned int i = 0; i < glyphs.length; i++)
-    {
-      unsigned int alternate_len = alternate_len_list[i];
-      if (unlikely (!alternateSet[i]
-                        .serialize_serialize (c, alternate_glyphs_list.sub_array (0, alternate_len))))
-        return_trace (false);
-      alternate_glyphs_list += alternate_len;
-    }
-    return_trace (coverage.serialize_serialize (c, glyphs));
-  }
-
   bool subset (hb_subset_context_t *c) const
   {
     TRACE_SUBSET (this);

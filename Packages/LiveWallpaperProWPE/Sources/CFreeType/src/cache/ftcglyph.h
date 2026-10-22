@@ -204,20 +204,6 @@ FT_BEGIN_HEADER
 #define FTC_GCACHE( x )  ((FTC_GCache)(x))
 
 
-#if 0
-  /* can be used as @FTC_Cache_InitFunc */
-  FT_LOCAL( FT_Error )
-  FTC_GCache_Init( FTC_GCache  cache );
-#endif
-
-
-#if 0
-  /* can be used as @FTC_Cache_DoneFunc */
-  FT_LOCAL( void )
-  FTC_GCache_Done( FTC_GCache  cache );
-#endif
-
-
   /* the glyph cache class adds fields for the family implementation */
   typedef struct  FTC_GCacheClassRec_
   {

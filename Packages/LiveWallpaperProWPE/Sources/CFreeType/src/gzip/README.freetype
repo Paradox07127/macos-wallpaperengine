@@ -1,7 +1,7 @@
 Name: zlib
 Short Name: zlib
 URL: http://zlib.net/
-Version: 1.3
+Version: 1.3.1
 License: see `zlib.h`
 
 Description:
@@ -20,3 +20,10 @@ The files in this directory have been prepared as follows.
    included by `ftgzip.c`.
  - Copy `zconf.h` to `ftzconf.h` (which stays unmodified otherwise).
  - Apply the diff file(s) in the `patches` folder.
+
+Loomscreen modifications:
+ - Keep FreeType's embedded Z_SOLO decoder and its inflate/checksum algorithms.
+ - Remove unused standalone gzip file-I/O utilities and inactive Adler combine
+   functions; include zutil.h directly for the decoder configuration.
+ - Remove standalone inflate utility functions permanently excluded by the
+   embedded Z_FREETYPE configuration; preserve the active decoder state machine.

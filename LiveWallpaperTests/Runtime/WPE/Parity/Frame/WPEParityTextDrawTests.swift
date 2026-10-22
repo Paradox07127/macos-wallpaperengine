@@ -1899,10 +1899,11 @@ final class WPEParityTextDrawTests: XCTestCase {
     // MARK: Helpers
 
     private func sceneText(_ plan: WPEParityFramePlan) throws -> WPEParitySceneText {
-        guard case let .text(text)? = plan.scene.scene.objects.first(where: { $0.id == Self.textID })?.kind else {
-            throw XCTSkip("no text object \(Self.textID)")
+        let text = plan.scene.scene.objects.first(where: { $0.id == Self.textID }).flatMap { object -> WPEParitySceneText? in
+            guard case let .text(text) = object.kind else { return nil }
+            return text
         }
-        return text
+        return try XCTUnwrap(text, "Required synthetic text object \(Self.textID) must reach the frame plan")
     }
 
     /// Pixel bounds of the glyph quads under the direct draw's MVP: anchor none, the layer model, the block offset

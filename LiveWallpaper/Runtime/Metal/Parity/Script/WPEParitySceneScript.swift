@@ -37,8 +37,6 @@ final class WPEParitySceneScript {
         /// The bindings scripts see as usershortcut `isbound`/`commandtype`/`file`; nil = every key unbound.
         var userShortcuts: WPEUserShortcutScriptBridge?
         var media: WPESceneMediaEventMailbox?
-        /// The existing product load generation; parity inputs are consumed atomically by the renderer.
-        var mediaGeneration: Int?
         var storage = Storage()
         var createLayer: ((String, inout WPEParitySceneState) -> WPEParityScriptEngine.CreatedLayer?)?
         var destroyLayer: ((String, inout WPEParitySceneState) -> Bool)?
@@ -72,7 +70,6 @@ final class WPEParitySceneScript {
     /// Objects of the camera class, whose fov and zoom the next frame's camera reads.
     let cameraIDs: [String]
     let soundIDs: [String]
-    private let media: WPESceneMediaEventMailbox?
     private let userShortcuts: WPEUserShortcutScriptBridge?
     private let hasMediaSource: Bool
     private var userProperties: [String: Any]
@@ -126,7 +123,6 @@ final class WPEParitySceneScript {
         let buttonBits = [WPEParityScriptEvent.cursorClick, .cursorDown, .cursorUp].reduce(0) { $0 | $1.exportBit }
         buttonIDs = Set(engine.bindings.lazy.filter { $0.exportBits & buttonBits != 0 && !$0.objectID.isEmpty }
             .map(\.objectID))
-        media = host.mediaGeneration == nil ? host.media : nil
         userShortcuts = host.userShortcuts
         hasMediaSource = host.media != nil
         userProperties = properties
@@ -147,12 +143,12 @@ final class WPEParitySceneScript {
         targets.reserveCapacity(candidates.count)
     }
 
-    /// Event 0 once every object loaded, then the current media state to the media handlers (140172830.c:82-288).
+    /// Event 0 once every object loaded, then enable media handlers (140172830.c:82-288).
+    /// The renderer delivers current media state with its atomic texture/event input.
     func start(state: inout WPEParitySceneState) throws {
         try engine.start(state: &state)
         guard handlesMedia, hasMediaSource else { return }
         engine.dispatch(.mediaStatusChanged, payloadJSON: #"{"enabled":true}"#, state: &state)
-        dispatchMedia(state: &state)
     }
 
     /// The layers the cursor pass tests this frame. `quad` gives a layer's corners in client pixels, nil for an object
@@ -193,15 +189,6 @@ final class WPEParitySceneScript {
         let dispatches = tracker.update(targets: targets, cursor: cursor, leftDown: leftDown, moved: moved)
         engine.cursor(dispatches, input: input(cursor: cursor, world: world, leftDown: leftDown, timeOfDay: timeOfDay),
                       state: &state)
-    }
-
-    /// Queued now-playing events, first in the manager tick (140171440.c:148-535).
-    func dispatchMedia(state: inout WPEParitySceneState) {
-        guard handlesMedia, let media else { return }
-        for event in media.drain() {
-            let (id, payload) = Self.payload(event)
-            engine.dispatch(id, payloadJSON: payload, state: &state)
-        }
     }
 
     /// Native thumbnail inputs reapply their system properties before dispatching the matching media events.

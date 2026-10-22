@@ -107,14 +107,10 @@ FT_BEGIN_HEADER
 #define cid_parser_to_int( p )       (p)->root.funcs.to_int( &(p)->root )
 #define cid_parser_to_fixed( p, t )  (p)->root.funcs.to_fixed( &(p)->root, t )
 
-#define cid_parser_to_coord_array( p, m, c )                 \
-          (p)->root.funcs.to_coord_array( &(p)->root, m, c )
 #define cid_parser_to_fixed_array( p, m, f, t )                 \
           (p)->root.funcs.to_fixed_array( &(p)->root, m, f, t )
 #define cid_parser_to_token( p, t )                 \
           (p)->root.funcs.to_token( &(p)->root, t )
-#define cid_parser_to_token_array( p, t, m, c )                 \
-          (p)->root.funcs.to_token_array( &(p)->root, t, m, c )
 
 #define cid_parser_load_field( p, f, o )                       \
           (p)->root.funcs.load_field( &(p)->root, f, o, 0, 0 )

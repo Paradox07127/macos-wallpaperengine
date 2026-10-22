@@ -15,6 +15,31 @@
   Without it, compiling the `.metal` shaders fails with
   `cannot execute tool 'metal' due to missing Metal Toolchain`.
 
+## Shader compiler SDK for Pro rendering integration
+
+Offline checks and the hosted app shard do not need the runtime shader compiler SDK:
+
+```sh
+make fast contracts lint test-packages test-app-hosted
+```
+
+The local Metal gate, full Pro tests and Release/RC builds do compile real shaders.
+Prepare the pinned DXC/Metal Shader Converter inputs described in
+[WPEShaderCompiler](../../WPEShaderCompiler/README.md), then run:
+
+```sh
+WPE_SHADER_TOOLCHAIN_ROOT=build/wpe-shader-toolchain-inputs \
+  bash WPEShaderCompiler/build.sh --check-inputs
+make verify WPE_SHADER_TOOLCHAIN_ROOT=build/wpe-shader-toolchain-inputs
+```
+
+This is a build SDK prerequisite, like Xcode's Metal component, and is independent of
+Workshop materials. Rendering gates check all input hashes before launching their tests
+and pass the root as an Xcode build setting. Missing inputs fail with setup instructions;
+assertions are never skipped. Ordinary Debug builds may omit the SDK, but such an app
+cannot certify real scene shader compilation. A clean checkout does not contain this
+ignored SDK staging directory. Do not copy a developer's absolute paths into source.
+
 ## Clone & open
 
 ```bash
@@ -60,10 +85,27 @@ signed Pro tests, Pro/Lite Debug/Release link matrix, archive smokes and
 release/signing checks. Run the schemes sequentially when using shared build
 storage; independent jobs require independent DerivedData directories.
 
-The supported shipping and CI toolchain is Xcode 27.0. `make` defaults to
-`/Applications/Xcode.app/Contents/Developer`; set `DEVELOPER_DIR` when your
-installation is elsewhere. See [Architecture](architecture.md) for the current
+The supported shipping and CI toolchain is Xcode 27.0. Local commands use
+`xcode-select -p`; set `DEVELOPER_DIR` to override the selected toolchain. See [Architecture](architecture.md) for the current
 targets and packages; Video/Web tests live in the app target.
+
+## External producer and Workshop acceptance
+
+`make test-packages` and the RC package gate use only checked-in or authored test inputs.
+The test fonts are pinned upstream releases with their licenses in
+`Packages/LiveWallpaperProWPE/Tests/Fixtures/TextAssets/fonts`; no Steam installation,
+Workshop subscription or local oracle directory is needed. Both Swift Testing and XCTest
+must finish without failures or skips. Mandatory commands clear inherited external-fixture opt-ins.
+
+Real producer/oracle assertions remain in the package's `ExternalCorpus` source group.
+Run them separately with `make test-packages-corpus`, supplying `WPE_WORKSHOP_ROOT`
+(containing `<Workshop ID>/scene.pkg`), `WPE_ASSETS_DIR`, `WPE_HLSL_CAPTURE_DIR` and the
+`LOOMSCREEN_WPE_*_ORACLE_DIR` inputs used by those cases. Paths may be relative to the checkout.
+This explicit command compiles the corpus cases as well as the mandatory cases; missing,
+corrupt or incompatible inputs fail acceptance. It neither downloads materials nor treats
+an unexecuted corpus as passed. For one diagnostic case, use
+`LIVEWALLPAPER_EXTERNAL_FIXTURES=1 swift test --package-path Packages/LiveWallpaperProWPE --filter WPEWorkshopMdlTests`;
+a filtered result certifies only that selected case, not the complete corpus.
 
 ## Test workflows
 

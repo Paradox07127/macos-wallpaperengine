@@ -26,7 +26,6 @@ final class InstalledLibraryModel {
         let saveLastUpdateCheckEpoch: @MainActor (Double) -> Void
         let makeMetadataService: @MainActor () -> SteamWorkshopMetadataService
         let now: @MainActor () -> Date
-        let prefetchPreviewURLs: @MainActor ([WPEHistoryEntry]) -> Void
 
         static let live = Dependencies(
             loadEntries: { SettingsManager.shared.loadGlobalSettings().recentWPEImports },
@@ -44,8 +43,7 @@ final class InstalledLibraryModel {
                 UserDefaults.appScoped().set($0, forKey: InstalledLibraryModel.lastUpdateCheckEpochKey)
             },
             makeMetadataService: { SteamWorkshopMetadataService() },
-            now: Date.init,
-            prefetchPreviewURLs: { WPEPreviewURLCache.shared.prefetch($0) }
+            now: Date.init
         )
     }
 
@@ -128,7 +126,6 @@ final class InstalledLibraryModel {
 
     func reload() {
         entries = dependencies.loadEntries()
-        dependencies.prefetchPreviewURLs(entries)
         invalidateDeletesForReimports()
     }
 

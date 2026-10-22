@@ -284,25 +284,6 @@ FT_BEGIN_HEADER
    * effect on `FT_GET_XXX`!  They operate on `stream->pos`, while
    * `FT_GET_XXX` use `stream->cursor`.
    */
-#if 0
-#define FT_GET_MACRO( type )    FT_NEXT_ ## type ( stream->cursor )
-
-#define FT_GET_CHAR()       FT_GET_MACRO( CHAR )
-#define FT_GET_BYTE()       FT_GET_MACRO( BYTE )
-#define FT_GET_SHORT()      FT_GET_MACRO( SHORT )
-#define FT_GET_USHORT()     FT_GET_MACRO( USHORT )
-#define FT_GET_OFF3()       FT_GET_MACRO( OFF3 )
-#define FT_GET_UOFF3()      FT_GET_MACRO( UOFF3 )
-#define FT_GET_LONG()       FT_GET_MACRO( LONG )
-#define FT_GET_ULONG()      FT_GET_MACRO( ULONG )
-#define FT_GET_TAG4()       FT_GET_MACRO( ULONG )
-
-#define FT_GET_SHORT_LE()   FT_GET_MACRO( SHORT_LE )
-#define FT_GET_USHORT_LE()  FT_GET_MACRO( USHORT_LE )
-#define FT_GET_LONG_LE()    FT_GET_MACRO( LONG_LE )
-#define FT_GET_ULONG_LE()   FT_GET_MACRO( ULONG_LE )
-
-#else
 #define FT_GET_MACRO( func, type )        ( (type)func( stream ) )
 
 #define FT_GET_CHAR()       FT_GET_MACRO( FT_Stream_GetByte, FT_Char )
@@ -318,7 +299,6 @@ FT_BEGIN_HEADER
 #define FT_GET_USHORT_LE()  FT_GET_MACRO( FT_Stream_GetUShortLE, FT_UInt16 )
 #define FT_GET_LONG_LE()    FT_GET_MACRO( FT_Stream_GetULongLE, FT_Int32 )
 #define FT_GET_ULONG_LE()   FT_GET_MACRO( FT_Stream_GetULongLE, FT_UInt32 )
-#endif
 
 
 #define FT_READ_MACRO( func, type, var )        \

@@ -2,16 +2,12 @@ import SwiftUI
 
 /// Attach with `.confirmDestructive($action)`.
 public enum DestructiveAction: Identifiable, Equatable {
-    case removePlaylistItem(isLast: Bool, displayName: String)
     case deleteScheme(schemeName: String)
     case applyScheme(schemeName: String, displayName: String)
     case replaceScheme(schemeName: String, displayName: String)
     case replaceLocalCopy(title: String)
-    case removeScheduleSlot(slotLabel: String)
-    case disableSchedule(slotCount: Int)
     case clearAllStorageCaches(byteSize: String)
     case applyConfigurationToAllDisplays(otherCount: Int)
-    case applyOverlayToAllDisplays(overlayName: String, otherCount: Int)
     case clearCurrentWallpaper(displayName: String)
     /// `sceneCapable` = the build renders scenes; false (Lite) omits scene settings from the copy.
     case resetDisplaySettings(displayName: String, sceneCapable: Bool)
@@ -28,18 +24,14 @@ public enum DestructiveAction: Identifiable, Equatable {
 
     public var id: String {
         switch self {
-        case .removePlaylistItem(let isLast, let name): return "removePlaylistItem-\(isLast)-\(name)"
         case .removeSystemWallpaper(let t, let u): return "removeSystemWallpaper-\(t)-\(u)"
         case let .deleteScheme(n): return "deleteScheme-\(n)"
         case let .applyScheme(n, d): return "applyScheme-\(n)-\(d)"
         case let .replaceScheme(n, d): return "replaceScheme-\(n)-\(d)"
         case let .replaceLocalCopy(t): return "replaceLocalCopy-\(t)"
-        case .removeScheduleSlot(let l): return "removeScheduleSlot-\(l)"
-        case .disableSchedule(let c): return "disableSchedule-\(c)"
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
         case .clearSystemWallpaperLibrary(let n, let b): return "clearSystemWallpaperLibrary-\(n)-\(b)"
         case .applyConfigurationToAllDisplays(let c): return "applyConfigurationToAllDisplays-\(c)"
-        case .applyOverlayToAllDisplays(let n, let c): return "applyOverlayToAllDisplays-\(n)-\(c)"
         case .clearCurrentWallpaper(let n): return "clearCurrentWallpaper-\(n)"
         case let .resetDisplaySettings(n, _): return "resetDisplaySettings-\(n)"
         case .resetAllSettings: return "resetAllSettings"
@@ -54,18 +46,13 @@ public enum DestructiveAction: Identifiable, Equatable {
 
     public var title: LocalizedStringKey {
         switch self {
-        case .removePlaylistItem(let isLast, _):
-            return isLast ? "Remove the last playlist item?" : "Remove this playlist item?"
         case .deleteScheme: return "Delete this scheme?"
         case .applyScheme: return "Replace this display's entire setup?"
         case .replaceScheme: return "Overwrite this saved scheme?"
         case .replaceLocalCopy: return "Replace the copy in your library?"
-        case .removeScheduleSlot:        return "Remove this schedule slot?"
-        case .disableSchedule:           return "Disable schedule?"
         case .clearAllStorageCaches:      return "Clear all storage caches?"
         case .clearSystemWallpaperLibrary: return "Remove every System Wallpaper?"
         case .applyConfigurationToAllDisplays: return "Apply this wallpaper to every other display?"
-        case .applyOverlayToAllDisplays: return "Apply this overlay to every other display?"
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
         case .resetDisplaySettings:      return "Reset this display's settings?"
         case .resetAllSettings: return "Reset all settings?"
@@ -81,16 +68,6 @@ public enum DestructiveAction: Identifiable, Equatable {
 
     public var message: String {
         switch self {
-        case .removePlaylistItem(let isLast, let displayName):
-            return isLast
-                ? String(
-                    localized: "This is the only wallpaper in the playlist. Removing it will clear the wallpaper on \(displayName).",
-                    bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
-                )
-                : String(
-                    localized: "The item will be removed from the playlist. Other displays using this video keep their copy.",
-                    bundle: .appLanguage, comment: "Destructive confirm message for removing a non-last playlist item."
-                )
         case .removeSystemWallpaper(let title, let isInUse):
             return isInUse
                 ? String(
@@ -121,16 +98,6 @@ public enum DestructiveAction: Identifiable, Equatable {
                 localized: "'\(title)' is already in your library from another folder. The Steam download takes its place; that folder stays on disk.",
                 bundle: .appLanguage, comment: "Confirm message before a Workshop download replaces a library copy imported from a local folder. Placeholder is the wallpaper title."
             )
-        case .removeScheduleSlot(let slotLabel):
-            return String(
-                localized: "The \(slotLabel) slot will be removed. Wallpapers outside this window keep their schedules.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the schedule slot label."
-            )
-        case .disableSchedule(let count):
-            return String(
-                localized: "All \(count) time-based wallpaper rules will be cleared. The current wallpaper stays applied.",
-                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholder is the number of schedule rules."
-            )
         case .clearSystemWallpaperLibrary(let itemCount, let formattedSize):
             return String(
                 localized: "\(itemCount) videos and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
@@ -145,11 +112,6 @@ public enum DestructiveAction: Identifiable, Equatable {
             return String(
                 localized: "The wallpaper, playlist, schedule, effect layer, and all other settings on \(count) other displays are replaced with this display's. Their widget, music, and clock overlays are not changed.",
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholder is the number of other displays."
-            )
-        case .applyOverlayToAllDisplays(let overlayName, let count):
-            return String(
-                localized: "This replaces the \(overlayName) overlay on \(count) other displays. Their wallpapers are left alone.",
-                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholders are the overlay's name and the number of other displays."
             )
         case .clearCurrentWallpaper(let displayName):
             return String(
@@ -203,18 +165,13 @@ public enum DestructiveAction: Identifiable, Equatable {
 
     public var destructiveButtonTitle: LocalizedStringKey {
         switch self {
-        case .removePlaylistItem(let isLast, _):
-            return isLast ? "Remove & Clear" : "Remove"
         case .deleteScheme: return "Delete"
         case .applyScheme: return "Replace Setup"
         case .replaceScheme: return "Overwrite Scheme"
         case .replaceLocalCopy: return "Replace"
-        case .removeScheduleSlot:        return "Remove Slot"
-        case .disableSchedule:           return "Disable Schedule"
         case .clearAllStorageCaches:      return "Clear All Caches"
         case .clearSystemWallpaperLibrary: return "Remove All"
         case .applyConfigurationToAllDisplays: return "Apply to All Displays"
-        case .applyOverlayToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"
         case .resetDisplaySettings:      return "Reset Settings"
         case .resetAllSettings: return "Reset All Settings"

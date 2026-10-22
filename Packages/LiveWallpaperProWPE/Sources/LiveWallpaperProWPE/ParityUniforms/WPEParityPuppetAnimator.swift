@@ -557,10 +557,6 @@ public struct WPEParityPuppetAnimator: Sendable {
             * simd_quatf(angle: euler.x, axis: SIMD3(1, 0, 0)))
     }
 
-    private static func pose(of key: WPEPuppetAnimKey) -> Pose {
-        Pose(translation: key.translation, rotation: rotation(euler: key.euler), scale: key.scale)
-    }
-
     /// The MDLS local split into T, R, S (1401fdf90.c:587-676); the negative-determinant flip.
     private static func pose(of matrix: simd_float4x4) -> Pose {
         let axes = [matrix.columns.0, matrix.columns.1, matrix.columns.2].map { SIMD3($0.x, $0.y, $0.z) }

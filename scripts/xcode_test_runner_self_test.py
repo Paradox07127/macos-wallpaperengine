@@ -221,7 +221,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class ReviewGateTests(unittest.TestCase):
-    def run_package_gate(self, core: int, wpe: int, summary: str = "passed"):
+    def run_package_gate(self, core: int, wpe: int, summary: str = "passed", native: str = "passed"):
         with tempfile.TemporaryDirectory(prefix="loomscreen-gate-test-") as temporary:
             scratch = Path(temporary)
             fake = scratch / "swift"
@@ -232,6 +232,11 @@ case "$*" in
   *) exit 99 ;;
 esac
 echo "$label" >> "$PROBE_CALLS"
+if [[ -n "${LIVEWALLPAPER_EXTERNAL_FIXTURES:-}${TEST_RUNNER_LIVEWALLPAPER_EXTERNAL_FIXTURES:-}" ]]; then exit 97; fi
+echo "Test Case 'Fixture/testNative' started."
+echo "Test Case 'Fixture/testNative' $PROBE_NATIVE (0.001 seconds)."
+echo "Test Suite 'All tests' passed at 2026-10-21 12:00:00.000."
+echo ' Executed 1 test, with 0 failures (0 unexpected) in 0.001 seconds'
 case "$PROBE_SUMMARY" in
   passed|skipped) echo 'Test run with 3 tests in 1 suite passed after 0.1 seconds.' ;;
   zero) echo 'Test run with 0 tests passed after 0.1 seconds.' ;;
@@ -254,7 +259,8 @@ exit "$code"
             calls = scratch / "calls"
             environment = dict(os.environ, PATH=f"{scratch}:{os.environ['PATH']}",
                                PROBE_CORE_EXIT=str(core), PROBE_WPE_EXIT=str(wpe),
-                               PROBE_SUMMARY=summary, PROBE_CALLS=str(calls))
+                               PROBE_SUMMARY=summary, PROBE_CALLS=str(calls), PROBE_NATIVE=native,
+                               LIVEWALLPAPER_EXTERNAL_FIXTURES="1", TEST_RUNNER_LIVEWALLPAPER_EXTERNAL_FIXTURES="1")
             result = subprocess.run(
                 ["/usr/bin/make", "test-packages", f"SWIFTPM_SCRATCH={scratch / 'products'}"],
                 cwd=ROOT, env=environment, text=True, capture_output=True, timeout=20,
@@ -281,6 +287,13 @@ exit "$code"
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(calls, ["Core", "ProWPE"])
 
+    def test_native_failure_or_skip_cannot_hide_behind_passed_swift_testing(self):
+        for native in ["failed", "skipped", "unfinished"]:
+            with self.subTest(native=native):
+                result, calls = self.run_package_gate(0, 0, native=native)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertEqual(calls, ["Core"])
+
     def test_package_report_rejects_failure_error_and_skipped_cases(self):
         with tempfile.TemporaryDirectory() as temporary:
             report = Path(temporary) / "result.xml"
@@ -291,6 +304,55 @@ exit "$code"
                     count, errors = package_results.validate(report)
                     self.assertEqual(count, 2)
                     self.assertTrue(errors)
+
+    def test_explicit_corpus_cannot_pass_without_its_suite(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report = Path(temporary) / "result.xml"
+            report.write_text('<testsuites><testcase classname="Package.MandatoryTests" name="pass"/></testsuites>')
+            _, errors = package_results.validate(report, required_suite="WPEWorkshopMdlTests")
+            self.assertTrue(errors)
+            report.write_text('<testsuites><testcase classname="Package.WPEWorkshopMdlTests" name="pass"/></testsuites>')
+            _, errors = package_results.validate(report, required_suite="WPEWorkshopMdlTests")
+            self.assertFalse(errors)
+
+    def test_corpus_relative_inputs_survive_swiftpm_working_directory(self):
+        with tempfile.TemporaryDirectory(prefix="corpus input ") as temporary:
+            scratch = Path(temporary)
+            (scratch / "marker").write_text("producer input")
+            fake = scratch / "swift"
+            fake.write_text('''#!/usr/bin/env python3
+import os, sys
+from pathlib import Path
+assert os.environ["LIVEWALLPAPER_EXTERNAL_FIXTURES"] == "1"
+report = Path(sys.argv[sys.argv.index("--xunit-output") + 1])
+os.chdir("Packages/LiveWallpaperProWPE")
+assert (Path(os.environ["WPE_WORKSHOP_ROOT"]) / "marker").read_text() == "producer input"
+report.with_name(report.stem + "-swift-testing.xml").write_text(
+    '<testsuites><testcase classname="Package.WPEWorkshopMdlTests" name="producer"/></testsuites>')
+print("Test Suite 'All tests' passed at 2026-10-21 12:00:00.000.")
+print(" Executed 0 tests, with 0 failures (0 unexpected) in 0.001 seconds")
+''')
+            fake.chmod(0o755)
+            environment = dict(os.environ, PATH=f"{scratch}:{os.environ['PATH']}",
+                               WPE_WORKSHOP_ROOT=os.path.relpath(scratch, ROOT))
+            result = subprocess.run(
+                ["bash", "scripts/app_tests.sh", "packages-corpus", str(scratch / "products"), "LiveWallpaperProWPE"],
+                cwd=ROOT, env=environment, capture_output=True, text=True, timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_full_rendering_gate_rejects_missing_sdk_before_starting_host(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary)
+            result = subprocess.run(
+                ["bash", "scripts/app_tests.sh", "full"], cwd=ROOT,
+                env=dict(os.environ, WPE_SHADER_TOOLCHAIN_ROOT=str(scratch / "missing-sdk"),
+                         RESULT_BUNDLE=str(scratch / "unexpected.xcresult")),
+                capture_output=True, text=True, timeout=20,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("shader compiler SDK input directory is missing", result.stderr)
+            self.assertFalse((scratch / "unexpected.xcresult").exists())
 
     def test_verify_remains_sequential_with_parallel_make(self):
         with tempfile.TemporaryDirectory() as temporary:

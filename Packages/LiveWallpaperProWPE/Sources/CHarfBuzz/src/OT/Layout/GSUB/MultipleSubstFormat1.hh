@@ -71,34 +71,6 @@ struct MultipleSubstFormat1_2
     return_trace ((this+sequence[index]).apply (c));
   }
 
-  template<typename Iterator,
-           hb_requires (hb_is_sorted_iterator (Iterator))>
-  bool serialize (hb_serialize_context_t *c,
-		  Iterator it)
-  {
-    TRACE_SERIALIZE (this);
-    auto sequences =
-      + it
-      | hb_map (hb_second)
-      ;
-    auto glyphs =
-      + it
-      | hb_map_retains_sorting (hb_first)
-      ;
-    if (unlikely (!c->extend_min (this))) return_trace (false);
-
-    if (unlikely (!sequence.serialize (c, sequences.length))) return_trace (false);
-
-    for (auto& pair : hb_zip (sequences, sequence))
-    {
-      if (unlikely (!pair.second
-		    .serialize_serialize (c, pair.first)))
-        return_trace (false);
-    }
-
-    return_trace (coverage.serialize_serialize (c, glyphs));
-  }
-
   bool subset (hb_subset_context_t *c) const
   {
     TRACE_SUBSET (this);

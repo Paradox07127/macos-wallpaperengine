@@ -69,11 +69,11 @@ struct WPESceneParallaxBindingInferenceTests {
         #expect(abs(doc.general.cameraParallax.amount - 0.8) < 1e-9)
         #expect(abs(doc.general.cameraParallax.mouseInfluence - 0.4) < 1e-9)
         // propertyBindings: property key → bound targets
-        #expect(doc.propertyBindings["newproperty"]?.map(\.target) == [.generalField(name: "cameraparallaxamount")])
-        #expect(doc.propertyBindings["newproperty1"]?.map(\.target) == [.generalField(name: "cameraparallaxmouseinfluence")])
-        #expect(doc.propertyBindings["newproperty"]?.allSatisfy { $0.action == .incremental } == true)
+        #expect(WPEParityUserProperties.bindings(document: doc)["newproperty"]?.map(\.target) == [.generalField(name: "cameraparallaxamount")])
+        #expect(WPEParityUserProperties.bindings(document: doc)["newproperty1"]?.map(\.target) == [.generalField(name: "cameraparallaxmouseinfluence")])
+        #expect(WPEParityUserProperties.bindings(document: doc)["newproperty"]?.allSatisfy { $0.action == .incremental } == true)
         // schemecolor (type color) is never a candidate.
-        #expect(doc.propertyBindings["schemecolor"] == nil)
+        #expect(WPEParityUserProperties.bindings(document: doc)["schemecolor"] == nil)
     }
 
     @Test("No script references leave sliders unbound")
@@ -83,7 +83,7 @@ struct WPESceneParallaxBindingInferenceTests {
         objects?[0]["parallaxDepth"] = "0.8 0"
         scene["objects"] = objects
         let doc = try WPESceneDocumentParser.parse(data: repair(scene))
-        #expect(doc.propertyBindings.isEmpty == true)
+        #expect(WPEParityUserProperties.bindings(document: doc).isEmpty == true)
         // Literal general values still parse.
         #expect(abs(doc.general.cameraParallax.amount - 1) < 1e-9)
     }

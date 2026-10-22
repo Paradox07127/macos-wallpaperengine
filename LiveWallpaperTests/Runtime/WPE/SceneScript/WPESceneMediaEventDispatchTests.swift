@@ -269,8 +269,12 @@ struct WPESceneMediaEventDispatchTests {
     private func dispatcher(
         _ source: FakeNowPlayingSource,
         clock: FakeClock
-    ) -> WPESceneMediaEventDispatcher {
-        WPESceneMediaEventDispatcher(source: source, now: { clock.now })
+    ) throws -> WPESceneMediaEventDispatcher {
+        let dispatcher = WPESceneMediaEventDispatcher(source: source, now: { clock.now })
+        dispatcher.mailbox.beginParityGeneration(1)
+        let configured = dispatcher.configureParity(generation: 1, device: nil, textureDemand: false, onChange: {})
+        try #require(configured)
+        return dispatcher
     }
 
     /// A raw `position` can be up to ~5s stale (Apple Music reports none, a 5s poll fills it in), so delivering it raw would lag every progress bar.
@@ -278,9 +282,9 @@ struct WPESceneMediaEventDispatchTests {
     func positionIsInterpolatedWhilePlaying() throws {
         let source = FakeNowPlayingSource()
         let clock = FakeClock(now: 1_000)
-        let dispatcher = dispatcher(source, clock: clock)
-        dispatcher.start()
-        _ = dispatcher.mailbox.drain()
+        let dispatcher = try dispatcher(source, clock: clock)
+        defer { dispatcher.stop() }
+        _ = dispatcher.mailbox.drainParityInputs(generation: 1)
 
         clock.now = 1_007
         source.push(MonitorNowPlayingState(
@@ -291,7 +295,7 @@ struct WPESceneMediaEventDispatchTests {
             positionSampledAt: 1_000
         ))
         #expect(
-            timelineEvents(in: dispatcher.mailbox.drain())
+            timelineEvents(in: dispatcher.mailbox.drainParityInputs(generation: 1).flatMap(\.events))
                 == [WPESceneMediaTimeline(position: 19, duration: 300)]
         )
     }
@@ -300,9 +304,9 @@ struct WPESceneMediaEventDispatchTests {
     func pausedPositionIsNotAdvanced() throws {
         let source = FakeNowPlayingSource()
         let clock = FakeClock(now: 1_000)
-        let dispatcher = dispatcher(source, clock: clock)
-        dispatcher.start()
-        _ = dispatcher.mailbox.drain()
+        let dispatcher = try dispatcher(source, clock: clock)
+        defer { dispatcher.stop() }
+        _ = dispatcher.mailbox.drainParityInputs(generation: 1)
 
         clock.now = 1_090
         source.push(MonitorNowPlayingState(
@@ -313,7 +317,7 @@ struct WPESceneMediaEventDispatchTests {
             positionSampledAt: 1_000
         ))
         #expect(
-            timelineEvents(in: dispatcher.mailbox.drain())
+            timelineEvents(in: dispatcher.mailbox.drainParityInputs(generation: 1).flatMap(\.events))
                 == [WPESceneMediaTimeline(position: 12, duration: 300)]
         )
     }
@@ -324,9 +328,9 @@ struct WPESceneMediaEventDispatchTests {
     func positionIsClampedToDuration() throws {
         let source = FakeNowPlayingSource()
         let clock = FakeClock(now: 1_000)
-        let dispatcher = dispatcher(source, clock: clock)
-        dispatcher.start()
-        _ = dispatcher.mailbox.drain()
+        let dispatcher = try dispatcher(source, clock: clock)
+        defer { dispatcher.stop() }
+        _ = dispatcher.mailbox.drainParityInputs(generation: 1)
 
         clock.now = 1_060
         source.push(MonitorNowPlayingState(
@@ -337,7 +341,7 @@ struct WPESceneMediaEventDispatchTests {
             positionSampledAt: 1_000
         ))
         #expect(
-            timelineEvents(in: dispatcher.mailbox.drain())
+            timelineEvents(in: dispatcher.mailbox.drainParityInputs(generation: 1).flatMap(\.events))
                 == [WPESceneMediaTimeline(position: 300, duration: 300)]
         )
     }
@@ -347,9 +351,9 @@ struct WPESceneMediaEventDispatchTests {
     func missingTimelineDataDeliversNothing() throws {
         let source = FakeNowPlayingSource()
         let clock = FakeClock(now: 1_000)
-        let dispatcher = dispatcher(source, clock: clock)
-        dispatcher.start()
-        _ = dispatcher.mailbox.drain()
+        let dispatcher = try dispatcher(source, clock: clock)
+        defer { dispatcher.stop() }
+        _ = dispatcher.mailbox.drainParityInputs(generation: 1)
 
         // Apple Music before the poll lands.
         source.push(MonitorNowPlayingState(
@@ -359,7 +363,7 @@ struct WPESceneMediaEventDispatchTests {
             position: nil,
             positionSampledAt: nil
         ))
-        #expect(timelineEvents(in: dispatcher.mailbox.drain()).isEmpty)
+        #expect(timelineEvents(in: dispatcher.mailbox.drainParityInputs(generation: 1).flatMap(\.events)).isEmpty)
 
         // A live stream: a position but no duration.
         source.push(MonitorNowPlayingState(
@@ -369,7 +373,7 @@ struct WPESceneMediaEventDispatchTests {
             position: 12,
             positionSampledAt: 1_000
         ))
-        #expect(timelineEvents(in: dispatcher.mailbox.drain()).isEmpty)
+        #expect(timelineEvents(in: dispatcher.mailbox.drainParityInputs(generation: 1).flatMap(\.events)).isEmpty)
     }
 
 }

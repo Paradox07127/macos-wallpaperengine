@@ -520,10 +520,9 @@ struct NowPlayingSourceTests {
         monitor.ingest(name: Fixture.musicName, userInfo: second)
 
         #expect(await waitUntil { sink.box.states.last?.artist == "Someone else entirely" })
-        let carried = sink.box.states.last(where: { $0.artist == "Someone else entirely" })
-        // Either still unset, or re-read for the new track — never the old
-        // track's value copied across.
-        #expect(carried?.position == nil || carried?.position == 42)
+        let firstNewTrack = sink.box.states.first(where: { $0.artist == "Someone else entirely" })
+        // The first publication precedes the new poll; a later reply may legitimately be 42 again.
+        #expect(firstNewTrack?.position == nil)
         await source.stop()
     }
 

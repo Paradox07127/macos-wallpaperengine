@@ -467,7 +467,7 @@ struct hb_uniscribe_font_data_t
   double x_mult, y_mult; /* From LOGFONT space to HB space. */
 };
 
-static bool
+static void
 populate_log_font (LOGFONTW  *lf,
 		   hb_font_t *font,
 		   unsigned int font_size)
@@ -478,7 +478,6 @@ populate_log_font (LOGFONTW  *lf,
 
   hb_memcpy (lf->lfFaceName, font->face->data.uniscribe->face_name, sizeof (lf->lfFaceName));
 
-  return true;
 }
 
 hb_uniscribe_font_data_t *
@@ -500,11 +499,7 @@ _hb_uniscribe_shaper_font_data_create (hb_font_t *font)
 
   data->hdc = GetDC (nullptr);
 
-  if (unlikely (!populate_log_font (&data->log_font, font, font_size))) {
-    DEBUG_MSG (UNISCRIBE, font, "Font populate_log_font() failed");
-    _hb_uniscribe_shaper_font_data_destroy (data);
-    return nullptr;
-  }
+  populate_log_font (&data->log_font, font, font_size);
 
   data->hfont = CreateFontIndirectW (&data->log_font);
   if (unlikely (!data->hfont)) {

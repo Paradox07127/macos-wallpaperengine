@@ -280,7 +280,7 @@ final class BrowseViewModel {
     nonisolated static let maxQueryPage = 1000
 
     nonisolated static func pageCount(totalAvailable: Int, perPage: Int) -> Int {
-        min(maxQueryPage, max(1, (totalAvailable + perPage - 1) / perPage))
+        min(maxQueryPage, max(1, totalAvailable / perPage + (totalAvailable % perPage > 0 ? 1 : 0)))
     }
 
     var totalPages: Int? {

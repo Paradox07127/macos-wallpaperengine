@@ -217,14 +217,6 @@ struct trak
   bool apply (hb_aat_apply_context_t *c, float track = 0.f) const
   {
     TRACE_APPLY (this);
-
-    float ptem = c->font->ptem;
-    if (unlikely (ptem <= 0.f))
-    {
-      /* https://developer.apple.com/documentation/coretext/1508745-ctfontcreatewithgraphicsfont */
-      ptem = HB_CORETEXT_DEFAULT_FONT_SIZE;
-    }
-
     hb_buffer_t *buffer = c->buffer;
     if (HB_DIRECTION_IS_HORIZONTAL (buffer->props.direction))
     {

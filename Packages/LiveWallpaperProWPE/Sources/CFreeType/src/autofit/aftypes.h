@@ -131,13 +131,6 @@ extern void*  af_debug_hints_;
   } AF_ScalerRec, *AF_Scaler;
 
 
-#define AF_SCALER_EQUAL_SCALES( a, b )      \
-          ( (a)->x_scale == (b)->x_scale && \
-            (a)->y_scale == (b)->y_scale && \
-            (a)->x_delta == (b)->x_delta && \
-            (a)->y_delta == (b)->y_delta )
-
-
   typedef struct AF_StyleMetricsRec_*  AF_StyleMetrics;
 
   /*

@@ -740,7 +740,7 @@ struct ModalActionsTests {
             loadEntries: { [entry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
             saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
-            now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
+            now: { Date(timeIntervalSince1970: 100) }
         ))
         var inputs = fixture.inputs()
         inputs.installedLibrary = model
@@ -765,7 +765,7 @@ struct ModalActionsTests {
             loadEntries: { [entry, otherEntry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
             saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
-            now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
+            now: { Date(timeIntervalSince1970: 100) }
         ))
         var inputs = fixture.inputs()
         inputs.installedLibrary = model
@@ -876,7 +876,7 @@ struct ModalActionsTests {
             loadEntries: { [entry] }, loadRemoteUpdateEpochs: { fixture.remoteEpochs },
             saveRemoteUpdateEpochs: { _ in }, loadLastUpdateCheckEpoch: { 100 },
             saveLastUpdateCheckEpoch: { _ in }, makeMetadataService: { SteamWorkshopMetadataService() },
-            now: { Date(timeIntervalSince1970: 100) }, prefetchPreviewURLs: { _ in }
+            now: { Date(timeIntervalSince1970: 100) }
         ))
         var inputs = fixture.inputs()
         inputs.installedLibrary = model

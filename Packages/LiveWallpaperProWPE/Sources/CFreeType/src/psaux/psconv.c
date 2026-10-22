@@ -364,102 +364,6 @@
   }
 
 
-#if 0
-  FT_LOCAL_DEF( FT_UInt )
-  PS_Conv_StringDecode( FT_Byte**  cursor,
-                        FT_Byte*   limit,
-                        FT_Byte*   buffer,
-                        FT_Offset  n )
-  {
-    FT_Byte*  p;
-    FT_UInt   r = 0;
-
-
-    for ( p = *cursor; r < n && p < limit; p++ )
-    {
-      FT_Byte  b;
-
-
-      if ( *p != '\\' )
-      {
-        buffer[r++] = *p;
-
-        continue;
-      }
-
-      p++;
-
-      switch ( *p )
-      {
-      case 'n':
-        b = '\n';
-        break;
-      case 'r':
-        b = '\r';
-        break;
-      case 't':
-        b = '\t';
-        break;
-      case 'b':
-        b = '\b';
-        break;
-      case 'f':
-        b = '\f';
-        break;
-      case '\r':
-        p++;
-        if ( *p != '\n' )
-        {
-          b = *p;
-
-          break;
-        }
-        /* no break */
-      case '\n':
-        continue;
-        break;
-      default:
-        if ( IS_PS_DIGIT( *p ) )
-        {
-          b = *p - '0';
-
-          p++;
-
-          if ( IS_PS_DIGIT( *p ) )
-          {
-            b = b * 8 + *p - '0';
-
-            p++;
-
-            if ( IS_PS_DIGIT( *p ) )
-              b = b * 8 + *p - '0';
-            else
-            {
-              buffer[r++] = b;
-              b = *p;
-            }
-          }
-          else
-          {
-            buffer[r++] = b;
-            b = *p;
-          }
-        }
-        else
-          b = *p;
-        break;
-      }
-
-      buffer[r++] = b;
-    }
-
-    *cursor = p;
-
-    return r;
-  }
-#endif /* 0 */
-
-
   FT_LOCAL_DEF( FT_UInt )
   PS_Conv_ASCIIHexDecode( FT_Byte**  cursor,
                           FT_Byte*   limit,
@@ -474,7 +378,6 @@
 
     n *= 2;
 
-#if 1
 
     p = *cursor;
 
@@ -515,40 +418,6 @@
 
     return w;
 
-#else /* 0 */
-
-    for ( r = 0; r < n; r++ )
-    {
-      FT_Char  c;
-
-
-      if ( IS_PS_SPACE( *p ) )
-        continue;
-
-      if ( *p OP 0x80 )
-        break;
-
-      c = ft_char_table[*p & 0x7F];
-
-      if ( (unsigned)c >= 16 )
-        break;
-
-      if ( r & 1 )
-      {
-        *buffer = (FT_Byte)( *buffer + c );
-        buffer++;
-      }
-      else
-        *buffer = (FT_Byte)( c << 4 );
-
-      r++;
-    }
-
-    *cursor = p;
-
-    return ( r + 1 ) / 2;
-
-#endif /* 0 */
 
   }
 
@@ -565,7 +434,6 @@
     FT_UInt   s = *seed;
 
 
-#if 1
 
     p = *cursor;
 
@@ -588,20 +456,6 @@
     *cursor = p + n;
     *seed   = (FT_UShort)s;
 
-#else /* 0 */
-
-    for ( r = 0, p = *cursor; r < n && p < limit; r++, p++ )
-    {
-      FT_Byte  b = (FT_Byte)( *p ^ ( s >> 8 ) );
-
-
-      s = (FT_UShort)( ( *p + s ) * 52845U + 22719 );
-      *buffer++ = b;
-    }
-    *cursor = p;
-    *seed   = s;
-
-#endif /* 0 */
 
     return r;
   }

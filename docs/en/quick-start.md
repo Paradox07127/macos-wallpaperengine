@@ -113,8 +113,8 @@ Start in **Workshop** to search, filter, sort and inspect public wallpapers; pub
      **Download and install** recovery; your existing installation stays in place.
      A busy connector or timeout can be retried with **Locate automatically**.
    - **Choose SteamCMD** (**Change** once the tool is ready) — point at a binary
-     yourself. It goes through the same signature and checksum gates as
-     everything else, on every run rather than only when you pick it.
+     yourself. Valve's signature and quarantine status are checked before
+     execution, including after a SteamCMD self-update.
    - The `⋯` menu beside the buttons appears only when there is something to
      undo: **Forget the SteamCMD I chose** goes back to automatic detection, and
      **Remove the copy Loomscreen installed** deletes the managed copy after you

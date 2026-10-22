@@ -4,8 +4,12 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${1:-$SOURCE_DIR/build}"
 if [ -z "${WPE_SHADER_TOOLCHAIN_ROOT:-}" ]; then
-  echo 'error: WPE_SHADER_TOOLCHAIN_ROOT must name the staged, pinned shader toolchain inputs' >&2
+  echo 'error: WPE_SHADER_TOOLCHAIN_ROOT must name the staged, pinned shader compiler SDK inputs; see WPEShaderCompiler/README.md (these are build dependencies, not Workshop fixtures)' >&2
   exit 1
+fi
+if [ ! -d "$WPE_SHADER_TOOLCHAIN_ROOT" ]; then
+  echo 'error: shader compiler SDK input directory is missing; stage the pinned inputs described in WPEShaderCompiler/README.md and set WPE_SHADER_TOOLCHAIN_ROOT' >&2
+  exit 64
 fi
 TOOLCHAIN_ROOT="$(cd "$WPE_SHADER_TOOLCHAIN_ROOT" && pwd -P)"
 # The manifest pins headers, both libraries and every notice before any output is built.
@@ -13,6 +17,10 @@ TOOLCHAIN_ROOT="$(cd "$WPE_SHADER_TOOLCHAIN_ROOT" && pwd -P)"
   cd "$TOOLCHAIN_ROOT"
   /usr/bin/shasum -a 256 -c "$SOURCE_DIR/toolchain-inputs.sha256"
 )
+if [ "${1:-}" = --check-inputs ]; then
+  echo 'Shader compiler SDK inputs verified; no helper was built.'
+  exit 0
+fi
 mkdir -p "$BUILD_DIR"
 /usr/bin/xcrun --sdk macosx clang++ --version
 /usr/bin/xcrun --sdk macosx --show-sdk-version

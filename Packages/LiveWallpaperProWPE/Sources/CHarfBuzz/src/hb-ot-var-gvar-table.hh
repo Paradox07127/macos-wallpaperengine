@@ -972,8 +972,6 @@ struct gvar_GVAR
       return true;
     }
 
-    unsigned int get_axis_count () const { return table->axisCount; }
-
     private:
     hb_blob_ptr_t<gvar_GVAR> table;
     unsigned glyphCount;

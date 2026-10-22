@@ -53,7 +53,6 @@
 #error "so that freetype.h of FreeType 2 is found first."
 #endif
 
-#define  xxFT_DEBUG_ERROR
 #define  FTC_INLINE
 
 FT_BEGIN_HEADER

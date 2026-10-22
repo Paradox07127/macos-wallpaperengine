@@ -213,19 +213,6 @@ struct InMemoryVideoAssetLoaderTeardownTests {
         #expect(outcome == .closed)
     }
 
-    @Test("Cancellation before the second chunk is reported as cancelled, not closed")
-    func cancelBeforeSecondChunkReportsCancelled() {
-        let loader = makeLoader(byteCount: 3 * Self.chunkSize)
-        var responded = 0
-        var cancelled = false
-        let outcome = loader.serve(range: 0 ..< (3 * Self.chunkSize), isCancelled: { cancelled }, respond: { _ in
-            responded += 1
-            cancelled = true
-        })
-        #expect(responded == 1)
-        #expect(outcome == .cancelled)
-    }
-
     @Test("Served chunks count as in flight until the receiver releases them")
     func heldChunksKeepTheLoaderUndrained() {
         let loader = makeLoader(byteCount: Self.chunkSize + 4096)

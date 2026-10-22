@@ -22,9 +22,6 @@ public enum WPESceneDocumentParser {
         guard let sourceJSON = WPESceneJSONValue(jsonValue: json) else {
             throw WPESceneDocumentError.malformedField("source JSON")
         }
-        // Record property→target bindings BEFORE resolving envelopes, since
-        // resolution replaces `{"user":K}` with the literal value and loses the key.
-        let propertyBindings = extractUserPropertyBindings(in: json)
         let resolvedJSON = try resolveUserPropertyEnvelopes(in: json, userValues: userValues)
         guard let root = resolvedJSON as? [String: Any] else {
             throw WPESceneDocumentError.rootNotObject
@@ -243,7 +240,6 @@ public enum WPESceneDocumentParser {
             soundObjects: soundObjects,
             lightObjects: lightObjects,
             objectPaintOrder: objectPaintOrder,
-            propertyBindings: propertyBindings,
             objectParentByID: objectParentByID,
             ownVisibilityByID: ownVisibilityByID,
             diagnostics: diagnostics
@@ -455,214 +451,6 @@ public enum WPESceneDocumentParser {
             }
         }
         return result
-    }
-
-    private static func extractUserPropertyBindings(in json: Any) -> [String: [WPEScenePropertyBinding]] {
-        guard let root = json as? [String: Any] else {
-            return [:]
-        }
-        let rawObjects = WPEValueParser.objectArray(root["objects"]) ?? []
-        var result: [String: [WPEScenePropertyBinding]] = [:]
-
-        func append(
-            raw: Any?,
-            target: WPEScenePropertyBindingTarget,
-            kind: WPEScenePropertyBindingKind,
-            action: WPEScenePropertyBindingAction,
-            includeNestedScriptProperties: Bool = true
-        ) {
-            let specs = (try? userPropertyBindingSpecs(
-                in: raw,
-                includeNestedScriptProperties: includeNestedScriptProperties
-            ))?.sorted { lhs, rhs in
-                if lhs.key != rhs.key { return lhs.key < rhs.key }
-                return (lhs.condition ?? "") < (rhs.condition ?? "")
-            } ?? []
-            for spec in specs {
-                result[spec.key, default: []].append(WPEScenePropertyBinding(
-                    propertyKey: spec.key,
-                    target: target,
-                    kind: kind,
-                    action: action,
-                    condition: spec.condition
-                ))
-            }
-        }
-
-        func appendScriptProperties(
-            in raw: Any?,
-            objectID: String,
-            role: WPESceneScriptPropertyRole,
-            subresourceID: String? = nil
-        ) {
-            guard let envelope = raw as? [String: Any],
-                  envelope["script"] is String,
-                  let properties = envelope["scriptproperties"] as? [String: Any] else {
-                return
-            }
-            for propertyName in properties.keys.sorted() {
-                append(
-                    raw: properties[propertyName],
-                    target: .scriptProperty(.init(
-                        objectID: objectID,
-                        role: role,
-                        propertyName: propertyName,
-                        subresourceID: subresourceID
-                    )),
-                    kind: .scriptProperty,
-                    action: .incremental
-                )
-            }
-        }
-
-        if let general = root["general"] as? [String: Any] {
-            let fields = [
-                "zoom", "perspectiveoverridefov", "camerashake",
-                "camerashakeamplitude", "camerashakespeed", "camerashakeroughness",
-                "clearenabled", "windenabled", "winddirection", "windstrength",
-                "gravitydirection", "gravitystrength"
-            ]
-            for field in fields {
-                append(
-                    raw: general[field],
-                    target: .generalField(name: field),
-                    kind: .general,
-                    action: .reload
-                )
-            }
-            // Camera parallax is a per-frame smooth term, not graph state — a
-            // bound slider patches it in place rather than remounting the scene.
-            for field in [
-                "cameraparallax", "cameraparallaxamount",
-                "cameraparallaxdelay", "cameraparallaxmouseinfluence",
-            ] {
-                append(
-                    raw: general[field],
-                    target: .generalField(name: field),
-                    kind: .general,
-                    action: .incremental
-                )
-            }
-        }
-
-        for object in rawObjects {
-            guard let objectID = objectID(in: object) else { continue }
-            let objectKind = objectKindResolution(for: object).primary
-            appendScriptProperties(in: object["origin"], objectID: objectID, role: .origin)
-            appendScriptProperties(in: object["scale"], objectID: objectID, role: .scale)
-            appendScriptProperties(in: object["angles"], objectID: objectID, role: .angles)
-            appendScriptProperties(in: object["color"], objectID: objectID, role: .color)
-            appendScriptProperties(in: object["parallaxDepth"] ?? object["parallaxdepth"], objectID: objectID, role: .parallaxDepth)
-            switch objectKind {
-            case .image:
-                append(raw: object["visible"], target: .imageObject(id: objectID), kind: .visible, action: .incremental, includeNestedScriptProperties: false)
-                append(raw: object["color"], target: .imageObject(id: objectID), kind: .color, action: .reload, includeNestedScriptProperties: false)
-                append(raw: object["alpha"], target: .imageObject(id: objectID), kind: .alpha, action: .reload, includeNestedScriptProperties: false)
-                append(raw: object["brightness"], target: .imageObject(id: objectID), kind: .brightness, action: .reload)
-                append(raw: object["image"], target: .objectResource(objectID: objectID, field: "image"), kind: .resource, action: .reload)
-                append(raw: object["material"], target: .objectResource(objectID: objectID, field: "material"), kind: .resource, action: .reload)
-                appendScriptProperties(in: object["visible"], objectID: objectID, role: .layerVisible)
-                appendScriptProperties(in: object["alpha"], objectID: objectID, role: .layerAlpha)
-                if let effects = WPEValueParser.objectArray(object["effects"]) {
-                    for (effectIndex, effect) in effects.enumerated() {
-                        let effectIdentifier = effectID(in: effect, fallback: "\(effectIndex)")
-                        append(raw: effect["visible"], target: .imageEffect(objectID: objectID, effectID: effectIdentifier), kind: .visible, action: .reload, includeNestedScriptProperties: false)
-                        appendScriptProperties(
-                            in: effect["visible"],
-                            objectID: objectID,
-                            role: .effectVisible,
-                            subresourceID: effectIdentifier
-                        )
-                        if let passes = WPEValueParser.objectArray(effect["passes"]) {
-                            for (passIndex, pass) in passes.enumerated() {
-                                let passID = parseInt(pass["id"]) ?? passIndex
-                                forEachShaderConstant(in: pass["constantshadervalues"]) { name, raw in
-                                    append(
-                                        raw: raw,
-                                        target: .shaderUniform(objectID: objectID, effectID: effectIdentifier, passID: passID, name: name),
-                                        kind: .uniform,
-                                        action: .reload,
-                                        includeNestedScriptProperties: false
-                                    )
-                                    appendScriptProperties(
-                                        in: raw,
-                                        objectID: objectID,
-                                        role: .effectConstant,
-                                        subresourceID: "\(effectIdentifier):\(passID):\(name)"
-                                    )
-                                }
-                                if let combos = pass["combos"] as? [String: Any] {
-                                    for (name, raw) in combos {
-                                        append(raw: raw, target: .shaderCombo(objectID: objectID, effectID: effectIdentifier, passID: passID, name: name), kind: .combo, action: .reload)
-                                    }
-                                }
-                                if let textures = pass["textures"] as? [Any] {
-                                    for (index, raw) in textures.enumerated() {
-                                        append(raw: raw, target: .textureSlot(objectID: objectID, effectID: effectIdentifier, passID: passID, index: index), kind: .texture, action: .reload)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            case .text:
-                append(raw: object["visible"], target: .textObject(id: objectID), kind: .visible, action: .incremental, includeNestedScriptProperties: false)
-                append(raw: object["color"], target: .textObject(id: objectID), kind: .color, action: .reload, includeNestedScriptProperties: false)
-                append(raw: object["alpha"], target: .textObject(id: objectID), kind: .alpha, action: .reload, includeNestedScriptProperties: false)
-                appendScriptProperties(in: object["text"], objectID: objectID, role: .textContent)
-                appendScriptProperties(in: object["visible"], objectID: objectID, role: .textVisible)
-                appendScriptProperties(in: object["alpha"], objectID: objectID, role: .textAlpha)
-            case .particle:
-                append(raw: object["visible"], target: .particleObject(id: objectID), kind: .visible, action: .reload)
-                append(raw: object["color"], target: .particleObject(id: objectID), kind: .color, action: .reload)
-                append(raw: object["alpha"], target: .particleObject(id: objectID), kind: .alpha, action: .reload)
-                // No live consumer for rate-script properties: a key also bound incrementally elsewhere would otherwise skip the reload.
-                let instanceOverride = (object["instanceoverride"] ?? object["instanceOverride"]) as? [String: Any]
-                append(
-                    raw: (instanceOverride?["rate"] as? [String: Any])?["scriptproperties"],
-                    target: .particleObject(id: objectID),
-                    kind: .scriptProperty,
-                    action: .reload
-                )
-            case .sound:
-                append(raw: object["visible"], target: .soundObject(id: objectID), kind: .visible, action: .incremental)
-                append(raw: object["volume"], target: .soundObject(id: objectID), kind: .volume, action: .incremental)
-            case .light:
-                for field in lightFieldNames {
-                    let kind: WPEScenePropertyBindingKind
-                    switch field {
-                    case "visible": kind = .visible
-                    case "color": kind = .color
-                    default: kind = .uniform
-                    }
-                    append(
-                        raw: object[field],
-                        target: .lightObject(id: objectID),
-                        kind: kind,
-                        action: .reload
-                    )
-                }
-            default:
-                // Pure SceneScript hosts land here as `.unknown`: they draw nothing but their
-                // visible script still consumes settings.
-                append(
-                    raw: object["visible"],
-                    target: .groupObject(id: objectID),
-                    kind: .visible,
-                    action: .reload,
-                    includeNestedScriptProperties: false
-                )
-                appendScriptProperties(in: object["visible"], objectID: objectID, role: .layerVisible)
-            }
-        }
-        return result
-    }
-
-    private static func effectID(in dict: [String: Any], fallback: String) -> String {
-        if let id = dict["id"] as? String, !id.isEmpty { return id }
-        if let id = parseInt(dict["id"]) { return String(id) }
-        if let name = dict["name"] as? String, !name.isEmpty { return name }
-        return fallback
     }
 
     /// `condition`: the literal the property must match for `value` to take effect;
@@ -2356,30 +2144,6 @@ public enum WPESceneDocumentParser {
             }
         }
         return nil
-    }
-
-    /// Iterates `constantshadervalues` in either of WPE's two forms (plain
-    /// dict, or structured array of `{name:…, value:…|default:…}` entries).
-    private static func forEachShaderConstant(
-        in raw: Any?,
-        _ body: (String, Any) -> Void
-    ) {
-        if let dict = raw as? [String: Any] {
-            for (name, value) in dict {
-                body(name, value)
-            }
-            return
-        }
-        guard let array = raw as? [Any] else { return }
-        for entry in array {
-            guard let dict = entry as? [String: Any],
-                  let name = WPEValueParser.shaderConstantEntryName(in: dict) else { continue }
-            if dict.keys.contains("value") {
-                body(name, dict["value"] ?? NSNull())
-            } else if dict.keys.contains("default") {
-                body(name, dict["default"] ?? NSNull())
-            }
-        }
     }
 
     private static func effectName(from file: String) -> String {

@@ -425,33 +425,6 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         assertEqual(animator.palette[1], animator.boneWorld[1] * translation(SIMD3(1, 2, 0)).inverse)
     }
 
-    func testWorkshop2370640409PuppetStaysFinite() throws {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-            "Library/Application Support/Steam/steamapps/workshop/content/431960/2370640409/scene.pkg"
-        )
-        guard let package = try? Data(contentsOf: url) else {
-            throw XCTSkip("Workshop 2370640409 is not installed")
-        }
-        let files = try PackageFixture.entries(package)
-        let sceneJSON = try XCTUnwrap(files["scene.json"].flatMap { String(bytes: $0, encoding: .utf8) })
-        let document = try ParityCameraFixture.document(json: sceneJSON)
-        let image = try XCTUnwrap(document.imageObjects.first { !$0.animationLayers.isEmpty })
-        let modelJSON = try XCTUnwrap(JSONSerialization.jsonObject(
-            with: XCTUnwrap(files[image.imageRelativePath])
-        ) as? [String: Any])
-        let puppetPath = try XCTUnwrap(modelJSON["puppet"] as? String)
-        let model = try WPEMdlParser.parse(data: XCTUnwrap(files[puppetPath]))
-        XCTAssertFalse(model.bones.isEmpty)
-        var animator = WPEParityPuppetAnimator(model: model, layers: image.animationLayers)
-        XCTAssertEqual(animator.layers.count, image.animationLayers.count)
-        for _ in 0 ..< 60 {
-            animator.advance(dt: 1.0 / 60)
-        }
-        XCTAssertEqual(animator.bones.count, model.bones.count * 3)
-        XCTAssertTrue(animator.bones.allSatisfy { [$0.x, $0.y, $0.z, $0.w].allSatisfy(\.isFinite) })
-        XCTAssertGreaterThan(animator.layers[0].time, 0)
-    }
-
     /// Workshop 3647999330's single morph target over one vertex.
     private func morphMesh(flags: UInt32 = 0x1000) -> WPEPuppetMesh {
         let target = WPEPuppetMorph.Target(name: "Shape 1706", positions: [-28174, 16728, 0], normals: nil,
@@ -514,32 +487,5 @@ final class ParityPuppetAnimatorTests: XCTestCase {
         let plain = try XCTUnwrap(WPEParityPuppetAnimator.morphTexels(morphMesh(flags: 0)))
         XCTAssertEqual(plain.side, 2)
         XCTAssertEqual(plain.texels, [0, 0, 0, 32767] + [Int16](repeating: 0, count: 12))
-    }
-}
-
-/// `PKGV` archive: header string, entry count, then (name, offset, size) records before the data block.
-private enum PackageFixture {
-    static func entries(_ data: Data) throws -> [String: Data] {
-        let bytes = [UInt8](data)
-        var cursor = 0
-        func u32() throws -> Int {
-            guard cursor + 4 <= bytes.count else { throw CocoaError(.fileReadCorruptFile) }
-            defer { cursor += 4 }
-            return (0 ..< 4).reduce(0) { $0 | Int(bytes[cursor + $1]) << ($1 * 8) }
-        }
-        func string() throws -> String {
-            let count = try u32()
-            guard cursor + count <= bytes.count,
-                  let value = String(bytes: bytes[cursor ..< cursor + count], encoding: .utf8) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-            cursor += count
-            return value
-        }
-        _ = try string()
-        let records = try (0 ..< u32()).map { _ in try (string(), u32(), u32()) }
-        return Dictionary(records.map { name, offset, size in
-            (name, Data(bytes[(cursor + offset) ..< (cursor + offset + size)]))
-        }, uniquingKeysWith: { first, _ in first })
     }
 }

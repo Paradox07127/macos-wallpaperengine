@@ -78,13 +78,6 @@
     size_t     i;
     CF2_Fixed  emBoxBottom, emBoxTop;
 
-#if 0
-    CF2_Int  unitsPerEm = font->unitsPerEm;
-
-
-    if ( unitsPerEm == 0 )
-      unitsPerEm = 1000;
-#endif
 
     FT_ZERO( blues );
     blues->scale = font->innerTransform.d;
@@ -110,21 +103,7 @@
      *
      */
 
-    /* get em box from OS/2 typoAscender/Descender                      */
-    /* TODO: FreeType does not parse these metrics.  Skip them for now. */
-#if 0
-    FCM_getHorizontalLineMetrics( &e,
-                                  font->font,
-                                  &ascender,
-                                  &descender,
-                                  &linegap );
-    if ( ascender - descender == unitsPerEm )
-    {
-      emBoxBottom = cf2_intToFixed( descender );
-      emBoxTop    = cf2_intToFixed( ascender );
-    }
-    else
-#endif
+    /* Use the synthetic ICF em box. */
     {
       emBoxBottom = CF2_ICF_Bottom;
       emBoxTop    = CF2_ICF_Top;
@@ -359,24 +338,6 @@
                                       maxZoneHeight );
       }
 
-      /*
-       * TODO: Revisit the bug fix for 613448.  The minimum scale
-       *       requirement catches a number of library fonts.  For
-       *       example, with default BlueScale (.039625) and 0.4 minimum,
-       *       the test below catches any font with maxZoneHeight < 10.1.
-       *       There are library fonts ranging from 2 to 10 that get
-       *       caught, including e.g., Eurostile LT Std Medium with
-       *       maxZoneHeight of 6.
-       *
-       */
-#if 0
-      if ( blueScale < .4 / maxZoneHeight )
-      {
-        tetraphilia_assert( 0 );
-        /* clamp at minimum scale, per bug 0613448 fix */
-        blueScale = .4 / maxZoneHeight;
-      }
-#endif
 
     }
 

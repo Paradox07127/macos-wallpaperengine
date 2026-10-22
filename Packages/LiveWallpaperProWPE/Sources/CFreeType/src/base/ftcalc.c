@@ -482,62 +482,7 @@
 
     return FT_MULFIX_ASSEMBLER( a_, b_ );
 
-#elif 0
-
-    /*
-     * This code is nonportable.  See comment below.
-     *
-     * However, on a platform where right-shift of a signed quantity fills
-     * the leftmost bits by copying the sign bit, it might be faster.
-     */
-
-    FT_Long    sa, sb;
-    FT_UInt32  a, b;
-
-
-    /*
-     * This is a clever way of converting a signed number `a' into its
-     * absolute value (stored back into `a') and its sign.  The sign is
-     * stored in `sa'; 0 means `a' was positive or zero, and -1 means `a'
-     * was negative.  (Similarly for `b' and `sb').
-     *
-     * Unfortunately, it doesn't work (at least not portably).
-     *
-     * It makes the assumption that right-shift on a negative signed value
-     * fills the leftmost bits by copying the sign bit.  This is wrong.
-     * According to K&R 2nd ed, section `A7.8 Shift Operators' on page 206,
-     * the result of right-shift of a negative signed value is
-     * implementation-defined.  At least one implementation fills the
-     * leftmost bits with 0s (i.e., it is exactly the same as an unsigned
-     * right shift).  This means that when `a' is negative, `sa' ends up
-     * with the value 1 rather than -1.  After that, everything else goes
-     * wrong.
-     */
-    sa = ( a_ >> ( sizeof ( a_ ) * 8 - 1 ) );
-    a  = ( a_ ^ sa ) - sa;
-    sb = ( b_ >> ( sizeof ( b_ ) * 8 - 1 ) );
-    b  = ( b_ ^ sb ) - sb;
-
-    a = (FT_UInt32)a_;
-    b = (FT_UInt32)b_;
-
-    if ( a + ( b >> 8 ) <= 8190UL )
-      a = ( a * b + 0x8000U ) >> 16;
-    else
-    {
-      FT_UInt32  al = a & 0xFFFFUL;
-
-
-      a = ( a >> 16 ) * b + al * ( b >> 16 ) +
-          ( ( al * ( b & 0xFFFFUL ) + 0x8000UL ) >> 16 );
-    }
-
-    sa ^= sb;
-    a   = ( a ^ sa ) - sa;
-
-    return (FT_Long)a;
-
-#else /* 0 */
+#else /* !FT_MULFIX_ASSEMBLER */
 
     FT_Int     s = 1;
     FT_UInt32  a, b;
@@ -563,7 +508,7 @@
 
     return s < 0 ? NEG_LONG( a_ ) : a_;
 
-#endif /* 0 */
+#endif /* !FT_MULFIX_ASSEMBLER */
 
   }
 
@@ -938,65 +883,6 @@
 
       return q;
     }
-  }
-
-
-  /* documentation is in ftcalc.h */
-
-  FT_BASE_DEF( FT_Int )
-  ft_corner_orientation( FT_Pos  in_x,
-                         FT_Pos  in_y,
-                         FT_Pos  out_x,
-                         FT_Pos  out_y )
-  {
-    /* we silently ignore overflow errors since such large values */
-    /* lead to even more (harmless) rendering errors later on     */
-
-#ifdef FT_INT64
-
-    FT_Int64  delta = SUB_INT64( MUL_INT64( in_x, out_y ),
-                                 MUL_INT64( in_y, out_x ) );
-
-
-    return ( delta > 0 ) - ( delta < 0 );
-
-#else
-
-    FT_Int64  z1, z2;
-    FT_Int    result;
-
-
-    if ( (FT_ULong)FT_ABS( in_x ) + (FT_ULong)FT_ABS( out_y ) <= 92681UL )
-    {
-      z1.lo = (FT_UInt32)in_x * (FT_UInt32)out_y;
-      z1.hi = (FT_UInt32)( (FT_Int32)z1.lo >> 31 );  /* sign-expansion */
-    }
-    else
-      ft_multo64( (FT_UInt32)in_x, (FT_UInt32)out_y, &z1 );
-
-    if ( (FT_ULong)FT_ABS( in_y ) + (FT_ULong)FT_ABS( out_x ) <= 92681UL )
-    {
-      z2.lo = (FT_UInt32)in_y * (FT_UInt32)out_x;
-      z2.hi = (FT_UInt32)( (FT_Int32)z2.lo >> 31 );  /* sign-expansion */
-    }
-    else
-      ft_multo64( (FT_UInt32)in_y, (FT_UInt32)out_x, &z2 );
-
-    if      ( (FT_Int32)z1.hi > (FT_Int32)z2.hi )
-      result = +1;
-    else if ( (FT_Int32)z1.hi < (FT_Int32)z2.hi )
-      result = -1;
-    else if ( z1.lo > z2.lo )
-      result = +1;
-    else if ( z1.lo < z2.lo )
-      result = -1;
-    else
-      result =  0;
-
-    /* XXX: only the sign of return value, +1/0/-1 must be used */
-    return result;
-
-#endif
   }
 
 

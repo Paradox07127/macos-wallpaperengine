@@ -179,7 +179,7 @@ struct TailCursorStoreTests {
         #expect(store.state(for: newest)?.offset == 10_009)
     }
 
-    @Test("the shipping entry-count cap stays at 256 so each full rewrite stays small")
+    @Test("the shipping entry-count cap stays at 512 so each full rewrite stays small")
     func productionDefaultEntryCountIsSmall() {
         #expect(TailCursorStore.defaultMaxEntryCount == 512)
     }

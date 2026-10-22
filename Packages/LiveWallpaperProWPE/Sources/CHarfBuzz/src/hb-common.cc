@@ -190,21 +190,6 @@ lang_equal (hb_language_t  v1,
   return *p1 == canon_map[*p2];
 }
 
-#if 0
-static unsigned int
-lang_hash (const void *key)
-{
-  const unsigned char *p = key;
-  unsigned int h = 0;
-  while (canon_map[*p])
-    {
-      h = (h << 5) - h + canon_map[*p];
-      p++;
-    }
-
-  return h;
-}
-#endif
 
 
 struct hb_language_item_t {
@@ -709,8 +694,9 @@ parse_char (const char **pp, const char *end, char c)
   return true;
 }
 
+template <typename UInt>
 static bool
-parse_uint (const char **pp, const char *end, unsigned int *pv)
+parse_uint (const char **pp, const char *end, UInt *pv)
 {
   /* Intentionally use hb_parse_int inside instead of hb_parse_uint,
    * such that -1 turns into "big number"... */
@@ -721,17 +707,6 @@ parse_uint (const char **pp, const char *end, unsigned int *pv)
   return true;
 }
 
-static bool
-parse_uint32 (const char **pp, const char *end, uint32_t *pv)
-{
-  /* Intentionally use hb_parse_int inside instead of hb_parse_uint,
-   * such that -1 turns into "big number"... */
-  int v;
-  if (unlikely (!hb_parse_int (pp, end, &v))) return false;
-
-  *pv = v;
-  return true;
-}
 
 static bool
 parse_bool (const char **pp, const char *end, uint32_t *pv)
@@ -838,7 +813,7 @@ static bool
 parse_feature_value_postfix (const char **pp, const char *end, hb_feature_t *feature)
 {
   bool had_equal = parse_char (pp, end, '=');
-  bool had_value = parse_uint32 (pp, end, &feature->value) ||
+  bool had_value = parse_uint (pp, end, &feature->value) ||
 		   parse_bool (pp, end, &feature->value);
   /* CSS doesn't use equal-sign between tag and value.
    * If there was an equal-sign, then there *must* be a value.

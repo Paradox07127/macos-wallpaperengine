@@ -34,23 +34,6 @@ struct AlternateSubst
     }
   }
 
-  /* TODO This function is unused and not updated to 24bit GIDs. Should be done by using
-   * iterators. While at it perhaps using iterator of arrays of hb_codepoint_t instead. */
-  bool serialize (hb_serialize_context_t *c,
-                  hb_sorted_array_t<const HBGlyphID16> glyphs,
-                  hb_array_t<const unsigned int> alternate_len_list,
-                  hb_array_t<const HBGlyphID16> alternate_glyphs_list)
-  {
-    TRACE_SERIALIZE (this);
-    if (unlikely (!c->extend_min (u.format.v))) return_trace (false);
-    unsigned int format = 1;
-    u.format.v = format;
-    switch (u.format.v) {
-    case 1: return_trace (u.format1.serialize (c, glyphs, alternate_len_list, alternate_glyphs_list));
-    default:return_trace (false);
-    }
-  }
-
   /* TODO subset() should choose format. */
 
 };

@@ -1570,10 +1570,6 @@ THE SOFTWARE.
 
         /* for simplicity, we take absolute values of integer properties */
 
-#if 0
-        bsize->height = face->accel.maxbounds.ascent << 6;
-#endif
-
 #ifdef FT_DEBUG_LEVEL_TRACE
         if ( face->accel.fontAscent + face->accel.fontDescent < 0 )
           FT_TRACE0(( "pcf_load_font: negative height\n" ));

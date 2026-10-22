@@ -1,5 +1,9 @@
 // swift-tools-version: 6.0
+import Foundation
 import PackageDescription
+
+/// External producer/oracle acceptance is explicit and never inherited by the mandatory gate.
+let externalCorpus = ProcessInfo.processInfo.environment["LIVEWALLPAPER_EXTERNAL_FIXTURES"] == "1"
 
 let package = Package(
     name: "LiveWallpaperProWPE",
@@ -109,7 +113,8 @@ let package = Package(
         .testTarget(
             name: "LiveWallpaperProWPETests",
             dependencies: ["LiveWallpaperProWPE", "CHarfBuzz", "CFreeType", "CWPESDF"],
-            path: "Tests/LiveWallpaperProWPETests"
+            path: "Tests/LiveWallpaperProWPETests",
+            exclude: externalCorpus ? [] : ["ExternalCorpus"]
         ),
     ],
     cxxLanguageStandard: .cxx17

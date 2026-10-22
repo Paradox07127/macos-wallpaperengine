@@ -12,7 +12,6 @@ struct PluralCountCopyTests {
         "%@ favorites": "compact count from 1,000 up; below that the %lld key is used",
         "%@ views": "compact count from 1,000 up; below that the %lld key is used",
         "%@ subs": "no call site",
-        "All %@ time-based wallpaper rules will be cleared. The current wallpaper stays applied.": "no call site",
         "Deletes %@ scratch items · %@ created by test runs in the container's tmp folder. Nothing else reads them.": "no call site",
         "Skipped %lld displays that changed afterward.": "only for 2 or more; one display gets a message naming it",
         "Created a playlist of %lld videos on %@": "only a drop of 2 or more videos becomes a playlist",

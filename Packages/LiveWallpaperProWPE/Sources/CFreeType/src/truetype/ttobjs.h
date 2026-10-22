@@ -313,9 +313,6 @@ FT_BEGIN_HEADER
   FT_LOCAL( FT_Error )
   tt_driver_init( FT_Module  ttdriver );    /* TT_Driver */
 
-  FT_LOCAL( void )
-  tt_driver_done( FT_Module  ttdriver );    /* TT_Driver */
-
 
   /**************************************************************************
    *

@@ -331,10 +331,20 @@ struct ConnectorQueueExpiryTests {
             contentsOf: RepositoryRoot.url("SteamConnector/SteamConnector.swift"),
             encoding: .utf8
         )
-        let enqueues = source.components(separatedBy: "Self.steamCMDQueue.async {").count - 1
-        // The liveness object is captured before the enqueue (never `self`) and checked at the top of the body: connection gone or queue wait past the budget, either way the caller is not listening.
+        let serialBodies = source.components(separatedBy: "Self.steamCMDQueue.async {").dropFirst()
+        let downloadBodies = source.components(separatedBy: "Self.downloadQueue.addOperation {").dropFirst()
+        let enqueues = serialBodies.count + downloadBodies.count
+        // Both queues capture the caller before enqueueing. Isolated downloads also reject cancelled jobs,
+        // after installing their response/cleanup defer and before preparing the workspace.
         let captures = source.components(separatedBy: "let liveness = callerLiveness").count - 1
-        let guards = source.components(separatedBy: "guard liveness.isLive(enqueuedAt: enqueuedAt) else").count - 1
+        let serialGuards = serialBodies.filter {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("guard liveness.isLive(enqueuedAt: enqueuedAt) else")
+        }.count
+        let downloadGuards = downloadBodies.filter {
+            $0.components(separatedBy: "let workspace: URL")[0]
+                .contains("guard liveness.isLive(enqueuedAt: enqueuedAt), !job.isCancelled else")
+        }.count
+        let guards = serialGuards + downloadGuards
         #expect(enqueues > 0)
         #expect(captures == enqueues, "a queued body enqueues without capturing the caller's liveness")
         #expect(guards == enqueues, "a queued body is missing its abandonment check")

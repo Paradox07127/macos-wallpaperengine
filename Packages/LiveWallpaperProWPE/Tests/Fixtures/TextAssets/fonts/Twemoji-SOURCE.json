@@ -1,0 +1,7 @@
+{
+  "url": "https://github.com/mozilla/twemoji-colr/releases/download/v0.4.0/TwemojiMozilla.ttf",
+  "sha256": "063b2a145c2331e1aede451242b5107a0f29a44d782fdb24a6adb9754dc48d14",
+  "license_url": "https://github.com/mozilla/twemoji-colr/blob/v0.4.0/LICENSE.md",
+  "attribution": "Twemoji artwork by Twitter and contributors; COLR/CPAL font by Mozilla Foundation. Unmodified v0.4.0 test fixture.",
+  "license": "Apache-2.0 (code); CC-BY-4.0 (artwork)"
+}

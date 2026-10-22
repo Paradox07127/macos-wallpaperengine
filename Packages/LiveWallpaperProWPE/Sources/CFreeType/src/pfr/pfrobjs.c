@@ -406,23 +406,6 @@
       metrics->vertBearingX = 0;
       metrics->vertBearingY = 0;
 
-#if 0 /* some fonts seem to be broken here! */
-
-      /* Apply the font matrix, if any.                 */
-      /* TODO: Test existing fonts with unusual matrix  */
-      /* whether we have to adjust Units per EM.        */
-      {
-        FT_Matrix font_matrix;
-
-
-        font_matrix.xx = face->log_font.matrix[0] << 8;
-        font_matrix.yx = face->log_font.matrix[1] << 8;
-        font_matrix.xy = face->log_font.matrix[2] << 8;
-        font_matrix.yy = face->log_font.matrix[3] << 8;
-
-        FT_Outline_Transform( outline, &font_matrix );
-      }
-#endif
 
       /* scale when needed */
       if ( !( load_flags & FT_LOAD_NO_SCALE ) )

@@ -8,47 +8,6 @@ import UniformTypeIdentifiers
 @Suite("SceneResourceResolver")
 struct SceneResourceResolverTests {
 
-    @Test("Raster decode thumbnails to maxSourceEdge without keeping the full bitmap")
-    func rasterDecodeUsesThumbnailWhenCapped() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        try writePNG(at: fixture.cacheRoot.appendingPathComponent("huge.png"), width: 256, height: 256)
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let full = try resolver.resolveImage(relativePath: "huge.png").image
-        #expect(full.width == 256)
-        #expect(full.height == 256)
-
-        let capped = try resolver.resolveImage(relativePath: "huge.png", maxSourceEdge: 64)
-        #expect(max(capped.image.width, capped.image.height) <= 64)
-        #expect(min(capped.image.width, capped.image.height) > 0)
-    }
-
-    @Test("Strip-shaped rasters stay full size under a source-edge cap")
-    func rasterDecodeKeepsLUTStrips() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        try writePNG(at: fixture.cacheRoot.appendingPathComponent("lut.png"), width: 256, height: 1)
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let image = try resolver.resolveImage(relativePath: "lut.png", maxSourceEdge: 64).image
-        #expect(image.width == 256)
-        #expect(image.height == 1)
-    }
-
-    @Test("Image inside the cache root decodes successfully")
-    func imageInsideCacheRoot() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        try writePNG(at: fixture.cacheRoot.appendingPathComponent("layer.png"))
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let image = try resolver.resolveImage(relativePath: "layer.png").image
-
-        #expect(image.width > 0)
-        #expect(image.height > 0)
-    }
-
     @Test("Path traversal via .. is rejected")
     func pathTraversalRejected() throws {
         let fixture = try makeFixture()
@@ -58,7 +17,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.pathEscape) {
-            try resolver.resolveImage(relativePath: "../secret.png").image
+            try resolver.data(relativePath: "../secret.png")
         }
     }
 
@@ -70,7 +29,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.pathEscape) {
-            try resolver.resolveImage(relativePath: "/etc/passwd").image
+            try resolver.data(relativePath: "/etc/passwd")
         }
     }
 
@@ -86,91 +45,8 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.pathEscape) {
-            try resolver.resolveImage(relativePath: "escape.png").image
+            try resolver.data(relativePath: "escape.png")
         }
-    }
-
-    @Test("Truncated .tex surfaces as a texture-specific resolve error")
-    func texTruncatedSurfacesTextureError() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        try Data([0x00, 0x01]).write(to: fixture.cacheRoot.appendingPathComponent("layer.tex"))
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-
-        do {
-            _ = try resolver.resolveImage(relativePath: "layer.tex").image
-            Issue.record("Expected resolveImage to throw on truncated .tex")
-        } catch SceneResourceResolver.ResolveError.texture(let texError) {
-            switch texError {
-            case .truncatedBlock, .unsupportedContainer:
-                break
-            default:
-                Issue.record("Expected truncatedBlock/unsupportedContainer, got \(texError)")
-            }
-        } catch {
-            Issue.record("Expected ResolveError.texture, got \(error)")
-        }
-    }
-
-    @Test("Preview decode rejects MP4-backed .tex that advertises RGBA8888")
-    func texPreviewRejectsMP4BackedRGBA() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        try writeRGBA8888Tex(
-            at: fixture.cacheRoot.appendingPathComponent("video.tex"),
-            width: 1,
-            height: 1,
-            payload: mp4HeaderPayload()
-        )
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        #expect(throws: SceneResourceResolver.ResolveError.texture(.unsupportedAnimation)) {
-            _ = try resolver.resolveImage(relativePath: "video.tex")
-        }
-    }
-
-    @Test("Model wrapper JSON resolves to materials/<name>.tex via material chain")
-    func materialChainResolves() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-
-        let modelsDir = fixture.cacheRoot.appendingPathComponent("models", isDirectory: true)
-        let materialsDir = fixture.cacheRoot.appendingPathComponent("materials", isDirectory: true)
-        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: materialsDir, withIntermediateDirectories: true)
-
-        try Data("""
-        { "autosize": true, "material": "materials/foo.json" }
-        """.utf8).write(to: modelsDir.appendingPathComponent("foo.json"))
-        try Data("""
-        { "passes": [{ "textures": ["foo"], "shader": "genericimage4" }] }
-        """.utf8).write(to: materialsDir.appendingPathComponent("foo.json"))
-        try writeRGBA8888Tex(at: materialsDir.appendingPathComponent("foo.tex"))
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let image = try resolver.resolveImage(relativePath: "models/foo.json").image
-
-        #expect(image.width == 4)
-        #expect(image.height == 4)
-    }
-
-    @Test("Workshop raw image references resolve converted material tex payloads")
-    func workshopRawImageReferenceResolvesConvertedTex() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-
-        let stored = fixture.cacheRoot
-            .appendingPathComponent("materials/workshop/2328851328/particle", isDirectory: true)
-            .appendingPathComponent("雪花.jpg.tex")
-        try FileManager.default.createDirectory(at: stored.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try writeRGBA8888Tex(at: stored)
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let image = try resolver.resolveImage(relativePath: "workshop/2328851328/particle/雪花.jpg").image
-
-        #expect(image.width == 4)
-        #expect(image.height == 4)
     }
 
     @Test("Workshop raw image references exist when stored as converted material tex")
@@ -189,43 +65,6 @@ struct SceneResourceResolverTests {
         #expect(resolver.exists(relativePath: "workshop/2328851328/particle/雪花.jpg"))
     }
 
-    @Test("A missing built-in util model is a renderer gap, not a damaged material")
-    func builtinUtilModelSurfacesPrecisely() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-
-        do {
-            _ = try resolver.resolveImage(relativePath: "models/util/solidlayer.json").image
-            Issue.record("Expected builtinLayerUnavailable")
-        } catch let SceneResourceResolver.ResolveError.builtinLayerUnavailable(reason) {
-            // 断言路径而非英文措辞:reason 是会本地化的用户文案。
-            #expect(reason.contains("models/util/solidlayer.json"))
-        } catch {
-            Issue.record("Expected builtinLayerUnavailable, got \(error)")
-        }
-    }
-
-    @Test("JSON wrapper without material/passes fields surfaces materialUnresolved")
-    func malformedDescriptorSurfacesUnresolved() throws {
-        let fixture = try makeFixture()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let modelsDir = fixture.cacheRoot.appendingPathComponent("models", isDirectory: true)
-        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
-        try Data("""
-        { "autosize": true, "puppet": "models/foo_puppet.mdl" }
-        """.utf8).write(to: modelsDir.appendingPathComponent("foo.json"))
-
-        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        do {
-            _ = try resolver.resolveImage(relativePath: "models/foo.json").image
-            Issue.record("Expected materialUnresolved")
-        } catch SceneResourceResolver.ResolveError.materialUnresolved {
-        } catch {
-            Issue.record("Expected materialUnresolved, got \(error)")
-        }
-    }
-
     @Test("Missing file throws fileMissing")
     func missingFileThrows() throws {
         let fixture = try makeFixture()
@@ -234,7 +73,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.fileMissing) {
-            try resolver.resolveImage(relativePath: "missing.png").image
+            try resolver.data(relativePath: "missing.png")
         }
     }
 
@@ -293,17 +132,6 @@ struct SceneResourceResolverTests {
         appendUInt32(UInt32(pixels.count))
         data.append(pixels)
         try data.write(to: url)
-    }
-
-    private func mp4HeaderPayload() -> Data {
-        Data([
-            0x00, 0x00, 0x00, 0x18,
-            0x66, 0x74, 0x79, 0x70,
-            0x6d, 0x70, 0x34, 0x32,
-            0x00, 0x00, 0x00, 0x00,
-            0x6d, 0x70, 0x34, 0x32,
-            0x69, 0x73, 0x6f, 0x6d
-        ])
     }
 
     private func writePNG(at url: URL, width: Int = 4, height: Int = 4) throws {

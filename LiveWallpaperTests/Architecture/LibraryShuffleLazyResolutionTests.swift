@@ -40,10 +40,8 @@ struct LibraryShuffleLazyResolutionTests {
         #expect(resolutions == 0, "listing the library opened its items")
         var committed: [WallpaperContent] = []
         let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
-            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
-            setupPreparedVideoPlayback: { _, _, _, _ in }, restoreProposedConfiguration: { _, _ in },
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
             bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
             prepareAutomation: { _, proposed, _, intended in
                 guard intended() else { return .cancelled }

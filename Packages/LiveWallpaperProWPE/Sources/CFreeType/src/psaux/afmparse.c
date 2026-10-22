@@ -396,10 +396,7 @@
       AFM_Value  val = vals + i;
 
 
-      if ( val->type == AFM_VALUE_TYPE_STRING )
-        str = afm_stream_read_string( stream );
-      else
-        str = afm_stream_read_one( stream );
+      str = afm_stream_read_one( stream );
 
       if ( !str )
         break;
@@ -408,21 +405,6 @@
 
       switch ( val->type )
       {
-      case AFM_VALUE_TYPE_STRING:
-      case AFM_VALUE_TYPE_NAME:
-        {
-          FT_Memory  memory = parser->memory;
-          FT_Error   error;
-
-
-          if ( !FT_QALLOC( val->u.s, len + 1 ) )
-          {
-            ft_memcpy( val->u.s, str, len );
-            val->u.s[len] = '\0';
-          }
-        }
-        break;
-
       case AFM_VALUE_TYPE_FIXED:
         val->u.f = PS_Conv_ToFixed( (FT_Byte**)(void*)&str,
                                     (FT_Byte*)str + len, 0 );
@@ -453,52 +435,28 @@
 
   FT_LOCAL_DEF( char* )
   afm_parser_next_key( AFM_Parser  parser,
-                       FT_Bool     line,
                        FT_Offset*  len )
   {
     AFM_Stream  stream = parser->stream;
     char*       key    = NULL;  /* make stupid compiler happy */
 
 
-    if ( line )
+    while ( 1 )
     {
-      while ( 1 )
-      {
-        /* skip current line */
-        if ( !AFM_STATUS_EOL( stream ) )
-          afm_stream_read_string( stream );
+      /* skip current line */
+      if ( !AFM_STATUS_EOL( stream ) )
+        afm_stream_read_string( stream );
 
-        stream->status = AFM_STREAM_STATUS_NORMAL;
-        key = afm_stream_read_one( stream );
+      stream->status = AFM_STREAM_STATUS_NORMAL;
+      key = afm_stream_read_one( stream );
 
-        /* skip empty line */
-        if ( !key                      &&
-             !AFM_STATUS_EOF( stream ) &&
-             AFM_STATUS_EOL( stream )  )
-          continue;
+      /* skip empty line */
+      if ( !key                      &&
+           !AFM_STATUS_EOF( stream ) &&
+           AFM_STATUS_EOL( stream )  )
+        continue;
 
-        break;
-      }
-    }
-    else
-    {
-      while ( 1 )
-      {
-        /* skip current column */
-        while ( !AFM_STATUS_EOC( stream ) )
-          afm_stream_read_one( stream );
-
-        stream->status = AFM_STREAM_STATUS_NORMAL;
-        key = afm_stream_read_one( stream );
-
-        /* skip empty column */
-        if ( !key                      &&
-             !AFM_STATUS_EOF( stream ) &&
-             AFM_STATUS_EOC( stream )  )
-          continue;
-
-        break;
-      }
+      break;
     }
 
     if ( len )
@@ -640,7 +598,7 @@
         return error;
     }
 
-    while ( ( key = afm_parser_next_key( parser, 1, &len ) ) != 0 )
+    while ( ( key = afm_parser_next_key( parser, &len ) ) != 0 )
     {
       AFM_ValueRec  shared_vals[5];
 
@@ -782,7 +740,7 @@
         return error;
     }
 
-    while ( ( key = afm_parser_next_key( parser, 1, &len ) ) != 0 )
+    while ( ( key = afm_parser_next_key( parser, &len ) ) != 0 )
     {
       AFM_Token  token = afm_tokenize( key, len );
 
@@ -883,7 +841,7 @@
     int  have_kernpairs = 0;
 
 
-    while ( ( key = afm_parser_next_key( parser, 1, &len ) ) != 0 )
+    while ( ( key = afm_parser_next_key( parser, &len ) ) != 0 )
     {
       switch ( afm_tokenize( key, len ) )
       {
@@ -946,12 +904,12 @@
 
     while ( n-- > 0 )
     {
-      key = afm_parser_next_key( parser, 1, NULL );
+      key = afm_parser_next_key( parser, NULL );
       if ( !key )
         goto Fail;
     }
 
-    while ( ( key = afm_parser_next_key( parser, 1, &len ) ) != 0 )
+    while ( ( key = afm_parser_next_key( parser, &len ) ) != 0 )
     {
       AFM_Token  token = afm_tokenize( key, len );
 
@@ -979,12 +937,12 @@
     if ( !fi )
       return FT_THROW( Invalid_Argument );
 
-    key = afm_parser_next_key( parser, 1, &len );
+    key = afm_parser_next_key( parser, &len );
     if ( !key || len != 16                              ||
          ft_strncmp( key, "StartFontMetrics", 16 ) != 0 )
       return FT_THROW( Unknown_File_Format );
 
-    while ( ( key = afm_parser_next_key( parser, 1, &len ) ) != 0 )
+    while ( ( key = afm_parser_next_key( parser, &len ) ) != 0 )
     {
       AFM_ValueRec  shared_vals[4];
 

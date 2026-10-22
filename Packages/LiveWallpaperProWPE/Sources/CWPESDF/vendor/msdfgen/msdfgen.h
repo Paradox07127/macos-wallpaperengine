@@ -31,15 +31,6 @@
 #include "core/edge-coloring.h"
 #include "core/generator-config.h"
 #include "core/msdf-error-correction.h"
-#include "core/render-sdf.h"
-#include "core/rasterization.h"
-#include "core/sdf-error-estimation.h"
-#include "core/save-bmp.h"
-#include "core/save-tiff.h"
-#include "core/save-rgba.h"
-#include "core/save-fl32.h"
-#include "core/shape-description.h"
-#include "core/export-svg.h"
 
 namespace msdfgen {
 

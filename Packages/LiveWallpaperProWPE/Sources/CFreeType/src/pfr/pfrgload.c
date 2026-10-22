@@ -58,10 +58,6 @@
     glyph->y_control = NULL;
 
     glyph->max_xy_control = 0;
-#if 0
-    glyph->num_x_control  = 0;
-    glyph->num_y_control  = 0;
-#endif
 
     FT_FREE( glyph->subs );
 

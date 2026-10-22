@@ -176,12 +176,6 @@ extension ScreenManager {
         automationOrchestrator.replaceWallpaperQueue(entries, for: screen)
     }
 
-    func playPlaylistEntry(at index: Int, for screen: Screen) {
-        guard !isTerminating else { return }
-        beginExplicitWallpaperSelection(for: screen)
-        automationOrchestrator.playPlaylistEntry(at: index, for: screen)
-    }
-
     func previewWallpaperQueueEntry(_ entry: WallpaperQueueEntry, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)

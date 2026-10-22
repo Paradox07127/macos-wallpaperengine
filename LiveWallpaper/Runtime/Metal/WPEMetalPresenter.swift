@@ -36,7 +36,7 @@ final class WPEMetalPresenter {
     private let pipelineCache: WPEMetalPipelineCache
     var linearPresentationTexture: MTLTexture?
     lazy var gpuPassProfiler = WPEMetalPassGPUProfiler.makeIfEnabled(device: device)
-    lazy var metalFXUpscaler = WPEMetalFXSpatialUpscaler.makeIfEnabled(device: device, library: defaultLibrary)
+    lazy var metalFXUpscaler = WPEMetalFXSpatialUpscaler.makeIfEnabled(device: device)
     var outputTexturePool: [MTLTexture] = []
     var spanOutputTextureLimit: Int?
     var recentOutputTextureIDs: [ObjectIdentifier] = []

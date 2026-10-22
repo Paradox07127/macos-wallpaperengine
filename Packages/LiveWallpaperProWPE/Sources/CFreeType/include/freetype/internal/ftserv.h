@@ -164,14 +164,11 @@ FT_BEGIN_HEADER
    *
    * @macro:
    *   FT_DEFINE_SERVICEDESCREC1
-   *   FT_DEFINE_SERVICEDESCREC2
    *   FT_DEFINE_SERVICEDESCREC3
    *   FT_DEFINE_SERVICEDESCREC4
    *   FT_DEFINE_SERVICEDESCREC5
    *   FT_DEFINE_SERVICEDESCREC6
-   *   FT_DEFINE_SERVICEDESCREC7
    *   FT_DEFINE_SERVICEDESCREC8
-   *   FT_DEFINE_SERVICEDESCREC9
    *   FT_DEFINE_SERVICEDESCREC10
    *
    * @description:
@@ -185,16 +182,6 @@ FT_BEGIN_HEADER
   static const FT_ServiceDescRec  class_[] =                                \
   {                                                                         \
     { serv_id_1, serv_data_1 },                                             \
-    { NULL, NULL }                                                          \
-  };
-
-#define FT_DEFINE_SERVICEDESCREC2( class_,                                  \
-                                   serv_id_1, serv_data_1,                  \
-                                   serv_id_2, serv_data_2 )                 \
-  static const FT_ServiceDescRec  class_[] =                                \
-  {                                                                         \
-    { serv_id_1, serv_data_1 },                                             \
-    { serv_id_2, serv_data_2 },                                             \
     { NULL, NULL }                                                          \
   };
 
@@ -258,26 +245,6 @@ FT_BEGIN_HEADER
     { NULL, NULL }                                                          \
   };
 
-#define FT_DEFINE_SERVICEDESCREC7( class_,                                  \
-                                   serv_id_1, serv_data_1,                  \
-                                   serv_id_2, serv_data_2,                  \
-                                   serv_id_3, serv_data_3,                  \
-                                   serv_id_4, serv_data_4,                  \
-                                   serv_id_5, serv_data_5,                  \
-                                   serv_id_6, serv_data_6,                  \
-                                   serv_id_7, serv_data_7 )                 \
-  static const FT_ServiceDescRec  class_[] =                                \
-  {                                                                         \
-    { serv_id_1, serv_data_1 },                                             \
-    { serv_id_2, serv_data_2 },                                             \
-    { serv_id_3, serv_data_3 },                                             \
-    { serv_id_4, serv_data_4 },                                             \
-    { serv_id_5, serv_data_5 },                                             \
-    { serv_id_6, serv_data_6 },                                             \
-    { serv_id_7, serv_data_7 },                                             \
-    { NULL, NULL }                                                          \
-  };
-
 #define FT_DEFINE_SERVICEDESCREC8( class_,                                  \
                                    serv_id_1, serv_data_1,                  \
                                    serv_id_2, serv_data_2,                  \
@@ -297,30 +264,6 @@ FT_BEGIN_HEADER
     { serv_id_6, serv_data_6 },                                             \
     { serv_id_7, serv_data_7 },                                             \
     { serv_id_8, serv_data_8 },                                             \
-    { NULL, NULL }                                                          \
-  };
-
-#define FT_DEFINE_SERVICEDESCREC9( class_,                                  \
-                                   serv_id_1, serv_data_1,                  \
-                                   serv_id_2, serv_data_2,                  \
-                                   serv_id_3, serv_data_3,                  \
-                                   serv_id_4, serv_data_4,                  \
-                                   serv_id_5, serv_data_5,                  \
-                                   serv_id_6, serv_data_6,                  \
-                                   serv_id_7, serv_data_7,                  \
-                                   serv_id_8, serv_data_8,                  \
-                                   serv_id_9, serv_data_9 )                 \
-  static const FT_ServiceDescRec  class_[] =                                \
-  {                                                                         \
-    { serv_id_1, serv_data_1 },                                             \
-    { serv_id_2, serv_data_2 },                                             \
-    { serv_id_3, serv_data_3 },                                             \
-    { serv_id_4, serv_data_4 },                                             \
-    { serv_id_5, serv_data_5 },                                             \
-    { serv_id_6, serv_data_6 },                                             \
-    { serv_id_7, serv_data_7 },                                             \
-    { serv_id_8, serv_data_8 },                                             \
-    { serv_id_9, serv_data_9 },                                             \
     { NULL, NULL }                                                          \
   };
 

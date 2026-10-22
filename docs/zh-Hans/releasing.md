@@ -42,14 +42,12 @@ scripts/release_candidate_check.sh
 想要可复现的验证运行，把所有临时产物放在仓库之外：
 
 ```sh
-DERIVED_DATA=/tmp/LoomscreenReleaseCandidate-arm64 \
+DERIVED_DATA="$(mktemp -d -t LoomscreenReleaseCandidate)" \
   scripts/release_candidate_check.sh
 ```
 
-Pro 与 Lite 的冒烟 archive 默认落在
-`/tmp/LoomscreenReleaseCandidate-arm64ProRelease/LiveWallpaper-LinkMatrix.xcarchive`
-和
-`/tmp/LoomscreenReleaseCandidate-arm64LiteRelease/Loomscreen-LinkMatrix.xcarchive`。
+Pro 与 Lite 的冒烟 archive 每次使用新的系统临时目录，脚本验证后清理。
+必选门禁不需要个人 Workshop 库；真实 producer/oracle 语料通过[构建指南](building.md#真实-producer-与-workshop-语料验收)中的独立入口验收。
 它们只做 ad-hoc 签名，目的是走一遍真实的 archive/签名路径。Pro 必须只含 arm64；
 Lite 必须含 arm64，并允许额外带 x86_64——因为 Lite 以 universal 形式发布以支持
 Intel Mac。两者的嵌套签名都必须有效。两个 SKU 都内嵌 `WallpaperMaintenance.xpc`，它替系统壁纸扩展

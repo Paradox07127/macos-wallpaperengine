@@ -521,23 +521,4 @@
   }
 
 
-  /**************************************************************************
-   *
-   * @Function:
-   *   cid_driver_done
-   *
-   * @Description:
-   *   Finalizes a given CID driver.
-   *
-   * @Input:
-   *   driver ::
-   *     A handle to the target CID driver.
-   */
-  FT_LOCAL_DEF( void )
-  cid_driver_done( FT_Module  driver )
-  {
-    FT_UNUSED( driver );
-  }
-
-
 /* END */

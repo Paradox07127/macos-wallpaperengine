@@ -123,17 +123,6 @@
   }
 
 
-#if 0
-
-  FT_LOCAL_DEF( FT_Error )
-  FTC_GCache_Init( FTC_GCache  gcache )
-  {
-    return ftc_gcache_init( FTC_CACHE( gcache ) );
-  }
-
-#endif /* 0 */
-
-
   FT_LOCAL_DEF( void )
   ftc_gcache_done( FTC_Cache  cache )
   {
@@ -143,17 +132,6 @@
     FTC_Cache_Done( cache );
     FTC_MruList_Done( &gcache->families );
   }
-
-
-#if 0
-
-  FT_LOCAL_DEF( void )
-  FTC_GCache_Done( FTC_GCache  gcache )
-  {
-    ftc_gcache_done( FTC_CACHE( gcache ) );
-  }
-
-#endif /* 0 */
 
 
   FT_LOCAL_DEF( FT_Error )

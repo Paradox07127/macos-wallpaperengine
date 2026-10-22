@@ -33,11 +33,10 @@ struct SteamConnectorClientCancellationTests {
         #expect(spawn[register.lowerBound...].prefix(220).contains("isCancelled: isCancelled"))
     }
 
-    @Test("Downloads and engine queries carry connection cancellation through child registration")
+    @Test("Engine queries and installs carry connection cancellation through child registration")
     func ownedOperationsCheckCancellationAtSpawn() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
         for (start, end, expectedCalls) in [
-            ("    func downloadWorkshopItem(", "    func listSubscribedWorkshopItems(", 1),
             ("    func latestWallpaperEngineBuildID(", "    func installWallpaperEngineAssets(", 1),
             ("    func installWallpaperEngineAssets(", "    private static func discardStagedWorkshopTree(", 2),
         ] {

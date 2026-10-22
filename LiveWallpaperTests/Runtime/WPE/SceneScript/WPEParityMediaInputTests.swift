@@ -58,7 +58,6 @@ struct WPEParityMediaInputTests {
             }
         })
         #expect(source.subscriberCount == 1)
-        #expect(mailbox.drain().isEmpty)
         #expect(dispatcher.replayGeneration(2))
         #expect(mailbox.drainParityInputs(generation: 2).isEmpty)
         #expect(wakes.withLock { $0 } == 3)

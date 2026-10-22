@@ -93,7 +93,7 @@ struct WPEParityFixtureShaderCompiler: WPEParityShaderCompiling {
     }
 
     /// The capture leaves `vertexInputs` empty while MSC's raw reflection lists them under `state.vertex_inputs`.
-    private static func fillingVertexInputs(_ json: Data) throws -> Data {
+    static func fillingVertexInputs(_ json: Data) throws -> Data {
         guard var object = try JSONSerialization.jsonObject(with: json) as? [String: Any],
               (object["vertexInputs"] as? [Any])?.isEmpty == true,
               let msc = object["mscReflection"] as? [String: Any],

@@ -92,9 +92,14 @@ case "$SKU" in
     ;;
 esac
 
-DERIVED_DATA="${DERIVED_DATA:-/tmp/${ARTIFACT}Release}"
-DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+DERIVED_DATA="${DERIVED_DATA:-${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/${ARTIFACT}Release}"
+DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 export DEVELOPER_DIR
+WPE_SHADER_TOOLCHAIN_ROOT="${WPE_SHADER_TOOLCHAIN_ROOT:-$ROOT/build/wpe-shader-toolchain-inputs}"
+[[ "$WPE_SHADER_TOOLCHAIN_ROOT" == /* ]] || WPE_SHADER_TOOLCHAIN_ROOT="$ROOT/$WPE_SHADER_TOOLCHAIN_ROOT"
+if [[ "$SKU" == pro ]]; then
+  WPE_SHADER_TOOLCHAIN_ROOT="$WPE_SHADER_TOOLCHAIN_ROOT" bash WPEShaderCompiler/build.sh --check-inputs
+fi
 
 codesign_team_id() {
   codesign -dv "$1" 2>&1 | awk -F= '/^TeamIdentifier/{print $2; exit}'
@@ -289,6 +294,8 @@ xcodebuild archive \
   DEVELOPMENT_TEAM="$EXPECTED_TEAM_ID" \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
+  SWIFT_EMIT_LOC_STRINGS=NO \
+  WPE_SHADER_TOOLCHAIN_ROOT="$WPE_SHADER_TOOLCHAIN_ROOT" \
   STRINGS_FILE_OUTPUT_ENCODING=binary \
   ${ARCHIVE_ARCHS:+ARCHS="$ARCHIVE_ARCHS"} \
   > "$OUTPUT_DIR/archive-$ARTIFACT.log" 2>&1 || {
@@ -451,7 +458,7 @@ create-dmg \
 
 echo "== [$SKU] Verifying DMG =="
 # Verify the packaged app before publishing its checksum.
-DMG_MOUNT="$(mktemp -d /tmp/lw-dmg-verify.XXXXXX)"
+DMG_MOUNT="$(mktemp -d -t lw-dmg-verify)"
 if ! hdiutil attach "$DMG_PATH" -nobrowse -readonly -mountpoint "$DMG_MOUNT" >/dev/null 2>&1; then
   echo "ERROR: could not mount $DMG_PATH for verification." >&2
   rmdir "$DMG_MOUNT" 2>/dev/null || true

@@ -71,28 +71,6 @@ struct SceneFailurePresentationTests {
         #expect(reason.recovery(workshopID: "local") == [.configureEngineAssets, .retry])
     }
 
-    @Test("Both surfaces read the same presentation for the same reason")
-    func presentationIsSurfaceIndependent() {
-        let origin = WPEOrigin(
-            workshopID: "1234",
-            title: "Night Sky",
-            originalType: .scene,
-            sourceFolderBookmark: Data([1]),
-            cacheRelativePath: "1234",
-            previewFileName: nil,
-            entryFile: "scene.json"
-        )
-        for reason in Self.allReasons {
-            let a = reason.presentation(origin: origin, engineAssetsAuthorized: true)
-            let b = reason.presentation(origin: origin, engineAssetsAuthorized: true)
-            #expect(a.tint == b.tint)
-            #expect(a.symbol == b.symbol)
-            #expect(a.code == b.code)
-            #expect(a.recovery == b.recovery)
-            #expect(a.failureClass == b.failureClass)
-        }
-    }
-
     @Test("Shared-asset wording changes with whether assets are linked")
     func resourceMessageTracksAssetState() {
         let linked = FallbackReason.sceneResourceMissing

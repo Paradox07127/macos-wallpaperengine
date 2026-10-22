@@ -833,9 +833,6 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.state.object("1")?.alpha ?? 1, 0, accuracy: 2e-3)
     }
 
-    static let install = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
-
     private struct Scene {
         let document: WPESceneDocument
         var state: WPEParitySceneState
@@ -861,9 +858,6 @@ final class ParityScriptEngineTests: XCTestCase {
                               assets: WPEParityProgramAssets? = nil,
                               resolveEffectResources: Bool = false,
                               configure: (inout WPEParityScriptEngine.Configuration) -> Void = { _ in }) throws -> Scene {
-        guard assets != nil || FileManager.default.fileExists(atPath: install.appendingPathComponent("scripts").path) else {
-            throw XCTSkip("No Wallpaper Engine assets")
-        }
         var generalJSON: [String: Any] = ["orthogonalprojection": ["width": 1920, "height": 1080]]
         generalJSON.merge(general) { _, new in new }
         let json: [String: Any] = ["camera": ["center": "0 0 -1", "eye": "0 0 0", "up": "0 1 0"], "general": generalJSON,
@@ -872,9 +866,8 @@ final class ParityScriptEngineTests: XCTestCase {
             data: JSONSerialization.data(withJSONObject: json), userValues: [:]
         )
         let state = WPEParitySceneState(document: document, hdr: false, constants: constants)
-        var configuration = WPEParityScriptEngine.Configuration(
-            assets: assets ?? WPEParityProgramAssets(sceneDirectory: FileManager.default.temporaryDirectory,
-                                                     assetRoots: [install]),
+        var configuration = try WPEParityScriptEngine.Configuration(
+            assets: assets ?? fixedAssets(),
             canvasSize: SIMD2(1920, 1080), screenResolution: SIMD2(1920, 1080), angleConstants: angleConstants
         )
         if resolveEffectResources {
@@ -1050,14 +1043,15 @@ final class ParityScriptEngineTests: XCTestCase {
     /// Module scope already reads the loaded layer values.
     func testModuleScopeReadsTheLoadedState() throws {
         var scene = try Self.scene([
-            Self.layer(1, "A", ["origin": "100 200 0", "alpha": Self.scripted(1, """
+            Self.layer(1, "A", ["origin": "200 200 0", "alpha": Self.scripted(1, """
             const original = thisLayer.origin.x;
             export function update(value) { return original / 100; }
             """)]),
         ])
         try scene.engine.start(state: &scene.state)
         scene.engine.tick(dt: 1 / 60, state: &scene.state)
-        XCTAssertEqual(scene.state.object("1")?.alpha, 1)
+        XCTAssertEqual(scene.state.object("1")?.alpha, 2)
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
     /// With a keyframe animation on the property, update receives this frame's animated value and its return wins.

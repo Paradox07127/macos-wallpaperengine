@@ -25,24 +25,6 @@ enum RepositoryRoot {
         try Data(contentsOf: url(relativePath))
     }
 
-    static func componentSource(under directory: String, namePrefix: String) throws -> String {
-        let files = swiftFiles(under: directory)
-            .filter { $0.deletingPathExtension().lastPathComponent.hasPrefix(namePrefix) }
-        guard !files.isEmpty else { throw SweepError.noSourcesMatch(directory: directory, prefix: namePrefix) }
-        return try files.map { try String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
-    }
-
-    enum SweepError: Error, CustomStringConvertible {
-        case noSourcesMatch(directory: String, prefix: String)
-
-        var description: String {
-            switch self {
-            case let .noSourcesMatch(directory, prefix):
-                return "No .swift file under \(directory) starts with \(prefix) — the scan is misconfigured, not passing."
-            }
-        }
-    }
-
     static func relativePath(of file: URL, under root: URL = RepositoryRoot.url) -> String {
         let prefix = root.resolvingSymlinksInPath().path + "/"
         return file.resolvingSymlinksInPath().path.replacingOccurrences(of: prefix, with: "")
@@ -160,10 +142,4 @@ struct RepositoryRootTests {
         #expect(RepositoryRoot.swiftFiles(under: "LiveWallpaper/DirectoryThatDoesNotExist").isEmpty)
     }
 
-    @Test("A component sweep matching nothing throws instead of returning empty")
-    func componentSourceRejectsEmptySweep() {
-        #expect(throws: RepositoryRoot.SweepError.self) {
-            try RepositoryRoot.componentSource(under: "LiveWallpaper/Runtime", namePrefix: "NoSuchTypeName")
-        }
-    }
 }

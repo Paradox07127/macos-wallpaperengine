@@ -30,69 +30,6 @@
 #include "hb.hh"
 #include "hb-map.hh"
 
-/* Bi-directional map */
-struct hb_bimap_t
-{
-  void reset ()
-  {
-    forw_map.reset ();
-    back_map.reset ();
-  }
-
-  void alloc (unsigned pop)
-  {
-    forw_map.alloc (pop);
-    back_map.alloc (pop);
-  }
-
-  bool in_error () const { return forw_map.in_error () || back_map.in_error (); }
-
-  void set (hb_codepoint_t lhs, hb_codepoint_t rhs)
-  {
-    if (in_error ()) return;
-    if (unlikely (lhs == HB_MAP_VALUE_INVALID)) return;
-    if (unlikely (rhs == HB_MAP_VALUE_INVALID)) { del (lhs); return; }
-
-    forw_map.set (lhs, rhs);
-    if (unlikely (in_error ())) return;
-
-    back_map.set (rhs, lhs);
-    if (unlikely (in_error ())) forw_map.del (lhs);
-  }
-
-  hb_codepoint_t get (hb_codepoint_t lhs) const { return forw_map.get (lhs); }
-  hb_codepoint_t backward (hb_codepoint_t rhs) const { return back_map.get (rhs); }
-
-  hb_codepoint_t operator [] (hb_codepoint_t lhs) const { return get (lhs); }
-  bool has (hb_codepoint_t lhs) const { return forw_map.has (lhs); }
-
-
-  void del (hb_codepoint_t lhs)
-  {
-    back_map.del (get (lhs));
-    forw_map.del (lhs);
-  }
-
-  void clear ()
-  {
-    forw_map.clear ();
-    back_map.clear ();
-  }
-
-  bool is_empty () const { return forw_map.is_empty (); }
-
-  unsigned int get_population () const { return forw_map.get_population (); }
-
-  protected:
-  hb_map_t  forw_map;
-  hb_map_t  back_map;
-
-  public:
-  auto keys () const HB_AUTO_RETURN (+ forw_map.keys())
-  auto values () const HB_AUTO_RETURN (+ forw_map.values())
-  auto iter () const HB_AUTO_RETURN (+ forw_map.iter())
-};
-
 /* Incremental bimap: only lhs is given, rhs is incrementally assigned */
 struct hb_inc_bimap_t
 {

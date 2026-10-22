@@ -567,50 +567,6 @@ bool OT::cff1::accelerator_t::get_path (hb_font_t *font, hb_codepoint_t glyph, h
   return _get_path (this, font, glyph, draw_session);
 }
 
-struct get_seac_param_t
-{
-  get_seac_param_t (const OT::cff1::accelerator_subset_t *_cff) : cff (_cff) {}
-
-  bool has_seac () const { return base && accent; }
-
-  const OT::cff1::accelerator_subset_t *cff;
-  hb_codepoint_t  base = 0;
-  hb_codepoint_t  accent = 0;
-};
-
-struct cff1_cs_opset_seac_t : cff1_cs_opset_t<cff1_cs_opset_seac_t, get_seac_param_t>
-{
-  static void process_seac (cff1_cs_interp_env_t &env, get_seac_param_t& param)
-  {
-    unsigned int  n = env.argStack.get_count ();
-    hb_codepoint_t  base_char = (hb_codepoint_t)env.argStack[n-2].to_int ();
-    hb_codepoint_t  accent_char = (hb_codepoint_t)env.argStack[n-1].to_int ();
-
-    param.base = param.cff->std_code_to_glyph (base_char);
-    param.accent = param.cff->std_code_to_glyph (accent_char);
-  }
-};
-
-bool OT::cff1::accelerator_subset_t::get_seac_components (hb_codepoint_t glyph, hb_codepoint_t *base, hb_codepoint_t *accent) const
-{
-  if (unlikely (!is_valid () || (glyph >= num_glyphs))) return false;
-
-  unsigned int fd = fdSelect->get_fd (glyph);
-  const hb_ubytes_t str = (*charStrings)[glyph];
-  cff1_cs_interp_env_t env (str, *this, fd);
-  cff1_cs_interpreter_t<cff1_cs_opset_seac_t, get_seac_param_t> interp (env);
-  get_seac_param_t  param (this);
-  if (unlikely (!interp.interpret (param))) return false;
-
-  if (param.has_seac ())
-  {
-    *base = param.base;
-    *accent = param.accent;
-    return true;
-  }
-  return false;
-}
-
 
 #endif
 

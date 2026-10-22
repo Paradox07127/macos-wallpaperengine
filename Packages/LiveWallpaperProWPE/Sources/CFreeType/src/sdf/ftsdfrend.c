@@ -235,13 +235,6 @@
   }
 
 
-  static void
-  ft_sdf_done( FT_Module  module )
-  {
-    FT_UNUSED( module );
-  }
-
-
   /* generate signed distance field from a glyph's slot image */
   static FT_Error
   ft_sdf_render( FT_Renderer       module,
@@ -437,7 +430,7 @@
     NULL,
 
     (FT_Module_Constructor)ft_sdf_init,
-    (FT_Module_Destructor) ft_sdf_done,
+    (FT_Module_Destructor) NULL,
     (FT_Module_Requester)  ft_sdf_requester,
 
     FT_GLYPH_FORMAT_OUTLINE,
@@ -586,7 +579,7 @@
     NULL,
 
     (FT_Module_Constructor)ft_sdf_init,
-    (FT_Module_Destructor) ft_sdf_done,
+    (FT_Module_Destructor) NULL,
     (FT_Module_Requester)  ft_sdf_requester,
 
     FT_GLYPH_FORMAT_BITMAP,

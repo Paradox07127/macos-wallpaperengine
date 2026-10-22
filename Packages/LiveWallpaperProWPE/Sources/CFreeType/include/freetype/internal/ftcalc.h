@@ -300,19 +300,6 @@ FT_BEGIN_HEADER
 
 
   /*
-   * Return -1, 0, or +1, depending on the orientation of a given corner.  We
-   * use the Cartesian coordinate system, with positive vertical values going
-   * upwards.  The function returns +1 if the corner turns to the left, -1 to
-   * the right, and 0 for undecidable cases.
-   */
-  FT_BASE( FT_Int )
-  ft_corner_orientation( FT_Pos  in_x,
-                         FT_Pos  in_y,
-                         FT_Pos  out_x,
-                         FT_Pos  out_y );
-
-
-  /*
    * Return TRUE if a corner is flat or nearly flat.  This is equivalent to
    * saying that the corner point is close to its neighbors, or inside an
    * ellipse defined by the neighbor focal points to be more precise.

@@ -53,10 +53,6 @@
   /* conflicts when a program is linked with both FreeType and the  */
   /* original ZLib.                                                 */
 
-#ifndef USE_ZLIB_ZCALLOC
-#define MY_ZCALLOC /* prevent all zcalloc() & zfree() in zutil.c */
-#endif
-
   /* Note that our `zlib.h' includes `ftzconf.h' instead of `zconf.h'; */
   /* the main reason is that even a global `zlib.h' includes `zconf.h' */
   /* with                                                              */
@@ -96,7 +92,7 @@
 #pragma GCC diagnostic ignored "-Wredundant-decls"
 #endif
 
-#include "zutil.c"
+#include "zutil.h"
 #include "inffast.c"
 #include "inflate.c"
 #include "inftrees.c"

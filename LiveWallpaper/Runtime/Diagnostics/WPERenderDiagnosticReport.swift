@@ -88,12 +88,6 @@ enum WPERenderDiagnosticReport {
             )
         }
 
-        if let summary = diagnostics?.compatibilitySummary, !summary.isEmpty {
-            lines.append("")
-            lines.append("Scene Compatibility")
-            lines.append(summary)
-        }
-
         lines.append("")
         lines.append(contentsOf: environmentLines)
         return lines

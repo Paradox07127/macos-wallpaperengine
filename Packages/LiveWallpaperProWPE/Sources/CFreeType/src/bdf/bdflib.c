@@ -507,40 +507,6 @@
                           BDF_BITMAP_   )
 
 
-  static FT_Error
-  bdf_add_comment_( bdf_font_t*    font,
-                    const char*    comment,
-                    unsigned long  len )
-  {
-    char*      cp;
-    FT_Memory  memory = font->memory;
-    FT_Error   error  = FT_Err_Ok;
-
-
-    /* Skip keyword COMMENT. */
-    comment += 7;
-    len     -= 7;
-
-    if ( len == 0 )
-      goto Exit;
-
-    if ( FT_QRENEW_ARRAY( font->comments,
-                          font->comments_len,
-                          font->comments_len + len + 1 ) )
-      goto Exit;
-
-    cp = font->comments + font->comments_len;
-
-    FT_MEM_COPY( cp, comment, len );
-    cp[len] = '\0';
-
-    font->comments_len += len + 1;
-
-  Exit:
-    return error;
-  }
-
-
   /* Determine whether the property is an atom or not.  If it is, then */
   /* clean it up so the double quotes are removed if they exist.       */
   static int
@@ -825,9 +791,6 @@
     /* Check for a comment. */
     if ( ft_strncmp( line, "COMMENT", 7 ) == 0 )
     {
-      if ( p->flags & BDF_KEEP_COMMENTS )
-        error = bdf_add_comment_( font, line, linelen );
-
       goto Exit;
     }
 
@@ -1151,9 +1114,6 @@
     /* Check for a comment. */
     if ( ft_strncmp( line, "COMMENT", 7 ) == 0 )
     {
-      if ( p->flags & BDF_KEEP_COMMENTS )
-        error = bdf_add_comment_( font, line, linelen );
-
       goto Exit;
     }
 
@@ -1230,9 +1190,6 @@
     /* Check for a comment. */
     if ( ft_strncmp( line, "COMMENT", 7 ) == 0 )
     {
-      if ( p->flags & BDF_KEEP_COMMENTS )
-        error = bdf_add_comment_( font, line, linelen );
-
       goto Exit;
     }
 

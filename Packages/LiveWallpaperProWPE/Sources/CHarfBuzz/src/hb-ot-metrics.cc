@@ -25,7 +25,6 @@
 #include "hb.hh"
 
 #include "hb-ot-var-mvar-table.hh"
-#include "hb-ot-gasp-table.hh" // Just so we compile it; unused otherwise.
 #include "hb-ot-os2-table.hh"
 #include "hb-ot-post-table.hh"
 #include "hb-ot-hhea-table.hh"
@@ -102,17 +101,6 @@ _hb_ot_metrics_get_position_common (hb_font_t           *font,
 }
 
 #ifndef HB_NO_METRICS
-
-#if 0
-static bool
-_get_gasp (hb_face_t *face, float *result, hb_ot_metrics_tag_t metrics_tag)
-{
-  const OT::GaspRange& range = face->table.gasp->get_gasp_range (metrics_tag - HB_TAG ('g','s','p','0'));
-  if (&range == &Null (OT::GaspRange)) return false;
-  if (result) *result = range.rangeMaxPPEM + font->face->table.MVAR->get_var (metrics_tag, font->coords, font->num_coords);
-  return true;
-}
-#endif
 
 /* Private tags for https://github.com/harfbuzz/harfbuzz/issues/1866 */
 #define _HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER_OS2   HB_TAG ('O','a','s','c')

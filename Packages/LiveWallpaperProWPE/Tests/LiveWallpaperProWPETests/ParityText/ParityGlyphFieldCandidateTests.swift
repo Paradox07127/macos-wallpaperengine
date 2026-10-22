@@ -7,8 +7,7 @@ import XCTest
 /// Candidate wiring/algorithm checks. These expected values are analytic inputs, not Windows tile oracles.
 final class ParityGlyphFieldCandidateTests: XCTestCase {
     func testRealQualifiedOutlineUsesExistingFaceSizeAndProducesThreeDistances() throws {
-        let root = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine/assets")
+        let root = PackageTestAssets.root
         let font = try Data(contentsOf: root.appendingPathComponent("fonts/NotoSans-Regular.ttf"))
         XCTAssertEqual(SHA256.hash(data: font).map { String(format: "%02x", $0) }.joined(),
                        "6b04c8dd65af6b73eb4279472ed1580b29102d6496a377340e80a40cdb3b22c9")

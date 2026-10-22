@@ -143,12 +143,6 @@ FT_BEGIN_HEADER
                         size_t   *value,
                         FT_Hash   hash );
 
-  FT_Bool
-  ft_hash_str_iterator( FT_UInt      *idx,
-                        const char*  *key,
-                        size_t       *value,
-                        FT_Hash       hash );
-
 FT_END_HEADER
 
 

@@ -21,7 +21,6 @@ struct SceneRendererDiagnostics: Sendable {
     let loadDiagnostics: SceneLoadDiagnostic?
     let shaderErrors: ShaderErrors
     let gpuErrors: GPUErrors
-    var compatibilitySummary = ""
     var parity: WPEParityRuntimeDiagnostics?
 }
 #endif

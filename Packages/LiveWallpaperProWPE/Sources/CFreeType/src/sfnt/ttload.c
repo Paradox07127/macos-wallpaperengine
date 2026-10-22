@@ -372,11 +372,6 @@
       goto Exit;
 
     /* many fonts don't have these fields set correctly */
-#if 0
-    if ( sfnt.search_range != 1 << ( sfnt.entry_selector + 4 )        ||
-         sfnt.search_range + sfnt.range_shift != sfnt.num_tables << 4 )
-      return FT_THROW( Unknown_File_Format );
-#endif
 
     /* load the table directory */
 

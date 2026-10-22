@@ -139,11 +139,6 @@
   const AF_Script_UniRangeRec  af_bamu_uniranges[] =
   {
     AF_UNIRANGE_REC( 0xA6A0,   0xA6FF ),   /* Bamum */
-#if 0
-    /* The characters in the Bamum supplement are pictograms, */
-    /* not (directly) related to the syllabic Bamum script    */
-    AF_UNIRANGE_REC( 0x16800, 0x16A3F ),   /* Bamum Supplement */
-#endif
     AF_UNIRANGE_REC(       0,       0 )
   };
 

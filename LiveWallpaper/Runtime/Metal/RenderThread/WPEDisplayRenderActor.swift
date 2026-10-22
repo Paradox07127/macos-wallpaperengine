@@ -926,7 +926,6 @@ struct WPERendererStateSnapshot: Sendable {
     let gpuErrorCount: Int
     let gpuErrorLast: String?
     var descriptor: SceneDescriptor?
-    var compatibilitySummary = ""
     /// Set only for a scene on the parity pipeline.
     var parity: WPEParityRuntimeDiagnostics?
     var runtimeFailure: String?

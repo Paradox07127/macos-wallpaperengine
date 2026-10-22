@@ -618,18 +618,8 @@ final class BoardLayoutEngineTests: XCTestCase {
         let cols = 2, rowsCount = 4
         let tightBoard = CGSize(width: small0.width * CGFloat(cols), height: small0.height * CGFloat(rowsCount))
         let g = MonitorBoardGeometry(boardSize: tightBoard)
-        let small = g.pixelSize(for: .cpu, size: .small)
         let medium = g.pixelSize(for: .cpu, size: .medium)
-        var items: [MonitorBoardItem] = []
-        var y: CGFloat = 0
-        while y + small.height <= tightBoard.height + 0.5 {
-            var x: CGFloat = 0
-            while x + small.width <= tightBoard.width + 0.5 {
-                items.append(item(UUID(), CGRect(x: x, y: y, width: small.width, height: small.height)))
-                x += small.width
-            }
-            y += small.height
-        }
+        let items = fillBoard(g, kind: .cpu, size: .small)
         let anchor = items.first!.rect.origin
         let refit = LayoutEngine.refitForSizeChange(
             anchor: anchor, newFootprint: medium, geometry: g,

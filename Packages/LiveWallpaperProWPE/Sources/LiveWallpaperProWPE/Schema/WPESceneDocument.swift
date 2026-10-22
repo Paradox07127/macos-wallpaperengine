@@ -26,8 +26,6 @@ public struct WPESceneDocument: Equatable, Sendable {
     public let lightObjects: [WPESceneLightObject]
     /// WPE objects-array paint order (earlier behind later) for z-interleave.
     public let objectPaintOrder: [String: Int]
-    /// User-property key → targets (incremental vs reload without re-parse).
-    public let propertyBindings: [String: [WPEScenePropertyBinding]]
     /// Parent chain + own baked visible; runtime ANDs live ancestor visibility
     /// so a script cannot show under a hidden group.
     public let objectParentByID: [String: String]
@@ -53,7 +51,6 @@ public struct WPESceneDocument: Equatable, Sendable {
         soundObjects: [WPESceneSoundObject] = [],
         lightObjects: [WPESceneLightObject] = [],
         objectPaintOrder: [String: Int] = [:],
-        propertyBindings: [String: [WPEScenePropertyBinding]] = [:],
         objectParentByID: [String: String] = [:],
         ownVisibilityByID: [String: Bool] = [:],
         diagnostics: [WPESceneDiagnostic]
@@ -76,7 +73,6 @@ public struct WPESceneDocument: Equatable, Sendable {
         self.soundObjects = soundObjects
         self.lightObjects = lightObjects
         self.objectPaintOrder = objectPaintOrder
-        self.propertyBindings = propertyBindings
         self.objectParentByID = objectParentByID
         self.ownVisibilityByID = ownVisibilityByID
         self.diagnostics = diagnostics
@@ -200,43 +196,6 @@ public enum WPEScenePropertyBindingTarget: Equatable, Sendable {
     /// A TEXB condition observes the resource itself, independently of the draw or JSON material override.
     case conditionalTexture(asset: String)
     case objectResource(objectID: String, field: String)
-    /// User property injected into a SceneScript's `scriptProperties`. Keeping name + role prevents mistaking it for a direct visible/alpha binding.
-    case scriptProperty(WPESceneScriptPropertyTarget)
-}
-
-public struct WPESceneScriptPropertyTarget: Equatable, Sendable {
-    public let objectID: String
-    public let role: WPESceneScriptPropertyRole
-    public let propertyName: String
-    /// Effect/pass identity when the script belongs below the object itself.
-    public let subresourceID: String?
-
-    public init(
-        objectID: String,
-        role: WPESceneScriptPropertyRole,
-        propertyName: String,
-        subresourceID: String? = nil
-    ) {
-        self.objectID = objectID
-        self.role = role
-        self.propertyName = propertyName
-        self.subresourceID = subresourceID
-    }
-}
-
-public enum WPESceneScriptPropertyRole: String, Equatable, Hashable, Sendable {
-    case origin
-    case scale
-    case angles
-    case color
-    case layerVisible
-    case layerAlpha
-    case textContent
-    case textVisible
-    case textAlpha
-    case effectVisible
-    case effectConstant
-    case parallaxDepth
 }
 
 public enum WPEScenePropertyBindingKind: String, Equatable, Sendable {

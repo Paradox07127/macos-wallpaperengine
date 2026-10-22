@@ -48,6 +48,14 @@ enum TestScratch {
         await cleanup()
     }
 
+    /// Shared-manager cases start and finish empty in the app-scoped test domain.
+    @MainActor
+    static func withCleanGlobalSettings(_ body: () throws -> Void) rethrows {
+        SettingsManager.shared.cleanAllSettings(applyLoginSetting: false)
+        defer { SettingsManager.shared.cleanAllSettings(applyLoginSetting: false) }
+        try body()
+    }
+
     struct DefaultsSuite {
         let name: String
         let defaults: UserDefaults

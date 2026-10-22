@@ -1500,7 +1500,6 @@
           min = 0;
           max = edge_limit - edges;
 
-#if 1
           /* for a small number of edges, a linear search is better */
           if ( max <= 8 )
           {
@@ -1519,7 +1518,6 @@
             min = nn;
           }
           else
-#endif
           while ( min < max )
           {
             mid  = ( max + min ) >> 1;

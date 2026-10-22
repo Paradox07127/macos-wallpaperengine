@@ -676,7 +676,7 @@
       NULL,    /* module-specific interface */
 
       tt_driver_init,           /* FT_Module_Constructor  module_init   */
-      tt_driver_done,           /* FT_Module_Destructor   module_done   */
+      NULL,                     /* FT_Module_Destructor   module_done   */
       tt_get_interface,         /* FT_Module_Requester    get_interface */
 
     sizeof ( TT_FaceRec ),

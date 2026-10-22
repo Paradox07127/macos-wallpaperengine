@@ -149,7 +149,7 @@
       {
         if ( type_offset >= table_size )
           goto InvalidTable;
-        if ( face->palette_data.num_palettes * 2U >
+        if ( face->palette_data.num_palettes * 4U >
                table_size - type_offset )
           goto InvalidTable;
 
@@ -161,7 +161,7 @@
         limit = q + face->palette_data.num_palettes;
 
         while ( q < limit )
-          *q++ = FT_NEXT_USHORT( p );
+          *q++ = (FT_UShort)FT_NEXT_ULONG( p );
 
         face->palette_data.palette_flags = array;
       }

@@ -144,15 +144,4 @@
   }
 
 
-#if 0
-
-  FT_LOCAL_DEF( FT_Offset )
-  FTC_INode_Weight( FTC_INode  inode )
-  {
-    return ftc_inode_weight( FTC_NODE( inode ), NULL );
-  }
-
-#endif /* 0 */
-
-
 /* END */

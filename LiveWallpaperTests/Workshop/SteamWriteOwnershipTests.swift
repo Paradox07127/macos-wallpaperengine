@@ -9,24 +9,31 @@ struct SteamWriteOwnershipTests {
         try String(contentsOf: RepositoryRoot.url(relativePath), encoding: .utf8)
     }
 
-    /// `+force_install_dir` must precede `+login` (the order Valve documents), the directory is the ONE
-    /// shared library for every account, and no `validate`.
-    @Test("Workshop downloads land in the one shared library, unvalidated")
+    /// Download into an isolated worker library, then publish to the authorized shared library.
+    /// This pins XPC entry-point wiring; SteamLibraryWriterTests covers publication and cancellation behavior.
+    @Test("Isolated Workshop downloads publish to the authorized shared library, unvalidated")
     func workshopDownloadTargetsSharedLibrary() throws {
         let connector = try Self.source("SteamConnector/SteamConnector.swift")
-        let start = try #require(connector.range(of: "func downloadWorkshopItem("))
-        let body = String(connector[start.lowerBound...].prefix(4000))
+        let body = try #require(Self.functionBody(of: "downloadWorkshopItem", in: connector))
 
         let installDir = try #require(body.range(of: "\"+force_install_dir\""))
         let login = try #require(body.range(of: "\"+login\""))
         #expect(installDir.lowerBound < login.lowerBound)
-        #expect(body.contains("\"+force_install_dir\", libraryRoot.path(percentEncoded: false)"))
+        #expect(body.contains("let workerLibrary = workspace.appendingPathComponent(\"Downloads\", isDirectory: true)"))
+        #expect(body.contains("\"+force_install_dir\", workerLibrary.path(percentEncoded: false)"))
+        let run = try #require(body.range(of: "let run = Self.runSteamCMD("))
+        let runEnd = try #require(body.range(of: "stopStagingPoll()", range: run.upperBound ..< body.endIndex))
+        let downloadRun = body[run.lowerBound ..< runEnd.lowerBound]
+        #expect(downloadRun.contains("operationID: operationID,"))
+        #expect(downloadRun.contains("isCancelled: { !liveness.canContinue || job.isCancelled }"))
+        #expect(body.contains("SteamLibraryWriter.publishWorkshopItem(workshopID: workshopID, from: workerLibrary, to: libraryRoot,"))
+        let publication = try #require(body.range(of: "SteamLibraryWriter.publishWorkshopItem("))
+        #expect(body[publication.lowerBound...].contains("isCancelled: { !liveness.canContinue || job.isCancelled }"))
         #expect(!body.contains("\"validate\""))
         #expect(!body.contains("publishContent"))
 
         // Control: the engine-assets install must still validate — prune deletes files only `validate` can restore.
-        let assets = try #require(connector.range(of: "func installWallpaperEngineAssets("))
-        let assetsBody = String(connector[assets.lowerBound...].prefix(5000))
+        let assetsBody = try #require(Self.functionBody(of: "installWallpaperEngineAssets", in: connector))
         #expect(assetsBody.contains("\"+app_update\", SteamLibraryPaths.wallpaperEngineAppID, \"validate\""))
         // …and it must clear any stale Workshop tree BEFORE running, or that
         // tree joins the AppID's update session and `validate` re-fetches it.
@@ -60,8 +67,7 @@ struct SteamWriteOwnershipTests {
                 gates >= max(1, spawns),
                 Comment(rawValue: "\(entryPoint): \(spawns) inline spawn(s) but only \(gates) resolution(s)")
             )
-            // Parameter list only: a body runs to the next non-private `func`,
-            // so it can swallow the private helper that legitimately takes a path.
+            // Parameter list only: private helpers may legitimately take a path.
             let signature = body.prefix { $0 != "{" }
             #expect(
                 !signature.contains("steamCMDPath"),
@@ -85,8 +91,7 @@ struct SteamWriteOwnershipTests {
             "The connector derives the shared library itself instead of using the authorized one"
         )
         for entryPoint in ["downloadWorkshopItem", "installWallpaperEngineAssets", "deleteWorkshopItem"] {
-            let start = try #require(connector.range(of: "func \(entryPoint)("))
-            let body = String(connector[start.lowerBound...].prefix(3000))
+            let body = try #require(Self.functionBody(of: entryPoint, in: connector))
             // The whole binding, not just the call: `contains` alone passes a variant that keeps the call
             // and adds a `??` fallback.
             #expect(
@@ -104,7 +109,8 @@ struct SteamWriteOwnershipTests {
     private static func functionBody(of name: String, in source: String) -> String? {
         guard let start = source.range(of: "func \(name)(") else { return nil }
         let tail = source[start.upperBound...]
-        let end = tail.range(of: "\n    func ")?.lowerBound ?? tail.endIndex
+        // Connector methods close at four spaces; nested closures and local functions are indented further.
+        guard let end = tail.range(of: "\n    }\n")?.lowerBound else { return nil }
         return String(tail[..<end])
     }
 }

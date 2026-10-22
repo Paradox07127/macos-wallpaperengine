@@ -157,9 +157,6 @@ FT_BEGIN_HEADER
 #define FT_CMAP( x )  ( (FT_CMap)( x ) )
 
   /* obvious macros */
-#define FT_CMAP_PLATFORM_ID( x )  FT_CMAP( x )->charmap.platform_id
-#define FT_CMAP_ENCODING_ID( x )  FT_CMAP( x )->charmap.encoding_id
-#define FT_CMAP_ENCODING( x )     FT_CMAP( x )->charmap.encoding
 #define FT_CMAP_FACE( x )         FT_CMAP( x )->charmap.face
 
 
@@ -534,8 +531,6 @@ FT_BEGIN_HEADER
 #define FT_MODULE_IS_HINTER( x )  ( FT_MODULE_CLASS( x )->module_flags & \
                                     FT_MODULE_HINTER )
 
-#define FT_MODULE_IS_STYLER( x )  ( FT_MODULE_CLASS( x )->module_flags & \
-                                    FT_MODULE_STYLER )
 
 #define FT_DRIVER_IS_SCALABLE( x )  ( FT_MODULE_CLASS( x )->module_flags & \
                                       FT_MODULE_DRIVER_SCALABLE )
@@ -741,8 +736,6 @@ FT_BEGIN_HEADER
 
 #define FT_RENDERER( x )       ( (FT_Renderer)(x) )
 #define FT_GLYPH( x )          ( (FT_Glyph)(x) )
-#define FT_BITMAP_GLYPH( x )   ( (FT_BitmapGlyph)(x) )
-#define FT_OUTLINE_GLYPH( x )  ( (FT_OutlineGlyph)(x) )
 
 
   typedef struct  FT_RendererRec_
@@ -798,17 +791,12 @@ FT_BEGIN_HEADER
    *
    *   faces_list ::
    *     The list of faces currently opened by this driver.
-   *
-   *   glyph_loader ::
-   *     Unused.  Used to be glyph loader for all faces managed by this
-   *     driver.
    */
   typedef struct  FT_DriverRec_
   {
     FT_ModuleRec     root;
     FT_Driver_Class  clazz;
     FT_ListRec       faces_list;
-    FT_GlyphLoader   glyph_loader;
 
   } FT_DriverRec;
 
@@ -931,18 +919,6 @@ FT_BEGIN_HEADER
                             FT_GlyphSlot    slot,
                             FT_Render_Mode  render_mode );
 
-  typedef const char*
-  (*FT_Face_GetPostscriptNameFunc)( FT_Face  face );
-
-  typedef FT_Error
-  (*FT_Face_GetGlyphNameFunc)( FT_Face     face,
-                               FT_UInt     glyph_index,
-                               FT_Pointer  buffer,
-                               FT_UInt     buffer_max );
-
-  typedef FT_UInt
-  (*FT_Face_GetGlyphNameIndexFunc)( FT_Face           face,
-                                    const FT_String*  glyph_name );
 
 
 #ifndef FT_CONFIG_OPTION_NO_DEFAULT_SYSTEM

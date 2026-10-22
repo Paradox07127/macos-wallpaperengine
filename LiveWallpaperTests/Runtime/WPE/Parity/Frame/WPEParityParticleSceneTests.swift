@@ -28,7 +28,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
     }
 
     func testEveryRendererKindDrawsAndRenderVarCarries() async throws {
-        let (plan, renderer, _) = try await makeRenderer()
+        let (plan, renderer, _) = try await makeRenderer(showMeteors: true)
         for (index, skip) in renderer.skipped.sorted(by: { $0.key < $1.key }) {
             XCTFail("operation \(index): \(skip)")
         }
@@ -893,10 +893,10 @@ final class WPEParityParticleSceneTests: XCTestCase {
         return Array(UnsafeRawBufferPointer(start: data.contents(), count: 4))
     }
 
-    private func makeRenderer(particleArenaBytes: Int? = nil, eventChildFixture: Bool = false) async throws
+    private func makeRenderer(particleArenaBytes: Int? = nil, eventChildFixture: Bool = false, showMeteors: Bool = false) async throws
         -> (WPEParityFramePlan, WPEParityFrameRenderer, MTLDevice) {
         let compiler = try WPEParityHelperShaderCompiler.local(workDirectory: scratch.appending(path: "shaderc"))
-        let plan = try makePlan(eventChildFixture: eventChildFixture)
+        let plan = try makePlan(eventChildFixture: eventChildFixture, showMeteors: showMeteors)
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         // Shared between the tests of this class, so only the first compiles cold.
         let cache = FileManager.default.temporaryDirectory.appending(path: "parity-particles-\(Self.sceneID)-cache",
@@ -911,7 +911,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         return (plan, renderer, device)
     }
 
-    private func makePlan(eventChildFixture: Bool) throws -> WPEParityFramePlan {
+    private func makePlan(eventChildFixture: Bool, showMeteors: Bool) throws -> WPEParityFramePlan {
         // The sandboxed test host's home is its container; Steam lives in the account's real home.
         let home = try URL(fileURLWithPath: String(cString: XCTUnwrap(getpwuid(getuid())).pointee.pw_dir))
         let steam = home.appending(path: "Library/Application Support/Steam/steamapps")
@@ -931,7 +931,10 @@ final class WPEParityParticleSceneTests: XCTestCase {
             assets = WPEParityProgramAssets(sources: [.lookup(folder) { files[$0] }] + assets.sources)
         }
         let document = try WPESceneDocumentParser.parse(
-            data: XCTUnwrap(assets.data("scene.json")), userValues: [:]
+            data: XCTUnwrap(assets.data("scene.json")),
+            // The rope-trail meteors are hidden by the scene's default day selection. Choose the authored
+            // custom-time/night mode for renderer coverage; all other scenarios keep the default scene.
+            userValues: showMeteors ? ["timevarying": .number(2), "display": .number(3)] : [:]
         )
         return try WPEParityFramePlan(document: document, assets: assets, settings: WPEParityProgramSettings(),
                                       width: Self.width, height: Self.height)

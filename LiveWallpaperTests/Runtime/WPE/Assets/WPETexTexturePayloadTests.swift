@@ -151,12 +151,6 @@ struct WPETexTexturePayloadTests {
             return
         }
         #expect(width == 8 && height == 8)
-
-        let decoded = WPETexDecoder().decode(data: tex)
-        guard case .failure(.invalidDimensions) = decoded else {
-            Issue.record("Expected decode() to reject 8x8 PNG in 4x4 TEXI, got \(decoded)")
-            return
-        }
     }
 
     @Test("Rejects a small 20000x20000 PNG before allocating its RGBA buffer")

@@ -355,6 +355,19 @@ struct GeneralSettingsView: View {
 
     // MARK: - Settings Persistence
 
+    /// Import and reset replace persisted settings, invalidating sessions and their undo history.
+    func reloadAfterSettingsReplacement() -> GlobalSettings {
+        postSettingsNotificationAsync(.dockVisibilityDidChange)
+        postSettingsNotificationAsync(.globalShortcutsDidChange)
+        postSettingsNotificationAsync(.weatherLocationPreferenceDidChange)
+        postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)
+        screenManager.handleGlobalSettingsChanged()
+        screenManager.resetAllWallpaperSessions()
+        undo?.removeAll()
+        screenManager.refreshScreens(preserveRuntimeSessions: false)
+        return SettingsManager.shared.loadGlobalSettings()
+    }
+
     func updateGlobalSettings() {
         GlobalSettingsCommit.apply(
             GlobalSettingsCommit.GeneralPageFields(

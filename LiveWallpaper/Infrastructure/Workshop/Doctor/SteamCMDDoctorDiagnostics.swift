@@ -49,11 +49,15 @@ extension SteamCMDDoctorService {
             switch report?.status ?? .notRun {
             case .notRun: info["status"] = "notRun"
             case .running: info["status"] = "running"
-            case .green(let detail):
+            case let .green(detail):
                 info["status"] = "green"
                 info["detail"] = sanitizeForExport(detail)
-            case .yellow(let message, let command), .red(let message, let command):
-                if case .red? = report?.status { info["status"] = "red" } else { info["status"] = "yellow" }
+            case let .yellow(message, command), let .red(message, command):
+                if case .red? = report?.status {
+                    info["status"] = "red"
+                } else {
+                    info["status"] = "yellow"
+                }
                 info["message"] = sanitizeForExport(message)
                 info["command"] = sanitizeForExport(command)
             }
@@ -71,7 +75,7 @@ extension SteamCMDDoctorService {
             "phase": "doctor", "ts": ISO8601DateFormatter().string(from: Date()),
             "binaryPath": binaryDisplayPath != nil ? "<bound>" : "<unbound>",
             "workdirPath": workdirDisplayPath != nil ? "<bound>" : "<unbound>",
-            "hasUsername": username != nil, "state": String(describing: state), "probes": reports
+            "hasUsername": username != nil, "state": String(describing: state), "probes": reports,
         ]
         if let diagnosis = lastAutoDetectDiagnosis {
             var detection: [String: Any] = [
@@ -82,9 +86,11 @@ extension SteamCMDDoctorService {
                 "launchAttempted": diagnosis.launch != nil,
                 "needsInAppSetup": diagnosis.needsInAppSetup,
                 "resolutionFailure": sanitizeForExport(diagnosis.resolutionFailure),
-                "unavailableReason": sanitizeForExport(diagnosis.unavailableReason)
+                "unavailableReason": sanitizeForExport(diagnosis.unavailableReason),
             ]
-            if let date = lastAutoDetectDate { detection["lastRun"] = ISO8601DateFormatter().string(from: date) }
+            if let date = lastAutoDetectDate {
+                detection["lastRun"] = ISO8601DateFormatter().string(from: date)
+            }
             if let signature = diagnosis.signature {
                 detection["signature"] = ["isValid": signature.isValid, "teamIdentifier": signature.teamIdentifier ?? "unknown", "isValveSigned": signature.isValveSigned]
             }
@@ -104,13 +110,15 @@ extension SteamCMDDoctorService {
 
     private func sanitizeForExport(_ value: String?) -> String {
         guard var output = value, !output.isEmpty else { return "" }
-        let paths = [workdirDisplayPath, binaryDisplayPath, lastAutoDetectDiagnosis?.canonicalPath].compactMap { $0 }
+        let paths = [workdirDisplayPath, binaryDisplayPath, lastAutoDetectDiagnosis?.canonicalPath].compactMap(\.self)
             + (lastAutoDetectDiagnosis?.rejectedExistingPaths ?? [])
         for path in paths.sorted(by: { $0.count > $1.count }) where !path.isEmpty {
             output = output.replacingOccurrences(of: path, with: "<path>")
         }
         output = WorkshopDiagnosticRedactor.redact(output)
-        if let username, !username.isEmpty { output = output.replacingOccurrences(of: username, with: "<steam_username>") }
+        if let username, !username.isEmpty {
+            output = output.replacingOccurrences(of: username, with: "<steam_username>")
+        }
         return output
     }
 }

@@ -1714,7 +1714,7 @@ final class WPEParityFrameRenderer {
         }
     }
 
-    /// The cursor pass and the queued media events of the frame, before the animations (14017fa70.c:473-476).
+    /// The cursor pass of the frame, before the animations (14017fa70.c:473-476).
     private func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, pointer: SIMD2<Float>,
                                  edges: [(position: SIMD2<Float>, down: Bool)], buttonDown: Bool,
                                  timeOfDay: Float) throws {
@@ -1725,7 +1725,6 @@ final class WPEParityFrameRenderer {
         }
         script.cursor(at: pointer * logicalSize, world: camera.cursorWorld(normalizedPointer: pointer),
                       leftDown: buttonDown, timeOfDay: timeOfDay, state: &state)
-        script.dispatchMedia(state: &state)
     }
 
     /// A layer's mesh corners in client pixels, y down, with its frame's parallax (140189e10.c:124-156).

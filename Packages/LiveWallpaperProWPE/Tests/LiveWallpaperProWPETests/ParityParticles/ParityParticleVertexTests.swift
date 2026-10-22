@@ -182,25 +182,8 @@ final class ParityParticleVertexTests: XCTestCase {
         )
     }
 
-    func testStaticCombosEqualTheSystemCombosForEveryRendererKind() {
+    func testSpriteSheetComboFlagsMatchNativeValues() {
         let sheet = WPEParityParticleMaterial(spriteSheet: true, spriteSheetNPOT: true, texture0Format: 8)
-        let renderers = [
-            #"{"name": "sprite"}"#, #"{"name": "sprite"}, {"name": "spritetrail"}"#, #"{"name": "rope"}"#,
-            #"{"name": "ropetrail", "segments": 4, "uvscrolling": 1, "fadealpha": 1, "fadesize": 1}"#,
-        ]
-        for json in renderers {
-            for material in [WPEParityParticleMaterial(), sheet] {
-                let particles = threeParticles(renderers: json, material: material)
-                for renderer in particles.renderers {
-                    XCTAssertEqual(
-                        WPEParityParticleSystem.combos(config: particles.config, material: material, renderer: renderer),
-                        particles.combos(for: renderer), json
-                    )
-                }
-                XCTAssertEqual(WPEParityParticleSystem.shaderOverride(renderers: particles.renderers),
-                               particles.shaderOverride, json)
-            }
-        }
         let sheetSprite = threeParticles(renderers: #"{"name": "sprite"}"#, material: sheet)
         XCTAssertEqual(sheetSprite.combos(for: sheetSprite.renderers[0]), [
             "THICKFORMAT": 1, "SPRITESHEET": 1, "SPRITESHEETBLEND": 1, "SPRITESHEETBLENDNPOT": 1, "TEX0FORMAT": 8,

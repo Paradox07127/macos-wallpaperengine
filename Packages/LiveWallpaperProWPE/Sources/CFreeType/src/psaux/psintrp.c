@@ -2058,17 +2058,6 @@
                       }
                       break;
 
-#if 0
-                    case 26:
-                      /* <val> mark <idx>                              */
-                      /* ==> set BuildCharArray[cvi( <idx> )] = <val>, */
-                      /*     leave mark on T1 stack                    */
-                      /* <val> <idx>                                   */
-                      /* ==> set BuildCharArray[cvi( <idx> )] = <val>  */
-                      XXX which routine has left its mark on the
-                      XXX (PostScript) stack?;
-                      break;
-#endif
 
                     case 27:
                       /* <res1> <res2> <val1> <val2> 4 27 callothersubr pop */
@@ -2390,17 +2379,6 @@
                     /* Distiller handle this situation by silently        */
                     /* ignoring the inappropriate `setcurrentpoint'       */
                     /* instruction.  So we do the same.                   */
-#if 0
-
-                    if ( decoder->flex_state != 1 )
-                    {
-                      FT_ERROR(( "cf2_interpT2CharString:"
-                                 " unexpected `setcurrentpoint'\n" ));
-                      goto Syntax_Error;
-                    }
-                    else
-                      ...
-#endif
 
                     curY = cf2_stack_popFixed( opStack );
                     curX = cf2_stack_popFixed( opStack );

@@ -65,16 +65,8 @@ struct WorkshopModal: View {
             )
             .id(item.id)
         }
-        .alert("Show mature content?", isPresented: $showingAgeConfirm) {
-            Button(role: .cancel) {} label: { Text("Cancel") }
-            Button(role: .destructive) {
-                MatureContentSettings.confirm()
-                actions.reveal()
-            } label: {
-                Text("I am 18 or older")
-            }
-        } message: {
-            Text("This wallpaper is tagged Mature and may contain explicit adult content. By revealing it you confirm you are at least 18 years old, or of legal age in your region.")
+        .matureContentConfirmation(isPresented: $showingAgeConfirm) {
+            actions.reveal()
         }
     }
 

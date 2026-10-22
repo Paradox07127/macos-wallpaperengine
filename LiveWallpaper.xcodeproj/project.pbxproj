@@ -169,9 +169,7 @@
 				Infrastructure/Assets/WPESceneProjectSchemaLoader.swift,
 				Infrastructure/Assets/WPETexByteReader.swift,
 				Infrastructure/Assets/WPETexDecoder.swift,
-				Infrastructure/Assets/WPETexMetalTranscoder.swift,
 				Infrastructure/Assets/WPETexMipValidation.swift,
-				Infrastructure/Assets/WPETexPixelDecoder.swift,
 				Infrastructure/Assets/WPEVideoTextureDiskCache.swift,
 				Infrastructure/Diagnostics/PreviewSignpost.swift,
 				Infrastructure/Diagnostics/TestProcessScratch.swift,
@@ -1037,7 +1035,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = "Loomscreen Pro";
@@ -1072,7 +1070,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = "Loomscreen Pro";
@@ -1124,7 +1122,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconLoomscreen;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;
@@ -1144,7 +1142,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = Loomscreen;
@@ -1158,7 +1156,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconLoomscreen;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;
@@ -1179,7 +1177,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = Loomscreen;
@@ -1261,7 +1259,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1290,7 +1288,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1320,7 +1318,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1350,7 +1348,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.0b2;
+				MARKETING_VERSION = 0.9.0b3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

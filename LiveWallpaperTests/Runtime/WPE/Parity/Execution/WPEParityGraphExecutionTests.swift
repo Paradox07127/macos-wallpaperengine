@@ -1078,26 +1078,12 @@ final class WPEParityGraphExecutionTests: XCTestCase {
     private func loadStage(_ number: Int, in directory: URL) throws -> WPEParityShaderArtifact.Stage {
         let compiled = directory.appending(path: "compiled")
         let json = try Data(contentsOf: compiled.appending(path: "\(number).json"))
-        let reflection = try JSONDecoder().decode(WPEStageReflection.self, from: Self.fillingVertexInputs(json))
+        let reflection = try JSONDecoder().decode(WPEStageReflection.self, from: WPEParityFixtureShaderCompiler.fillingVertexInputs(json))
         return try WPEParityShaderArtifact.Stage(
             metallib: Data(contentsOf: compiled.appending(path: "\(number).metallib")),
             reflection: reflection,
             functionName: reflection.entry
         )
-    }
-
-    /// The capture leaves `vertexInputs` empty while MSC's raw reflection lists them under `state.vertex_inputs`.
-    private static func fillingVertexInputs(_ json: Data) throws -> Data {
-        guard var object = try JSONSerialization.jsonObject(with: json) as? [String: Any],
-              (object["vertexInputs"] as? [Any])?.isEmpty == true,
-              let msc = object["mscReflection"] as? [String: Any],
-              let state = msc["state"] as? [String: Any],
-              let inputs = state["vertex_inputs"] as? [[String: Any]] else { return json }
-        object["vertexInputs"] = inputs.map { input -> [String: Any] in
-            ["name": input["name"] ?? "", "index": input["index"] ?? 0,
-             "elementType": input["elementType"] ?? "", "columns": input["columnCount"] ?? 0]
-        }
-        return try JSONSerialization.data(withJSONObject: object)
     }
 
     // MARK: Metal helpers

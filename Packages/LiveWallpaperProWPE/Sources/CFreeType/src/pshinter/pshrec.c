@@ -537,31 +537,6 @@
   }
 
 
-#if 0
-
-  /* set a bit at a given index in the current hint mask */
-  static FT_Error
-  ps_dimension_set_mask_bit( PS_Dimension  dim,
-                             FT_UInt       idx,
-                             FT_Memory     memory )
-  {
-    PS_Mask   mask;
-    FT_Error  error = FT_Err_Ok;
-
-
-    /* get last hint mask */
-    error = ps_mask_table_last( &dim->masks, memory, &mask );
-    if ( error )
-      goto Exit;
-
-    error = ps_mask_set_bit( mask, idx, memory );
-
-  Exit:
-    return error;
-  }
-
-#endif
-
   /* set the end point in a mask, called from "End" & "Reset" methods */
   static void
   ps_dimension_end_mask( PS_Dimension  dim,

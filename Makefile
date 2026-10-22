@@ -8,7 +8,8 @@
 #   make fast          seconds; structure/boundaries/i18n
 #   make contracts     ~15s; release tooling + entitlements + gate self-tests
 #   make lint          changed lines only (never the whole repo — see below)
-#   make test-packages SwiftPM package suites
+#   make test-packages SwiftPM package suites (self-contained; no Workshop install)
+#   make test-packages-corpus explicit external producer/oracle acceptance
 #   make test-app      small daily data/security/apply/session shard (Pro + Lite hosts)
 #   make test-app-full complete signed Pro target, including tests outside the shard
 #   make test-app-interaction local window/input contracts excluded from hosted CI
@@ -21,21 +22,23 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 .NOTPARALLEL:
 
-# Shipping toolchain is Xcode 27.0. CI overrides this with its own image path.
-DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
+# Use the selected Xcode toolchain. CI may override DEVELOPER_DIR for its image.
+DEVELOPER_DIR ?= $(shell xcode-select -p)
 export DEVELOPER_DIR
 
 # Revision the changed-lines ratchets diff against. CI passes the PR/push base.
 BASE ?= HEAD
 export QUALITY_GATE_BASE = $(BASE)
 
-DERIVED_DATA ?= /tmp/LiveWallpaperVerify
-SWIFTPM_SCRATCH ?= /tmp/LiveWallpaperVerify-SwiftPM
+TEMP_ROOT := $(shell getconf DARWIN_USER_TEMP_DIR)
+DERIVED_DATA ?= $(TEMP_ROOT)LiveWallpaperVerify
+SWIFTPM_SCRATCH ?= $(TEMP_ROOT)LiveWallpaperVerify-SwiftPM
+WPE_SHADER_TOOLCHAIN_ROOT ?= $(CURDIR)/build/wpe-shader-toolchain-inputs
 PACKAGES := LiveWallpaperCore LiveWallpaperProWPE
 
 .DEFAULT_GOAL := help
 .PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted test-wpe-metal test-app-full test-app-interaction \
-        unregister-build-appex
+        unregister-build-appex test-packages-corpus
 
 help:
 	@sed -n '/^#   make/s/^#   //p' $(MAKEFILE_LIST)
@@ -82,6 +85,9 @@ lint:
 test-packages:
 	bash scripts/app_tests.sh packages "$(SWIFTPM_SCRATCH)" $(PACKAGES)
 
+test-packages-corpus:
+	bash scripts/app_tests.sh packages-corpus "$(SWIFTPM_SCRATCH)Corpus" LiveWallpaperProWPE
+
 test-app:
 	@echo "== Fast app architecture/security contracts =="
 	DERIVED_DATA="$(DERIVED_DATA)" bash scripts/fast_app_contract_tests.sh
@@ -119,9 +125,11 @@ TRANSITION_METAL_SUITES := WallpaperTransitionControllerTests WallpaperTransitio
 
 # Keep certificate-signed Metal products separate from the ad-hoc fast host.
 test-wpe-metal:
-	DERIVED_DATA="$(DERIVED_DATA)Metal" \
+	WPE_SHADER_TOOLCHAIN_ROOT="$(WPE_SHADER_TOOLCHAIN_ROOT)" bash WPEShaderCompiler/build.sh --check-inputs
+	WPE_SHADER_TOOLCHAIN_ROOT="$(WPE_SHADER_TOOLCHAIN_ROOT)" DERIVED_DATA="$(DERIVED_DATA)Metal" \
 	RESULT_BUNDLE="$(DERIVED_DATA)Metal/WPEMetalContracts-$$(date +%Y%m%d-%H%M%S)-$$$$.xcresult" \
 	TEST_RUNNER_MTL_DEBUG_LAYER=1 TEST_RUNNER_MTL_SHADER_VALIDATION=1 \
+	env -u LIVEWALLPAPER_EXTERNAL_FIXTURES -u TEST_RUNNER_LIVEWALLPAPER_EXTERNAL_FIXTURES \
 	bash scripts/app_tests.sh suites $(WPE_METAL_SUITES) $(TRANSITION_METAL_SUITES)
 
 # CI's variant. The Lite host asserts on runtime entitlements, so it needs a real

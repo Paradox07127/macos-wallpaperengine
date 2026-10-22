@@ -575,7 +575,6 @@ final class WPEParitySceneDriver {
             if WPEParitySceneScript.hasScripts(document) {
                 do {
                     var connectedHost = scriptHost
-                    connectedHost.mediaGeneration = generation
                     connectedHost.pauseVideoTexture = renderer.scriptVideoPause
                     connectedHost.executeMaterialFunction = renderer.scriptMaterialFunction
                     connectedHost.canDestroyLayer = renderer.scriptLayerRemovalAdmission
@@ -1243,7 +1242,7 @@ final class WPEParitySceneDriver {
     private func adoptUpscalePlan(_ plan: WPEMetalUpscalePlan) {
         if plan.isActive {
             if executor.metalFXUpscaler == nil {
-                executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device, library: executor.defaultLibrary)
+                executor.metalFXUpscaler = WPEMetalFXSpatialUpscaler(device: device)
             }
         } else if executor.lastPresentPass?.usedMetalFX != true {
             // An unpresented native replan must still be able to replay the last scaled present for capture.

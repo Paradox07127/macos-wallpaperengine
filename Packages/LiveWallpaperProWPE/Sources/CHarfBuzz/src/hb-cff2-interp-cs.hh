@@ -176,7 +176,6 @@ struct cff2_cs_interp_env_t : cs_interp_env_t<ELEM, CFF2Subrs>
   }
 
   unsigned int get_region_count () const { return region_count; }
-  void	 set_region_count (unsigned int region_count_) { region_count = region_count_; }
   unsigned int get_ivs () const { return ivs; }
   void	 set_ivs (unsigned int ivs_) { ivs = ivs_; }
   bool	 seen_vsindex () const { return seen_vsindex_; }
@@ -221,13 +220,6 @@ struct cff2_cs_opset_t : cs_opset_t<ELEM, OPSET, cff2_cs_interp_env_t<ELEM>, PAR
       case OpCode_callsubr:
       case OpCode_callgsubr:
 	/* a subroutine number shouldn't be a blended value */
-#if 0
-	if (unlikely (env.argStack.peek ().blending ()))
-	{
-	  env.set_error ();
-	  break;
-	}
-#endif
 	SUPER::process_op (op, env, param);
 	break;
 
@@ -236,13 +228,6 @@ struct cff2_cs_opset_t : cs_opset_t<ELEM, OPSET, cff2_cs_interp_env_t<ELEM>, PAR
 	break;
 
       case OpCode_vsindexcs:
-#if 0
-	if (unlikely (env.argStack.peek ().blending ()))
-	{
-	  env.set_error ();
-	  break;
-	}
-#endif
 	OPSET::process_vsindex (env, param);
 	break;
 

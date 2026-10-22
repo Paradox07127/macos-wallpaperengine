@@ -4,9 +4,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-DERIVED_DATA="${DERIVED_DATA:-/tmp/LiveWallpaperReleaseCandidateCheck}"
-DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+DERIVED_DATA="${DERIVED_DATA:-${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/LiveWallpaperReleaseCandidateCheck}"
+DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 export DEVELOPER_DIR
+WPE_SHADER_TOOLCHAIN_ROOT="${WPE_SHADER_TOOLCHAIN_ROOT:-$ROOT/build/wpe-shader-toolchain-inputs}"
+[[ "$WPE_SHADER_TOOLCHAIN_ROOT" == /* ]] || WPE_SHADER_TOOLCHAIN_ROOT="$ROOT/$WPE_SHADER_TOOLCHAIN_ROOT"
+export WPE_SHADER_TOOLCHAIN_ROOT
+# The real rendering gate needs the compiler SDK, independently of any Workshop corpus.
+bash WPEShaderCompiler/build.sh --check-inputs
 MACOS_DESTINATION="platform=macOS,arch=arm64"
 MACOS_ARCHIVE_DESTINATION="generic/platform=macOS"
 
@@ -23,8 +28,8 @@ esac
 
 BUILD_SETTINGS_LOG="$(mktemp -t livewallpaper-release-build-settings.XXXXXX)"
 MATRIX_BUILD_LOG="$(mktemp -t livewallpaper-link-matrix.XXXXXX)"
-APP_TEST_RESULT_BUNDLE="${APP_TEST_RESULT_BUNDLE:-/tmp/LiveWallpaperReleaseCandidateTests-$$.xcresult}"
-LITE_TEST_RESULT_BUNDLE="${LITE_TEST_RESULT_BUNDLE:-/tmp/LoomscreenLiteReleaseCandidateTests-$$.xcresult}"
+APP_TEST_RESULT_BUNDLE="${APP_TEST_RESULT_BUNDLE:-${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/LiveWallpaperReleaseCandidateTests-$$.xcresult}"
+LITE_TEST_RESULT_BUNDLE="${LITE_TEST_RESULT_BUNDLE:-${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/LoomscreenLiteReleaseCandidateTests-$$.xcresult}"
 # The link-matrix archives are throwaway — nothing downstream reads them
 # (`release-app.sh` builds its own under build/release). They used to land on a
 # fixed path and were never cleaned, so the second run of a dual-SKU release
@@ -214,6 +219,7 @@ xcodebuild archive \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
   ARCHS=arm64 \
+  WPE_SHADER_TOOLCHAIN_ROOT="$WPE_SHADER_TOOLCHAIN_ROOT" \
   SWIFT_EMIT_LOC_STRINGS=NO \
   > "$MATRIX_BUILD_LOG" 2>&1 || fail_with_log "LiveWallpaper Release archive failed."
 PRO_ARCHIVED_APP="$PRO_ARCHIVE_PATH/Products/Applications/Loomscreen Pro.app"

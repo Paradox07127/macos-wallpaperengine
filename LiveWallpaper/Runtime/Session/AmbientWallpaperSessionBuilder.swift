@@ -17,14 +17,6 @@ private enum WPEPathSafety {
             && value != "."
     }
 
-    static func isSafeCacheRelativePath(_ path: String) -> Bool {
-        path.hasPrefix("wpe-cache/")
-            && !path.contains("\0")
-            && !path.contains("\\")
-            && !path.split(separator: "/", omittingEmptySubsequences: false).contains("..")
-            && !path.contains("//")
-    }
-
     static func contains(_ child: URL, in parent: URL) -> Bool {
         let childPath = normalizedPath(child.path(percentEncoded: false))
         let parentPath = normalizedPath(parent.path(percentEncoded: false))

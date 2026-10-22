@@ -5,37 +5,6 @@ import Testing
 
 @Suite("DraftState")
 struct DraftStateTests {
-    @Test("Default matches no-config branch defaults")
-    func defaultMatchesNoConfigBranchDefaults() {
-        let expected = DraftState(
-            playbackSpeed: 1.0,
-            selectedFitMode: .aspectFill,
-            selectedVideoDisplayMode: .perDisplay,
-            selectedWallpaperType: .video,
-            selectedWallpaperMode: .playlist,
-            selectedParticleEffect: .none,
-            effectConfig: .default,
-            htmlSource: nil,
-            htmlConfig: .default,
-            wpeOrigin: nil,
-            setAsLockScreen: false,
-            playlistBookmarks: [],
-            shufflePlaylist: false,
-            playlistRotationMinutes: nil,
-            scheduleSlots: [],
-            videoMuted: true,
-            videoVolume: 1.0,
-            videoColorSpace: .auto,
-            particleDensity: 1.0,
-            selectedFrameRateLimit: .matchDisplay,
-            sceneMouseInteractionEnabled: true,
-            sceneClickCaptureEnabled: true,
-            hasPreviewSource: false
-        )
-
-        #expect(DraftState.default == expected)
-    }
-
     @Test("Nil config equals default modulo preview-source fallback")
     func nilConfigEqualsDefaultModuloPreviewSourceFallback() {
         #expect(

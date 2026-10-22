@@ -99,8 +99,6 @@ FT_BEGIN_HEADER
 #define T1_ToInt( p )       (p)->root.funcs.to_int( &(p)->root )
 #define T1_ToFixed( p, t )  (p)->root.funcs.to_fixed( &(p)->root, t )
 
-#define T1_ToCoordArray( p, m, c )                           \
-          (p)->root.funcs.to_coord_array( &(p)->root, m, c )
 #define T1_ToFixedArray( p, m, f, t )                           \
           (p)->root.funcs.to_fixed_array( &(p)->root, m, f, t )
 #define T1_ToToken( p, t )                          \

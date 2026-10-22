@@ -497,24 +497,6 @@ struct STAT
     return false;
   }
 
-  unsigned get_design_axis_count () const { return designAxisCount; }
-
-  hb_ot_name_id_t get_axis_record_name_id (unsigned axis_record_index) const
-  {
-    if (unlikely (axis_record_index >= designAxisCount)) return HB_OT_NAME_ID_INVALID;
-    const StatAxisRecord &axis_record = get_design_axes ()[axis_record_index];
-    return axis_record.get_name_id ();
-  }
-
-  unsigned get_axis_value_count () const { return axisValueCount; }
-
-  hb_ot_name_id_t get_axis_value_name_id (unsigned axis_value_index) const
-  {
-    if (unlikely (axis_value_index >= axisValueCount)) return HB_OT_NAME_ID_INVALID;
-    const AxisValue &axis_value = (this + get_axis_value_offsets ()[axis_value_index]);
-    return axis_value.get_value_name_id ();
-  }
-
   void collect_name_ids (hb_hashmap_t<hb_tag_t, Triple> *user_axes_location,
                          hb_set_t *nameids_to_retain /* OUT */) const
   {

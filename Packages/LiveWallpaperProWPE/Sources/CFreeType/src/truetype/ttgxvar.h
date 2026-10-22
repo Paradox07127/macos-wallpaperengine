@@ -93,14 +93,6 @@ FT_BEGIN_HEADER
     GX_ItemVarStoreRec    itemStore;        /* Item Variation Store  */
     GX_DeltaSetIdxMapRec  widthMap;         /* Advance Width Mapping */
 
-#if 0
-    GX_DeltaSetIdxMapRec  lsbMap;           /* not implemented */
-    GX_DeltaSetIdxMapRec  rsbMap;           /* not implemented */
-
-    GX_DeltaSetIdxMapRec  tsbMap;           /* not implemented */
-    GX_DeltaSetIdxMapRec  bsbMap;           /* not implemented */
-    GX_DeltaSetIdxMapRec  vorgMap;          /* not implemented */
-#endif
 
   } GX_HVVarTableRec, *GX_HVVarTable;
 

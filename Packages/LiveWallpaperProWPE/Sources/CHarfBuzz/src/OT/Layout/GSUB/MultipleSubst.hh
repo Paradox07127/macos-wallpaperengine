@@ -35,21 +35,6 @@ struct MultipleSubst
     }
   }
 
-  template<typename Iterator,
-           hb_requires (hb_is_sorted_iterator (Iterator))>
-  bool serialize (hb_serialize_context_t *c,
-		  Iterator it)
-  {
-    TRACE_SERIALIZE (this);
-    if (unlikely (!c->extend_min (u.format.v))) return_trace (false);
-    unsigned int format = 1;
-    u.format.v = format;
-    switch (u.format.v) {
-    case 1: return_trace (u.format1.serialize (c, it));
-    default:return_trace (false);
-    }
-  }
-
   /* TODO subset() should choose format. */
 
 };

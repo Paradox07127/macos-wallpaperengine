@@ -831,15 +831,6 @@ struct hb_font_t
       get_glyph_v_advances (count, first_glyph, glyph_stride, first_advance, advance_stride);
   }
 
-  void apply_offset (hb_position_t *x, hb_position_t *y,
-		     hb_position_t dx, hb_position_t dy,
-		     signed mult)
-  {
-    assert (mult == -1 || mult == +1);
-
-    *x += dx * mult;
-    *y += dy * mult;
-  }
   void add_offset (hb_position_t *x, hb_position_t *y,
 		   hb_position_t dx, hb_position_t dy)
   {

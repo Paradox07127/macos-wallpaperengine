@@ -112,10 +112,6 @@ FT_BEGIN_HEADER
 
   typedef struct  CFF_VarData_
   {
-#if 0
-    FT_UInt  itemCount;       /* not used; always zero */
-    FT_UInt  shortDeltaCount; /* not used; always zero */
-#endif
 
     FT_UInt   regionIdxCount; /* number of region indexes           */
     FT_UInt*  regionIndices;  /* array of `regionIdxCount' indices; */

@@ -4061,15 +4061,6 @@ struct ConditionValue
     return value > 0;
   }
 
-  bool subset (hb_subset_context_t *c,
-               hb_subset_layout_context_t *l,
-               bool insert_catch_all) const
-  {
-    TRACE_SUBSET (this);
-    // TODO(subset)
-    return_trace (false);
-  }
-
   bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
@@ -4107,15 +4098,6 @@ struct ConditionAnd
 					   instancer))
 	return false;
     return true;
-  }
-
-  bool subset (hb_subset_context_t *c,
-               hb_subset_layout_context_t *l,
-               bool insert_catch_all) const
-  {
-    TRACE_SUBSET (this);
-    // TODO(subset)
-    return_trace (false);
   }
 
   bool sanitize (hb_sanitize_context_t *c) const
@@ -4156,15 +4138,6 @@ struct ConditionOr
     return false;
   }
 
-  bool subset (hb_subset_context_t *c,
-               hb_subset_layout_context_t *l,
-               bool insert_catch_all) const
-  {
-    TRACE_SUBSET (this);
-    // TODO(subset)
-    return_trace (false);
-  }
-
   bool sanitize (hb_sanitize_context_t *c) const
   {
     TRACE_SANITIZE (this);
@@ -4197,15 +4170,6 @@ struct ConditionNegate
     return !_hb_recurse_condition_evaluate (this+condition,
 					    coords, coord_len,
 					    instancer);
-  }
-
-  bool subset (hb_subset_context_t *c,
-               hb_subset_layout_context_t *l,
-               bool insert_catch_all) const
-  {
-    TRACE_SUBSET (this);
-    // TODO(subset)
-    return_trace (false);
   }
 
   bool sanitize (hb_sanitize_context_t *c) const

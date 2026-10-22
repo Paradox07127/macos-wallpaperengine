@@ -261,24 +261,11 @@ final class ScreenManager {
     @ObservationIgnored lazy var automationOrchestrator = WallpaperAutomationOrchestrator(
         configurationStore: configurationStore,
         automationCoordinator: automationCoordinator,
-        playableVideoLoader: playableVideoLoader,
         screensProvider: { [weak self] in
             self?.screens ?? []
         },
         saveConfiguration: { [weak self] config in
             self?.saveConfiguration(config)
-        },
-        recordBookmarkDisplayName: { [weak self] bookmark, name in
-            self?.recordBookmarkDisplayName(bookmark, name: name)
-        },
-        setupPreparedVideoPlayback: { [weak self] url, screen, configuration, beforeCommit in
-            guard let self else { return }
-            self.playbackCoordinator.setupVideoPlayback(
-                url: url,
-                screen: screen,
-                proposedConfiguration: configuration,
-                beforeCommit: beforeCommit
-            )
         },
         restoreProposedConfiguration: { [weak self] screen, configuration in
             self?.restoreProposedWallpaperSession(
