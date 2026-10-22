@@ -87,14 +87,18 @@ Developer ID 信任与公证是未来分发步骤，当前打包脚本不会完�
 - `build/release/Loomscreen-Pro-X.Y.Z.dmg`
 - `build/release/Loomscreen-Pro-X.Y.Z.dmg.sha256`
 
-打包需要打包机上装有 `create-dmg`：
+打包机需要 Python 3.10+ 和固定版本的 `dmgbuild` 工具。在仓库根目录创建本地虚拟环境，
+安装依赖，并在预检与打包期间将其可执行文件保留在 `PATH` 中：
 
 ```sh
-brew install create-dmg
+python3 -m venv build/release-tools
+build/release-tools/bin/python -m pip install -r scripts/release-requirements.txt
+export PATH="$PWD/build/release-tools/bin:$PATH"
 ```
 
-它会布置挂载后的 DMG 窗口（背景、图标位置、`/Applications` 拖放链接）。窗口背景由
-`scripts/dmg_background.swift` 按 SKU 渲染，会把该 SKU 的应用名烘进图上显示的
+`dmgbuild` 直接写入 DMG 窗口布局，无需自动控制 Finder。
+`scripts/dmg_settings.py` 从打包输入读取背景、图标位置和 `/Applications` 拖放链接。
+窗口几何数据和背景由 `scripts/dmg_background.swift` 提供，按 SKU 渲染时会把该 SKU 的应用名烘进图上显示的
 Gatekeeper 命令里——这也是它在打包时生成、而不是作为静态 PNG 提交的原因。
 
 预期命令：

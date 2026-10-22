@@ -17,6 +17,10 @@ public final class WPEParityFontLibrary {
         loader = WPEParityFontLoader(assets: assets)
     }
 
+    init(assets: WPEParityProgramAssets, systemFontForTesting: @escaping (String, Float) -> CTFont?) {
+        loader = WPEParityFontLoader(assets: assets, systemFontForTesting: systemFontForTesting)
+    }
+
     /// WPE clamps the point size to [1, 256] before loading (1401b0410.c:228-237).
     public static func clampedPointSize(_ pointSize: Float) -> Float {
         var clamped = pointSize
@@ -143,13 +147,18 @@ final class WPEParityFontLoader {
     /// Scene and assets font bytes; system fonts are read by FreeType from their files.
     private var files: [String: WPEParityFontBytes] = [:]
     private var faces: [String: WPEParityFontFace] = [:]
+    private let systemFontForTesting: ((String, Float) -> CTFont?)?
 
-    init(assets: WPEParityProgramAssets) {
+    init(assets: WPEParityProgramAssets, systemFontForTesting: ((String, Float) -> CTFont?)? = nil) {
         self.assets = assets
+        self.systemFontForTesting = systemFontForTesting
     }
 
     /// nil when `family` is not installed: CoreText then substitutes another family, which WPE never does.
     func systemFace(family: String, pointSize: Float) -> WPEParityFontFace? {
+        if let systemFontForTesting {
+            return systemFontForTesting(family, pointSize).flatMap { face(for: $0, pointSize: pointSize) }
+        }
         // A family descriptor, not CTFontCreateWithName: by name "PingFang SC" resolves to the reserved
         // PingFangUI.ttc, from which no face loads here, instead of PingFang.ttc.
         let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: family] as CFDictionary)

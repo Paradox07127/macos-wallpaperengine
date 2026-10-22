@@ -15,13 +15,12 @@ import UniformTypeIdentifiers
 
 // Single source of truth for the DMG window layout. Finder places icons over
 // this image by absolute coordinate, so release-app.sh imports these same
-// numbers via --print-layout rather than repeating them as create-dmg flags.
+// numbers via --print-layout for the dmgbuild settings.
 //
 // H carries ~100pt of dead space below the last icon on purpose: Finder draws
 // the path bar (and optionally the status bar) inside the window, eating up to
-// ~52pt, and their visibility comes from the *viewer's* Finder prefs, not from
-// anything we can bake into the image. create-dmg's AppleScript only turns off
-// the toolbar and status bar, never the path bar.
+// ~52pt. The layout hides these bars, but the viewer's Finder preferences can
+// still affect the available content height.
 let W: CGFloat = 680
 let H: CGFloat = 560
 let iconSize: CGFloat = 104
@@ -177,7 +176,7 @@ func render(appName: String, scale: CGFloat, to url: URL) {
 }
 
 // Emits the layout as shell assignments so release-app.sh can build its
-// create-dmg flags from these constants instead of duplicating them.
+// dmgbuild settings from these constants instead of duplicating them.
 if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--print-layout" {
     print("""
     DMG_WINDOW_W=\(Int(W))

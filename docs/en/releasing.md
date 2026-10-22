@@ -111,14 +111,19 @@ The tracked, secret-free packaging helper produces:
 - `build/release/Loomscreen-Pro-X.Y.Z.dmg`
 - `build/release/Loomscreen-Pro-X.Y.Z.dmg.sha256`
 
-Packaging requires `create-dmg` on the packaging Mac:
+Packaging requires Python 3.10+ and the pinned `dmgbuild` tools on the packaging
+Mac. From the repository root, install them in a local virtual environment and
+keep its executables on `PATH` for preflight and packaging:
 
 ```sh
-brew install create-dmg
+python3 -m venv build/release-tools
+build/release-tools/bin/python -m pip install -r scripts/release-requirements.txt
+export PATH="$PWD/build/release-tools/bin:$PATH"
 ```
 
-It lays out the mounted DMG window (background, icon positions, `/Applications`
-drop link). The window background is rendered per SKU by
+`dmgbuild` writes the DMG window layout directly, without Finder automation.
+`scripts/dmg_settings.py` takes the background, icon positions and `/Applications`
+drop link from the packaging inputs. The window geometry and background come from
 `scripts/dmg_background.swift`, which bakes the SKU's app name into the
 Gatekeeper command shown on the image — that is why it is generated at package
 time instead of committed as a static PNG.

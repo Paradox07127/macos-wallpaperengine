@@ -1,0 +1,17 @@
+{
+  "file": "TestFontCollection.ttc",
+  "sha256": "1bbad6337c4d883be0755ca30b90e9b5be0bc7291921caf9e7bbf9898d6fb56d",
+  "faces": [
+    "NotoSans-Regular.ttf",
+    "RobotoMono-Regular.ttf"
+  ],
+  "source_pins": [
+    "SOURCE.json",
+    "RobotoMono-SOURCE.json"
+  ],
+  "licenses": [
+    "OFL.txt",
+    "RobotoMono-OFL.txt"
+  ],
+  "derivation": "fontTools 4.60.1 TTCollection, face order Noto Sans then Roboto Mono, each TTFont(recalcTimestamp=False); save with default shared tables. Original outlines, names and metrics retained. Test-only collection for real CoreText URL/PostScript selection and FreeType file opening."
+}

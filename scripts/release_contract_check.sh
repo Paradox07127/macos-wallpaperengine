@@ -317,7 +317,25 @@ grep -q '^dmg=Loomscreen-Pro-0.0.0.dmg$' <<<"$pro_plan"
 pro_sku_block="$(sed -n '/^  pro)$/,/;;/p' scripts/release-app.sh)"
 grep -q 'ARCHIVE_ARCHS="arm64"' <<<"$pro_sku_block"
 grep -Fq '${ARCHIVE_ARCHS:+ARCHS="$ARCHIVE_ARCHS"}' scripts/release-app.sh
-grep -q -- '--format ULMO' scripts/release-app.sh
+python3 - <<'PYDMG'
+import runpy
+
+settings = runpy.run_path("scripts/dmg_settings.py", init_globals={"defines": {
+    "staging": "/fixture/staging with spaces",
+    "app_name": "Loomscreen Pro",
+    "readme": "READ ME — first launch.txt",
+    "background": "/fixture/background.tiff",
+    "layout": " ".join(
+        assignment.split("=", 1)[0] + "=1"
+        for assignment in open("scripts/dmg_background.swift", encoding="utf-8")
+        if assignment.strip().startswith("DMG_")
+    ),
+}})
+assert settings["format"] == "ULMO", "DMGs must retain ULMO compression"
+assert settings["filesystem"] == "HFS+", "DMGs must retain their HFS+ filesystem"
+assert settings["background"] == "/fixture/background.tiff", "DMG background input was lost"
+assert settings["symlinks"] == {"Applications": "/Applications"}, "DMG install link was lost"
+PYDMG
 
 # Release archives ship binary-plist strings.
 release_archive_block="$(sed -n '/^xcodebuild archive/,/archive-\$ARTIFACT\.log/p' scripts/release-app.sh)"

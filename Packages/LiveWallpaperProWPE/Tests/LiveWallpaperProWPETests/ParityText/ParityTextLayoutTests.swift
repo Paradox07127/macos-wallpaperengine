@@ -280,7 +280,7 @@ final class ParityTextLayoutTests: XCTestCase {
     }
 
     func testChineseComesFromAFallbackFace() throws {
-        let mesh = try XCTUnwrap(layout(input("你好")).mesh)
+        let mesh = try XCTUnwrap(WPEParityTextLayoutEngine.layout(input("你好"), fonts: ParityFontChainTests.makeLibraryWithFixedFallbacks()).mesh)
         let keys = mesh.mono.glyphKeys + mesh.color.glyphKeys
         XCTAssertEqual(keys.count, 2)
         for key in keys {
@@ -291,24 +291,30 @@ final class ParityTextLayoutTests: XCTestCase {
 
     /// Windows draws ：（） from msyh; Apple Symbols, the seguisym stand-in one slot earlier, must not take them.
     func testFullWidthPunctuationComesFromTheCJKFace() throws {
-        let library = try ParityFontChainTests.makeLibrary()
+        let library = try ParityFontChainTests.makeLibraryWithFixedFallbacks()
         let mesh = try XCTUnwrap(WPEParityTextLayoutEngine.layout(input("作：（）　"), fonts: library).mesh)
         let faces = mesh.mono.glyphKeys.map { Int($0 >> 24) }
         let families = library.chain(fontPath: ParityFontChainTests.notoSans, pointSize: 32).faces.map(\.familyName)
-        XCTAssertEqual(faces.map { families[$0] }, Array(repeating: "PingFang SC", count: 5))
+        XCTAssertEqual(faces.map { families[$0] }, Array(repeating: "Loomscreen Test CJK", count: 5))
+        let symbols = try XCTUnwrap(library.chain(fontPath: ParityFontChainTests.notoSans, pointSize: 32).faces.first {
+            $0.familyName == "Loomscreen Test Symbols"
+        })
+        for scalar in [UInt32(0x3000), 0xFF08, 0xFF09, 0xFF1A] {
+            XCTAssertTrue(symbols.hasCharacter(scalar), "The earlier Symbols slot must map the excluded form")
+        }
     }
 
     /// A character no slot maps spends all eight slots, and every slot that loads stays in the chain.
     func testUnmappedCharacterAppendsEverySlotAndLaterCharactersUseThem() throws {
-        let library = try ParityFontChainTests.makeLibrary()
+        let library = try ParityFontChainTests.makeLibraryWithFixedFallbacks()
         let mesh = try XCTUnwrap(WPEParityTextLayoutEngine.layout(input("\u{E000}你"), fonts: library).mesh)
         let keys = mesh.mono.glyphKeys + mesh.color.glyphKeys
         XCTAssertEqual(keys.count, 1)
         XCTAssertGreaterThan(try XCTUnwrap(keys.first) >> 24, 0, "face index in the chain")
         XCTAssertEqual(
             library.chain(fontPath: ParityFontChainTests.notoSans, pointSize: 32).faces.map(\.familyName),
-            ["Noto Sans", "Arial", "Twemoji Mozilla", "Helvetica Neue", "Apple Symbols", "PingFang SC",
-             "Apple SD Gothic Neo"]
+            ["Noto Sans", "Noto Sans", "Twemoji Mozilla", "Roboto Mono", "Loomscreen Test Symbols", "Loomscreen Test CJK",
+             "Noto Sans"]
         )
     }
 

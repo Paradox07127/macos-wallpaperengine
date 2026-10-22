@@ -1,4 +1,5 @@
 import CFreeType
+import CoreText
 import Foundation
 @testable import LiveWallpaperProWPE
 import XCTest
@@ -29,6 +30,25 @@ final class ParityFontChainTests: XCTestCase {
         _ = try Data(contentsOf: font)
         let assets = WPEParityProgramAssets(sources: [.directory(assetsRoot)])
         return WPEParityFontLibrary(assets: assets)
+    }
+
+    static func makeLibraryWithFixedFallbacks() throws -> WPEParityFontLibrary {
+        let bindings = [
+            ("Arial", "TestFontCollection.ttc", "NotoSans-Regular"),
+            ("Helvetica Neue", "TestFontCollection.ttc", "RobotoMono-Regular"),
+            ("Apple Symbols", "TestSymbols-Regular.otf", "LoomscreenTestSymbols-Regular"),
+            ("PingFang SC", "TestCJK-Regular.otf", "LoomscreenTestCJK-Regular"),
+            ("Apple SD Gothic Neo", "NotoSans-Regular.ttf", "NotoSans-Regular"),
+        ]
+        let descriptors = try Dictionary(uniqueKeysWithValues: bindings.map { family, file, postScript in
+            try (family, PackageTestAssets.fontDescriptor(file: file, postScriptName: postScript))
+        })
+        return WPEParityFontLibrary(assets: WPEParityProgramAssets(sources: [.directory(assetsRoot)]),
+                                    systemFontForTesting: { family, pointSize in
+                                        descriptors[family].map {
+                                            CTFontCreateWithFontDescriptor($0, CGFloat(pointSize * 300 / 72), nil)
+                                        }
+                                    })
     }
 
     func testPointSizeIsClampedToOneThrough256() throws {
@@ -97,14 +117,17 @@ final class ParityFontChainTests: XCTestCase {
 
     /// System fonts are read by FreeType from their files instead of being copied whole into memory.
     func testSystemFontsOpenFromTheirFilesAndCollectionsPickThePostScriptFace() throws {
-        let library = try Self.makeLibrary()
-        let chain = library.chain(fontPath: Self.notoSans, pointSize: 32)
-        let index = try XCTUnwrap(chain.faceIndex(containing: 0x4F60))
-        let collection = chain.faces[index]
-        XCTAssertEqual(collection.familyName, "PingFang SC")
-        XCTAssertEqual(collection.postScriptName, "PingFangSC-Regular")
+        let descriptor = try PackageTestAssets.fontDescriptor(file: "TestFontCollection.ttc", postScriptName: "RobotoMono-Regular")
+        let font = CTFontCreateWithFontDescriptor(descriptor, CGFloat(32 * 300) / 72, nil)
+        let url = try XCTUnwrap(CTFontCopyAttribute(font, kCTFontURLAttribute) as? URL)
+        XCTAssertEqual(url.lastPathComponent, "TestFontCollection.ttc")
+        let assets = WPEParityProgramAssets(sources: [.directory(Self.assetsRoot)])
+        let collection = try XCTUnwrap(WPEParityFontLoader(assets: assets).face(for: font, pointSize: 32))
+        XCTAssertEqual(collection.familyName, "Roboto Mono")
+        XCTAssertEqual(collection.postScriptName, "RobotoMono-Regular")
+        XCTAssertEqual(collection.face.pointee.face_index, 1)
         XCTAssertNil(collection.bytes)
-        XCTAssertNotNil(chain.faces.first?.bytes)
+        XCTAssertNotNil(try Self.makeLibrary().chain(fontPath: Self.notoSans, pointSize: 32).faces.first?.bytes)
     }
 
     func testGlyphBoxAndRasterOfCapitalH() throws {

@@ -1,0 +1,38 @@
+{
+  "upstream_commit": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+  "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+  "upstream_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+  "license": "OFL-1.1",
+  "license_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/LICENSE",
+  "derivation": "fontTools 4.60.1 subset.Subsetter with default Options except recalc_timestamp=False; exact unicodes below. Renamed name IDs 1/2/3/4/6/16/17; unchanged copyright/license records. Test-only real glyph outlines; no installed system fonts or runtime download. CFF font name, FamilyName and FullName are also renamed consistently with the SFNT name table.",
+  "fixtures": [
+    {
+      "file": "TestCJK-Regular.otf",
+      "sha256": "e91a8bc4a4f4874240e3213284f7a0e891338f825342cb977003ade5888a33f3",
+      "unicodes": [
+        "U+4F60",
+        "U+597D",
+        "U+4F5C",
+        "U+3000",
+        "U+FF08",
+        "U+FF09",
+        "U+FF1A"
+      ],
+      "family": "Loomscreen Test CJK",
+      "postscript": "LoomscreenTestCJK-Regular"
+    },
+    {
+      "file": "TestSymbols-Regular.otf",
+      "sha256": "a016cc821aa57e4c2090f4f6e4bbdc0ec929564992bb16f1c4203f7d5a0f8bcd",
+      "unicodes": [
+        "U+2606",
+        "U+3000",
+        "U+FF08",
+        "U+FF09",
+        "U+FF1A"
+      ],
+      "family": "Loomscreen Test Symbols",
+      "postscript": "LoomscreenTestSymbols-Regular"
+    }
+  ]
+}

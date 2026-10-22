@@ -131,10 +131,15 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: 43)?.references, 1)
         XCTAssertEqual(first.atlases[key]?.mono.entry(forKey: newGlyph)?.references, 2)
         try pipeline.discard(first)
+        let unsupported = object("U", "H😀")
+        let probe = try WPEParityTextPlanner(assets: assets()).layout(unsupported, effectCount: 0)
+        let fallback = try XCTUnwrap(probe.mesh).color.glyphKeys
+        XCTAssertEqual(fallback.count, 1)
+        XCTAssertGreaterThan(try XCTUnwrap(fallback.first) >> 24, 0)
         assertError(.unqualifiedDistanceFieldGroup) {
             _ = try pipeline.prepareRelayouts([
                 .init(self.object("T", "ii"), glyphMode: .distanceField),
-                .init(self.object("U", "H你"), glyphMode: .distanceField),
+                .init(unsupported, glyphMode: .distanceField),
             ])
         }
         XCTAssertEqual(pipeline.texts, before)
@@ -261,7 +266,7 @@ final class ParityTextPreparedTransactionTests: XCTestCase {
         let font = try Data(contentsOf: root.appendingPathComponent("NotoSans-Regular.ttf"))
         XCTAssertEqual(SHA256.hash(data: font).map { String(format: "%02x", $0) }.joined(),
                        "6b04c8dd65af6b73eb4279472ed1580b29102d6496a377340e80a40cdb3b22c9")
-        return WPEParityProgramAssets(sources: [.directory(root)])
+        return WPEParityProgramAssets(sources: [.directory(root), .directory(PackageTestAssets.root)])
     }
 
     private func hash(_ pixels: [UInt8]) -> String {

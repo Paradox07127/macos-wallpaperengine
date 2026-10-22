@@ -97,9 +97,6 @@ DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 export DEVELOPER_DIR
 WPE_SHADER_TOOLCHAIN_ROOT="${WPE_SHADER_TOOLCHAIN_ROOT:-$ROOT/build/wpe-shader-toolchain-inputs}"
 [[ "$WPE_SHADER_TOOLCHAIN_ROOT" == /* ]] || WPE_SHADER_TOOLCHAIN_ROOT="$ROOT/$WPE_SHADER_TOOLCHAIN_ROOT"
-if [[ "$SKU" == pro ]]; then
-  WPE_SHADER_TOOLCHAIN_ROOT="$WPE_SHADER_TOOLCHAIN_ROOT" bash WPEShaderCompiler/build.sh --check-inputs
-fi
 
 codesign_team_id() {
   codesign -dv "$1" 2>&1 | awk -F= '/^TeamIdentifier/{print $2; exit}'
@@ -199,6 +196,10 @@ if [[ "$PLAN" == "1" ]]; then
   echo "dmg=${ARTIFACT}-${VERSION}.dmg"
   echo "sha256=${ARTIFACT}-${VERSION}.dmg.sha256"
   exit 0
+fi
+
+if [[ "$SKU" == pro ]]; then
+  WPE_SHADER_TOOLCHAIN_ROOT="$WPE_SHADER_TOOLCHAIN_ROOT" bash WPEShaderCompiler/build.sh --check-inputs
 fi
 
 mkdir -p "$OUTPUT_DIR"
@@ -379,7 +380,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 echo "== [$SKU] Adding READ-ME =="
-# No /Applications symlink here — create-dmg --app-drop-link adds it inside the
+# No /Applications symlink here — dmgbuild adds it inside the
 # image. Staging one too would mount two Applications icons.
 
 # The DMG background can only carry one language (Finder resolves a single
@@ -432,26 +433,20 @@ swift "$ROOT/scripts/dmg_background.swift" "$DMG_BG_PATH" "$APP_NAME" || {
 }
 
 echo "== [$SKU] Creating DMG =="
-if ! command -v create-dmg >/dev/null 2>&1; then
-  echo "ERROR: create-dmg not found. Install it with: brew install create-dmg" >&2
+if ! command -v dmgbuild >/dev/null 2>&1; then
+  echo "ERROR: dmgbuild not found. Activate the release-tools environment from docs/en/releasing.md." >&2
   exit 1
 fi
-# Geometry comes from DMG_* above; create-dmg defaults to HFS+, matching the
-# filesystem this script used before.
-create-dmg \
-  --volname "$VOLNAME" \
-  --background "$DMG_BG_PATH" \
-  --window-pos 200 120 \
-  --window-size "$DMG_WINDOW_W" "$DMG_WINDOW_H" \
-  --icon-size "$DMG_ICON_SIZE" \
-  --icon "${APP_NAME}.app" "$DMG_APP_X" "$DMG_APP_Y" \
-  --app-drop-link "$DMG_APPS_X" "$DMG_APPS_Y" \
-  --icon "$README_NAME" "$DMG_README_X" "$DMG_README_Y" \
-  --hide-extension "${APP_NAME}.app" \
-  --format ULMO \
-  "$DMG_PATH" "$STAGING_DIR" \
+# Write the Finder layout directly without requiring a running Finder instance.
+dmgbuild -s "$ROOT/scripts/dmg_settings.py" \
+  -D "staging=$STAGING_DIR" \
+  -D "app_name=$APP_NAME" \
+  -D "readme=$README_NAME" \
+  -D "background=$DMG_BG_PATH" \
+  -D "layout=$DMG_LAYOUT" \
+  "$VOLNAME" "$DMG_PATH" \
   > "$OUTPUT_DIR/dmg-$ARTIFACT.log" 2>&1 || {
-    echo "ERROR: create-dmg failed. Tail of log:" >&2
+    echo "ERROR: dmgbuild failed. Tail of log:" >&2
     tail -20 "$OUTPUT_DIR/dmg-$ARTIFACT.log" >&2
     exit 1
   }
