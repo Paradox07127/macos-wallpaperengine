@@ -41,7 +41,9 @@ struct SchemeDetailModal: View {
     let onDismiss: () -> Void
 
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var artwork: CGImage?
+    @State private var isNavigatingForward = true
     @State private var location = LibraryContentLocation.unknown
 
     private var locale: Locale {
@@ -55,18 +57,18 @@ struct SchemeDetailModal: View {
             actions: headerActions,
             onDismiss: onDismiss,
             onTargetShortcut: applyToShortcut,
-            onPrevious: onPrevious,
-            onNext: onNext
+            onPrevious: navigate(onPrevious, forward: false),
+            onNext: navigate(onNext, forward: true)
         ) { _ in
             WallpaperDetailLayout(
                 facts: SchemeDetailRows.facts(for: scheme, now: Date(), locale: locale),
                 previewSize: previewSize,
+                scrollResetID: scheme.id.uuidString,
                 preview: { preview },
                 sidebar: { sidebar },
                 status: { EmptyView() },
                 buttons: { ModalDisplayButtons(targets: targets, canApply: location.isAvailable, applyTo: applyTo) }
             )
-            .id(scheme.id)
         }
         .task(id: TileContentKey(id: scheme.id, coverFileName: scheme.coverFileName, version: scheme.updatedAt)) {
             await load()
@@ -81,6 +83,15 @@ struct SchemeDetailModal: View {
     private func applyToShortcut(_ index: Int) {
         guard location.isAvailable, let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
         applyTo(target.id)
+    }
+
+    private func navigate(_ step: (() -> Void)?, forward: Bool) -> (() -> Void)? {
+        step.map { step in
+            {
+                isNavigatingForward = forward
+                step()
+            }
+        }
     }
 
     private func load() async {
@@ -108,19 +119,27 @@ struct SchemeDetailModal: View {
     private var preview: some View {
         ZStack {
             DesignTokens.Colors.surfaceSunken
-            if let artwork {
-                Image(decorative: artwork, scale: 1)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Image(systemName: scheme.iconName)
-                    .font(DesignTokens.EditDesk.Typography.modalTitle)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
-            }
+            previewImage
+                .id(scheme.id)
+                .transition(ModalPageMotion.previewTransition(forward: isNavigatingForward, reduceMotion: reduceMotion))
         }
         .clipShape(previewShape)
+        .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: scheme.id)
         .overlay(previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1))
         .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var previewImage: some View {
+        if let artwork {
+            Image(decorative: artwork, scale: 1)
+                .resizable()
+                .scaledToFit()
+        } else {
+            Image(systemName: scheme.iconName)
+                .font(DesignTokens.EditDesk.Typography.modalTitle)
+                .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
+        }
     }
 
     // MARK: Right column

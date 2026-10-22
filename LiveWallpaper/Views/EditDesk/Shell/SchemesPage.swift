@@ -34,7 +34,12 @@ struct SchemesPage: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.45, dampingFraction: 0.82)), value: details.presented != nil)
+            .animation(
+                details.presented == nil
+                    ? DesignTokens.Motion.modalDismissal(reduceMotion: reduceMotion)
+                    : DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion),
+                value: details.presented != nil
+            )
             ZStack(alignment: .top) {
                 LibraryDragOverlay(drag: drag, targets: dragTargets, windowWidth: stageSize.width)
             }

@@ -157,7 +157,12 @@ struct WorkshopModalHost: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.45, dampingFraction: 0.82)), value: presentedItemID != nil)
+        .animation(
+            presentedItemID == nil
+                ? DesignTokens.Motion.modalDismissal(reduceMotion: reduceMotion)
+                : DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion),
+            value: presentedItemID != nil
+        )
         .task(id: presentedItemID) { await open() }
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             refreshInstalledEntry()

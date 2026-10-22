@@ -298,19 +298,11 @@ struct WallpaperModal: View {
     // MARK: Motion
 
     private var navigationAnimation: Animation {
-        reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.25)
+        ModalPageMotion.animation(reduceMotion: reduceMotion)
     }
 
-    /// MOTION 6: the incoming preview enters from the side the navigation is heading.
     private var previewTransition: AnyTransition {
-        if reduceMotion {
-            return .opacity
-        }
-        let travel: CGFloat = isNavigatingForward ? 24 : -24
-        return .asymmetric(
-            insertion: .offset(x: travel).combined(with: .opacity),
-            removal: .offset(x: -travel).combined(with: .opacity)
-        )
+        ModalPageMotion.previewTransition(forward: isNavigatingForward, reduceMotion: reduceMotion)
     }
 
     // MARK: Kind
@@ -322,6 +314,25 @@ struct WallpaperModal: View {
         case .scene: "cube.transparent"
         case .aerial: "sparkles"
         }
+    }
+}
+
+/// Previous / next in the detail modals: the preview is keyed by the shown item and swaps with this.
+enum ModalPageMotion {
+    static func animation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.25)
+    }
+
+    /// The incoming preview enters from the side the navigation is heading.
+    static func previewTransition(forward: Bool, reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        let travel: CGFloat = forward ? 24 : -24
+        return .asymmetric(
+            insertion: .offset(x: travel).combined(with: .opacity),
+            removal: .offset(x: -travel).combined(with: .opacity)
+        )
     }
 }
 

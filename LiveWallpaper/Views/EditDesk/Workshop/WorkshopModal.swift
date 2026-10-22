@@ -33,6 +33,7 @@ struct WorkshopModal: View {
     @State private var showingAgeConfirm = false
     @State private var descriptionExpanded = false
     @State private var previewPixels: CGSize?
+    @State private var isNavigatingForward = true
 
     private var item: WorkshopQueryItem {
         content.item
@@ -53,8 +54,8 @@ struct WorkshopModal: View {
             ),
             onDismiss: onDismiss,
             onTargetShortcut: pressByShortcut,
-            onPrevious: navigation.canGoPrevious ? { navigation.previous() } : nil,
-            onNext: navigation.canGoNext ? { navigation.next() } : nil,
+            onPrevious: navigation.canGoPrevious ? { navigate(forward: false) } : nil,
+            onNext: navigation.canGoNext ? { navigate(forward: true) } : nil,
             shortcutIdentity: shortcutIdentity
         ) { _ in
             WallpaperDetailLayout(
@@ -69,7 +70,7 @@ struct WorkshopModal: View {
                 status: { status },
                 buttons: { buttons }
             )
-            .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.25)), value: previewFit.size)
+            .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: previewFit.size)
         }
         .onChange(of: item.id) {
             descriptionExpanded = false
@@ -77,6 +78,15 @@ struct WorkshopModal: View {
         }
         .matureContentConfirmation(isPresented: $showingAgeConfirm) {
             actions.reveal()
+        }
+    }
+
+    private func navigate(forward: Bool) {
+        isNavigatingForward = forward
+        if forward {
+            navigation.next()
+        } else {
+            navigation.previous()
         }
     }
 
@@ -107,8 +117,11 @@ struct WorkshopModal: View {
                 onImageSizeChange: { previewPixels = $0 }
             )
             .accessibilityHidden(shouldBlurPreview)
+            .id(item.id)
+            .transition(ModalPageMotion.previewTransition(forward: isNavigatingForward, reduceMotion: reduceMotion))
         }
         .clipShape(previewShape)
+        .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: item.id)
         .overlay {
             previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1)
                 .allowsHitTesting(false)
