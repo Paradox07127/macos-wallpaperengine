@@ -42,7 +42,8 @@ struct SchemeDetailModal: View {
 
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var artwork: CGImage?
+    /// nil until the first cover read finishes; across pages it keeps the previous scheme's until the next one lands.
+    @State private var artwork: LoadedArtwork?
     @State private var isNavigatingForward = true
     @State private var location = LibraryContentLocation.unknown
 
@@ -69,6 +70,7 @@ struct SchemeDetailModal: View {
                 status: { EmptyView() },
                 buttons: { ModalDisplayButtons(targets: targets, canApply: location.isAvailable, applyTo: applyTo) }
             )
+            .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: previewSize)
         }
         .task(id: TileContentKey(id: scheme.id, coverFileName: scheme.coverFileName, version: scheme.updatedAt)) {
             await load()
@@ -95,21 +97,33 @@ struct SchemeDetailModal: View {
     }
 
     private func load() async {
-        artwork = nil
         location = .unknown
         let resolved = await SchemeArtwork.location(for: scheme)
         guard !Task.isCancelled else { return }
         location = resolved
         let image = await SchemeArtwork.image(for: scheme)
         guard !Task.isCancelled else { return }
-        artwork = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        let loaded = LoadedArtwork(
+            schemeID: scheme.id, iconName: scheme.iconName,
+            image: image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        )
+        // The first cover lands while the modal is still opening; resizing then would relayout mid-animation.
+        var transaction = Transaction()
+        transaction.disablesAnimations = artwork == nil
+        withTransaction(transaction) {
+            artwork = loaded
+        }
     }
 
     // MARK: Preview
 
     private var previewSize: CGSize {
-        guard let artwork else { return ModalGeometry.previewSize }
-        return ModalGeometry.previewFit(pixels: CGSize(width: artwork.width, height: artwork.height), scale: displayScale).size
+        guard let image = artwork?.image else { return ModalGeometry.previewSize }
+        return ModalGeometry.previewFit(pixels: CGSize(width: image.width, height: image.height), scale: displayScale).size
+    }
+
+    private var previewID: UUID {
+        artwork?.schemeID ?? scheme.id
     }
 
     private var previewShape: RoundedRectangle {
@@ -120,23 +134,23 @@ struct SchemeDetailModal: View {
         ZStack {
             DesignTokens.Colors.surfaceSunken
             previewImage
-                .id(scheme.id)
+                .id(previewID)
                 .transition(ModalPageMotion.previewTransition(forward: isNavigatingForward, reduceMotion: reduceMotion))
         }
         .clipShape(previewShape)
-        .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: scheme.id)
+        .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: previewID)
         .overlay(previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1))
         .accessibilityHidden(true)
     }
 
     @ViewBuilder
     private var previewImage: some View {
-        if let artwork {
-            Image(decorative: artwork, scale: 1)
+        if let image = artwork?.image {
+            Image(decorative: image, scale: 1)
                 .resizable()
                 .scaledToFit()
         } else {
-            Image(systemName: scheme.iconName)
+            Image(systemName: artwork?.iconName ?? scheme.iconName)
                 .font(DesignTokens.EditDesk.Typography.modalTitle)
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
         }
@@ -158,6 +172,13 @@ struct SchemeDetailModal: View {
             }
         }
     }
+}
+
+private struct LoadedArtwork {
+    let schemeID: UUID
+    let iconName: String
+    /// nil = the scheme has no cover; the preview draws its icon.
+    let image: CGImage?
 }
 
 /// A section's label / value rows, drawn like `WallpaperFactGrid`'s.
