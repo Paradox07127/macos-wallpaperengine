@@ -13,6 +13,8 @@ struct EditDeskModalChrome<Panel: View>: View {
     var titlebarInset: CGFloat = DesignTokens.EditDesk.Spacing.topBar
     /// Leads the row the close button ends; empty leaves the close button alone on it.
     var title = ""
+    /// The shown item, whose change fades the title row; nil falls back to `title` to detect a page turn.
+    var pageID: String?
     /// Icon buttons between the title and the close button, in order.
     var actions: [ModalHeaderAction] = []
     let onDismiss: () -> Void
@@ -130,6 +132,8 @@ struct EditDeskModalChrome<Panel: View>: View {
                 .help(Text("Close"))
                 .padding(.leading, DesignTokens.Spacing.sm)
         }
+        .contentTransition(.opacity)
+        .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: pageID ?? title)
         .padding(.horizontal, ModalGeometry.horizontalPadding)
     }
 

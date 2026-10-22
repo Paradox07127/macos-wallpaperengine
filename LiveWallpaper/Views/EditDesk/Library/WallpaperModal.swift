@@ -45,6 +45,7 @@ struct WallpaperModal: View {
             windowSize: windowSize,
             titlebarInset: titlebarInset,
             title: content.title,
+            pageID: content.itemID,
             actions: actions.headerActions(isUpdating: isUpdating, requestRename: requestRename, requestDelete: requestDelete),
             onDismiss: onDismiss,
             onEscape: cancelDragForEscape,
@@ -331,7 +332,8 @@ enum ModalPageMotion {
         let travel: CGFloat = forward ? 24 : -24
         return .asymmetric(
             insertion: .offset(x: travel).combined(with: .opacity),
-            removal: .offset(x: -travel).combined(with: .opacity)
+            // The leaving preview keeps the direction it was built with, so a reversed step would slide it the wrong way.
+            removal: .opacity
         )
     }
 }

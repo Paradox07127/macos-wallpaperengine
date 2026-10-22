@@ -22,6 +22,8 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
     @ViewBuilder let status: () -> Status
     @ViewBuilder let buttons: () -> Buttons
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(spacing: ModalGeometry.sectionGap) {
             GeometryReader { geometry in
@@ -36,6 +38,8 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
                             }
                             .frame(width: sidebarWidth, alignment: .leading)
                         }
+                        .contentTransition(.opacity)
+                        .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: scrollResetID)
                         .padding(.horizontal, ModalGeometry.horizontalPadding)
                         .id("wallpaper-detail-top")
                     }
@@ -52,6 +56,8 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
                 status()
                 buttons()
             }
+            .contentTransition(.opacity)
+            .animation(ModalPageMotion.animation(reduceMotion: reduceMotion), value: scrollResetID)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, ModalGeometry.horizontalPadding)
             .padding(.bottom, ModalGeometry.bottomPadding)
