@@ -105,7 +105,10 @@ struct BrowsePane: View {
             case .results:
                 keyRejectedBanner
                 content
-                    .overlay(alignment: .top) { rateLimitBanner }
+                    .overlay(alignment: .top) {
+                        ZStack { rateLimitBanner }
+                            .animation(phaseAnimation, value: viewModel.isRateLimited)
+                    }
             case .likes:
                 likesContent
             }
@@ -214,25 +217,61 @@ struct BrowsePane: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
+    private enum ContentPhase: Equatable {
+        case error(WorkshopQueryError)
+        case skeleton
+        case empty
+        case grid
+    }
+
+    private var contentPhase: ContentPhase {
         // A failure with the pager live (a page turn off an all-filtered or later page)
         // belongs to the grid branch; the full-pane error state has no way back.
         if let error = viewModel.lastError, viewModel.items.isEmpty, !viewModel.isRateLimited,
            !viewModel.currentPageIsFilteredOut {
-            if viewModel.usesKeylessSearch {
-                publicSearchFailedState(error)
-            } else {
-                errorState(error)
-            }
-        } else if !viewModel.hasLoadedPage, viewModel.isLoading {
-            loadingSkeleton
-        } else if viewModel.items.isEmpty, !viewModel.currentPageIsFilteredOut {
-            emptyState
-        } else {
-            populatedGrid
-                .opacity(viewModel.isLoading ? DesignTokens.Opacity.disabledContent : 1)
+            return .error(error)
         }
+        if !viewModel.hasLoadedPage, viewModel.isLoading {
+            return .skeleton
+        }
+        if viewModel.items.isEmpty, !viewModel.currentPageIsFilteredOut {
+            return .empty
+        }
+        return .grid
+    }
+
+    private var phaseAnimation: Animation? {
+        DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.exitDuration))
+    }
+
+    private var content: some View {
+        ZStack {
+            switch contentPhase {
+            case let .error(error):
+                Group {
+                    if viewModel.usesKeylessSearch {
+                        publicSearchFailedState(error)
+                    } else {
+                        errorState(error)
+                    }
+                }
+                .transition(.opacity)
+            case .skeleton:
+                loadingSkeleton
+                    .transition(.opacity)
+            case .empty:
+                emptyState
+                    .transition(.opacity)
+            case .grid:
+                // Scoped to the dimming: the same transaction usually swaps the lazy grid's items.
+                populatedGrid
+                    .animation(phaseAnimation) {
+                        $0.opacity(viewModel.isLoading ? DesignTokens.Opacity.disabledContent : 1)
+                    }
+                    .transition(.opacity)
+            }
+        }
+        .animation(phaseAnimation, value: contentPhase)
     }
 
     private var populatedGrid: some View {

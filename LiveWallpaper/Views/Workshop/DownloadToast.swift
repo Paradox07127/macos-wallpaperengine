@@ -14,20 +14,25 @@ struct DownloadToastHost: View {
     /// A folder import in flight; its card stays above the latest event until the batch ends.
     var activity: WorkshopFolderImportCoordinator.Progress?
     var onOpenFailure: (WallpaperFailureSnapshot, CGDirectDisplayID) -> Void = { _, _ in }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var toastTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+    }
 
     var body: some View {
         VStack {
             if let activity {
                 activityToast(activity)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(toastTransition)
             }
             if let event = shown {
                 toast(event)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(toastTransition)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: shown?.token)
-        .animation(.easeOut(duration: 0.2), value: activity == nil)
+        .animation(.easeOut(duration: DesignTokens.Motion.exitDuration), value: shown?.token)
+        .animation(.easeOut(duration: DesignTokens.Motion.exitDuration), value: activity == nil)
         .onChange(of: center.lastEvent?.token) { _, _ in
             if let event = center.lastEvent {
                 shown = event.failure != nil && event.screenID == visibleDisplayID ? nil : event
@@ -43,7 +48,7 @@ struct DownloadToastHost: View {
             guard let event = shown, !hovering, focused == nil else { return }
             do { try await Task.sleep(for: .seconds(event.isSuccess ? 4 : 8)) } catch { return }
             guard !Task.isCancelled, shown?.token == event.token else { return }
-            withAnimation(.easeOut(duration: 0.2)) { shown = nil }
+            withAnimation(.easeOut(duration: DesignTokens.Motion.exitDuration)) { shown = nil }
         }
     }
 
@@ -102,7 +107,7 @@ struct DownloadToastHost: View {
             }
             if progress == nil {
                 Button {
-                    withAnimation(.easeOut(duration: 0.2)) { shown = nil }
+                    withAnimation(.easeOut(duration: DesignTokens.Motion.exitDuration)) { shown = nil }
                 } label: {
                     Image(systemName: "xmark")
                         .font(DesignTokens.Glyph.toastDismiss)

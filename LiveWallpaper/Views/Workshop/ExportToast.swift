@@ -7,6 +7,7 @@ struct ExportToast: View {
     var lingerSeconds: TimeInterval = 3.5
     /// Overridable so the auto-dismiss timer doesn't drive UI in a test runner.
     var clock: ContinuousClock = .continuous
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -27,11 +28,11 @@ struct ExportToast: View {
                 .padding(.vertical, 10)
                 .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
                 .shadow(color: .black.opacity(DesignTokens.Card.shadowOpacity), radius: 14, x: 0, y: 6)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .task(id: isPresented) {
                     guard isPresented else { return }
                     try? await clock.sleep(for: .milliseconds(Int(lingerSeconds * 1_000)))
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(.easeOut(duration: DesignTokens.Motion.exitDuration)) {
                         isPresented = false
                     }
                 }
@@ -40,7 +41,7 @@ struct ExportToast: View {
                 .accessibilityLabel(Text("Copied"))
             }
         }
-        .animation(.easeOut(duration: 0.2), value: isPresented)
+        .animation(.easeOut(duration: DesignTokens.Motion.exitDuration), value: isPresented)
     }
 }
 #endif
