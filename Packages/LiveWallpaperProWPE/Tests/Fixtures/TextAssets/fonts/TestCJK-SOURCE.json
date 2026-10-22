@@ -4,7 +4,7 @@
   "upstream_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
   "license": "OFL-1.1",
   "license_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/LICENSE",
-  "derivation": "fontTools 4.60.1 subset.Subsetter with default Options except recalc_timestamp=False; exact unicodes below. Renamed name IDs 1/2/3/4/6/16/17; unchanged copyright/license records. Test-only real glyph outlines; no installed system fonts or runtime download. CFF font name, FamilyName and FullName are also renamed consistently with the SFNT name table.",
+  "derivation": "fontTools 4.60.1 subset.Subsetter with default Options except recalc_timestamp=False; exact unicodes below. Renamed name IDs 1/2/3/4/6/16/17; original copyright name ID 0 retained; optional license name IDs 13/14 dropped by default subsetting; full license supplied in TestCJK-OFL.txt. Test-only real glyph outlines; no installed system fonts or runtime download. CFF font name, FamilyName and FullName are also renamed consistently with the SFNT name table.",
   "fixtures": [
     {
       "file": "TestCJK-Regular.otf",
