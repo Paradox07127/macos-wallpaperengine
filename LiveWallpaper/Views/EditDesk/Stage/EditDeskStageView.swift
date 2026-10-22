@@ -96,7 +96,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var accessibilityExposure = (displays: false, cards: false)
     /// `arrangement` allocates while it works out the gaps; it only changes with the displays or
     /// the window, never per frame.
-    private var arrangementCache: (size: CGSize, topInset: CGFloat, value: StageGeometry.Arrangement)?
+    private var arrangementCache: (
+        size: CGSize, topInset: CGFloat, value: StageGeometry.Arrangement, halfOpen: StageGeometry.StageTransform
+    )?
     private var flights: [StageDisplay.ID: TileFlight] = [:]
 
     @MainActor
@@ -479,16 +481,23 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         reducedMotionState = model.reduceMotion ? Int(p) : nil
         let topInset = CGFloat(arrangementInset.value)
         let arrangement: StageGeometry.Arrangement
+        let halfOpen: StageGeometry.StageTransform
         if let cached = arrangementCache, cached.size == bounds.size, cached.topInset == topInset {
-            arrangement = cached.value
+            (arrangement, halfOpen) = (cached.value, cached.halfOpen)
         } else {
             arrangement = StageGeometry.arrangement(
                 frames: displays.map(\.frame),
                 in: StageGeometry.stageRect(windowSize: bounds.size, topInset: topInset)
             )
-            arrangementCache = (bounds.size, topInset, arrangement)
+            halfOpen = StageGeometry.halfOpenTransform(
+                extent: StageGeometry.arrangementExtent(
+                    contentRects: arrangement.contentRects, builtin: displays.map(\.isBuiltin)
+                ),
+                windowSize: bounds.size
+            )
+            arrangementCache = (bounds.size, topInset, arrangement, halfOpen)
         }
-        let transform = StageGeometry.stageTransform(progress: dragging ? min(p, 1) : p)
+        let transform = StageGeometry.stageTransform(progress: dragging ? min(p, 1) : p, halfOpen: halfOpen)
         arrangementLayer.transform = CATransform3DScale(
             CATransform3DMakeTranslation(0, transform.translationY, 0), transform.scale, transform.scale, 1
         )

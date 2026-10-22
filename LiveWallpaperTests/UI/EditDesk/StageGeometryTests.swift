@@ -103,6 +103,51 @@ struct StageGeometryTests {
         }
     }
 
+    /// An external display stacked above a MacBook, and a lone MacBook.
+    private static let stackedPair: [(CGRect, Bool)] = [
+        (CGRect(x: -416, y: 1117, width: 2560, height: 1440), false),
+        (CGRect(x: 0, y: 0, width: 1728, height: 1117), true),
+    ]
+    private static let loneLaptop: [(CGRect, Bool)] = [(CGRect(x: 0, y: 0, width: 1728, height: 1117), true)]
+
+    /// The arrangement's drawn extent at p = 1 in `window`, and the pose that drew it.
+    private func halfOpenExtent(_ layout: [(CGRect, Bool)], window: CGSize) -> (CGRect, StageGeometry.StageTransform) {
+        let a = StageGeometry.arrangement(frames: layout.map(\.0), in: StageGeometry.stageRect(windowSize: window))
+        let extent = a.contentRects.enumerated().reduce(CGRect.null) {
+            $0.union(occupiedRect(content: $1.element, isBuiltin: layout[$1.offset].1))
+        }
+        #expect(near(StageGeometry.arrangementExtent(contentRects: a.contentRects, builtin: layout.map(\.1)), extent, 0.01))
+        let t = StageGeometry.stageTransform(
+            progress: 1, halfOpen: StageGeometry.halfOpenTransform(extent: extent, windowSize: window)
+        )
+        let midX = window.width / 2
+        let drawn = CGRect(
+            x: midX + (extent.minX - midX) * t.scale, y: extent.minY * t.scale + t.translationY,
+            width: extent.width * t.scale, height: extent.height * t.scale
+        )
+        return (drawn, t)
+    }
+
+    @Test("At half-open a stacked pair stays between the top bar and the shelf hint", arguments: [
+        StageGeometry.designWindow, StageGeometry.minimumWindow,
+    ])
+    func stackedHalfOpenFits(window: CGSize) {
+        let (drawn, t) = halfOpenExtent(Self.stackedPair, window: window)
+        #expect(drawn.minY >= StageGeometry.topBarHeight, Comment(rawValue: "\(drawn) under the top bar, pose \(t)"))
+        #expect(
+            drawn.maxY <= HomeHints.shelfHintTop(progress: 1, windowSize: window),
+            Comment(rawValue: "\(drawn) over the shelf hint, pose \(t)")
+        )
+    }
+
+    @Test("A lone display that already fits keeps the nominal half-open pose", arguments: [
+        StageGeometry.designWindow, StageGeometry.minimumWindow,
+    ])
+    func loneDisplayKeepsNominalPose(window: CGSize) {
+        let (_, t) = halfOpenExtent(Self.loneLaptop, window: window)
+        #expect(t == StageGeometry.nominalHalfOpen)
+    }
+
     @Test("The card row's top follows the shelf up over the first leg and rests there")
     func shelfRowTop() {
         let expectations: [(p: Double, top: CGFloat)] = [(0, 864), (0.5, 774), (1, 684), (2, 684)]

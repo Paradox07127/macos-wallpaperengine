@@ -280,13 +280,30 @@ enum StageGeometry {
         Int(clampProgress(progress).rounded())
     }
 
-    static func stageTransform(progress: Double) -> StageTransform {
+    static let nominalHalfOpen = StageTransform(translationY: -60, scale: 0.82, opacity: 1)
+    /// Clear space kept above and below the arrangement at half-open.
+    static let halfOpenMargin: CGFloat = 8
+
+    /// `halfOpen` is the pose at p = 1; the second leg shrinks it by the nominal 0.3 / 0.82 and lifts it 220 more.
+    static func stageTransform(progress: Double, halfOpen: StageTransform = nominalHalfOpen) -> StageTransform {
         let (t1, t2) = progressSplit(progress)
+        let shrink = halfOpen.scale * 0.3 / nominalHalfOpen.scale
         return StageTransform(
-            translationY: CGFloat(-60 * t1 - 220 * t2),
-            scale: CGFloat(1 - 0.18 * t1 - 0.3 * t2),
+            translationY: halfOpen.translationY * CGFloat(t1) - 220 * CGFloat(t2),
+            scale: 1 + (halfOpen.scale - 1) * CGFloat(t1) - shrink * CGFloat(t2),
             opacity: CGFloat(1 - t2)
         )
+    }
+
+    /// The nominal half-open pose, shrunk and shifted only as far as keeps `extent` (window points
+    /// at p = 0) between the top bar and the shelf hint. The pose scales about the window's top edge.
+    static func halfOpenTransform(extent: CGRect, windowSize: CGSize) -> StageTransform {
+        guard !extent.isNull, extent.height > 0 else { return nominalHalfOpen }
+        let top = topBarHeight + halfOpenMargin
+        let bottom = HomeHints.shelfHintTop(progress: 1, windowSize: windowSize) - halfOpenMargin
+        let scale = max(0.02, min(nominalHalfOpen.scale, (bottom - top) / extent.height))
+        let lift = min(max(nominalHalfOpen.translationY, top - extent.minY * scale), bottom - extent.maxY * scale)
+        return StageTransform(translationY: lift, scale: scale, opacity: 1)
     }
 
     /// Top edge of the card row *right now*: the shelf slides up from under the window over the
@@ -366,6 +383,19 @@ enum StageGeometry {
             )
         }
         return Arrangement(scale: scale, contentRects: rects)
+    }
+
+    /// What the arrangement draws: each shell with the badge above it and the stand and name row below.
+    static func arrangementExtent(contentRects: [CGRect], builtin: [Bool]) -> CGRect {
+        zip(contentRects, builtin).reduce(CGRect.null) { union, item in
+            let (content, isBuiltin) = item
+            let shell = shellRect(content: content, isBuiltin: isBuiltin)
+            let drop = (isBuiltin ? builtinStandDrop : externalStandDrop) + nameRowGap + nameRowHeight
+            return union.union(CGRect(
+                x: shell.minX, y: shell.minY - badgeOverhang,
+                width: shell.width, height: shell.height + badgeOverhang + drop
+            ))
+        }
     }
 
     /// Two displays that meet only at a corner straddle no boundary on either axis, so neither pass

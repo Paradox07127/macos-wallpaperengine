@@ -3482,16 +3482,23 @@ struct EditDeskStageViewTests {
         view.layoutSubtreeIfNeeded()
         let root = try #require(view.layer)
         let shell = try #require(view.displayLayers[1])
-        let content = StageGeometry.arrangement(
+        let arrangement = StageGeometry.arrangement(
             frames: model.displays.map(\.frame), in: StageGeometry.stageRect(windowSize: view.bounds.size)
-        ).contentRects[0]
+        )
+        let content = arrangement.contentRects[0]
+        let halfOpen = StageGeometry.halfOpenTransform(
+            extent: StageGeometry.arrangementExtent(
+                contentRects: arrangement.contentRects, builtin: model.displays.map(\.isBuiltin)
+            ),
+            windowSize: view.bounds.size
+        )
         let layout = StageGeometry.playbackLayout(content: content.size, showsPlaylistControls: true)
         let row = layout.buttons.reduce(CGRect.null) { $0.union($1) }
             .offsetBy(dx: content.minX + layout.container.minX, dy: content.minY + layout.container.minY)
 
         /// `row` as the arrangement layer draws it: scaled about the window's top centre, then lifted.
         func drawn(at progress: Double) -> CGRect {
-            let t = StageGeometry.stageTransform(progress: progress)
+            let t = StageGeometry.stageTransform(progress: progress, halfOpen: halfOpen)
             let midX = view.bounds.midX
             return CGRect(
                 x: midX + (row.minX - midX) * t.scale, y: row.minY * t.scale + t.translationY,
