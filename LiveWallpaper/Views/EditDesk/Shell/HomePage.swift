@@ -926,7 +926,7 @@ struct HomePage: View {
         .allowsHitTesting(!interactionLock)
         // VoiceOver presses these through the display's own actions on the stage.
         .accessibilityHidden(true)
-        .animation(.easeOut(duration: 0.2), value: stage.hoveredPlayback?.displayID)
+        .animation(DesignTokens.Motion.stateChange, value: stage.hoveredPlayback?.displayID)
     }
 
     private static func chipID(_ chip: SavedLibraryModel.Chip) -> String {
@@ -1049,11 +1049,11 @@ struct HomePage: View {
                     }
                     // Keyed on the branch, not the items: a filter change inside the grid must not animate its lazy layout.
                     .animation(
-                        DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.exitDuration)),
+                        DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange),
                         value: libraryGridContent
                     )
                     .animation(
-                        DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.exitDuration)),
+                        DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange),
                         value: libraryTargetScreen != nil
                     )
                     .frame(minHeight: library?.visibleItems.isEmpty == true ? geometry.size.height : nil)
@@ -1713,7 +1713,7 @@ struct HomePage: View {
                     stage.gridScrollOffset = 0
                 }
                 // The slide the nav pill runs when it is clicked.
-                withAnimation(DesignTokens.motion(stage.reduceMotion, .snappy(duration: 0.18))) {
+                withAnimation(DesignTokens.motion(stage.reduceMotion, DesignTokens.Motion.selection)) {
                     if index == 2, router.page == .home {
                         pageChangeFromStage = true
                         router.select(.library)
@@ -1984,7 +1984,7 @@ private struct CoveredByDetail: ViewModifier {
             .allowsHitTesting(!covered)
             .accessibilityHidden(covered)
             // The curve the detail's own top bar and inspector come in on.
-            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: covered)
+            .animation(DesignTokens.Motion.detailChrome(reduceMotion: reduceMotion), value: covered)
     }
 }
 
@@ -2026,19 +2026,24 @@ struct HoverCardName: View {
     }
 
     var body: some View {
-        if enabled, stage.progress < 1.5, let caption, let rect = stage.hoveredCardRect, stage.showsShelf {
-            Text(verbatim: caption)
-                .font(DesignTokens.Typography.captionEmphasized)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                .lineLimit(1)
-                .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
-                .padding(.vertical, 4)
-                .background(DesignTokens.EditDesk.Colors.panel, in: Capsule())
-                .fixedSize()
-                .position(x: rect.midX, y: rect.minY - 16)
-                .allowsHitTesting(false)
-                .transition(.opacity)
+        ZStack {
+            if enabled, stage.progress < 1.5, let caption, let rect = stage.hoveredCardRect, stage.showsShelf {
+                Text(verbatim: caption)
+                    .font(DesignTokens.Typography.captionEmphasized)
+                    .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+                    .lineLimit(1)
+                    .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.EditDesk.Colors.panel, in: Capsule())
+                    .fixedSize()
+                    .position(x: rect.midX, y: rect.minY - 16)
+                    .id(stage.hoveredCard)
+                    .transition(.opacity)
+            }
         }
+        .allowsHitTesting(false)
+        // Keyed on the card, not the rect: the rect moves every gesture frame and must not lag.
+        .animation(DesignTokens.Motion.feedback, value: stage.hoveredCard)
     }
 }
 

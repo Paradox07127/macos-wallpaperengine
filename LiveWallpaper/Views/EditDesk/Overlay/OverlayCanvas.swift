@@ -253,7 +253,7 @@ struct OverlayObjectChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // Each fade is scoped to its own overlay and keyed on `selected` alone: the caller's `.position` moves every drag frame.
+            // Each fade is scoped to its own overlay and keyed on selection or hover, never position: the caller's `.position` moves every drag frame.
             .overlay {
                 ZStack {
                     if selected || dragging {
@@ -283,7 +283,7 @@ struct OverlayObjectChrome: ViewModifier {
                             .transition(.opacity)
                     }
                 }
-                .animation(selectionFade, value: selected)
+                .animation(selectionFade, value: selected || hovering || hoveringButton)
             }
             .onHover { hovering = $0 }
             .shadow(color: DesignTokens.EditDesk.Shadow.floatPanel.color.opacity(dragging && !reduceMotion ? 1 : 0),
@@ -316,7 +316,7 @@ struct OverlayObjectChrome: ViewModifier {
     }
 
     private var selectionFade: Animation? {
-        DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15))
+        DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback)
     }
 
     private var animation: Animation {
