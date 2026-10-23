@@ -7,54 +7,40 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.8.9</title>
-      <pubDate>Sun, 18 Oct 2026 23:02:11 +0000</pubDate>
-      <sparkle:version>0.8.9</sparkle:version>
-      <sparkle:shortVersionString>0.8.9</sparkle:shortVersionString>
+      <title>Version 0.9.0</title>
+      <pubDate>Fri, 23 Oct 2026 15:30:41 +0000</pubDate>
+      <sparkle:version>0.9.0</sparkle:version>
+      <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Update channel in Settings › General and Settings › About: stay on Stable, or choose Beta to get test builds first</li>
-<li>macOS 26 and later: System Settings › Wallpaper shows one "Loomscreen — Selected Wallpaper" tile that follows the wallpaper each display runs in Loomscreen — thanks @Aleem2Z (#149)</li>
-<li>Pro: on macOS 26 and later, that tile can play Wallpaper Engine scenes live — thanks @Aleem2Z (#149)</li>
-<li>New option in Performance &amp; Battery: pause only the display that has an app window on it — thanks @Aleem2Z (#147)</li>
+<li>Pro: Wallpaper Engine scenes use the new renderer everywhere, including scene recording and live macOS wallpapers.</li>
+<li>Pro: more scenes play correctly: scripted layers, model data, puppet animation, text and particles.</li>
+<li>The System Wallpaper page shows the state of each display, and marks old copies so you can remove them in one step.</li>
+<li>Hover a display on the home page to clear its wallpaper with one button.</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>The video frame kept as the macOS wallpaper refreshes every minute while the Mac is unlocked, so the lock screen shows a recent frame — thanks @Aleem2Z (#148)</li>
-<li>Changing the volume or muting no longer re-captures the display's thumbnail</li>
+<li>Pro: scene shaders compile in a separate helper, and repeated loads share shader and planning work.</li>
+<li>Pro: clearer scene-load and GPU errors; a failed switch keeps the current wallpaper.</li>
+<li>Pro: easier SteamCMD setup on first launch, with better diagnostics.</li>
+<li>Page switches, detail views, filters and toasts fade or slide smoothly, and follow Reduce Motion.</li>
+<li>Workshop previews start from the cached poster instead of a spinner.</li>
+<li>The System Wallpaper page no longer imports videos straight from Finder; add them from the library.</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>The menu bar volume reads 0% for a muted wallpaper, and for web pages from untrusted sites, which always play muted</li>
-<li>Removing a display's wallpaper clears its thumbnail at the top of the display page at once</li>
+<li>0.8.9 and earlier no longer open, because their signing certificate was revoked. Download this version and replace the old app by hand.</li>
+<li>Pro: the old renderer and its crash-prone particle loading are gone.</li>
+<li>Pro: bad shader or texture cache data, oversized text and oversized render targets are rejected before they can crash.</li>
+<li>Pro: video textures that a script turns on later now play.</li>
+<li>The macOS wallpaper tile honours Low Power Mode, and retries scenes that timed out while loading.</li>
+<li>A video that resumes soon after a pause keeps its decoder and continues at once.</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.9">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.8.9">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.8.9/Loomscreen-Pro-0.8.9.dmg" type="application/octet-stream" sparkle:edSignature="avz7XdyEzfqXmE4Cfb2X8k12gMmFyYILO3hfq2IQUCpZTuKA4RDHmkodgvw4tIKcAMVxdTs8U/cnD5wiDm42Ag==" length="13921262" />
-    </item>
-    <item>
-      <title>Version 0.9.0b3</title>
-      <sparkle:channel>beta</sparkle:channel>
-      <pubDate>Thu, 22 Oct 2026 05:23:30 +0000</pubDate>
-      <sparkle:version>0.9.0b3</sparkle:version>
-      <sparkle:shortVersionString>0.9.0b3</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
-      <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>Improvements</strong></p>
-<ul>
-<li>Remove unused code and consolidate duplicate implementations across the app and rendering modules.</li>
-<li>Make required regression tests independent of a developer's Workshop library and optional system font downloads; keep real Workshop and rendering-oracle acceptance separate.</li>
-<li>RC1: extended Release runtime, sleep/wake, physical multi-display and real capture-hiding acceptance remain pending.</li>
-</ul>
-<p><strong>Bug Fixes</strong></p>
-<ul>
-<li>Pro: improve SteamCMD first-launch setup and diagnostics.</li>
-</ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0b3">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0b3">完整发布说明</a></small></p>
-      ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.0b3/Loomscreen-Pro-0.9.0b3.dmg" type="application/octet-stream" sparkle:edSignature="ZDgvQQMwMxbgaM8EqpjJ5M7YvOVgTJX2FzzgGRY/mQCxIBQMIozpvwyTqDxih66XTwheW1dIg2NK4tIdRLKJBQ==" length="31161407" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.0/Loomscreen-Pro-0.9.0.dmg" type="application/octet-stream" sparkle:edSignature="WfWtesGhj5MZPafwLwNOPgmVagdlpPmkCw/L63aCxvUalfyYFxCjIhc0PDO6rg2ywdbKMJkZSJoE6d29BjqtAA==" length="31294936" />
     </item>
   </channel>
 </rss>
