@@ -7,6 +7,7 @@ struct ShortcutsView: View {
     @State private var rejectionMessage: String?
     @State private var globalShortcutsEnabled: Bool
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
+    private let registrationStatus = GlobalShortcutRegistrationStatus.shared
 
     init(pendingSearchAnchor: Binding<SettingsSearchAnchor?> = .constant(nil)) {
         let settings = SettingsManager.shared.loadGlobalSettings()
@@ -25,6 +26,7 @@ struct ShortcutsView: View {
                         action: action,
                         binding: bindingFor(action),
                         isEnabled: globalShortcutsEnabled,
+                        registrationFailed: globalShortcutsEnabled && registrationFailed(action),
                         onCapture: { newBinding in updateBinding(newBinding, for: action) },
                         onClear: { updateBinding(nil, for: action) },
                         onReset: { resetToDefault(action) }
@@ -93,44 +95,49 @@ struct ShortcutsView: View {
     }
 
     private func bindingFor(_ action: GlobalShortcutAction) -> GlobalShortcutBinding? {
-        if bindings.keys.contains(action.rawAction) {
-            return bindings[action.rawAction] ?? nil
+        ShortcutBindingTable(overrides: bindings).binding(for: action)
+    }
+
+    private func registrationFailed(_ action: GlobalShortcutAction) -> Bool {
+        guard case .failed = registrationStatus.states[action] else {
+            return false
         }
-        return GlobalShortcutAction.defaultBinding(for: action)
+        return true
     }
 
     private func updateBinding(_ newBinding: GlobalShortcutBinding?, for action: GlobalShortcutAction) {
         guard globalShortcutsEnabled else { return }
-        if let newBinding {
-            switch validate(newBinding, for: action) {
-            case .valid:
-                rejectionMessage = nil
-            case .missingModifier:
-                rejectionMessage = String(
-                    localized: "Include a modifier key (⌃ ⌥ ⇧ ⌘).",
-                    bundle: .appLanguage
-                )
-                NSSound.beep()
-                return
-            case let .duplicate(other):
-                rejectionMessage = String(
-                    localized: "\(newBinding.displayString) is already used by \(other.displayName).",
-                    bundle: .appLanguage
-                )
-                NSSound.beep()
-                return
-            }
-        } else {
-            rejectionMessage = nil
-        }
-        bindings[action.rawAction] = newBinding
-        persistSettings()
+        var table = ShortcutBindingTable(overrides: bindings)
+        let outcome = table.assign(newBinding, to: action)
+        commit(outcome, table)
     }
 
     private func resetToDefault(_ action: GlobalShortcutAction) {
-        rejectionMessage = nil
-        bindings.removeValue(forKey: action.rawAction)
-        persistSettings()
+        var table = ShortcutBindingTable(overrides: bindings)
+        let outcome = table.resetToDefault(action)
+        commit(outcome, table)
+    }
+
+    private func commit(_ outcome: ShortcutBindingTable.Outcome, _ table: ShortcutBindingTable) {
+        switch outcome {
+        case .applied:
+            rejectionMessage = nil
+            bindings = table.overrides
+            persistSettings()
+        case .missingModifier:
+            rejectionMessage = String(
+                localized: "Include a modifier key (⌃ ⌥ ⇧ ⌘).",
+                bundle: .appLanguage
+            )
+            NSSound.beep()
+        case let .duplicate(binding, other):
+            let shown = binding.displayString(layoutCharacter: KeyboardLayoutCharacter.character)
+            rejectionMessage = String(
+                localized: "\(shown) is already used by \(other.displayName).",
+                bundle: .appLanguage
+            )
+            NSSound.beep()
+        }
     }
 
     private func persistSettings() {
@@ -142,20 +149,47 @@ struct ShortcutsView: View {
         )
     }
 
-    private func validate(_ binding: GlobalShortcutBinding, for action: GlobalShortcutAction) -> ValidationResult {
-        guard !binding.modifiers.isEmpty else { return .missingModifier }
-        for other in GlobalShortcutAction.allCases where other != action {
-            if bindingFor(other) == binding {
-                return .duplicate(other)
-            }
-        }
-        return .valid
+}
+
+/// A stored nil means the user cleared the action; a missing key means its default applies.
+struct ShortcutBindingTable: Equatable {
+    enum Outcome: Equatable {
+        case applied
+        case missingModifier
+        case duplicate(GlobalShortcutBinding, usedBy: GlobalShortcutAction)
     }
 
-    private enum ValidationResult {
-        case valid
-        case missingModifier
-        case duplicate(GlobalShortcutAction)
+    private(set) var overrides: [GlobalShortcutAction.RawAction: GlobalShortcutBinding?]
+
+    func binding(for action: GlobalShortcutAction) -> GlobalShortcutBinding? {
+        if overrides.keys.contains(action.rawAction) {
+            return overrides[action.rawAction] ?? nil
+        }
+        return GlobalShortcutAction.defaultBinding(for: action)
+    }
+
+    /// nil clears the action. The table changes only when the outcome is `.applied`.
+    mutating func assign(_ binding: GlobalShortcutBinding?, to action: GlobalShortcutAction) -> Outcome {
+        if let binding, let rejection = rejection(of: binding, for: action) {
+            return rejection
+        }
+        overrides[action.rawAction] = .some(binding)
+        return .applied
+    }
+
+    mutating func resetToDefault(_ action: GlobalShortcutAction) -> Outcome {
+        if let binding = GlobalShortcutAction.defaultBinding(for: action),
+           let rejection = rejection(of: binding, for: action) {
+            return rejection
+        }
+        overrides.removeValue(forKey: action.rawAction)
+        return .applied
+    }
+
+    private func rejection(of binding: GlobalShortcutBinding, for action: GlobalShortcutAction) -> Outcome? {
+        guard !binding.modifiers.isEmpty else { return .missingModifier }
+        let owner = GlobalShortcutAction.allCases.first { $0 != action && self.binding(for: $0) == binding }
+        return owner.map { .duplicate(binding, usedBy: $0) }
     }
 }
 
@@ -163,6 +197,7 @@ private struct ShortcutRow: View {
     let action: GlobalShortcutAction
     let binding: GlobalShortcutBinding?
     let isEnabled: Bool
+    let registrationFailed: Bool
     let onCapture: (GlobalShortcutBinding) -> Void
     let onClear: () -> Void
     let onReset: () -> Void
@@ -174,6 +209,14 @@ private struct ShortcutRow: View {
             icon: action.iconName,
             iconColor: action.iconColor,
             title: action.displayNameKey,
+            titleBadge: registrationFailed ? SettingRowTitleBadge(
+                systemImage: "exclamationmark.triangle.fill",
+                tint: DesignTokens.Colors.Status.warning,
+                accessibilityLabel: Text("Shortcut not active")
+            ) : nil,
+            subtitle: registrationFailed
+                ? "This shortcut isn't active. Another app or macOS may already be using it."
+                : nil,
             info: scopeInfo
         ) {
             HStack(spacing: DesignTokens.Spacing.sm) {
@@ -296,7 +339,7 @@ private struct ShortcutCaptureField: View {
 
     private var shortcutAccessibilityLabel: Text {
         if let binding {
-            return Text(verbatim: binding.displayString)
+            return Text(verbatim: binding.displayString(layoutCharacter: KeyboardLayoutCharacter.character))
         }
         return Text("No shortcut set")
     }
@@ -318,7 +361,7 @@ struct ShortcutKeyLabel: View {
         }
         .font(DesignTokens.Typography.body)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: binding.displayString))
+        .accessibilityLabel(Text(verbatim: binding.displayString(layoutCharacter: KeyboardLayoutCharacter.character)))
     }
 
     private var modifierSymbols: [String] {
@@ -332,7 +375,11 @@ struct ShortcutKeyLabel: View {
 
     /// Keypad Enter (76) registers apart from Return (36), so it needs a face of its own; SF Symbols has no Enter glyph.
     static func keyText(for keyCode: UInt32) -> String {
-        keyCode == 76 ? "\u{2324}" : GlobalShortcutBinding.keyName(for: keyCode)
+        keyText(for: keyCode, layoutCharacter: KeyboardLayoutCharacter.character)
+    }
+
+    static func keyText(for keyCode: UInt32, layoutCharacter: (UInt32) -> String?) -> String {
+        keyCode == 76 ? "\u{2324}" : GlobalShortcutBinding.keyName(for: keyCode, layoutCharacter: layoutCharacter)
     }
 
     /// SF Symbol name; nil falls back to `keyText(for:)`.

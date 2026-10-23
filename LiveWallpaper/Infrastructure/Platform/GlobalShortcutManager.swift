@@ -2,20 +2,52 @@ import Foundation
 import AppKit
 import Carbon.HIToolbox
 import LiveWallpaperCore
+import Observation
+
+enum GlobalShortcutRegistrationState: Equatable, Sendable {
+    case registered
+    case failed(OSStatus)
+}
+
+/// Outcome of the latest registration pass; an action without an entry was not attempted (unbound or shortcuts off).
+@MainActor
+@Observable
+final class GlobalShortcutRegistrationStatus {
+    static let shared = GlobalShortcutRegistrationStatus()
+
+    private(set) var states: [GlobalShortcutAction: GlobalShortcutRegistrationState] = [:]
+
+    func replace(with states: [GlobalShortcutAction: GlobalShortcutRegistrationState]) {
+        guard self.states != states else { return }
+        self.states = states
+    }
+}
 
 /// Delivery goes through `GetEventDispatcherTarget()` plus a file-level C trampoline. An inline `@MainActor` closure on `GetApplicationEventTarget()` can return `noErr` and still never fire in an accessory / `LSUIElement` app, especially in Release.
 @MainActor
 final class GlobalShortcutManager {
+    typealias HotKeyRegistrar = @MainActor (_ keyCode: UInt32, _ carbonModifiers: UInt32, _ id: EventHotKeyID)
+        -> (status: OSStatus, ref: EventHotKeyRef?)
+
     private weak var screenManager: ScreenManager?
     private let onOpenSettings: () -> Void
+    private let registrationStatus: GlobalShortcutRegistrationStatus
+    private let registerHotKey: HotKeyRegistrar
     /// MainActor-only; `nonisolated(unsafe)` so deinit can tear down Carbon refs.
     nonisolated(unsafe) private var registrations: [GlobalShortcutAction: HotKeyRegistration] = [:]
     nonisolated(unsafe) private var eventHandler: EventHandlerRef?
     nonisolated(unsafe) private var preferenceObserver: NSObjectProtocol?
 
-    init(screenManager: ScreenManager, onOpenSettings: @escaping () -> Void) {
+    init(
+        screenManager: ScreenManager,
+        onOpenSettings: @escaping () -> Void,
+        registrationStatus: GlobalShortcutRegistrationStatus = .shared,
+        registerHotKey: @escaping HotKeyRegistrar = GlobalShortcutManager.registerCarbonHotKey
+    ) {
         self.screenManager = screenManager
         self.onOpenSettings = onOpenSettings
+        self.registrationStatus = registrationStatus
+        self.registerHotKey = registerHotKey
     }
 
     deinit {
@@ -35,55 +67,66 @@ final class GlobalShortcutManager {
     // MARK: - Registration
 
     private func registerFromPreferences() {
-        unregisterAll()
-
         let settings = SettingsManager.shared.loadGlobalSettings()
         guard settings.globalShortcutsEnabled else {
+            unregisterAll()
+            registrationStatus.replace(with: [:])
             // Keep the event handler so re-enable can re-register without reinstall.
             Logger.info("Global shortcuts master switch is off", category: .startup)
             return
         }
 
         let overrides = settings.globalShortcuts
+        var bindings: [GlobalShortcutAction: GlobalShortcutBinding] = [:]
         for action in GlobalShortcutAction.allCases {
-            let binding: GlobalShortcutBinding?
             if overrides.keys.contains(action.rawAction) {
-                binding = overrides[action.rawAction] ?? nil
+                bindings[action] = overrides[action.rawAction] ?? nil
             } else {
-                binding = GlobalShortcutAction.defaultBinding(for: action)
+                bindings[action] = GlobalShortcutAction.defaultBinding(for: action)
             }
-            guard let binding else { continue }
-            register(action: action, binding: binding)
         }
+        register(bindings)
         Logger.info(
             "Registered \(registrations.count) global shortcuts",
             category: .startup
         )
     }
 
-    private func register(action: GlobalShortcutAction, binding: GlobalShortcutBinding) {
+    /// Replaces every registration and publishes each action's outcome to `registrationStatus`.
+    func register(_ bindings: [GlobalShortcutAction: GlobalShortcutBinding]) {
+        unregisterAll()
+        var states: [GlobalShortcutAction: GlobalShortcutRegistrationState] = [:]
+        for action in GlobalShortcutAction.allCases {
+            guard let binding = bindings[action] else { continue }
+            states[action] = register(action: action, binding: binding)
+        }
+        registrationStatus.replace(with: states)
+    }
+
+    private func register(action: GlobalShortcutAction, binding: GlobalShortcutBinding) -> GlobalShortcutRegistrationState {
         let hotKeyID = EventHotKeyID(signature: Self.fourCharCode("LWLP"), id: UInt32(action.signatureID))
-        var hotKeyRef: EventHotKeyRef?
+        let result = registerHotKey(binding.keyCode, carbonModifiers(for: binding.modifiers), hotKeyID)
 
-        let modMask = carbonModifiers(for: binding.modifiers)
-        let status = RegisterEventHotKey(
-            binding.keyCode,
-            modMask,
-            hotKeyID,
-            GetEventDispatcherTarget(),
-            0,
-            &hotKeyRef
-        )
-
-        guard status == noErr, let hotKeyRef else {
+        guard result.status == noErr, let hotKeyRef = result.ref else {
             Logger.warning(
-                "Failed to register hot key for \(action.rawValue): \(Self.describeStatus(status))",
+                "Failed to register hot key for \(action.rawValue): \(Self.describeStatus(result.status))",
                 category: .general
             )
-            return
+            return .failed(result.status)
         }
 
         registrations[action] = HotKeyRegistration(ref: hotKeyRef, hotKeyID: hotKeyID)
+        return .registered
+    }
+
+    static func registerCarbonHotKey(
+        keyCode: UInt32,
+        carbonModifiers: UInt32,
+        id: EventHotKeyID
+    ) -> (status: OSStatus, ref: EventHotKeyRef?) {
+        var hotKeyRef: EventHotKeyRef?
+        let status = RegisterEventHotKey(keyCode, carbonModifiers, id, GetEventDispatcherTarget(), 0, &hotKeyRef)
+        return (status, hotKeyRef)
     }
 
     private func unregisterAll() {

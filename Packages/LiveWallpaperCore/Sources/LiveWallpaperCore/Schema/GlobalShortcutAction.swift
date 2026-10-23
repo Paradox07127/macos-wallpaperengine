@@ -130,18 +130,35 @@ public struct GlobalShortcutBinding: Codable, Equatable, Hashable, Sendable {
         public static let shift    = ModifierSet(rawValue: 1 << 3)
     }
 
-    /// Human-readable form, e.g. `⌃⇧Space`.
+    /// Human-readable form, e.g. `⌃⇧Space`, with character keys named by the US layout.
     public var displayString: String {
-        var symbols = ""
-        if modifiers.contains(.control) { symbols += "⌃" }
-        if modifiers.contains(.option)  { symbols += "⌥" }
-        if modifiers.contains(.shift)   { symbols += "⇧" }
-        if modifiers.contains(.command) { symbols += "⌘" }
-        return symbols + GlobalShortcutBinding.keyName(for: keyCode)
+        displayString(layoutCharacter: { _ in nil })
     }
 
-    /// Falls back to `Key \(code)` for unmapped codes so debug rendering still works.
+    public func displayString(layoutCharacter: (UInt32) -> String?) -> String {
+        var symbols = ""
+        if modifiers.contains(.control) {
+            symbols += "⌃"
+        }
+        if modifiers.contains(.option) {
+            symbols += "⌥"
+        }
+        if modifiers.contains(.shift) {
+            symbols += "⇧"
+        }
+        if modifiers.contains(.command) {
+            symbols += "⌘"
+        }
+        return symbols + GlobalShortcutBinding.keyName(for: keyCode, layoutCharacter: layoutCharacter)
+    }
+
     public static func keyName(for keyCode: UInt32) -> String {
+        keyName(for: keyCode, layoutCharacter: { _ in nil })
+    }
+
+    /// `layoutCharacter` names a character key on the active keyboard layout; nil falls back to the
+    /// US map, then to `Key \(code)`.
+    public static func keyName(for keyCode: UInt32, layoutCharacter: (UInt32) -> String?) -> String {
         switch keyCode {
         case 49: return "Space"
         case 36: return "Return"
@@ -165,6 +182,9 @@ public struct GlobalShortcutBinding: Codable, Equatable, Hashable, Sendable {
         case 103: return "F11"
         case 111: return "F12"
         default:
+            if let character = layoutCharacter(keyCode), !character.isEmpty {
+                return character.uppercased()
+            }
             if let scalar = printableCharacter(for: keyCode) {
                 return String(scalar).uppercased()
             }

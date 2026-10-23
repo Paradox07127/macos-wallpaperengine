@@ -63021,6 +63021,42 @@
         }
       }
     },
+    "Shortcut not active" : {
+      "comment" : "Accessibility label of the warning badge on a shortcut row whose global shortcut could not be registered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcut not active"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atajo no activo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ショートカットは無効です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷键未生效"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速鍵未生效"
+          }
+        }
+      }
+    },
     "Shortcut rejected: %@" : {
       "localizations" : {
         "en" : {
@@ -75589,6 +75625,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此場景包含 Loomscreen 無法渲染的效果"
+          }
+        }
+      }
+    },
+    "This shortcut isn't active. Another app or macOS may already be using it." : {
+      "comment" : "Shortcut row subtitle when macOS refused to register the global shortcut.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This shortcut isn't active. Another app or macOS may already be using it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este atajo no está activo. Puede que otra app o macOS ya lo esté usando."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このショートカットは有効になっていません。ほかのアプリまたは macOS がすでに使用している可能性があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此快捷键未生效，可能已被其他应用或 macOS 占用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此快速鍵未生效，可能已被其他應用程式或 macOS 佔用。"
           }
         }
       }
