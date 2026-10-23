@@ -171,9 +171,10 @@ struct EditDeskMinimumWindowTests {
         let host = MinimumHost()
         defer { host.close() }
         host.router.showDetail(host.screen.id, section: .overlay)
-        await host.settle(seconds: 3) { host.canvasColumn != nil && host.dragStrips.count == 2 }
+        await host.settle(seconds: 3) { host.canvasColumn != nil && host.dragStrips.count == 3 }
         try #require(host.canvasColumn != nil, "the overlay workspace never mounted")
-        try #require(host.dragStrips.count == 2, "the detail top bar never mounted")
+        // The home top bar stays mounted, hidden, under the detail page.
+        try #require(host.dragStrips.count == 3, "the detail top bar never mounted")
         await host.shrinkToMinimum()
         Self.expectMinimum(host, "overlay")
         let size = host.host.bounds.size
