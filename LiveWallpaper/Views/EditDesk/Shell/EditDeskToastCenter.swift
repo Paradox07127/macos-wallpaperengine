@@ -77,8 +77,9 @@ final class EditDeskToastCenter {
             undoStepID: undoStepID, action: action
         )
         toasts.append(toast)
-        if toasts.count > Self.visibleLimit {
-            toasts.removeFirst(toasts.count - Self.visibleLimit)
+        // An open failure goes only when closed or pushed out by a newer failure; any other toast goes first, even the new one.
+        while toasts.count > Self.visibleLimit {
+            toasts.remove(at: toasts.firstIndex { $0.style != .failure } ?? 0)
         }
         return toast.id
     }

@@ -359,11 +359,13 @@ struct WidgetSettingsPopover: View {
                     set: { onUpdate(MonitorWidgetDraft.settingHistoryWindow(tag: $0, clearValue: defaultWindow, on: placement)) }
                 ),
                 values: [30, 60, 120],
-                shell: .flat
-            ) { seconds, isSelected in
-                Text(verbatim: "\(seconds)s")
-                    .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
-            }
+                shell: .flat,
+                segmentName: { Text("\($0) seconds", comment: "VoiceOver name of a history window choice in widget settings. Placeholder is a number of seconds.") },
+                label: { seconds, isSelected in
+                    Text(verbatim: "\(seconds)s")
+                        .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
+                }
+            )
             .frame(width: 140)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("History window"))

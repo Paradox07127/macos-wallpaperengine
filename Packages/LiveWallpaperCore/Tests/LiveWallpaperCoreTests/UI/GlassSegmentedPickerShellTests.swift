@@ -30,7 +30,61 @@ struct GlassSegmentedPickerShellTests {
         )
     }
 
+    @MainActor
+    @Test("Each icon segment reads as the name its caller passed")
+    func iconSegmentsReadAsTheirNames() {
+        let names = ["square.grid.2x2": "Wallpaper", "list.bullet": "Overlays"]
+        let picker = GlassSegmentedPicker(
+            selection: .constant("square.grid.2x2"),
+            values: ["square.grid.2x2", "list.bullet"],
+            shell: .detail,
+            segmentName: { Text(verbatim: names[$0] ?? "") },
+            label: { symbol, _ in Image(systemName: symbol) }
+        )
+        #expect(Self.buttonLabels(in: picker) == ["Wallpaper", "Overlays"])
+    }
+
+    @MainActor
+    @Test("Each titled segment reads as its title")
+    func titledSegmentsReadAsTheirTitles() {
+        let picker = GlassSegmentedPicker(selection: .constant(1), values: [1, 2], shell: .flat) { value in
+            value == 1 ? "Small" : "Large"
+        }
+        #expect(Self.buttonLabels(in: picker) == ["Small", "Large"])
+    }
+
     // MARK: Probe
+
+    /// The AX labels of the buttons SwiftUI hands to assistive technology, in tree order.
+    @MainActor
+    private static func buttonLabels(in view: some View) -> [String] {
+        // SwiftUI builds no AX nodes until an assistive client asks for them; this is what VoiceOver sets.
+        let enhancedUI = "AXEnhancedUserInterface"
+        let setAttribute = Selector(("accessibilitySetValue:forAttribute:"))
+        NSApplication.shared.perform(setAttribute, with: NSNumber(value: true), with: enhancedUI)
+        defer { NSApplication.shared.perform(setAttribute, with: NSNumber(value: false), with: enhancedUI) }
+        let host = NSHostingView(rootView: view.fixedSize())
+        let window = NSWindow(
+            contentRect: CGRect(origin: CGPoint(x: -30000, y: -30000), size: host.fittingSize),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        var labels: [String] = []
+        func walk(_ element: Any) {
+            let object = element as AnyObject
+            if object.accessibilityRole?() == .button {
+                labels.append(object.accessibilityLabel?() ?? "")
+            }
+            for child in object.accessibilityChildren?() ?? [] {
+                walk(child)
+            }
+        }
+        walk(host)
+        return labels
+    }
 
     private static let probeTitles = ["AAAA", "BBBB"]
 

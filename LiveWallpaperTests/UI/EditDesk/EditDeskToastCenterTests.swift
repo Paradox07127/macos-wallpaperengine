@@ -74,6 +74,28 @@ struct EditDeskToastCenterTests {
         #expect(center.toasts.map(\.text) == ["Second", "Third"])
     }
 
+    @Test("Later successes push out each other, never a failure the user hasn't closed")
+    func successesNeverEvictAnOpenFailure() {
+        let center = EditDeskToastCenter()
+        let failure = center.post("Couldn't apply", style: .failure, action: .init(title: "Retry") {})
+        center.post("Applied to 1", style: .success)
+        center.post("Applied to 2", style: .success)
+        center.post("Applied to 3", style: .info)
+        #expect(center.toasts.map(\.text) == ["Couldn't apply", "Applied to 3"])
+        #expect(center.toasts.first?.id == failure)
+    }
+
+    @Test("A newer failure replaces the oldest failure once both slots hold failures")
+    func newerFailureReplacesTheOldestFailure() {
+        let center = EditDeskToastCenter()
+        center.post("Failed A", style: .failure)
+        center.post("Failed B", style: .failure)
+        center.post("Applied", style: .success)
+        #expect(center.toasts.map(\.text) == ["Failed A", "Failed B"], "a success pushed out a failure")
+        center.post("Failed C", style: .failure)
+        #expect(center.toasts.map(\.text) == ["Failed B", "Failed C"])
+    }
+
     @Test("A toast expires 1.8s after it was posted, driven by an injected clock")
     func expiryAfterDuration() {
         let clock = TestClock(Date(timeIntervalSince1970: 1000))

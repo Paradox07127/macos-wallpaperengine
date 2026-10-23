@@ -19,7 +19,7 @@ struct LibraryImporterTests {
         }
         let importer = LibraryImporter(bookmarks: bookmarks, sceneCapable: true)
 
-        #expect(importer.add([video, page, note]) == LibraryImporter.Outcome(added: 2, failed: 1))
+        #expect(importer.add([video, page, note]) == LibraryImporter.Outcome(added: 2, failed: 1, failures: [.init(url: note, reason: .unsupportedFormat)]))
         #expect(bookmarks.bookmarks.count == 2)
         _ = importer.add([video])
         #expect(bookmarks.bookmarks.count == 2, "the same video was saved twice")
@@ -34,7 +34,7 @@ struct LibraryImporterTests {
         let lite = LibraryImporter(bookmarks: bookmarks, sceneCapable: false).add([folder])
 
         #expect(pro == LibraryImporter.Outcome(projectFolders: [folder]))
-        #expect(lite == LibraryImporter.Outcome(failed: 1))
+        #expect(lite == LibraryImporter.Outcome(failed: 1, failures: [.init(url: folder, reason: .scenesUnavailable)]))
         #expect(bookmarks.bookmarks.isEmpty, "a project folder was saved as a web page")
     }
 
@@ -48,7 +48,7 @@ struct LibraryImporterTests {
         }
         let importer = LibraryImporter(bookmarks: bookmarks, sceneCapable: true)
 
-        #expect(importer.add([videos, empty]) == LibraryImporter.Outcome(added: 2, failed: 1))
+        #expect(importer.add([videos, empty]) == LibraryImporter.Outcome(added: 2, failed: 1, failures: [.init(url: empty, reason: .noWallpaperInFolder)]))
         #expect(bookmarks.bookmarks.count == 2)
         #expect(bookmarks.bookmarks.allSatisfy { $0.content.wallpaperType == .video }, "the folder was saved as a web page")
     }
@@ -96,6 +96,39 @@ struct LibraryImporterTests {
         // Control: another file in the same folder is a different wallpaper.
         let other = try otherFile.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         #expect(ApplyRouter.saveIfNew(page(other), label: "Other page", in: bookmarks) != nil)
+    }
+
+    @Test func mixedImportKeepsEachFailureAndWhy() throws {
+        let folder = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let video = folder.appendingPathComponent("clip.mp4")
+        let note = folder.appendingPathComponent("notes.txt")
+        for url in [video, note] {
+            try Data("fixture".utf8).write(to: url)
+        }
+        let empty = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: empty) }
+        let locked = try fixtureFolder()
+        try Data("fixture".utf8).write(to: locked.appendingPathComponent("hidden.mp4"))
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: locked)
+        }
+        try #require(
+            (try? FileManager.default.contentsOfDirectory(atPath: locked.path)) == nil,
+            "the locked folder is still readable, so the test can't tell a read failure from an empty folder"
+        )
+
+        let outcome = LibraryImporter(bookmarks: bookmarks, sceneCapable: true).add([video, note, empty, locked])
+
+        #expect(outcome.added == 1)
+        #expect(outcome.failed == 3)
+        #expect(outcome.failures.map(\.url) == [note, empty, locked])
+        #expect(outcome.failures.map(\.reason) == [.unsupportedFormat, .noWallpaperInFolder, .folderUnreadable])
+        let lines = try #require(outcome.failureSummary).components(separatedBy: "\n")
+        #expect(lines.count == 2)
+        #expect(lines.first?.hasPrefix("notes.txt") == true)
     }
 
     private func fixtureFolder() throws -> URL {

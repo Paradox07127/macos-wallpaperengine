@@ -40,6 +40,41 @@
         }
       }
     },
+    "%lld seconds" : {
+      "comment" : "VoiceOver name of a history window choice in widget settings. Placeholder is a number of seconds.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld seconds"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld segundos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 秒"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 秒"
+          }
+        }
+      }
+    },
     "'%@' is already in your library from another folder. The Steam download takes its place; that folder stays on disk." : {
       "comment" : "Confirm message before a Workshop download replaces a library copy imported from a local folder. Placeholder is the wallpaper title.",
       "extractionState" : "manual",
@@ -19033,6 +19068,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法下載：%@"
+          }
+        }
+      }
+    },
+    "Couldn't keep access to the file." : {
+      "comment" : "Why one video of the Wallpaper Library's import wasn't added: the app couldn't save permission to reopen it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't keep access to the file."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo conservar el acceso al archivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルへのアクセスを保持できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保留对该文件的访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法保留對該檔案的存取權限。"
+          }
+        }
+      }
+    },
+    "Couldn't open the folder to look inside." : {
+      "comment" : "Why one folder of the Wallpaper Library's import wasn't added: reading its contents failed, for example without permission.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't open the folder to look inside."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo abrir la carpeta para ver su contenido."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォルダを開いて中身を確認できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开文件夹查看其内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法打開資料夾查看其內容。"
           }
         }
       }
@@ -72132,6 +72237,41 @@
         }
       }
     },
+    "The folder has no videos or web page." : {
+      "comment" : "Why one folder of the Wallpaper Library's import wasn't added: nothing inside it can be a wallpaper.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The folder has no videos or web page."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta no contiene vídeos ni páginas web."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォルダにビデオも Web ページもありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件夹中没有视频或网页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資料夾中沒有影片或網頁。"
+          }
+        }
+      }
+    },
     "The image can't be found. Choose it again." : {
       "localizations" : {
         "en" : {
@@ -74188,6 +74328,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布按鈕開啟目前顯示器的設定層，圖層按鈕開啟疊加層編輯器。顯示器標籤切換目標，返回箭頭回到全景。"
+          }
+        }
+      }
+    },
+    "The Wallpaper Library can't add this kind of file." : {
+      "comment" : "Why one item of the Wallpaper Library's import wasn't added: not a video, web page or wallpaper folder.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Wallpaper Library can't add this kind of file."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La biblioteca de fondos no puede añadir este tipo de archivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この種類のファイルは壁紙ライブラリに追加できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸库无法加入这种文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布庫無法加入這種檔案。"
           }
         }
       }
@@ -82300,6 +82475,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法確認 Wallpaper Engine 資源版本"
+          }
+        }
+      }
+    },
+    "Wallpaper Engine projects aren't available in this edition." : {
+      "comment" : "Why one item of the Wallpaper Library's import wasn't added: the app edition can't play Wallpaper Engine scenes.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine projects aren't available in this edition."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los proyectos de Wallpaper Engine no están disponibles en esta edición."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このエディションでは Wallpaper Engine のプロジェクトを使用できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本不支持 Wallpaper Engine 项目。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本不支援 Wallpaper Engine 專案。"
           }
         }
       }

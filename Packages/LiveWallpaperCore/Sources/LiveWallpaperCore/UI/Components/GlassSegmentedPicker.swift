@@ -18,6 +18,8 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     private let values: [Value]
     private let shell: GlassSegmentedShell
     private let label: (Value, _ isSelected: Bool) -> SegmentLabel
+    /// Each segment's VoiceOver name; nil leaves it to whatever the label view reads as.
+    private let segmentName: ((Value) -> Text)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.segmentedSelectionNamespace) private var sharedSelectionNamespace
@@ -27,11 +29,13 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         selection: Binding<Value>,
         values: [Value],
         shell: GlassSegmentedShell = .flat,
+        segmentName: ((Value) -> Text)? = nil,
         @ViewBuilder label: @escaping (Value, _ isSelected: Bool) -> SegmentLabel
     ) {
         self._selection = selection
         self.values = values
         self.shell = shell
+        self.segmentName = segmentName
         self.label = label
     }
 
@@ -70,6 +74,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .modifier(SegmentName(name: segmentName?(value)))
     }
 
     /// Edit Desk hands one capsule across the segments so the indicator slides rather than
@@ -102,6 +107,18 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     }
 }
 
+private struct SegmentName: ViewModifier {
+    let name: Text?
+
+    func body(content: Content) -> some View {
+        if let name {
+            content.accessibilityLabel(name)
+        } else {
+            content
+        }
+    }
+}
+
 public extension EnvironmentValues {
     /// nil = each picker uses its own namespace.
     @Entry var segmentedSelectionNamespace: Namespace.ID?
@@ -114,9 +131,9 @@ public extension GlassSegmentedPicker where SegmentLabel == Text {
         shell: GlassSegmentedShell = .flat,
         title: @escaping (Value) -> LocalizedStringKey
     ) {
-        self.init(selection: selection, values: values, shell: shell) { value, isSelected in
+        self.init(selection: selection, values: values, shell: shell, segmentName: { Text(title($0)) }, label: { value, isSelected in
             Text(title(value))
                 .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
-        }
+        })
     }
 }
