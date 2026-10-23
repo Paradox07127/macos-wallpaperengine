@@ -1086,8 +1086,6 @@ private func shutdownAtUtility(_ shutdown: @escaping @Sendable () -> Void) async
 #if !LITE_BUILD
 private final class StubSurfaceControl: WPESurfaceControl, @unchecked Sendable {
     func applyPacing(_: WPERenderPacingUpdate) {}
-    func releaseDrawables() {}
-    func detach() {}
     func setClickCaptureEnabled(_: Bool) {}
 }
 #endif

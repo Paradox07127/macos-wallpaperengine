@@ -26,6 +26,34 @@ struct SceneHotZoneRoutingTests {
         #expect(window.level.rawValue == Int(CGWindowLevelForKey(.desktopWindow)) - 1)
     }
 
+    @Test("Scene cleanup stops the surface pointer publisher")
+    func cleanupStopsPointerPublisher() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let window = VideoWallpaperWindow(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
+        window.contentView = surface.mtkView
+        let actor = WPEDisplayRenderActor(backing: .main)
+        surface.attach(client: WPERenderSurfaceClientShim(renderActor: actor, backing: .main))
+        let session = SceneWallpaperSession(window: window, renderActor: actor, surface: surface)
+        let geometry = WPEPointerPublisher.geometry(of: surface.mtkView)
+        try #require(geometry != .none)
+        let center = CGPoint(x: geometry.viewFrameInScreen.midX, y: geometry.viewFrameInScreen.midY)
+
+        session.cleanup()
+
+        var republished = true
+        for _ in 0 ..< 100 {
+            surface.mailbox.publishGeometry(.none)
+            NotificationCenter.default.post(name: NSWindow.didMoveNotification, object: window)
+            try await Task.sleep(for: .milliseconds(20))
+            republished = surface.mailbox.sample(screenLocation: center).isInsideView
+            if !republished {
+                break
+            }
+        }
+        #expect(!republished, "a torn-down scene would keep its geometry observers and mouse monitors")
+    }
+
     @Test("Moving a span canvas moves the hot-zone panels with it")
     func spanViewportMoveRelaysOutPanels() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

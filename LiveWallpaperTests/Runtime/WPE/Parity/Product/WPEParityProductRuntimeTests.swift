@@ -399,10 +399,6 @@ private final class PacingRecorder: WPESurfaceControl {
         }
     }
 
-    func releaseDrawables() {}
-
-    func detach() {}
-
     func setClickCaptureEnabled(_: Bool) {}
 }
 

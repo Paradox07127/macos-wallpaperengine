@@ -424,10 +424,6 @@ private final class RecordingSurfaceControl: WPESurfaceControl {
         recorded.withLock { $0.framesPerSecond = fps }
     }
 
-    func releaseDrawables() {}
-
-    func detach() {}
-
     func setClickCaptureEnabled(_ enabled: Bool) {
         recorded.withLock { $0.clickCaptureEnabled = enabled }
     }

@@ -166,10 +166,6 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         }
     }
 
-    private func releaseDrawablesOnMain() {
-        mtkView.releaseDrawables()
-    }
-
     /// The per-screen Interaction toggle: the view gates event capture on it, the
     /// mailbox exposes it to the render path. Both must see the same value.
     private func setClickCaptureEnabledOnMain() {
@@ -177,7 +173,7 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         mtkView.clickCaptureEnabled = mailbox.read().clickCaptureEnabled
     }
 
-    private func detachOnMain() {
+    func detach() {
         stopDisplayLinkDriver()
         publisher.stop()
         mtkView.delegate = nil
@@ -267,8 +263,6 @@ protocol WPERenderSurfaceClient: AnyObject {
 
 protocol WPESurfaceControl: Sendable {
     func applyPacing(_ update: WPERenderPacingUpdate)
-    func releaseDrawables()
-    func detach()
     func setClickCaptureEnabled(_ enabled: Bool)
 }
 
@@ -278,14 +272,6 @@ extension WPERenderSurface: WPESurfaceControl {
             desiredPointerEventsEnabled.withLock { $0 = pointerEvents }
         }
         deliver { $0.applyPacingOnMain(update) }
-    }
-
-    nonisolated func releaseDrawables() {
-        deliver { $0.releaseDrawablesOnMain() }
-    }
-
-    nonisolated func detach() {
-        deliver { $0.detachOnMain() }
     }
 
     nonisolated func setClickCaptureEnabled(_ enabled: Bool) {

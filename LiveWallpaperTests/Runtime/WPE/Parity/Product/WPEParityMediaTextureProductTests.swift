@@ -1545,8 +1545,6 @@ private final class MediaPacingRecorder: WPESurfaceControl {
         last.withLock { $0 = update.isPaused ?? $0 }
     }
 
-    func releaseDrawables() {}
-    func detach() {}
     func setClickCaptureEnabled(_: Bool) {}
 }
 #endif

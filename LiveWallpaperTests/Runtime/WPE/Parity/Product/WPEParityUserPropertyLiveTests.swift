@@ -489,10 +489,6 @@ final class WPEParityUserPropertyLiveTests: XCTestCase {
 private final class SilentSurfaceControl: WPESurfaceControl {
     func applyPacing(_: WPERenderPacingUpdate) {}
 
-    func releaseDrawables() {}
-
-    func detach() {}
-
     func setClickCaptureEnabled(_: Bool) {}
 }
 #endif

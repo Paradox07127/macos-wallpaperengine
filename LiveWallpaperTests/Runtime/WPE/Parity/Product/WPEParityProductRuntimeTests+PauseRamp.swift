@@ -164,10 +164,6 @@ private final class PauseRampPacingRecorder: WPESurfaceControl {
         isPaused.withLock { $0 = update.isPaused ?? $0 }
     }
 
-    func releaseDrawables() {}
-
-    func detach() {}
-
     func setClickCaptureEnabled(_: Bool) {}
 }
 #endif

@@ -471,10 +471,11 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         window?.close()
         window = nil
         group.remove(self)
-        Task { [actor] in
+        Task { [actor, surface] in
             await startup?.value
             await stop?.value
             await actor.teardownRenderer()
+            surface.detach()
             await actor.shutdown()
         }
     }

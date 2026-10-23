@@ -101,8 +101,6 @@ struct SystemWallpaperSceneSource: Sendable {
 /// Headless pacing: the export loop or extension drives frames, never MTKView.
 private final class SystemWallpaperSceneSurfaceControl: WPESurfaceControl {
     func applyPacing(_: WPERenderPacingUpdate) {}
-    func releaseDrawables() {}
-    func detach() {}
     func setClickCaptureEnabled(_: Bool) {}
 }
 

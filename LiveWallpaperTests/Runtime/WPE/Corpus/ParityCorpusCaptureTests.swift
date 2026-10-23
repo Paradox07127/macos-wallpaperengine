@@ -351,10 +351,6 @@ final class ParityCorpusCaptureTests: XCTestCase {
 private final class IdleSurfaceControl: WPESurfaceControl {
     func applyPacing(_: WPERenderPacingUpdate) {}
 
-    func releaseDrawables() {}
-
-    func detach() {}
-
     func setClickCaptureEnabled(_: Bool) {}
 }
 #endif

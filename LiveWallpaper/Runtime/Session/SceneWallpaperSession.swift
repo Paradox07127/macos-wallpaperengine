@@ -669,6 +669,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         window?.close()
         window = nil
         let actor = renderActor
+        let surface = surface
         let startup = startupTask
         let load = loadTask
         startupTask = nil
@@ -687,6 +688,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             await pressureDwell.drain()
             await wake?.value
             await actor.teardownRenderer()
+            surface.detach()
             // Async join: a wedged render thread must cost a leaked thread, never a frozen main thread.
             await actor.shutdown()
         }
