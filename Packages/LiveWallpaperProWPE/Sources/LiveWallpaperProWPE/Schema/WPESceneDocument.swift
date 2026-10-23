@@ -8,6 +8,8 @@ public struct WPESceneDocument: Equatable, Sendable {
     public let resolvedGeneralJSON: WPESceneJSONValue
     /// User-resolved `objects` entries for the parity pipeline.
     public let resolvedObjectsJSON: [WPESceneJSONValue]
+    /// Computed once from the two resolved fields above.
+    public let paritySeeds: WPESceneParitySeeds
     public let camera: WPESceneCamera
     /// Root static camera, distinct from the selected camera object.
     public let staticCamera: WPESceneCamera
@@ -58,6 +60,7 @@ public struct WPESceneDocument: Equatable, Sendable {
         self.sourceJSON = sourceJSON
         self.resolvedGeneralJSON = resolvedGeneralJSON ?? sourceJSON["general"] ?? .object([:])
         self.resolvedObjectsJSON = resolvedObjectsJSON
+        paritySeeds = WPESceneParitySeeds(general: self.resolvedGeneralJSON, objects: resolvedObjectsJSON)
         self.camera = camera
         self.staticCamera = staticCamera ?? camera
         self.authoredCamera = authoredCamera

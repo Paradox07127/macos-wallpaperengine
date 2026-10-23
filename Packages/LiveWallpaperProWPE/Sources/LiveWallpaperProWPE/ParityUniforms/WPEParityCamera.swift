@@ -83,21 +83,22 @@ public struct WPEParityCamera: Sendable, Equatable {
         let ortho = general.orthogonalProjection
         let size = Self.autoLayer(document)?.size.map { SIMD2(Float($0.width), Float($0.height)) }
             ?? SIMD2(Float(ortho.width), Float(ortho.height))
-        let parallax = Self.parallaxSettings(general: document.resolvedGeneralJSON)
-        let resolved = document.resolvedGeneralJSON
-        var perspective = general.usesPerspectiveProjection ? WPEParityScenePerspective(general: resolved) : nil
+        let seeds = document.paritySeeds
+        let parallax = seeds.cameraParallax
+        var perspective = general.usesPerspectiveProjection ? seeds.perspective : nil
         if document.cameraMotion != nil {
             perspective?.fov = Float(document.camera.fov)
         }
         let (eye, center, up) = orthoWithoutPaths && document.cameraMotion == nil ? Self.originPose
             : (SIMD3(document.camera.eye), SIMD3(document.camera.center), SIMD3(document.camera.up))
+        var shake = seeds.cameraShake
+        shake.orthographic = perspective == nil
         // The V parallax push needs an orthographic scene (14018aac0.c:87).
         self.init(eye: eye, center: center, up: up, size: size, renderTargetSize: renderTargetSize,
                   zoom: Float(general.zoom) * cameraZoom, alignment: alignment,
                   parallaxAmount: parallax.enabled && perspective == nil ? Float(parallax.amount) : nil,
-                  perspectiveFOV: Self.perspectiveOverrideFOV(general: resolved),
-                  shake: WPEParityScriptProperty.sceneBoolValue(fromJSON: resolved["camerashake"]) == true
-                      ? WPEParityCameraShake(general: resolved, orthographic: perspective == nil) : nil,
+                  perspectiveFOV: seeds.perspectiveOverrideFOV,
+                  shake: seeds.cameraShakeEnabled ? shake : nil,
                   scenePerspective: perspective)
     }
 
@@ -128,7 +129,7 @@ public struct WPEParityCamera: Sendable, Equatable {
         (camera.eye, camera.center, camera.up) = orthoWithoutPaths ? Self.originPose
             : (SIMD3(document.staticCamera.eye), SIMD3(document.staticCamera.center), SIMD3(document.staticCamera.up))
         if camera.scenePerspective != nil {
-            camera.scenePerspective?.fov = WPEParityScenePerspective(general: document.resolvedGeneralJSON).fov
+            camera.scenePerspective?.fov = document.paritySeeds.perspective.fov
         }
         return camera
     }
@@ -136,9 +137,8 @@ public struct WPEParityCamera: Sendable, Equatable {
     /// 1401891a0.c:57-67: the last camera whose own bit and all ancestors are visible wins. Selection uses the
     /// resolved authored order, independently of whether the object has a script binding.
     public static func activeObjectID(document: WPESceneDocument, state: WPEParitySceneState) -> String? {
-        for object in document.resolvedObjectsJSON.reversed() {
-            guard case .string? = object["camera"], let id = WPEParitySceneAnimations.id(object),
-                  state.isVisible(id) else { continue }
+        for object in document.paritySeeds.objects.reversed() {
+            guard object.isCamera, let id = object.id, state.isVisible(id) else { continue }
             return id
         }
         return nil
@@ -164,16 +164,15 @@ public struct WPEParityCamera: Sendable, Equatable {
     /// defaults (fov 50, zoom 1). Keeps internal JSON identity/scalar helpers inside the package.
     public func applyingObject(world: simd_float4x4, objectID: String, document: WPESceneDocument,
                                state: WPEParitySceneState, generalZoom: Float) -> Self {
-        let object = document.resolvedObjectsJSON.first { WPEParitySceneAnimations.id($0) == objectID }
-        func scalar(_ name: String, fallback: Float) -> Float {
+        let object = document.paritySeeds.objects.first { $0.id == objectID }
+        func scalar(_ name: String, seed: Float?, fallback: Float) -> Float {
             if case let .vector(value)? = state.scriptField(name, of: objectID) {
                 return value.x
             }
-            let raw = object?[name]
-            return WPEParityProgramScene.number(raw?["value"] ?? raw).map(Float.init) ?? fallback
+            return seed ?? fallback
         }
-        return applyingObject(world: world, fov: scalar("fov", fallback: 50),
-                              zoom: scalar("zoom", fallback: 1), generalZoom: generalZoom)
+        return applyingObject(world: world, fov: scalar("fov", seed: object?.fov, fallback: 50),
+                              zoom: scalar("zoom", seed: object?.zoom, fallback: 1), generalZoom: generalZoom)
     }
 
     /// SceneScript cursorWorldPosition (14018e070 mode 0 / 14019df90): viewport depth .5 becomes clip depth 0.

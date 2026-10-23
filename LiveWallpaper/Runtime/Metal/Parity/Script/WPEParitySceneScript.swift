@@ -87,15 +87,7 @@ final class WPEParitySceneScript {
 
     /// Some object or the general block carries a property script.
     static func hasScripts(_ document: WPESceneDocument) -> Bool {
-        ([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: hasScript)
-    }
-
-    private static func hasScript(_ value: WPESceneJSONValue) -> Bool {
-        switch value {
-        case let .object(members): members["script"] != nil || members.values.contains(where: hasScript)
-        case let .array(elements): elements.contains(where: hasScript)
-        default: false
-        }
+        !document.paritySeeds.scripts.isEmpty
     }
 
     init(document: WPESceneDocument, state: WPEParitySceneState, assets: WPEParityProgramAssets,
@@ -103,7 +95,7 @@ final class WPEParitySceneScript {
          materialConstants: [WPEParityScriptEngine.ConstantKey: WPEParityScriptEngine.MaterialConstant] = [:],
          resolvedEffectRecords: [WPEParitySceneState.EffectKey: [WPEParityEffectPassRecord]] = [:],
          fieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:], host: Host) throws {
-        let defaults = Self.generalFields(document.resolvedGeneralJSON).merging(fieldDefaults) { _, value in value }
+        let defaults = Self.generalFields(document.paritySeeds).merging(fieldDefaults) { _, value in value }
         var properties = (try? JSONSerialization.jsonObject(with: Data(host.userPropertiesJSON.utf8))) as? [String: Any] ?? [:]
         // Taken before the snapshot: a rebind in between stays marked for the first tick instead of being lost.
         _ = host.userShortcuts?.takeChangedKeys()
@@ -131,14 +123,12 @@ final class WPEParitySceneScript {
         userProperties = properties
         var candidates: [CursorCandidate] = []
         var cameras: [String] = []
-        for object in document.resolvedObjectsJSON {
-            guard let id = Self.id(object) else { continue }
-            if case .string? = object["camera"] {
+        for object in document.paritySeeds.objects {
+            guard let id = object.id else { continue }
+            if object.isCamera {
                 cameras.append(id)
             }
-            // The editor writes `solid` on every layer; an object without it counts as solid.
-            candidates.append(CursorCandidate(id: id, solid: Self.flag(object["solid"]) ?? true,
-                                              disablePropagation: Self.flag(object["disablepropagation"]) ?? false))
+            candidates.append(CursorCandidate(id: id, solid: object.solid, disablePropagation: object.disablePropagation))
         }
         cursorCandidates = Dictionary(candidates.map { ($0.id, $0) }) { first, _ in first }
         cameraIDs = cameras
@@ -266,45 +256,17 @@ final class WPEParitySceneScript {
         engine.resize(canvasSize: canvasSize, screenResolution: screenResolution, state: &state)
     }
 
-    /// Read native seeds from the authored/resolved JSON, not from the parser's defaults, which differ from WPE's.
-    private static func generalFields(_ general: WPESceneJSONValue)
+    /// The document's native seeds, not the parser's defaults, which differ from WPE's.
+    private static func generalFields(_ seeds: WPESceneParitySeeds)
         -> [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] {
-        func components(_ value: WPESceneJSONValue?) -> [Float]? {
-            switch value {
-            case let .object(entries)?: return components(entries["value"])
-            case let .number(number)?: return [Float(number)]
-            case let .string(text)?:
-                let tokens = text.split { $0.isWhitespace || $0 == "," }
-                let parsed = tokens.compactMap { Float($0) }
-                return parsed.count == tokens.count ? parsed : nil
-            case let .array(values)?:
-                var result: [Float] = []
-                for value in values {
-                    guard case let .number(number) = value else { return nil }
-                    result.append(Float(number))
-                }
-                return result
-            default: return nil
-            }
-        }
-        let native: [(String, SIMD4<Float>)] = [
-            ("bloomstrength", SIMD4(2, 0, 0, 0)), ("bloomthreshold", SIMD4(0.65, 0, 0, 0)),
-            ("ambientcolor", .zero), ("skylightcolor", .zero),
+        let values: [(String, SIMD4<Float>)] = [
+            ("bloomstrength", seeds.bloomStrength), ("bloomthreshold", seeds.bloomThreshold),
+            ("ambientcolor", seeds.ambientColor), ("skylightcolor", seeds.skylightColor),
+            ("bloom", SIMD4(seeds.bloom ? 1 : 0, 0, 0, 0)),
         ]
-        var fields = Dictionary(uniqueKeysWithValues: native.map { name, fallback in
-            var value = fallback
-            if let parsed = components(general[name]), !parsed.isEmpty {
-                value = .zero
-                for (lane, number) in parsed.prefix(4).enumerated() {
-                    value[lane] = number
-                }
-            }
-            return (WPEParitySceneState.ScriptFieldKey(objectID: "", name: name),
-                    WPEParitySceneState.ScriptValue.vector(value))
+        return Dictionary(uniqueKeysWithValues: values.map { name, value in
+            (WPEParitySceneState.ScriptFieldKey(objectID: "", name: name), WPEParitySceneState.ScriptValue.vector(value))
         })
-        let bloom = WPEParityScriptProperty.sceneBoolValue(fromJSON: general["bloom"]) ?? true
-        fields[.init(objectID: "", name: "bloom")] = .vector(SIMD4(bloom ? 1 : 0, 0, 0, 0))
-        return fields
     }
 
     /// Refreshes the registerAudioBuffers bins from the frame's 128 spectrum bins (left 64, then right 64).
@@ -315,28 +277,6 @@ final class WPEParitySceneScript {
     private func input(cursor: SIMD2<Float>, world: SIMD3<Float>, leftDown: Bool,
                        timeOfDay: Float) -> WPEParityScriptEngine.Input {
         WPEParityScriptEngine.Input(cursorScreen: cursor, cursorWorld: world, leftDown: leftDown, timeOfDay: timeOfDay)
-    }
-
-    /// The engine's object id: `id` as a string or number, else `name`.
-    private static func id(_ object: WPESceneJSONValue) -> String? {
-        switch object["id"] {
-        case let .string(id)? where !id.isEmpty: id
-        case let .number(number)?: WPEAuthoredInteger.exact(number, as: Int.self).map(String.init)
-        default: if case let .string(name)? = object["name"] {
-                name
-            } else {
-                nil
-            }
-        }
-    }
-
-    private static func flag(_ value: WPESceneJSONValue?) -> Bool? {
-        switch value {
-        case let .bool(flag)?: flag
-        case let .number(number)?: number != 0
-        case let .object(entries)?: flag(entries["value"])
-        default: nil
-        }
     }
 
     /// WPE's media event ids with the payload fields `lib.sceneScript.d.ts` declares.
