@@ -28,11 +28,9 @@ excluded:
   # Expiry review (G4/breadth#7): re-check this list each fix cycle — an entry
   # leaves when its split lands. Status 2026-07-14: Dispatcher got the ADR-001
   # step-0 decomposition but remains oversized pending ADR-001 data migration →
-  # keep excluded. SceneRenderer's split landed (B4), so it moved to the parts
-  # list below. GeneralSettingsView was split (G8) and was never on this list.
+  # keep excluded. GeneralSettingsView was split (G8) and was never on this list.
   - LiveWallpaper/Playback/Web/HTMLWallpaperView.swift
-  # WPEShaderTranspiler, ScreenManager, WPEMetalRenderExecutor (B3a/B3b/B3c) and
-  # WPEMetalSceneRenderer (B4) were split. Every split was a pure move, so the
+  # ScreenManager (B3b) was split. Every split was a pure move, so the
   # parts inherit the violations the monoliths were never held to — splitting a
   # file does not make it conform. The exclusions therefore follow the parts, but
   # their reason has changed: they now wait on a dedicated lint-cleanup pass, which

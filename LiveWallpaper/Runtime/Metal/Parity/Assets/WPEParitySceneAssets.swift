@@ -3,7 +3,7 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// The parity pipeline's file lookup over what the old renderer is given: the wallpaper's files through the
+/// The parity pipeline's file lookup: the wallpaper's files through the
 /// scene asset provider (scene.pkg or source folder; `nil` reads the extracted cache at `projectRoot`), with
 /// `../<workshop id>/` paths going to the dependency mounts, then the engine root's `assets` directory.
 enum WPEParitySceneAssets {

@@ -265,7 +265,7 @@ actor WPEDisplayRenderActor {
             let acquisitionStart = parityDriver.drawableAcquisitionSeconds
             let start = CACurrentMediaTime()
             let pointer = parityDriver.pointerInput(parityInputs.mailbox)
-            // As the old renderer: the shared system-audio capture, not the scene's own sounds.
+            // The shared system-audio capture, not the scene's own sounds.
             let audio = parityAudioFeed.frame(broker: SystemAudioCaptureManager.broker,
                                               isCapturing: SystemAudioCaptureManager.isCapturing)
             let presented = if let frames = parityDriver.spanFrames {
@@ -606,7 +606,7 @@ actor WPEDisplayRenderActor {
 
     /// The display link starts paused; the parity scene runs it while loaded and not suspended (or still ramping a
     /// suspend down), and a static one only until its pending frame presents. The frame-rate ceiling and pointer
-    /// monitoring follow the old renderer: neither applies while suspended.
+    /// monitoring don't apply while suspended.
     private func applyParityPacing() {
         guard let parityDriver, let parityInputs else { return }
         let running = parityDriver.didLoad && parityDriver.runtimeFailure == nil
@@ -742,7 +742,7 @@ actor WPEDisplayRenderActor {
 
     func setClickCaptureEnabled(_ enabled: Bool) {
         if let parityInputs {
-            // The mailbox first, as the old renderer: its epoch cancels pending presses at once.
+            // The mailbox first: its epoch cancels pending presses at once.
             parityInputs.mailbox.setClickCaptureEnabled(enabled)
             parityInputs.surfaceControl.setClickCaptureEnabled(enabled)
             applyParityPacing()

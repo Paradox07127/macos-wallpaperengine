@@ -60,7 +60,7 @@ final class WPEParityProductRuntimeTests: XCTestCase {
 
         await harness.actor.applyPerformanceProfile(.suspended)
         let suspendedPoster = await harness.actor.captureLivePoster()
-        XCTAssertNil(suspendedPoster, "as the old renderer, a suspended scene gives no poster")
+        XCTAssertNil(suspendedPoster, "a suspended scene gives no poster")
     }
 
     func testHibernateReleasesTheSceneAndWakeRendersAgain() async throws {

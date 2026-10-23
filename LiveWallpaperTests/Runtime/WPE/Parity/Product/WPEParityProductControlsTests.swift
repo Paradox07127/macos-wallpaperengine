@@ -115,7 +115,7 @@ final class WPEParityProductControlsTests: XCTestCase {
         let center = WPEParitySceneDriver.renderTarget(fitMode: .center, drawableSize: large, sceneSize: scene)
         XCTAssertEqual([center.width, center.height], [Int(scene.x), Int(scene.y)])
         XCTAssertEqual(center.presentFit, .center)
-        // A scene larger than the drawable keeps its size; the present crops it about the centre as the old renderer.
+        // A scene larger than the drawable keeps its size; the present crops it about the centre.
         let cropped = WPEParitySceneDriver.renderTarget(fitMode: .center, drawableSize: drawable, sceneSize: scene)
         XCTAssertEqual([cropped.width, cropped.height], [Int(scene.x), Int(scene.y)])
     }

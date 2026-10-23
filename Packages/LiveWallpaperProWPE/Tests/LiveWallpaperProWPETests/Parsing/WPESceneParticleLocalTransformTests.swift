@@ -16,7 +16,7 @@ final class WPESceneParticleLocalTransformTests: XCTestCase {
         XCTAssertEqual(particle.localOrigin, SIMD3(10, 20, 0))
         XCTAssertEqual(particle.localScale, SIMD3(3, 3, 1))
         XCTAssertEqual(particle.localAngles, SIMD3(0, 0, 0.5))
-        // The parent-resolved origin the old renderer reads is unchanged.
+        // The parent-resolved origin is unchanged.
         XCTAssertEqual(particle.origin, SIMD3(110, 70, 0))
     }
 }

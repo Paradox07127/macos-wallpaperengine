@@ -769,7 +769,7 @@ final class WPEParitySceneDriver {
         return true
     }
 
-    /// The old renderer's gates (`sampleFrameContext`): the cursor follows only with mouse interaction on and over
+    /// The cursor follows only with mouse interaction on and over
     /// the picture, else it rests at the centre. Queued left-button edges go to the renderer in order, so a press
     /// and release between two frames both reach the scripts. The position is backbuffer UV with a top-left origin.
     func pointerInput(_ mailbox: WPEPointerMailbox) -> (position: SIMD2<Double>, buttonDown: Bool) {
@@ -806,7 +806,7 @@ final class WPEParitySceneDriver {
     }
 
     /// Drawable-UV bounds (top-left origin) of the layers the last cursor pass found taking the left button; a rect
-    /// over 30% of the view is left out, as in the old renderer.
+    /// over 30% of the view is left out.
     func interactiveZones() -> [CGRect] {
         guard let renderer, let plannedTarget,
               let quads = renderer.script?.buttonQuads(state: renderer.state), !quads.isEmpty else { return [] }
@@ -989,7 +989,6 @@ final class WPEParitySceneDriver {
         try Task.checkCancellation()
     }
 
-    /// A span member's present of a published frame: readiness, as the old renderer's `recordPresentCompletion`.
     func recordSpanPresent(_ result: WPEFrameReadinessResult) {
         presentState.record(generation: result.generation, succeeded: result.renderCompleted && result.presentCompleted)
     }
@@ -1198,7 +1197,7 @@ final class WPEParitySceneDriver {
 
     /// WPE has no letterbox: cover is its default alignment, which crops the canvas to the target aspect about
     /// its centre, and stretch is mode 2, which never crops. Contain renders the largest fit of the scene's aspect and
-    /// center the scene's ortho size; the present boxes or crops them, as the old renderer does.
+    /// center the scene's ortho size; the present boxes or crops them.
     static func renderTarget(fitMode: WPEPresentFitMode, drawableSize: CGSize,
                              sceneSize: SIMD2<Float>) -> RenderTarget {
         let drawable = SIMD2(Double(drawableSize.width), Double(drawableSize.height))
@@ -1423,7 +1422,7 @@ struct WPEParitySceneInputs: Sendable {
     /// Resolves the scene's sound files; nil plays no sound.
     var soundResolver: WPEMultiRootResourceResolver?
     var presentFitMode = WPEPresentFitMode.cover
-    /// A span group's producer: where its frames go, and its output pool's cap as the old renderer's.
+    /// A span group's producer: where its frames go, and its output pool's cap.
     var span: (frames: WPESceneSpanFrames, outputTextureLimit: Int)?
     /// Called on the render actor when the activity changes.
     var onRuntimeActivityChange: (@Sendable (WPESceneRuntimeActivity) -> Void)?

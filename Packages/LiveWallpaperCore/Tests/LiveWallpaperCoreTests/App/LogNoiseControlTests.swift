@@ -69,7 +69,7 @@ struct LogNoiseControlTests {
 
         sink.record(
             category: .wpeRender, level: .error, message: "Scene 999 failed: fileMissing",
-            file: "/s/WPEMetalSceneRenderer+Load.swift", line: 124
+            file: "/s/WPEParitySceneDriver.swift", line: 124
         )
         for index in 0..<10 {
             sink.record(
