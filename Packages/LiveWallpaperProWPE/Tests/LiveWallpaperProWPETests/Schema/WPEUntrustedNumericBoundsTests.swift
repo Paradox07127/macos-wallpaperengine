@@ -1,4 +1,5 @@
 import Foundation
+import JavaScriptCore
 @testable import LiveWallpaperProWPE
 import Testing
 
@@ -206,6 +207,70 @@ struct WPEUntrustedNumericBoundsTests {
             #expect(WPEParitySceneAnimations.id(.object(["id": .number(value), "name": .string("n")])) == nil)
         }
         #expect(WPEParitySceneAnimations.id(.object(["id": .number(7)])) == "7")
+    }
+
+    // MARK: - Script-created model layers
+
+    private static let extremeJSONNumbers = ["1.5", "1e300", "-1", "18446744073709551616", "true"]
+    private static let extremeJSNumbers = ["1e300", "-1", "NaN", "Infinity", "9007199254740993"]
+
+    @Test("A createLayer model token that is not an exact UInt32 is refused instead of trapping")
+    func unrepresentableModelTokenIsRefused() {
+        for raw in Self.extremeJSONNumbers {
+            let config = jsonValues(#"{"model":\#(raw),"id":5}"#)
+            #expect(WPESceneDocumentParser.parseModelDataLayerConfiguration(config) == nil, "model \(raw)")
+        }
+        let legal = WPESceneDocumentParser.parseModelDataLayerConfiguration(jsonValues(#"{"model":3,"id":5}"#))
+        #expect(legal?.modelDataToken == 3)
+    }
+
+    @Test("Extreme createLayer ids and 1e300 vectors parse without trapping")
+    func extremeLayerIDsAndVectorsDoNotTrap() {
+        for raw in Self.extremeJSONNumbers {
+            let descriptor = WPESceneDocumentParser.parseModelDataLayerConfiguration(jsonValues(#"{"model":3,"id":\#(raw)}"#))
+            #expect(descriptor.map { Int($0.id) != nil } ?? true, "id \(raw)")
+        }
+        for raw in [#""1e300 1 1""#, "[1e300,1,1]", #"{"x":1e300,"y":1,"z":1}"#] {
+            let config = jsonValues(#"{"model":3,"id":5,"origin":\#(raw),"scale":\#(raw)}"#)
+            let descriptor = WPESceneDocumentParser.parseModelDataLayerConfiguration(config)
+            #expect(descriptor?.origin == SIMD3(1e300, 1, 1), "origin \(raw)")
+            #expect(descriptor?.scale == SIMD3(1e300, 1, 1), "scale \(raw)")
+        }
+    }
+
+    private func convert(_ context: JSContext, _ script: String) throws -> WPEParityModelDataPatch {
+        let value = try #require(context.evaluateScript(script))
+        return try WPEModelDataConverter.convert(value, requireFields: false, maximumArrayEntries: 16,
+                                                 maximumBufferBytes: 1 << 20) { _ in Data() }
+    }
+
+    @Test("ModelData counts cannot carry an extreme length past the entry limit")
+    func extremeModelDataCountsAreBounded() throws {
+        let context = try #require(JSContext())
+        for raw in Self.extremeJSNumbers {
+            let assigned = context.evaluateScript("(() => { try { [].length = \(raw); } catch (e) { return e.name; } })()")
+            #expect(assigned?.toString() == "RangeError", "a real array cannot take length \(raw)")
+            // isArray is false for a Proxy, so the converter reads the input itself as the one shape.
+            let fake = "new Proxy([], {get: (t, k) => k === 'length' ? \(raw) : t[k]})"
+            #expect(try convert(context, "({shapes: \(fake)})").shapes.count == 1, "shapes length \(raw)")
+            #expect(try convert(context, "({vertexFormat: \(fake)})").shapes.map(\.vertexFormat) == [0], "format length \(raw)")
+        }
+        for field in ["shapes", "vertexFormat"] {
+            #expect(throws: WPEModelDataConverter.Failure.shapeLimitExceeded) {
+                try convert(context, "({\(field): new Array(4294967295)})")
+            }
+        }
+    }
+
+    @Test("Extreme ModelData bounding boxes convert without trapping")
+    func extremeModelDataBoundsDoNotTrap() throws {
+        let context = try #require(JSContext())
+        for raw in Self.extremeJSNumbers {
+            let script = "({boundingBoxMins: {x: \(raw), y: \(raw), z: \(raw)}, boundingBoxMaxs: {x: \(raw), y: 0, z: -(\(raw))}})"
+            let bounds = try #require(try convert(context, script).bounds, "bounds \(raw)")
+            let expected = try #require(context.evaluateScript(raw)).toDouble()
+            #expect(bounds.minimum.x.bitPattern == Float(expected).bitPattern, "bounds \(raw)")
+        }
     }
 }
 

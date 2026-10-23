@@ -12,9 +12,12 @@ public struct WPESceneObjectHeader: Equatable, Sendable {
     /// Authored `fov` / `zoom` with one `value` envelope unwrapped; nil when not numeric.
     public let fov: Float?
     public let zoom: Float?
+    /// Raw `effects`; createLayer compares a config's effects to its clone template's with it.
+    public let effects: WPESceneJSONValue?
 
     init(_ object: WPESceneJSONValue) {
         id = WPEParitySceneAnimations.id(object)
+        effects = object["effects"]
         if case .string? = object["camera"] {
             isCamera = true
         } else {

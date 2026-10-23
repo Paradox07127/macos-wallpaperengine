@@ -106,14 +106,8 @@ enum WPEParityModelDataLayerAdmission {
                                category: .wpeRender)
                 return nil
             }
-            let loaded = plan.document.resolvedObjectsJSON.first { entry in
-                switch entry["id"] {
-                case let .number(number)?: WPEAuthoredInteger.exact(number, as: Int.self).map(String.init) == template.id
-                case let .string(id)?: id == template.id
-                default: false
-                }
-            }
-            guard loaded?["effects"] == effects else {
+            let loaded = plan.document.paritySeeds.objects.first { $0.id == template.id }
+            guard loaded?.effects == effects else {
                 Logger.warning("Image layer admission: effects differ from template \(template.id)", category: .wpeRender)
                 return nil
             }
