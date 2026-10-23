@@ -25,7 +25,7 @@ enum PlaybackPolicy {
         switch input.thermalState {
         case .critical: return .paused
         case .serious: return .minimal
-        case .fair: return input.onBattery ? .minimal : .reduced
+        case .fair: return (input.onBattery || input.lowPowerMode) ? .minimal : .reduced
         case .nominal: break
         @unknown default: return .minimal
         }

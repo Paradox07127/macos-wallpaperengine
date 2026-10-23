@@ -75,6 +75,11 @@ struct SystemWallpaperPlaybackPolicyTests {
         #expect(PlaybackPolicy.tier(for: input(lowPower: true)) == .minimal)
     }
 
+    @Test("Low power mode drops to minimal under fair thermals on wall power")
+    func lowPowerModeUnderFairThermals() {
+        #expect(PlaybackPolicy.tier(for: input(thermal: .fair, lowPower: true)) == .minimal)
+    }
+
     @Test("Rates match the tiers, with both stopped tiers at zero")
     func rates() {
         #expect(PlaybackPolicy.rate(for: .full) == 1.0)

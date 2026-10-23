@@ -978,9 +978,11 @@ final class WallpaperExportService {
         hidesClockCalendarOnLockScreen = manifest?.hideClockCalendarOnLockScreen ?? true
         items = manifest?.items ?? []
         refreshProviderStatus()
-        if let manifest {
+        // Re-read under the lock: another instance may have committed a new video since the read above.
+        try? SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+            guard let current = loadManifest() else { return }
             SystemWallpaperLibrary.sweepOrphans(
-                manifest: manifest,
+                manifest: current,
                 videosDirectory: videosDirectory,
                 now: dependencies.now()
             )

@@ -1037,6 +1037,36 @@ struct WallpaperExportServiceTests {
                 "sweeping the rollback copy away mid-republish makes the rollback lose the video")
     }
 
+    @Test("Refresh spares a video another instance committed after refresh read the manifest")
+    func refreshSweepSparesConcurrentlyCommittedVideo() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        try await rig.service.publish(bookmark: bookmark)
+        let committed = rig.videosDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        rig.service.onHeartbeatRefreshed = {
+            rig.service.onHeartbeatRefreshed = nil
+            try? SystemWallpaperLock.withExclusiveLock(root: rig.root) {
+                try Data("other-instance".utf8).write(to: committed)
+                try FileManager.default.setAttributes(
+                    [.modificationDate: Self.referenceNow.addingTimeInterval(-2 * 3600)],
+                    ofItemAtPath: committed.path
+                )
+                var manifest = try rig.manifestOnDisk()
+                var item = try #require(manifest.items.first)
+                item.id = committed.deletingPathExtension().lastPathComponent
+                item.fileName = committed.lastPathComponent
+                manifest.items.append(item)
+                try JSONEncoder().encode(manifest).write(to: rig.manifestURL)
+            }
+        }
+
+        rig.service.refresh()
+
+        #expect(FileManager.default.fileExists(atPath: committed.path),
+                "a sweep against the pre-commit manifest deletes the other instance's new video")
+    }
+
     @Test("A manifest entry whose file name escapes Videos/ is dropped at decode")
     func manifestDropsTraversalFileNames() throws {
         let json = """
