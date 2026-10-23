@@ -83,7 +83,11 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
                 let running = try await SystemWallpaperSceneRuntime.makeActor(source: source, layer: sceneLayer, size: sceneLayer.drawableSize,
                                                                               hidingClockCalendar: hideClockCalendar,
                                                                               actorCreated: { actor in
-                                                                                  lifecycle.installShutdown { await actor.shutdownSystemWallpaperRenderer() }
+                                                                                  lifecycle.installShutdown {
+                                                                                      await actor.shutdownSystemWallpaperRenderer()
+                                                                                  } awaitExit: {
+                                                                                      await actor.shutdown(timeout: .seconds(60))
+                                                                                  }
                                                                               })
                 var clocksHidden = hideClockCalendar
                 let clock = ContinuousClock()
@@ -120,6 +124,7 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
                         }
                         if hibernated {
                             try await lifecycle.acquireSlot()
+                            lifecycle.restartLoad()
                             try await running.reload()
                             await running.applyPerformanceProfile(.suspended)
                             hibernated = false
@@ -127,6 +132,7 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
                     } else if wasPaused {
                         if hibernated {
                             try await lifecycle.acquireSlot()
+                            lifecycle.restartLoad()
                             try await running.reload()
                             hibernated = false
                         }

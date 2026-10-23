@@ -127,6 +127,8 @@ enum SceneLifecycleChecks {
                 entered.withLock { $0 = true }
                 for await _ in stream {}
                 return false
+            } awaitExit: {
+                false
             }
             try await session.acquireSlot()
             session.finish()
@@ -145,6 +147,45 @@ enum SceneLifecycleChecks {
                 }
             } catch { refused = true }
             check(admission.leakedRenderThreadCount == 1 && refused, "leaked thread closes live scene admission")
+        }
+        do {
+            let admission = WallpaperSceneAdmission()
+            let session = WallpaperSceneLifecycle(running: true, admission: admission, onFailure: { _ in })
+            let (exit, exited) = AsyncStream<Void>.makeStream()
+            session.installShutdown {
+                false
+            } awaitExit: {
+                for await _ in exit {}
+                return true
+            }
+            try await session.acquireSlot()
+            session.finish()
+            for _ in 0 ..< 100 where admission.leakedRenderThreadCount == 0 {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let leaked = admission.leakedRenderThreadCount == 1
+            exited.finish()
+            for _ in 0 ..< 100 where admission.leakedRenderThreadCount != 0 {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let reopened = (try? admission.acquire()) == true
+            check(leaked && admission.leakedRenderThreadCount == 0 && reopened,
+                  "a slow teardown reopens live scene admission once its thread exits")
+            admission.release()
+        }
+        do {
+            let failure = OSAllocatedUnfairLock<String?>(initialState: nil)
+            let session = WallpaperSceneLifecycle(running: true, admission: WallpaperSceneAdmission(), now: now,
+                                                  onFailure: { code in failure.withLock { $0 = code } })
+            try await session.acquireSlot(now: now)
+            session.framePresented(now: now)
+            session.restartLoad(now: now.advanced(by: .seconds(40)))
+            session.checkDeadline(now: now.advanced(by: .seconds(65)))
+            check(failure.withLock { $0 } == nil && session.isActive,
+                  "reloading after hibernation has the first-frame budget, not the running-frame one")
+            session.checkDeadline(now: now.advanced(by: .seconds(70)))
+            check(failure.withLock { $0 } == "scene.stalled", "a reload with no frame for 30 s is a stall")
+            session.finish()
         }
         do {
             let admission = WallpaperSceneAdmission()

@@ -41,6 +41,10 @@ final class WallpaperSceneAdmission: Sendable {
         state.withLock { $0.leaked += 1 }
     }
 
+    func recordThreadExited() {
+        state.withLock { $0.leaked = max(0, $0.leaked - 1) }
+    }
+
     func isBlocked(_ capsule: String) -> Bool {
         state.withLock { $0.blocked.contains(capsule) }
     }
@@ -64,11 +68,14 @@ final class WallpaperSceneAdmission: Sendable {
 
 /// Owns cancellation and admission independently of the render actor's executor.
 final class WallpaperSceneLifecycle: Sendable {
+    /// `stop` reports whether the render thread exited in time; `awaitExit` waits longer and reports the same.
+    private typealias Shutdown = (stop: @Sendable () async -> Bool, awaitExit: @Sendable () async -> Bool)
+
     private struct State {
         var active = true
         var ownsSlot = false
         var task: Task<Void, Never>?
-        var shutdown: (@Sendable () async -> Bool)?
+        var shutdown: Shutdown?
         var capsule: String?
         var presented = false
         var running: Bool
@@ -117,14 +124,14 @@ final class WallpaperSceneLifecycle: Sendable {
         }
     }
 
-    func installShutdown(_ shutdown: @escaping @Sendable () async -> Bool) {
+    func installShutdown(_ shutdown: @escaping @Sendable () async -> Bool, awaitExit: @escaping @Sendable () async -> Bool) {
         let active = state.withLock { value in
             guard value.active else { return false }
-            value.shutdown = shutdown
+            value.shutdown = (shutdown, awaitExit)
             return true
         }
         if !active {
-            retire(shutdown)
+            retire((shutdown, awaitExit))
         }
     }
 
@@ -179,6 +186,16 @@ final class WallpaperSceneLifecycle: Sendable {
         }
     }
 
+    /// A reload after hibernation gets the first-frame budget again.
+    func restartLoad(now: ContinuousClock.Instant = .now) {
+        state.withLock { value in
+            Self.advance(&value, now: now)
+            value.presented = false
+            value.runningWithoutFrame = .zero
+            value.loadStarted = now
+        }
+    }
+
     func framePresented(now: ContinuousClock.Instant = .now) {
         state.withLock { value in
             value.presented = true
@@ -200,7 +217,7 @@ final class WallpaperSceneLifecycle: Sendable {
     }
 
     func finish(failure: String? = nil, stalledAt now: ContinuousClock.Instant? = nil) {
-        let retired = state.withLock { value -> (Task<Void, Never>?, (@Sendable () async -> Bool)?, String?)? in
+        let retired = state.withLock { value -> (Task<Void, Never>?, Shutdown?, String?)? in
             guard value.active else { return nil }
             if let now {
                 Self.advance(&value, now: now)
@@ -232,13 +249,15 @@ final class WallpaperSceneLifecycle: Sendable {
         }
     }
 
-    private func retire(_ shutdown: @escaping @Sendable () async -> Bool) {
+    private func retire(_ shutdown: Shutdown) {
         Task.detached { [admission, onHealthChange] in
-            if await !shutdown() {
-                wpxLog.fault("live scene render thread did not exit; refusing new live scenes")
-                admission.recordLeakedThread()
-                onHealthChange()
-            }
+            guard await !shutdown.stop() else { return }
+            wpxLog.fault("live scene render thread did not exit; refusing new live scenes")
+            admission.recordLeakedThread()
+            onHealthChange()
+            guard await shutdown.awaitExit() else { return }
+            admission.recordThreadExited()
+            onHealthChange()
         }
     }
 }
