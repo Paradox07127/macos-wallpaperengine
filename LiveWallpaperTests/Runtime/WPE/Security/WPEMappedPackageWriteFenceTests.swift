@@ -195,9 +195,10 @@ struct WPEMappedPackageWriteFenceTests {
         "LiveWallpaper/Infrastructure/Services/WallpaperExportService.swift": [
             "createFile(": 1,
             "FileHandle(forWritingTo": 1,
-            // Container manifest/provider/thumbnail and a poster in a fresh temporary scene bundle.
+            // Container manifest/provider/thumbnail and a poster in a fresh temporary scene bundle,
+            // plus scene-recovery.json in the shared container root.
             // All writes are atomic and never target a mapped source asset.
-            ".write(to": 4,
+            ".write(to": 5,
         ],
         // Atomic configuration write inside a fresh temporary copy, never the source scene.
         "LiveWallpaper/Infrastructure/SystemWallpaper/SystemWallpaperSceneBundle.swift": [".write(to": 1],
