@@ -245,8 +245,10 @@ final class WPEParityFrameRenderer {
     var layers: WPEParityLayerTransformSet
     /// Every particle object and its state index; hidden ones are not stepped.
     private let particleObjects: [(id: String, index: Int?)]
+    #if DEBUG
     /// The draws the last frame encoded, by draw operation, in encode order.
     private(set) var lastFrameDraws: [(operation: Int, draw: WPEParityDraw)] = []
+    #endif
     /// Actual decoder owners, including live user-video replacements; controlled tests reject video workloads.
     var videoSourceCount: Int {
         videos.sourceCount
@@ -259,8 +261,12 @@ final class WPEParityFrameRenderer {
         return executor.copyEncoded
     }
 
-    /// `lastFrameDraws`' operations, so per-frame reads of them do not copy each draw.
+    /// The draw operations the last frame encoded, in encode order.
     private var lastFrameOperations: [Int] = []
+    var lastFrameDrawCount: Int {
+        lastFrameOperations.count
+    }
+
     var targetSamplers: [ObjectIdentifier: WPEParitySamplerState] = [:]
     var resourceBindings: WPEParityResourceBindings = [:]
     var seenScriptText = 0
@@ -1088,7 +1094,9 @@ final class WPEParityFrameRenderer {
                 arena.capacity = baseArenaBytes + instance.particles.budget
             }
         }
+        #if DEBUG
         lastFrameDraws.removeAll(keepingCapacity: true)
+        #endif
         lastFrameOperations.removeAll(keepingCapacity: true)
         let executor = graphs.executors[variant]
         executor.restoreResourceBindings(resourceBindings)
@@ -1183,7 +1191,9 @@ final class WPEParityFrameRenderer {
                                                         provided.samplers[name + "SamplerState"] = sampler
                                                     }
                                                 }
+                                                #if DEBUG
                                                 lastFrameDraws.append((operation, provided))
+                                                #endif
                                                 lastFrameOperations.append(operation)
                                                 try emit(provided)
                                             }

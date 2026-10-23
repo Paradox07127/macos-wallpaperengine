@@ -342,7 +342,7 @@ final class WPEParitySceneDriver {
         guard let renderer else { return nil }
         return WPEParityRuntimeDiagnostics(
             loadGeneration: loadGeneration, drawCount: renderer.drawCount,
-            encodedDrawCount: renderer.lastFrameDraws.count,
+            encodedDrawCount: renderer.lastFrameDrawCount,
             skippedDraws: renderer.skipped.values.reduce(into: [:]) { $0[$1.category, default: 0] += 1 },
             encodeFrameCPUMeanMilliseconds: encodeCount == 0 ? nil : encodeSeconds / Double(encodeCount) * 1000,
             arenaBytes: renderer.arenaBytes, heapBytes: renderer.heapBytes,

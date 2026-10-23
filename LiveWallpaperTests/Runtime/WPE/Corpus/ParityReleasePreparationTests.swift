@@ -525,7 +525,7 @@ final class ParityReleasePreparationTests: XCTestCase {
                               "No video source or skipped draw may enter this controlled comparison")
             let copies = try XCTUnwrap(renderer.lastFrameCopyCount)
             return FrameSample(encodeWall: encodeWall, encodeCPU: encodeCPU, gpu: command.gpuEndTime - command.gpuStartTime,
-                               draws: renderer.lastFrameDraws.count, copyEncoded: copies)
+                               draws: renderer.lastFrameDrawCount, copyEncoded: copies)
         }
     }
 
