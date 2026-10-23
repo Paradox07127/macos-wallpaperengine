@@ -13,6 +13,45 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.9.0] — 2026-10-23
+
+### Added
+
+- Pro: Wallpaper Engine scenes use the new renderer everywhere, including scene
+  recording and live macOS wallpapers.
+- Pro: scripted layers, model data, puppet animation, text and particles play
+  in more scenes.
+- The System Wallpaper page shows the state of each display and marks old
+  copies, which you can remove in one step.
+- The hovered display on the home page has a **Clear Wallpaper** button.
+
+### Changed
+
+- Pro: scene shaders compile in a separate helper; repeated loads share shader
+  and planning work. The Metal shader converter is 4.0.3.
+- Pro: scene-load and GPU errors are clearer; a failed switch keeps the current
+  wallpaper.
+- Pro: SteamCMD first-launch setup and diagnostics are improved.
+- Page switches, detail views, filters and toasts animate, and follow Reduce
+  Motion.
+- Workshop previews start from the cached poster.
+- The System Wallpaper page no longer imports videos straight from Finder.
+
+### Removed
+
+- Pro: the old scene renderer and its particle loading path.
+
+### Fixed
+
+- 0.8.9 and earlier no longer open because their signing certificate was
+  revoked; this version is signed with a valid certificate.
+- Pro: bad shader or texture cache data, oversized text and oversized render
+  targets are rejected before they can crash.
+- Pro: video textures that a script turns on later now play.
+- The macOS wallpaper tile honours Low Power Mode and retries scenes that timed
+  out while loading.
+- A video that resumes soon after a pause keeps its decoder.
+
 ## [0.8.9] — 2026-10-18
 
 ### Added
@@ -1381,6 +1420,7 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[0.9.0]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.9...loomscreen-v0.9.0
 [0.8.9]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.8...loomscreen-v0.8.9
 [0.8.8]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.7...loomscreen-v0.8.8
 [0.8.7]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.6...loomscreen-v0.8.7
