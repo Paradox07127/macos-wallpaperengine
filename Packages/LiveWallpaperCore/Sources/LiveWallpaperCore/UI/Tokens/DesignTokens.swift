@@ -79,7 +79,6 @@ public enum DesignTokens {
             public static let inspectRegistrations = Color.indigo
             public static let restartService = Color.orange
             public static let automaticRecovery = Color.teal
-            public static let repairExtension = Color.indigo
         }
 
         /// Deliberately softer than `Status.*`: paired with a thin ring, the always-busy
@@ -366,7 +365,6 @@ public enum DesignTokens {
 
     public enum GuidedLibrary {
         public static let outerPadding: CGFloat = 40
-        public static let iconSize: CGFloat = 48
         public static let messageWidth: CGFloat = 360
     }
 

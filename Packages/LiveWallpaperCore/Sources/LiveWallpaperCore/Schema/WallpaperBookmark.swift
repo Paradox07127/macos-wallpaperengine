@@ -87,13 +87,4 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
         }
         return copy
     }
-
-    public var iconName: String {
-        switch content {
-        case .video: return "play.rectangle"
-        case .html(let source, _): return source.iconName
-        case .scene: return "cube.transparent"
-        }
-    }
-
 }

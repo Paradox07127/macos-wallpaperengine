@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 
 /// Top-level automation mode chosen by the user per screen; `playlist` is the default.
 public enum WallpaperMode: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -20,13 +19,5 @@ public enum WallpaperMode: String, Codable, CaseIterable, Identifiable, Sendable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
-    }
-
-    public var labelKey: LocalizedStringKey {
-        switch self {
-        case .playlist: "Playlist"
-        case .schedule: "Schedule"
-        case .libraryShuffle: "Library Shuffle"
-        }
     }
 }
