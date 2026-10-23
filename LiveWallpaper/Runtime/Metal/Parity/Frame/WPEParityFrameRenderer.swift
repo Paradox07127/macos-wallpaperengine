@@ -849,9 +849,9 @@ final class WPEParityFrameRenderer {
                                               frames: prewarm, rng: sceneRNG), budget: particleBytes
             )
             var queues: [String: WPEParityCameraQueue] = [:]
-            for object in plan.document.resolvedObjectsJSON {
-                guard case .string? = object["camera"],
-                      let queue = try WPEParityCameraQueue(object: object, assets: plan.scene.assets,
+            for object in plan.document.paritySeeds.objects {
+                guard object.isCamera,
+                      let queue = try WPEParityCameraQueue(header: object, assets: plan.scene.assets,
                                                            randomInteger: { sceneRNG.integer($0, $1) })
                 else { continue }
                 queues[queue.objectID] = queue

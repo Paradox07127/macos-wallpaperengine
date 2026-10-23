@@ -464,15 +464,6 @@ extension WPEParitySceneDriverTests {
                       "a skipped registered material must leave a warning")
     }
 
-    func testPrecacheMaterialPathsKeepOnlyMaterialsPrefixedStrings() throws {
-        let general = try XCTUnwrap(WPESceneJSONValue(jsonValue: ["precache": [
-            "materials/a.json", "models/b.json", 7, NSNull(), ["materials/nested.json"], "materialsx.json", "Materials/c.json",
-        ]]))
-        XCTAssertEqual(WPEParitySceneDriver.precacheMaterialPaths(general), ["materials/a.json", "materialsx.json"])
-        XCTAssertEqual(WPEParitySceneDriver.precacheMaterialPaths(.object(["precache": .string("materials/a.json")])), [])
-        XCTAssertEqual(WPEParitySceneDriver.precacheMaterialPaths(.object([:])), [])
-    }
-
     func testPrecacheLoadsOnlyMaterialsEntriesAndSkipsAFailedOne() async throws {
         let fixture = try modelDataFixture(script: "export function init(value) { return 0.5; }",
                                            precache: ["models/b.json", 7, "materials/missing-model-data.json",

@@ -422,4 +422,14 @@ if [[ -n "$login_item_writes" ]]; then
   exit 1
 fi
 
+# The parity runtime reads scenes through typed document fields, never the raw scene JSON.
+parity_raw_json=$(grep -rnE 'sourceJSON|resolvedObjectsJSON|resolvedGeneralJSON' \
+                    LiveWallpaper/Runtime/Metal/Parity --include='*.swift' || true)
+if [[ -n "$parity_raw_json" ]]; then
+  echo "ERROR: parity runtime code reads raw scene JSON:" >&2
+  echo "$parity_raw_json" >&2
+  echo "       Read the typed WPESceneDocument fields or WPESceneDocument.paritySeeds instead." >&2
+  exit 1
+fi
+
 echo "Release tooling contract passed for Lite and Pro."

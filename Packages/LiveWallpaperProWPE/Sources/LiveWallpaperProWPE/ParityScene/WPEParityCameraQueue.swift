@@ -53,10 +53,10 @@ public final class WPEParityCameraQueue {
 
     /// A missing/nonstring path, unreadable JSON or non-array `paths` produces no queue, as in 1401f2030.
     /// Item scripts remain an explicit preparation error until their original manager consumer is connected.
-    public init?(object: WPESceneJSONValue, assets: WPEParityProgramAssets,
+    public init?(header: WPESceneObjectHeader, assets: WPEParityProgramAssets,
                  randomInteger: @escaping (Int32, Int32) -> Int32) throws {
-        guard let objectID = WPEParitySceneAnimations.id(object),
-              let path = WPEParityProgramScene.string(object["path"]), let file = assets.json(path),
+        guard let objectID = header.id,
+              let path = header.path, let file = assets.json(path),
               case let .array(records)? = file["paths"] else { return nil }
         var items: [Item] = []
         for record in records {
@@ -90,8 +90,7 @@ public final class WPEParityCameraQueue {
         self.items = items
         eligible = items.indices.filter { items[$0].visible }
         remaining = eligible
-        let mode = object["queuemode"]?["value"] ?? object["queuemode"]
-        authoredMode = mode == .string("sequential") ? "sequential" : "random"
+        authoredMode = header.sequentialQueue ? "sequential" : "random"
         self.randomInteger = randomInteger
     }
 

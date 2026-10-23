@@ -267,23 +267,23 @@ struct WPEParityFramePlan {
         loadedState.setScriptField("bloomhdriterations", of: "",
                                    to: .integer(Int32(truncatingIfNeeded: post.bloomSettings.hdrIterations)), invalidating: .bloom)
         loadedState.setScriptField("bloomtint", of: "", to: .vector(SIMD4(post.bloomSettings.tint, 0)), invalidating: .bloom)
-        let parallax = WPEParityCamera.parallaxSettings(general: document.resolvedGeneralJSON)
+        let parallax = document.paritySeeds.cameraParallax
         loadedState.setScriptField("cameraparallax", of: "", to: .vector(SIMD4(parallax.enabled ? 1 : 0, 0, 0, 0)),
                                    invalidating: .none)
         for (name, value) in [("cameraparallaxamount", parallax.amount), ("cameraparallaxdelay", parallax.delay),
                               ("cameraparallaxmouseinfluence", parallax.mouseInfluence)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(Float(value), 0, 0, 0)), invalidating: .none)
         }
-        let shake = WPEParityCameraShake(general: document.resolvedGeneralJSON)
-        let shakeEnabled = WPEParityScriptProperty.sceneBoolValue(fromJSON: document.resolvedGeneralJSON["camerashake"]) == true
+        let shake = document.paritySeeds.cameraShake
+        let shakeEnabled = document.paritySeeds.cameraShakeEnabled
         loadedState.setScriptField("camerashake", of: "", to: .vector(SIMD4(shakeEnabled ? 1 : 0, 0, 0, 0)), invalidating: .none)
         for (name, value) in [("camerashakespeed", shake.speed), ("camerashakeamplitude", shake.amplitude),
                               ("camerashakeroughness", shake.roughness)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
         }
-        let overrideFOV = WPEParityCamera.perspectiveOverrideFOV(general: document.resolvedGeneralJSON)
+        let overrideFOV = document.paritySeeds.perspectiveOverrideFOV
         loadedState.setScriptField("perspectiveoverridefov", of: "", to: .vector(SIMD4(overrideFOV, 0, 0, 0)), invalidating: .none)
-        let projection = WPEParityScenePerspective(general: document.resolvedGeneralJSON)
+        let projection = document.paritySeeds.perspective
         for (name, value) in [("fov", projection.fov), ("nearz", projection.near), ("farz", projection.far)] {
             loadedState.setScriptField(name, of: "", to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
         }

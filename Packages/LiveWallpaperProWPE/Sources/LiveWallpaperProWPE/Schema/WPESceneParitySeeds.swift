@@ -14,10 +14,16 @@ public struct WPESceneObjectHeader: Equatable, Sendable {
     public let zoom: Float?
     /// Raw `effects`; createLayer compares a config's effects to its clone template's with it.
     public let effects: WPESceneJSONValue?
+    /// Camera queue file; nil unless `path` is a string.
+    public let path: String?
+    /// `queuemode` with one `value` envelope unwrapped is "sequential"; every other value is a random queue.
+    public let sequentialQueue: Bool
 
     init(_ object: WPESceneJSONValue) {
         id = WPEParitySceneAnimations.id(object)
         effects = object["effects"]
+        path = WPEParityProgramScene.string(object["path"])
+        sequentialQueue = (object["queuemode"]?["value"] ?? object["queuemode"]) == .string("sequential")
         if case .string? = object["camera"] {
             isCamera = true
         } else {
@@ -62,6 +68,8 @@ public struct WPESceneParitySeeds: Equatable, Sendable {
     public let cameraShakeEnabled: Bool
     /// `orthographic` is left at its default; the camera sets it from the projection.
     public let cameraShake: WPEParityCameraShake
+    /// String entries of `general.precache` whose first 9 bytes are "materials"; WPE skips the rest (140186c90.c:651-655).
+    public let precacheMaterials: [String]
 
     init(general: WPESceneJSONValue, objects: [WPESceneJSONValue]) {
         self.objects = objects.map(WPESceneObjectHeader.init)
@@ -80,6 +88,14 @@ public struct WPESceneParitySeeds: Equatable, Sendable {
         perspectiveOverrideFOV = WPEParityCamera.perspectiveOverrideFOV(general: general)
         cameraShakeEnabled = WPEParityScriptProperty.sceneBoolValue(fromJSON: general["camerashake"]) == true
         cameraShake = WPEParityCameraShake(general: general)
+        if case let .array(entries)? = general["precache"] {
+            precacheMaterials = entries.compactMap { entry in
+                guard case let .string(path) = entry, path.utf8.starts(with: "materials".utf8) else { return nil }
+                return path
+            }
+        } else {
+            precacheMaterials = []
+        }
     }
 
     private static func collectScripts(_ value: WPESceneJSONValue, into scripts: inout [WPESceneJSONValue]) {

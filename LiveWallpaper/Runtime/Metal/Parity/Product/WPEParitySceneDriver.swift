@@ -568,7 +568,7 @@ final class WPEParitySceneDriver {
             adoptUpscalePlan(selection.upscale)
             scriptUserProperties = scriptHost.userPropertiesJSON
             renderer.attachMedia(mediaMailbox, generation: generation)
-            let precached = Self.precacheMaterialPaths(document.resolvedGeneralJSON)
+            let precached = document.paritySeeds.precacheMaterials
             // Unverified whether WPE fails the scene on a precache entry (1401515b0); the entry is skipped.
             try await preloadMaterials(precached, source: "precache", renderer: renderer, shaders: shaders,
                                        generation: generation)
@@ -1268,28 +1268,9 @@ final class WPEParitySceneDriver {
     }
 
     static func scriptsCreateLayers(_ document: WPESceneDocument) -> Bool {
-        func mentions(_ value: WPESceneJSONValue) -> Bool {
-            switch value {
-            case let .object(members):
-                if case let .string(source)? = members["script"], source.contains("createLayer") {
-                    return true
-                }
-                return members.values.contains(where: mentions)
-            case let .array(elements):
-                return elements.contains(where: mentions)
-            default:
-                return false
-            }
-        }
-        return ([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: mentions)
-    }
-
-    /// String entries of `general.precache` whose first 9 bytes are "materials"; WPE skips the rest (140186c90.c:651-655).
-    static func precacheMaterialPaths(_ general: WPESceneJSONValue) -> [String] {
-        guard case let .array(entries)? = general["precache"] else { return [] }
-        return entries.compactMap { entry in
-            guard case let .string(path) = entry, path.utf8.starts(with: "materials".utf8) else { return nil }
-            return path
+        document.paritySeeds.scripts.contains { script in
+            guard case let .string(source) = script else { return false }
+            return source.contains("createLayer")
         }
     }
 

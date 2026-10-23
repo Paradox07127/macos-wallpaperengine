@@ -110,7 +110,7 @@ final class ParityCameraQueueTests: XCTestCase {
         let assets = WPEParityProgramAssets(sources: [.lookup(FileManager.default.temporaryDirectory) {
             $0 == "camera.json" ? data : nil
         }])
-        let object = try XCTUnwrap(document.resolvedObjectsJSON.first)
-        return try (XCTUnwrap(WPEParityCameraQueue(object: object, assets: assets, randomInteger: random)), document)
+        let header = try XCTUnwrap(document.paritySeeds.objects.first)
+        return try (XCTUnwrap(WPEParityCameraQueue(header: header, assets: assets, randomInteger: random)), document)
     }
 }
