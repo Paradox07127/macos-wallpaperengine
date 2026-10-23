@@ -408,6 +408,9 @@ final class ScreenManager {
         Logger.debug("ScreenManager initializing", category: .screenManager)
         setupPowerMonitoring()
         setupScreenObservers()
+        if startupOptions.seedsUserAbsenceAtLaunch {
+            seedUserAbsenceBaseline()
+        }
         setupMemoryPressureMonitoring()
         setupFullScreenDetection()
         if featureCatalog.isEnabled(.lockScreenSnapshots) {
@@ -430,6 +433,14 @@ final class ScreenManager {
                 self?.automationOrchestrator.refreshMonitoringIfActive()
                 guard let self, self.effectsCoordinatorWasInitialized else { return }
                 self.effectsCoordinator.reconcileEnvironmentOverlays()
+            }
+            .store(in: &cleanupTasks)
+
+        NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                NSTimeZone.resetSystemTimeZone()
+                self?.automationOrchestrator.handleTimeZoneChange()
             }
             .store(in: &cleanupTasks)
 

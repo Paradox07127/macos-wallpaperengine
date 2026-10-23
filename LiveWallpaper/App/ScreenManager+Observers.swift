@@ -211,6 +211,16 @@ extension ScreenManager {
         return true
     }
 
+    /// Lock and display-sleep edges that predate launch never arrive as notifications, so the current state is read once.
+    func seedUserAbsenceBaseline() {
+        if userPresenceProbe.screenLockState() == .locked {
+            setUserAbsence(.screenLocked, present: true)
+        }
+        if userPresenceProbe.areAllDisplaysAsleep() {
+            setUserAbsence(.displaySleep, present: true)
+        }
+    }
+
     /// Asks an independent truth source whether the user is in fact back, and only ever clears reasons — it can never invent an absence.
     /// CGDisplayIsAsleep is an unambiguous boolean, while a missing CGSSessionScreenIsLocked key cannot be told apart from a failed read, so unlocking demands corroboration from an active display.
     func revalidateUserAbsence() {

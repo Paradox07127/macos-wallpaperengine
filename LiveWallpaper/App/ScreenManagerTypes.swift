@@ -46,6 +46,8 @@ struct ScreenManagerStartupOptions: Equatable {
     /// Second opinion used to clear a stale absence when an OS wake/unlock
     /// notification never arrives. Injectable so tests can drive lock state.
     var userPresenceProbe: any UserPresenceProbing = SystemUserPresenceProbe.shared
+    /// Off by default so a test host started on a locked Mac does not begin with playback held.
+    var seedsUserAbsenceAtLaunch = false
     /// How long a freshly recorded absence is left alone before the probe is allowed to second-guess it. OS notifications can beat the CoreGraphics state they describe, so revalidating immediately would clear the very absence the notification just established.
     var absenceRevalidationGrace: Duration = .seconds(10)
     /// Cadence of the slow poll that re-runs revalidation while absent. Injectable so tests do not have to wait out the production cadence.

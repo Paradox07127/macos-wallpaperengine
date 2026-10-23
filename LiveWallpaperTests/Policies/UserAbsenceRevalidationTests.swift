@@ -37,6 +37,7 @@ struct UserAbsenceRevalidationTests {
             startAutomation: false,
             fullScreenDetector: FakeFullScreenDetector(),
             userPresenceProbe: probe,
+            seedsUserAbsenceAtLaunch: true,
             absenceRevalidationGrace: .zero,
             featureCatalog: FeatureCatalog(capabilities: .pro)
         ))
@@ -138,6 +139,52 @@ struct UserAbsenceRevalidationTests {
         manager.revalidateUserAbsence()
 
         #expect(!manager.isUserAbsent, "Past the grace period the probe is authoritative")
+    }
+
+    @Test("A lock already in place at launch is the starting absence")
+    func launchWhileLockedStartsAbsent() {
+        let probe = FakeUserPresenceProbe()
+        probe.lockState = .locked
+
+        let manager = makeManager(probe: probe)
+
+        #expect(manager.userAbsenceReasons == [.screenLocked], "launching behind the lock screen treated the user as present")
+    }
+
+    @Test("Displays already asleep at launch are the starting absence")
+    func launchWithDisplaysAsleepStartsAbsent() {
+        let probe = FakeUserPresenceProbe()
+        probe.allDisplaysAsleep = true
+
+        let manager = makeManager(probe: probe)
+
+        #expect(manager.userAbsenceReasons == [.displaySleep], "launching with every display asleep treated the user as present")
+    }
+
+    @Test("A manager built without launch seeding ignores a lock already in place")
+    func unseededLaunchIgnoresExistingLock() {
+        let probe = FakeUserPresenceProbe()
+        probe.lockState = .locked
+
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            fullScreenDetector: FakeFullScreenDetector(),
+            userPresenceProbe: probe,
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+
+        #expect(!manager.isUserAbsent, "a test host started on a locked Mac would begin with playback held")
+    }
+
+    @Test("An unreadable lock state at launch invents no absence")
+    func launchWithUnknownLockStateStartsPresent() {
+        let probe = FakeUserPresenceProbe()
+        probe.lockState = .unknown
+
+        let manager = makeManager(probe: probe)
+
+        #expect(!manager.isUserAbsent, "`unknown` at launch must not be read as `locked`")
     }
 
     @Test("An absence whose only policy refresh fell inside the grace window is still cleared")

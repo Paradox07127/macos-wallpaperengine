@@ -36,9 +36,14 @@ final class WallpaperAutomationOrchestrator {
     private let libraryEntryAvailable: @MainActor (WallpaperQueueEntry) async -> Bool
     private let bookmarkVolumeUnavailable: @MainActor (Data) -> Bool
     private let now: @MainActor () -> Date
+    private let calendar: @MainActor () -> Calendar
     private var isMonitoring = false
     private var isSuspendedForUserAbsence = false
     private var validationTasksByScreen: [CGDirectDisplayID: Task<Void, Never>] = [:]
+    /// The zone the saved settled-until instants were computed in.
+    private var scheduleTimeZone: TimeZone
+    /// Displays whose next schedule check must look past a settled-until stamped under an earlier zone.
+    private var schedulesAwaitingRecheck: Set<CGDirectDisplayID> = []
 
     init(
         configurationStore: WallpaperConfigurationStore,
@@ -52,6 +57,12 @@ final class WallpaperAutomationOrchestrator {
         bumpTransition: @MainActor @escaping (CGDirectDisplayID) -> Int,
         isCurrentTransition: @MainActor @escaping (Int, CGDirectDisplayID) -> Bool,
         now: @MainActor @escaping () -> Date = { Date() },
+        // Calendar.current is cached and can keep the zone it was built with, so the system zone is re-read each call.
+        calendar: @MainActor @escaping () -> Calendar = {
+            var calendar = Calendar.current
+            calendar.timeZone = .current
+            return calendar
+        },
         prepareAutomation: @escaping AutomationPreparer,
         automationAllowed: @MainActor @escaping () -> Bool = { true },
         libraryEntries: @MainActor @escaping () -> [LibraryShuffleCandidate] = { [] },
@@ -68,6 +79,8 @@ final class WallpaperAutomationOrchestrator {
         self.bumpTransition = bumpTransition
         self.isCurrentTransition = isCurrentTransition
         self.now = now
+        self.calendar = calendar
+        scheduleTimeZone = calendar().timeZone
         self.prepareAutomation = prepareAutomation
         self.automationAllowed = automationAllowed
         self.libraryEntries = libraryEntries
@@ -186,6 +199,7 @@ final class WallpaperAutomationOrchestrator {
         if let libraryShuffleRotationMinutes {
             config.libraryShuffleRotationMinutes = max(1, libraryShuffleRotationMinutes)
         }
+        cancelAutomaticSelection(for: screen.id)
         saveConfiguration(config)
         if mode == .libraryShuffle {
             if previousMode != .libraryShuffle {
@@ -209,6 +223,7 @@ final class WallpaperAutomationOrchestrator {
         let unique = entries.filter { seen.insert($0.id).inserted }
         config.wallpaperQueue = unique
         config.playlistCursorIndex = unique.firstIndex(where: { $0.id == currentID }) ?? 0
+        cancelAutomaticSelection(for: screen.id)
         saveConfiguration(config)
     }
 
@@ -290,7 +305,7 @@ final class WallpaperAutomationOrchestrator {
                 self?.automaticSelections[screenID] == serial && self?.isSuspendedForUserAbsence == false && !Task.isCancelled
             }
             var dispatched = false
-            for candidate in candidates {
+            candidateLoop: for candidate in candidates {
                 guard intended(), let config = configurationStore.get(for: screenID), config.wallpaperMode == expectedMode else { return }
                 guard let entry = candidate.entry.resolve() else { continue }
                 // Editing a source changes its snapshot and automatically gives it a fresh chance.
@@ -311,10 +326,17 @@ final class WallpaperAutomationOrchestrator {
                     if !dispatched, !isCurrentTransition(initialTransition, screenID) {
                         return
                     }
+                    var cursor = candidate.cursor
+                    if cursor != nil {
+                        // The queue can change during the await: a removed or edited row must not land, and a kept row may sit at a new index.
+                        guard let index = current.effectiveWallpaperQueue.firstIndex(where: { $0.id == entry.id && $0.content == entry.content })
+                        else { continue candidateLoop }
+                        cursor = index
+                    }
                     if available {
                         sourceWasFound = true
                         var proposed = current.applyingAutomationEntry(entry)
-                        if let cursor = candidate.cursor {
+                        if let cursor {
                             proposed.playlistCursorIndex = cursor
                         }
                         dispatched = true
@@ -356,13 +378,15 @@ final class WallpaperAutomationOrchestrator {
               config.scheduleSlots?.isEmpty == false || config.scheduleFallback != nil else { return }
         let slots = config.scheduleSlots ?? []
         let currentTime = now()
-        if !force, let settled = config.scheduleSettledUntil, currentTime < settled {
+        let awaitingRecheck = schedulesAwaitingRecheck.remove(screen.id) != nil
+        if !force, !awaitingRecheck, let settled = config.scheduleSettledUntil, currentTime < settled {
             return
         }
-        let decision = SchedulePolicy.decision(for: config, hour: Calendar.current.component(.hour, from: currentTime))
+        let calendar = calendar()
+        let decision = SchedulePolicy.decision(for: config, hour: calendar.component(.hour, from: currentTime))
         // Saving here would move the revision and discard a launch restore candidate that is still preparing.
         guard decision != .none else { return }
-        config.scheduleSettledUntil = SchedulePolicy.nextBoundary(after: currentTime, slots: slots, calendar: .current)
+        config.scheduleSettledUntil = SchedulePolicy.nextBoundary(after: currentTime, slots: slots, calendar: calendar)
         // Saved before dispatch: a web or scene candidate gives up when the revision moves while it prepares.
         saveConfiguration(config)
 
@@ -376,6 +400,29 @@ final class WallpaperAutomationOrchestrator {
             entry = WallpaperQueueEntry(id: "schedule-primary", title: "", content: .video(bookmarkData: bookmark, packageEntryName: config.savedVideoPackageEntryName))
         }
         applyEntry(entry, cursor: nil, source: .schedule, for: screen)
+    }
+
+    /// Settled-until instants mark local slot edges; after a zone change a hand-picked hold moves to the new zone's next edge, and anything else is re-planned.
+    func handleTimeZoneChange() {
+        let calendar = calendar()
+        var previousCalendar = calendar
+        previousCalendar.timeZone = scheduleTimeZone
+        scheduleTimeZone = calendar.timeZone
+        guard previousCalendar.timeZone != calendar.timeZone else { return }
+        let currentTime = now()
+        for screen in screensProvider() {
+            guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+                  config.wallpaperMode == .schedule, config.scheduleSettledUntil != nil else { continue }
+            let heldByHand = SchedulePolicy.pausedUntil(for: config, now: currentTime, calendar: previousCalendar) != nil
+            // Saving nil would not clear it: the save path keeps a later settled-until for unchanged content.
+            config.scheduleSettledUntil = SchedulePolicy.nextBoundary(after: currentTime, slots: config.scheduleSlots ?? [], calendar: calendar)
+            saveConfiguration(config)
+            guard !heldByHand else { continue }
+            schedulesAwaitingRecheck.insert(screen.id)
+            if isMonitoring {
+                checkAndApplySchedule(for: screen)
+            }
+        }
     }
 
     // MARK: - Automation start

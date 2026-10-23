@@ -51,6 +51,7 @@ struct AppStartupPlan: Equatable {
             startAutomation: runtimeOptions.shouldStartAutomation,
             playsOpening: runtimeOptions.shouldRestoreSavedWallpapers,
             memoryPressureWatcher: SystemMemoryPressureWatcher.shared,
+            seedsUserAbsenceAtLaunch: !runtimeOptions.isTesting,
             featureCatalog: FeatureCatalog(capabilities: .lite),
             originReconciler: PreservingOriginReconciler()
         )
@@ -61,6 +62,7 @@ struct AppStartupPlan: Equatable {
             startAutomation: runtimeOptions.shouldStartAutomation,
             playsOpening: runtimeOptions.shouldRestoreSavedWallpapers,
             memoryPressureWatcher: SystemMemoryPressureWatcher.shared,
+            seedsUserAbsenceAtLaunch: !runtimeOptions.isTesting,
             featureCatalog: FeatureCatalog(capabilities: proCapabilities)
         )
         #endif
