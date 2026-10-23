@@ -1984,7 +1984,8 @@ struct HomePage: View {
         }
         #endif
         if let summary = outcome.summary {
-            toasts.post(summary, style: outcome.failed == 0 ? .success : .failure)
+            let text = [summary, outcome.failureSummary].compactMap { $0 }.joined(separator: "\n")
+            toasts.post(text, style: outcome.failed == 0 ? .success : .failure)
         }
     }
 }

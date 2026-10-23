@@ -253,8 +253,11 @@ struct DisplayStateResolverTests {
         let configuration = harness.manager.getConfiguration(for: harness.screen)
         let revision = harness.manager.configurationStore.revision(for: harness.screen.id)
         // Unsupported, so the import writes nothing to the shared bookmark store.
-        let summary = try #require(LibraryImporter.Outcome(failed: 1).summary)
-        view.model.emit(.filesDroppedOnShelf([URL(fileURLWithPath: "/private/tmp/loomscreen-drop/notes.txt")]))
+        let dropped = URL(fileURLWithPath: "/private/tmp/loomscreen-drop/notes.txt")
+        var expected = LibraryImporter.Outcome()
+        expected.fail(dropped, .unsupportedFormat)
+        let summary = try #require(expected.summary) + "\n" + #require(expected.failureSummary)
+        view.model.emit(.filesDroppedOnShelf([dropped]))
         await harness.waitUntil { harness.toasts.toasts.map(\.text) == [summary] }
         #expect(harness.toasts.toasts.map(\.style) == [.failure])
         #expect(view.debugShakenDisplays.isEmpty, "a drop meant for the library shook a display")
