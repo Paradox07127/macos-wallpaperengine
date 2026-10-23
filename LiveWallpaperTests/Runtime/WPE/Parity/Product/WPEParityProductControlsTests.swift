@@ -424,10 +424,6 @@ private final class RecordingSurfaceControl: WPESurfaceControl {
         recorded.withLock { $0.framesPerSecond = fps }
     }
 
-    func setNeedsRedraw() {}
-
-    func drawImmediately() {}
-
     func releaseDrawables() {}
 
     func detach() {}

@@ -57,15 +57,6 @@ final class WPERenderThreadFramePacer: WPESurfaceControl, @unchecked Sendable {
         }
     }
 
-    nonisolated func setNeedsRedraw() {
-        deliverToRenderActor { $0.renderFrame() }
-    }
-
-    nonisolated func drawImmediately() {
-        // Actor-owned calls keep the old synchronous `mtkView.draw()` behavior; any-thread callers get non-blocking delivery.
-        deliverToRenderActor { $0.renderFrame() }
-    }
-
     nonisolated func releaseDrawables() { surface.releaseDrawables() }
 
     nonisolated func detach() {
