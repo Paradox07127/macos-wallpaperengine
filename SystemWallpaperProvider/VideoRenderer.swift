@@ -509,7 +509,7 @@ final class VideoRenderer: @unchecked Sendable {
 
     private func enterDeepPause() {
         cancelDeepPauseTimer()
-        guard !isDeepPaused, let reader else { return }
+        guard !isDeepPaused, desiredRate == 0, currentRate == 0, rampTimer == nil, let reader else { return }
         renderer.stopRequestingMediaData()
         reader.cancelReading()
         self.reader = nil
@@ -548,6 +548,9 @@ final class VideoRenderer: @unchecked Sendable {
     private func rampRateOnQueue(to target: Double, duration: TimeInterval) {
         guard let timebase else { return }
         cancelRamp()
+        if target > 0 {
+            cancelDeepPauseTimer()
+        }
         desiredRate = target
         // A deep-paused renderer has no reader — ramping only the timebase
         // would "resume" into a permanent freeze-frame (every policy update

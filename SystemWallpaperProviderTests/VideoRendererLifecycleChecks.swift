@@ -60,6 +60,38 @@ extension VideoRenderer {
         }
     }
 
+    /// Parks the clock with a far-off decoder release armed, then resumes; returns whether the release is still armed.
+    func fixtureResumeKeepsDeepPauseArmed() async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                let timer = DispatchSource.makeTimerSource(queue: queue)
+                timer.schedule(deadline: .now() + 3600)
+                timer.setEventHandler {}
+                timer.resume()
+                deepPauseTimer = timer
+                currentRate = 0
+                rampRateOnQueue(to: 1, duration: 0.05)
+                continuation.resume(returning: deepPauseTimer != nil)
+            }
+        }
+    }
+
+    /// Fires the decoder release while playback is wanted; returns whether the pipeline was dropped.
+    func fixtureDeepPauseWhilePlaying() async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                cancelRamp()
+                reader = try? AVAssetReader(asset: AVMutableComposition())
+                check(reader != nil, "fixture could not build a reader to release")
+                isDeepPaused = false
+                desiredRate = 1
+                currentRate = 1
+                enterDeepPause()
+                continuation.resume(returning: isDeepPaused)
+            }
+        }
+    }
+
     func fixtureStaleNotificationThenSwitch(_ callback: @escaping @Sendable (String) -> Void) async {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
@@ -170,6 +202,12 @@ private func snapshotIsRed(_ surface: IOSurface) -> Bool {
         let videoClock = await sceneThenVideo.fixtureClockSeconds()
         check(abs(videoClock) < 0.001, "a video after a scene inherited the scene's \(videoClock)s timeline")
         sceneThenVideo.stopSync()
+        let resumed = VideoRenderer()
+        let staleReleaseArmed = await resumed.fixtureResumeKeepsDeepPauseArmed()
+        check(!staleReleaseArmed, "resuming within the still window left the decoder release armed")
+        let releasedWhilePlaying = await resumed.fixtureDeepPauseWhilePlaying()
+        check(!releasedWhilePlaying, "a decoder release fired during playback and froze the frame")
+        resumed.stopSync()
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless, backing: .buffered, defer: false)
@@ -197,6 +235,6 @@ private func snapshotIsRed(_ surface: IOSurface) -> Bool {
         await video.fixtureDrain()
         guard let unchanged = video.snapshot() else { check(false, "stale frame discarded the displayed snapshot"); return }
         check(snapshotIsRed(unchanged), "a stale scene task replaced the displayed frame")
-        print("PASS: 16 controlled VideoRenderer lifecycle assertions, including raw scene presentation and snapshots")
+        print("PASS: 18 controlled VideoRenderer lifecycle assertions, including raw scene presentation and snapshots")
     }
 }
