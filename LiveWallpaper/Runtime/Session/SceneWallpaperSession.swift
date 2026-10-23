@@ -98,6 +98,9 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// Manual pause is not an absence; uses its own longer dwell, not the absence constant.
     private let userPauseHibernationDelay: Duration
     private let wakeRetryDelay: Duration
+    private let retirementDeadline: Duration
+    /// The render thread's join result once cleanup's retirement ends; nil before cleanup.
+    private(set) var retirement: Task<Bool, Never>?
     private let absenceDwell = AbsenceDwell()
     private let pauseDwell = AbsenceDwell()
     private let pressureDwell = AbsenceDwell()
@@ -120,23 +123,28 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private var lifecycleGeneration = 0
     /// Guards clearing loadTask so a finished older task cannot drop a newer one.
     private var loadGeneration = 0
-    private(set) var loadFailureCause: WallpaperFailureCause?
-    private(set) var loadError: SceneRenderingError? {
+    /// The session's only failure slot; `loadError`, `loadFailureCause` and `runtimeError` all project from it.
+    private(set) var failure: SceneSessionFailure? {
         didSet {
-            runtimeError = loadError.map {
-                .sceneRenderingFailed(description: $0.errorDescription ?? "")
-            }
-        }
-    }
-
-    private(set) var loadProgress: String?
-    private(set) var runtimeError: WallpaperRuntimeError? {
-        didSet {
-            guard oldValue != runtimeError else { return }
+            guard oldValue != failure else { return }
             onRuntimeErrorChange?()
         }
     }
 
+    var loadFailureCause: WallpaperFailureCause? {
+        failure?.cause
+    }
+
+    /// Covers runtime failures too, so every consumer that gates on it sees a scene that stopped drawing.
+    var loadError: SceneRenderingError? {
+        failure?.error
+    }
+
+    var runtimeError: WallpaperRuntimeError? {
+        failure.map { .sceneRenderingFailed(description: $0.error.errorDescription ?? "") }
+    }
+
+    private(set) var loadProgress: String?
     var onRuntimeErrorChange: (@MainActor () -> Void)?
 
     /// Cached present flag from `pollRendererState()`: nil/false/true → idle/loading/presented.
@@ -145,7 +153,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// The scene candidate and its parity pipeline; nil before preparation starts.
     private(set) var adoptedScene: (workshopID: String, renderer: String)?
     /// A construction failure cannot be retried as a reload of an actor that never adopted a driver.
-    private var preparationFailure: SceneRenderingError?
+    private var preparationFailure: SceneSessionFailure?
 
     init(
         window: NSWindow,
@@ -154,7 +162,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         audioCaptureDemandController: any SystemAudioCaptureDemandControlling = SystemAudioCaptureManager.shared,
         hibernationDelay: Duration = .seconds(20),
         userPauseHibernationDelay: Duration = ManualPauseHibernation.delay,
-        wakeRetryDelay: Duration = .seconds(10)
+        wakeRetryDelay: Duration = .seconds(10),
+        retirementDeadline: Duration = .seconds(5)
     ) {
         self.window = window
         self.renderActor = renderActor
@@ -164,6 +173,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         self.hibernationDelay = hibernationDelay
         self.userPauseHibernationDelay = userPauseHibernationDelay
         self.wakeRetryDelay = wakeRetryDelay
+        self.retirementDeadline = retirementDeadline
         // Called on the render thread.
         surface.mailbox.setInteractiveZonesObserver { [weak self] _ in
             Task { @MainActor in self?.refreshHotZones() }
@@ -233,10 +243,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         await updateSystemAudioCaptureRequirement(renderActor.requiresSystemAudioCapture())
     }
 
-    private func cacheRendererState(_ snapshot: WPERendererStateSnapshot) {
-        if let failure = snapshot.runtimeFailure {
-            runtimeError = .sceneRenderingFailed(description: failure)
-        }
+    func cacheRendererState(_ snapshot: WPERendererStateSnapshot) {
+        reconcileRuntimeFailure(with: snapshot)
         hasPresentedFrame = snapshot.hasPresentedFrame
         rendererDiagnostics = SceneRendererDiagnostics(
             loadDiagnostics: snapshot.loadDiagnostics,
@@ -250,7 +258,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         )
         // The renderer's own generation also advances on retire/hibernate, so attempts count session loads instead.
         if !isHibernated, let descriptor = snapshot.descriptor {
-            let status = loadError.map { "load failed: \($0.errorDescription ?? "unknown")" }
+            let loadFailure = failure?.stage == .loading ? failure?.error : nil
+            let status = loadFailure.map { "load failed: \($0.errorDescription ?? "unknown")" }
                 ?? (snapshot.failedPresentGeneration == snapshot.currentLoadGeneration
                     ? "presentation failed"
                     : (snapshot.hasPresentedFrame ? "frame presented" : "awaiting first frame"))
@@ -260,6 +269,27 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 descriptor: descriptor, status: status, diagnostics: rendererDiagnostics
             )
             lastRecordedDiagnosticAttempt = attempt
+        }
+    }
+
+    /// The renderer keeps a runtime failure until its next load, so only a newer renderer generation clears it.
+    private func reconcileRuntimeFailure(with snapshot: WPERendererStateSnapshot) {
+        let latched: Int?
+        switch failure?.stage {
+        case .loading?: return
+        case let .runtime(rendererGeneration)?: latched = rendererGeneration
+        case nil: latched = nil
+        }
+        let isNewer = latched.map { snapshot.currentLoadGeneration > $0 } ?? true
+        if let message = snapshot.runtimeFailure {
+            guard isNewer else { return }
+            let diagnostic = snapshot.loadDiagnostics ?? .other(layer: "scene", message: message)
+            failure = SceneSessionFailure(
+                stage: .runtime(rendererGeneration: snapshot.currentLoadGeneration),
+                error: .resourceFailed(diagnostic), cause: SceneFailureCause.make(diagnostic)
+            )
+        } else if latched != nil, isNewer {
+            failure = nil
         }
     }
 
@@ -624,10 +654,11 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     func failPreparation(workshopID: String, error: Error) {
         adoptedScene = (workshopID, "parity")
         didStartLoad = true
-        let failure = SceneRenderingError.resourceFailed(.other(layer: "scene", message: String(describing: error)))
-        preparationFailure = failure
-        loadFailureCause = SceneFailureCause.make(error)
-        loadError = failure
+        let preparation = SceneSessionFailure.loading(
+            .resourceFailed(.other(layer: "scene", message: String(describing: error))), cause: SceneFailureCause.make(error)
+        )
+        preparationFailure = preparation
+        failure = preparation
         Logger.warning("Parity scene preparation failed for \(workshopID): \(error)", category: .screenManager)
     }
 
@@ -676,7 +707,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         loadTask?.cancel()
         loadTask = nil
         // cleanup() is sync; drain happens in this task so teardown cannot overtake adopt/load.
-        Task {
+        let drain = Task {
             startup?.cancel()
             await displayLinkStopTask?.value
             await startup?.value
@@ -689,9 +720,28 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             await wake?.value
             await actor.teardownRenderer()
             surface.detach()
-            // Async join: a wedged render thread must cost a leaked thread, never a frozen main thread.
-            await actor.shutdown()
         }
+        let deadline = retirementDeadline
+        retirement = Task {
+            // Counted from cleanup, not from the drain's end: a drain stage that never returns must not hold off the join.
+            await Self.awaitDrain(drain, atMost: deadline)
+            // Async join: a wedged render thread must cost a leaked thread, never a frozen main thread.
+            return await actor.shutdown(timeout: deadline)
+        }
+    }
+
+    /// Stopping the wait never cancels the drain; its stages still run, in order, whenever they unblock.
+    private nonisolated static func awaitDrain(_ drain: Task<Void, Never>, atMost limit: Duration) async {
+        let (ended, signal) = AsyncStream<Void>.makeStream()
+        Task {
+            await drain.value
+            signal.finish()
+        }
+        Task {
+            try? await Task.sleep(for: limit)
+            signal.finish()
+        }
+        for await _ in ended {}
     }
 
     func beginLoad() async {
@@ -747,11 +797,11 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     func reload() async {
         guard hasRenderer else {
-            loadError = .cacheRootMissing
+            failure = .loading(.cacheRootMissing)
             return
         }
         if let preparationFailure {
-            loadError = preparationFailure
+            failure = preparationFailure
             return
         }
         isHibernated = false
@@ -772,18 +822,16 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 try await renderActor.reload()
                 guard loadGeneration == generation else { return }
                 await refreshSystemAudioCaptureRequirement()
-                loadFailureCause = nil
-                loadError = nil
+                failure = nil
                 loadProgress = nil
             } catch is CancellationError {
                 return
             } catch let error as SceneRenderingError {
                 guard self.loadGeneration == generation else { return }
-                self.loadFailureCause = SceneFailureCause.make(error)
-                self.loadError = error
+                self.failure = .loading(error)
             } catch {
                 guard loadGeneration == generation else { return }
-                loadError = await mapLoadFailure(error)
+                failure = await mapLoadFailure(error)
             }
         }
         loadTask = task
@@ -805,8 +853,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             try await renderActor.load()
             guard !Task.isCancelled else { return }
             await refreshSystemAudioCaptureRequirement()
-            loadFailureCause = nil
-            loadError = nil
+            failure = nil
             loadProgress = nil
         } catch is CancellationError {
             return
@@ -820,8 +867,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 "Scene wallpaper load failed: \(error.errorDescription ?? "(no description)")",
                 category: .screenManager
             )
-            loadFailureCause = SceneFailureCause.make(error)
-            loadError = error
+            failure = .loading(error)
         } catch {
             await pollRendererState()
             guard !Task.isCancelled else { return }
@@ -831,7 +877,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 "Scene wallpaper load failed: \(error.localizedDescription)",
                 category: .screenManager
             )
-            loadError = await mapLoadFailure(error)
+            failure = await mapLoadFailure(error)
         }
         await pollRendererState()
         startDiagnosticPolling()
@@ -880,23 +926,37 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
-    private func mapLoadFailure(_ error: Error) async -> SceneRenderingError {
-        let cause = SceneFailureCause.make(error)
-        loadFailureCause = cause
+    private func mapLoadFailure(_ error: Error) async -> SceneSessionFailure {
         if let diagnostic = await renderActor.loadDiagnostics() {
-            loadFailureCause = Self.failureCause(for: error, diagnostic: diagnostic)
-            return .resourceFailed(diagnostic)
+            return .loading(.resourceFailed(diagnostic), cause: Self.failureCause(for: error, diagnostic: diagnostic))
         }
+        let cause = SceneFailureCause.make(error)
         if error is WPESceneDocumentError {
-            return .parseFailed(error.localizedDescription)
+            return .loading(.parseFailed(error.localizedDescription), cause: cause)
         }
-        return .resourceFailed(.other(layer: "scene", message: cause.reason))
+        return .loading(.resourceFailed(.other(layer: "scene", message: cause.reason)), cause: cause)
     }
 
     /// A non-retryable code from the error itself (e.g. `texture.metal_format`) is finer than the diagnostic's category, so it wins.
     nonisolated static func failureCause(for error: Error, diagnostic: SceneLoadDiagnostic) -> WallpaperFailureCause {
         let own = SceneFailureCause.make(error)
         return own.canRetry ? SceneFailureCause.make(diagnostic) : own
+    }
+}
+
+struct SceneSessionFailure: Equatable {
+    enum Stage: Equatable {
+        case loading
+        /// `rendererGeneration`: the renderer load whose runtime latched the failure.
+        case runtime(rendererGeneration: Int)
+    }
+
+    let stage: Stage
+    let error: SceneRenderingError
+    let cause: WallpaperFailureCause
+
+    static func loading(_ error: SceneRenderingError, cause: WallpaperFailureCause? = nil) -> Self {
+        Self(stage: .loading, error: error, cause: cause ?? SceneFailureCause.make(error))
     }
 }
 

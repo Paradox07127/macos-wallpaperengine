@@ -25,9 +25,15 @@ extension ScreenManager {
 
     #if !LITE_BUILD
     func captureActiveSceneFailure(_ session: any SceneWallpaperRuntime) {
-        guard let error = session.loadError,
-              let screen = screens.first(where: { $0.runtimeSession === session }),
-              wallpaperLoads.attempt(for: screen) == nil,
+        guard let screen = screens.first(where: { $0.runtimeSession === session }) else { return }
+        guard let error = session.loadError else {
+            // Only a runtime-stage attempt belongs to the on-screen session; other stages belong to an apply.
+            if let attempt = wallpaperLoads.attempt(for: screen), attempt.failure?.stage == .runtime {
+                wallpaperLoads.clear(for: screen, matching: attempt.id)
+            }
+            return
+        }
+        guard wallpaperLoads.attempt(for: screen) == nil,
               let config = getConfiguration(for: screen), case let .scene(descriptor) = config.activeWallpaper else { return }
         let id = wallpaperLoads.begin(for: screen, title: config.wpeOrigin?.title ?? wallpaperDisplayName(for: screen) ?? "", origin: config.wpeOrigin)
         wallpaperLoads.update(id, for: screen) { $0.configuration = config; $0.phase = .preparing }

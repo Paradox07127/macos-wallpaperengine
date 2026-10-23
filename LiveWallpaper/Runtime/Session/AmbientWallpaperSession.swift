@@ -19,6 +19,8 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     /// The classified counterpart of `runtimeError`, mirroring `SceneWallpaperSession`: the
     /// transaction prefers it so a web failure reaches the surface as more than one bucket.
     private(set) var loadFailureCause: WallpaperFailureCause?
+    /// The HTML preparation generation that raised `runtimeError`; nil when no HTML page raised it.
+    private var runtimeErrorGeneration: UInt64?
     /// Manual pause is not an absence: the user may unpause any moment, so it
     /// gets its own much longer dwell instead of reusing the view's absence
     /// constant. Matches `SceneWallpaperSession.userPauseHibernationDelay`.
@@ -43,6 +45,9 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         self.wallpaperType = wallpaperType
         self.performanceTarget = performanceTarget
         self.userPauseHibernationDelay = userPauseHibernationDelay
+        (performanceTarget as? HTMLWallpaperView)?.onReady = { [weak self] generation in
+            self?.recordReady(generation: generation)
+        }
     }
 
     var summary: WallpaperSessionSummary {
@@ -166,6 +171,7 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         guard let retryTarget = performanceTarget as? any HTMLWallpaperRetrying else { return }
         let result = await retryTarget.retryCurrentSource(timeout: .seconds(5))
         guard result == .ready else { return }
+        runtimeErrorGeneration = nil
         loadFailureCause = nil
         runtimeError = nil
     }
@@ -199,7 +205,16 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     }
 
     func recordRuntimeError(_ error: WallpaperRuntimeError) {
+        runtimeErrorGeneration = (performanceTarget as? HTMLWallpaperView)?.preparationGeneration
         runtimeError = error
+    }
+
+    /// An older generation finishing must not clear a failure a newer one raised.
+    private func recordReady(generation: UInt64) {
+        guard let errorGeneration = runtimeErrorGeneration, errorGeneration <= generation else { return }
+        runtimeErrorGeneration = nil
+        loadFailureCause = nil
+        runtimeError = nil
     }
 
     /// nil: the failure that follows carries no classification, so a stale cause must not be republished with it.

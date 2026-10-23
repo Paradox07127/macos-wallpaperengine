@@ -84,6 +84,8 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     var onError: (@MainActor (WallpaperRuntimeError) -> Void)?
     /// Always precedes `onError`; nil clears a cause an earlier failure published.
     var onFailureCause: (@MainActor (WallpaperFailureCause?) -> Void)?
+    /// The `preparationGeneration` whose main document finished without failing.
+    var onReady: (@MainActor (UInt64) -> Void)?
     var preparationGeneration: UInt64 = 0
     var completedNavigationGeneration: UInt64?
     var failedPreparationGeneration: UInt64?
@@ -1071,6 +1073,7 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         // cause — unless this generation already failed: an HTTP error page finishes loading like any document.
         if failedPreparationGeneration != preparationGeneration {
             onFailureCause?(nil)
+            onReady?(preparationGeneration)
         }
         completedNavigationGeneration = preparationGeneration
         let volume = HTMLWallpaperRuntimeScript.jsNumber(lastAppliedConfig?.audioVolume ?? 1.0)

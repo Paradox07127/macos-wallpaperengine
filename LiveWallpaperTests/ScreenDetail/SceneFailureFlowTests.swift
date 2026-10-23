@@ -55,6 +55,73 @@ struct SceneFailureFlowTests {
         #expect(history.recovery(engineAssetsAuthorized: false) == [.openWorkshop("2934020506")])
     }
 
+    @MainActor
+    @Test("A runtime failure after the first frame reaches the summary and the failure workflow, and a recovered load clears both",
+          .timeLimit(.minutes(1)))
+    func runtimeFailureJoinsTheFailureFlow() async throws {
+        let fixture = try ParityLifecycleFixture.make()
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let window = NSWindow(contentRect: surface.mtkView.frame, styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = surface.mtkView
+        let session = SceneWallpaperSession(window: window, renderActor: actor, surface: surface)
+        let display = try #require(NSScreen.screens.first)
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false, powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(), playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(screens: [Screen(nsScreen: display)]), featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        let screen = try #require(manager.screens.first)
+        defer {
+            manager.tearDownForTermination()
+            manager.configurationStore.remove(for: screen.id)
+            fixture.cleanup()
+        }
+        var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(fixture.descriptor))
+        configuration.displayFingerprint = screen.displayFingerprint
+        manager.configurationStore.save(configuration)
+        session.startAdoptingParityScene(fixture.inputs(surface: surface, actor: actor))
+        try await Self.poll("the scene loaded") { await actor.rendererStateSnapshot()?.isLoaded == true }
+        // Drains the initial load, so its late success cannot race the injected failure below.
+        await session.reload()
+        #expect(session.loadError == nil)
+        screen.installRuntimeSession(session)
+        manager.observeRuntimeErrors(for: session)
+        #expect(screen.wallpaperSessionSummary.activity != .error)
+
+        // The renderer latches a runtime failure (a script watchdog, a video admission) and stops drawing.
+        var snapshot = try #require(await actor.rendererStateSnapshot())
+        snapshot.runtimeFailure = "executionTimedOut(operation: update)"
+        session.cacheRendererState(snapshot)
+
+        #expect(screen.wallpaperSessionSummary.activity == .error, "a stopped scene still reads as healthy in the summary")
+        #expect(screen.wallpaperSessionSummary.subtitle?.contains("executionTimedOut") == true)
+        try await Self.poll("a runtime-stage failed attempt") {
+            manager.wallpaperLoads.attempt(for: screen)?.failure?.stage == .runtime
+        }
+
+        await session.retry()
+        #expect(session.loadError == nil)
+        #expect(screen.wallpaperSessionSummary.activity != .error, "a recovered scene still reads as failed")
+        try await Self.poll("the runtime failure retired after recovery") {
+            manager.wallpaperLoads.attempt(for: screen) == nil
+        }
+    }
+
+    @MainActor
+    private static func poll(_ label: String, until condition: @MainActor () async -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while ContinuousClock.now < deadline {
+            if await condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        Issue.record("Timed out waiting for: \(label)")
+    }
+
     @Test("Unsafe schema paths are failures, not scenes without options")
     func unsafeSchemaPath() async {
         let result = await WPESceneProjectSchemaLoader.load(

@@ -1339,6 +1339,67 @@ struct AmbientHTMLUserRetryTests {
         #expect(session.runtimeError == nil)
         #expect(target.requestedTimeout == .seconds(5))
     }
+
+    @Test("An automatic reload that reaches readiness clears the error, while an HTTP error page finishing does not",
+          .timeLimit(.minutes(1)))
+    func automaticReloadReadinessClearsError() async throws {
+        let (view, session) = Self.wiredHTMLSession()
+        defer { session.cleanup() }
+        view.loadSource(.inline("<body>ready</body>"))
+        try await Self.waitForFinish(of: view)
+
+        view.reloadCurrentSource()
+        view.handleNavigationResponse(Self.serverError, isForMainFrame: true, currentURL: nil)
+        try await Self.waitForFinish(of: view)
+        #expect(session.runtimeError != nil, "an HTTP 500 document finishing cleared the error it raised")
+        #expect(session.summary.activity == .error)
+
+        // The scheduler's refresh path: a new generation that finishes without failing.
+        view.reloadCurrentSource()
+        try await Self.waitForFinish(of: view)
+        #expect(session.runtimeError == nil, "a recovered page still reports the earlier error")
+        #expect(session.loadFailureCause == nil)
+        #expect(session.summary.activity != .error)
+    }
+
+    @Test("Readiness from an older generation leaves a newer generation's error in place", .timeLimit(.minutes(1)))
+    func olderReadinessKeepsNewerError() async throws {
+        let (view, session) = Self.wiredHTMLSession()
+        defer { session.cleanup() }
+        view.loadSource(.inline("<body>ready</body>"))
+        try await Self.waitForFinish(of: view)
+        let older = view.preparationGeneration
+
+        view.reloadCurrentSource()
+        view.handleNavigationResponse(Self.serverError, isForMainFrame: true, currentURL: nil)
+        view.onReady?(older)
+
+        #expect(session.runtimeError != nil, "an older generation's readiness cleared a newer failure")
+        #expect(session.summary.activity == .error)
+    }
+
+    private static let serverError = HTTPURLResponse(
+        url: URL(string: "https://wallpaper.invalid/")!, statusCode: 500, httpVersion: nil, headerFields: nil
+    )!
+
+    /// Wired the way the session builder wires a real HTML wallpaper.
+    private static func wiredHTMLSession() -> (HTMLWallpaperView, AmbientWallpaperSession) {
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 32, height: 32), initialEphemeral: true)
+        let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: true)
+        window.contentView = view
+        let session = AmbientWallpaperSession(window: window, wallpaperType: .html, performanceTarget: view)
+        view.onError = { [weak session] in session?.recordRuntimeError($0) }
+        view.onFailureCause = { [weak session] in session?.recordLoadFailureCause($0) }
+        return (view, session)
+    }
+
+    private static func waitForFinish(of view: HTMLWallpaperView) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while view.completedNavigationGeneration != view.preparationGeneration, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(view.completedNavigationGeneration == view.preparationGeneration, "the inline page never finished loading")
+    }
 }
 
 @MainActor
