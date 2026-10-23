@@ -27,6 +27,8 @@ struct LibraryChipsRow: View {
     @Binding var sort: SavedLibraryModel.Sort
     @Binding var filter: SavedLibraryModel.Filter?
     let onImport: () -> Void
+    /// True shows Add to Library on the shelf too: with an empty library the shelf has nothing else to click.
+    var keepsImportOnShelf = false
 
     var body: some View {
         LibraryToolbarRow(centersFilters: true) {
@@ -39,10 +41,12 @@ struct LibraryChipsRow: View {
         } search: {
             AdaptiveLibrarySearch(text: $searchText, prompt: searchPrompt, shortPrompt: searchShortPrompt, stage: stage)
         } sort: {
-            LibrarySortControl(label: sortLabel) { sortMenu }
-                .id(stage.snappedIndex)
+            LibraryOnlyControl(stage: stage) {
+                LibrarySortControl(label: sortLabel) { sortMenu }
+                    .id(stage.snappedIndex)
+            }
         } actions: {
-            importButton
+            LibraryOnlyControl(stage: stage, pinned: keepsImportOnShelf) { importButton }
         }
     }
 
@@ -97,6 +101,26 @@ struct LibraryChipsRow: View {
         case let .storage(kind): Text(verbatim: kind.title)
         #endif
         }
+    }
+}
+
+/// A row control that fades in only as the row crosses from the shelf to the library. It stays laid out
+/// on the shelf, so the row does not reflow mid-swipe. `pinned` keeps it shown on the shelf as well.
+struct LibraryOnlyControl<Content: View>: View {
+    let stage: EditDeskStageModel
+    var pinned = false
+    @ViewBuilder let content: Content
+
+    static func opacity(progress: Double, pinned: Bool) -> Double {
+        pinned ? 1 : HomeHints.ramp(progress, from: StageGeometry.chipRowSwitchProgress, to: StageGeometry.libraryHandoffProgress)
+    }
+
+    var body: some View {
+        let opacity = Self.opacity(progress: stage.progress, pinned: pinned)
+        content
+            .opacity(opacity)
+            .allowsHitTesting(opacity > ShelfChromeRide.interactiveOpacity)
+            .accessibilityHidden(opacity <= ShelfChromeRide.interactiveOpacity)
     }
 }
 

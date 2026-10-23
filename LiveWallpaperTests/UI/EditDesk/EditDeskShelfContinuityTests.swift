@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import SwiftUI
 import Testing
 
 /// Sweeps the whole 0 → 2 gesture at 0.01 and proves the shelf chrome has no jump in it: every
@@ -130,6 +131,19 @@ struct EditDeskShelfContinuityTests {
         }
         #expect(row(0) == 0, "the filter row shows at rest")
         #expect(row(2) == 1, "the filter row is short of the library")
+    }
+
+    @Test("Sort and Add stay out of the shelf and fade in on the way to the library; an empty library keeps Add on the shelf")
+    func libraryOnlyControlsWaitForTheLibrary() {
+        let control = { (p: Double) in LibraryOnlyControl<EmptyView>.opacity(progress: p, pinned: false) }
+        for (index, p) in Self.samples.enumerated() where index > 0 {
+            #expect(control(p) >= control(Self.samples[index - 1]), Comment(rawValue: "the control dips at \(p)"))
+        }
+        #expect(control(1) == 0, "the shelf at rest shows Sort and Add")
+        #expect(control(2) == 1, "the library is short of Sort and Add")
+        for p in [0.0, 1, 2] {
+            #expect(LibraryOnlyControl<EmptyView>.opacity(progress: p, pinned: true) == 1, Comment(rawValue: "pinned Add hides at \(p)"))
+        }
     }
 
     @Test("The scrim fades in with the shelf and back out as its cards leave for the grid")
