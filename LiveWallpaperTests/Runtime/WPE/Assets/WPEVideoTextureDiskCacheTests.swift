@@ -6,10 +6,14 @@ import Testing
 @Suite("WPEVideoTextureDiskCache")
 struct WPEVideoTextureDiskCacheTests {
 
-    private func makeCache(maxBytes: UInt64 = WPEVideoTextureDiskCache.defaultMaxBytes) -> (WPEVideoTextureDiskCache, URL) {
+    private func makeCache(
+        maxBytes: UInt64 = WPEVideoTextureDiskCache.defaultMaxBytes,
+        releaseSweepDelay: Duration = WPEVideoTextureDiskCache.releaseSweepDelay
+    ) -> (WPEVideoTextureDiskCache, URL) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("wpe-tex-video-test-\(UUID().uuidString)", isDirectory: true)
-        return (WPEVideoTextureDiskCache(rootURL: root, maxBytes: maxBytes), root)
+        let cache = WPEVideoTextureDiskCache(rootURL: root, maxBytes: maxBytes, releaseSweepDelay: releaseSweepDelay)
+        return (cache, root)
     }
 
     @Test("Identical content under the same workshop dedups to one file")
@@ -208,6 +212,37 @@ struct WPEVideoTextureDiskCacheTests {
         #expect(stats.fileCount == 2)
         #expect(FileManager.default.fileExists(atPath: a.path))
         #expect(FileManager.default.fileExists(atPath: b.path))
+    }
+
+    @Test("Releasing the last lease brings an over-cap cache back under the cap", .timeLimit(.minutes(1)))
+    func releaseSweepConvergesUnderCap() async throws {
+        // 3500 bytes allocates 3500 or one 4 KiB block: two files exceed the cap either way, one fits.
+        let cap: UInt64 = 6000
+        let (cache, root) = makeCache(maxBytes: cap, releaseSweepDelay: .milliseconds(20))
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let released = try await cache.store(Data(repeating: 1, count: 3500), workshopID: "111")
+        let held = try await cache.store(Data(repeating: 2, count: 3500), workshopID: "222")
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1)],
+            ofItemAtPath: held.path
+        )
+        #expect(await cache.stats().totalBytes > cap)
+
+        await cache.release(released)
+
+        var stats = await cache.stats()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while stats.totalBytes > cap, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            stats = await cache.stats()
+        }
+        #expect(stats.totalBytes <= cap, "a fully released cache stays over the cap until the next store or launch")
+        #expect(FileManager.default.fileExists(atPath: released.path) == false)
+        #expect(
+            FileManager.default.fileExists(atPath: held.path),
+            "the sweep removed a leased file even though it is the oldest"
+        )
     }
 }
 #endif

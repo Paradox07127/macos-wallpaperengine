@@ -19,9 +19,13 @@ actor WPEVideoTextureDiskCache {
     /// An export that has not finished in this long lost its process.
     static let stripTemporaryMaxAge: TimeInterval = 60 * 60
 
+    /// A scene teardown releases all its video sources within a few frames; the delay folds that burst into one directory walk.
+    static let releaseSweepDelay: Duration = .seconds(5)
+
     private let rootURL: URL
     private let fileManager: FileManager
     private let maxBytes: UInt64
+    private let releaseSweepDelay: Duration
 
     /// Live lease refcounts (content-addressing can share one file across sources).
     private var leaseCounts: [String: Int] = [:]
@@ -30,10 +34,17 @@ actor WPEVideoTextureDiskCache {
     /// export on every load of the same scene.
     private var audioStripFailedKeys: Set<String> = []
 
-    init(rootURL: URL? = nil, maxBytes: UInt64 = WPEVideoTextureDiskCache.defaultMaxBytes) {
+    private var releaseSweep: Task<Void, Never>?
+
+    init(
+        rootURL: URL? = nil,
+        maxBytes: UInt64 = WPEVideoTextureDiskCache.defaultMaxBytes,
+        releaseSweepDelay: Duration = WPEVideoTextureDiskCache.releaseSweepDelay
+    ) {
         self.fileManager = .default
         self.rootURL = (rootURL ?? Self.defaultRootURL).standardizedFileURL
         self.maxBytes = maxBytes
+        self.releaseSweepDelay = releaseSweepDelay
     }
 
     nonisolated static var defaultRootURL: URL {
@@ -111,9 +122,23 @@ actor WPEVideoTextureDiskCache {
         guard let count = leaseCounts[path] else { return }
         if count <= 1 {
             leaseCounts.removeValue(forKey: path)
+            scheduleReleaseSweep()
         } else {
             leaseCounts[path] = count - 1
         }
+    }
+
+    private func scheduleReleaseSweep() {
+        releaseSweep?.cancel()
+        releaseSweep = Task(priority: .utility) { [weak self, releaseSweepDelay] in
+            do { try await Task.sleep(for: releaseSweepDelay) } catch { return }
+            await self?.runReleaseSweep()
+        }
+    }
+
+    private func runReleaseSweep() {
+        releaseSweep = nil
+        enforceSizeLimit()
     }
 
     // MARK: - Garbage collection
