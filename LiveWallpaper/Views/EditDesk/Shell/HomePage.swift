@@ -624,9 +624,7 @@ struct HomePage: View {
                 }
             },
             StageMenuItem(title: String(localized: "Clear Wallpaper", bundle: .appLanguage), isEnabled: configured) {
-                pendingDestructive = PendingDestructive(.clearCurrentWallpaper(displayName: screen.name)) {
-                    clearWallpaper(on: screen)
-                }
+                requestClearWallpaper(on: screen)
             },
         ]
         return [naming, wallpaper]
@@ -637,6 +635,12 @@ struct HomePage: View {
         guard let screen = screenManager.screens.first(where: { $0.id == id }) else { return }
         screenManager.setCustomName(name, for: screen)
         syncDisplays()
+    }
+
+    private func requestClearWallpaper(on screen: Screen) {
+        pendingDestructive = PendingDestructive(.clearCurrentWallpaper(displayName: screen.name)) {
+            clearWallpaper(on: screen)
+        }
     }
 
     private func clearWallpaper(on screen: Screen) {
@@ -902,22 +906,12 @@ struct HomePage: View {
     private var hoverPlayback: some View {
         ZStack {
             if let playback = stage.hoveredPlayback {
-                HStack(spacing: 12) {
-                    if playback.showsPlaylistControls {
-                        GlassIconButton("backward.end.fill") { stage.emit(.playbackTapped(playback.displayID, .previous)) }
-                            .disabled(!playback.canChangeEntry)
-                            .help(Text("Previous Wallpaper"))
-                    }
-                    GlassIconButton(playback.glyph) { stage.emit(.playbackTapped(playback.displayID, .toggle)) }
-                        .disabled(!playback.canToggle)
-                        .help(Text(playback.intendsToPlay ? "Pause" : "Play"))
-                    if playback.showsPlaylistControls {
-                        GlassIconButton("forward.end.fill") { stage.emit(.playbackTapped(playback.displayID, .next)) }
-                            .disabled(!playback.canChangeEntry)
-                            .help(Text("Next Wallpaper"))
-                    }
+                ZStack {
+                    transport(playback)
+                    GlassIconButton("trash", role: .destructive) { stage.emit(.clearWallpaperTapped(playback.displayID)) }
+                        .help(Text("Clear Wallpaper"))
+                        .position(x: playback.clearRect.midX, y: playback.clearRect.midY)
                 }
-                .position(x: playback.rect.midX, y: playback.rect.midY)
                 // One view per display: moving straight onto another fades rather than slides across the gap.
                 .id(playback.displayID)
                 .transition(.opacity)
@@ -927,6 +921,25 @@ struct HomePage: View {
         // VoiceOver presses these through the display's own actions on the stage.
         .accessibilityHidden(true)
         .animation(DesignTokens.Motion.stateChange, value: stage.hoveredPlayback?.displayID)
+    }
+
+    private func transport(_ playback: StagePlaybackOverlay) -> some View {
+        HStack(spacing: 12) {
+            if playback.showsPlaylistControls {
+                GlassIconButton("backward.end.fill") { stage.emit(.playbackTapped(playback.displayID, .previous)) }
+                    .disabled(!playback.canChangeEntry)
+                    .help(Text("Previous Wallpaper"))
+            }
+            GlassIconButton(playback.glyph) { stage.emit(.playbackTapped(playback.displayID, .toggle)) }
+                .disabled(!playback.canToggle)
+                .help(Text(playback.intendsToPlay ? "Pause" : "Play"))
+            if playback.showsPlaylistControls {
+                GlassIconButton("forward.end.fill") { stage.emit(.playbackTapped(playback.displayID, .next)) }
+                    .disabled(!playback.canChangeEntry)
+                    .help(Text("Next Wallpaper"))
+            }
+        }
+        .position(x: playback.rect.midX, y: playback.rect.midY)
     }
 
     private static func chipID(_ chip: SavedLibraryModel.Chip) -> String {
@@ -1734,6 +1747,9 @@ struct HomePage: View {
                 case .previous:
                     screenManager.regressPlaylist(for: screen)
                 }
+            case let .clearWallpaperTapped(id):
+                guard let screen = screenManager.screens.first(where: { $0.id == id }) else { continue }
+                requestClearWallpaper(on: screen)
             case let .emptyActionTapped(id, action):
                 guard let screen = screenManager.screens.first(where: { $0.id == id }) else { continue }
                 switch action {

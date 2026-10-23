@@ -415,6 +415,21 @@ struct StageGeometryTests {
         #expect(near(layout.container.width - (layout.buttons.last?.maxX ?? 0), inset.width, 0.001))
     }
 
+    @Test("The Clear Wallpaper button lines up with the transport's trailing edge, in the top corner or below a capsule")
+    func clearButtonSitsTopRight() {
+        let size = CGSize(width: 480, height: 270)
+        let transport = StageGeometry.playbackLayout(content: size, showsPlaylistControls: false)
+        let last = transport.buttons[0].offsetBy(dx: transport.container.minX, dy: transport.container.minY)
+        let corner = StageGeometry.clearButtonRect(content: size, below: nil)
+        #expect(corner.size == last.size)
+        #expect(near(corner.maxX, last.maxX, 0.001))
+        #expect(near(corner.minY, size.height - last.maxY, 0.001), Comment(rawValue: "\(corner) vs \(last)"))
+        let chip = CGRect(x: 380, y: 8, width: 90, height: 24)
+        let below = StageGeometry.clearButtonRect(content: size, below: chip)
+        #expect(near(below.minY, chip.maxY + StageGeometry.clearButtonChipGap, 0.001))
+        #expect(below.maxX == corner.maxX)
+    }
+
     // MARK: Shelf row
 
     @Test("Folder row: 84pt pitch, 200×112 cards, 136pt above the window bottom, leading ≥ 48")

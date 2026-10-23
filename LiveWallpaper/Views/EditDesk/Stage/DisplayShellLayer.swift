@@ -266,11 +266,7 @@ final class DisplayShellLayer {
         meta.frame = CGRect(x: 10, y: size.height - 25, width: lineWidth, height: 17)
         veil.frame = content.bounds
         let width = min(stateWidth, max(0, size.width - 20))
-        let trailing = switch display?.state {
-        case .paused?, .preparing?, .off?: true
-        default: false
-        }
-        stateGroup.frame = CGRect(x: trailing ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
+        stateGroup.frame = CGRect(x: stateChipTrails ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
         stateGroup.cornerRadius = stateGroup.bounds.height / 2
         stateLabel.frame = CGRect(x: 27, y: 4, width: max(0, width - 34), height: 17)
         stateSymbol.frame = CGRect(x: 8, y: 6, width: 13, height: 13)
@@ -341,6 +337,18 @@ final class DisplayShellLayer {
     private func stopShake() {
         shakeElapsed = nil
         layer.sublayerTransform = CATransform3DIdentity
+    }
+
+    private var stateChipTrails: Bool {
+        switch display?.state {
+        case .paused?, .preparing?, .off?: true
+        default: false
+        }
+    }
+
+    /// The state capsule in content coordinates while it sits in the top-right corner; nil when it is on the left or hidden.
+    var trailingStateChipFrame: CGRect? {
+        stateChipTrails ? stateGroup.frame : nil
     }
 
     /// The transport buttons VoiceOver may press, in the home page's order: the enabled ones, whether or not the pointer shows them.

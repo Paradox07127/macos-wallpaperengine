@@ -666,8 +666,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         )
         let row = layout.buttons.reduce(CGRect.null) { $0.union($1) }
             .offsetBy(dx: layout.container.minX, dy: layout.container.minY)
+        let clear = StageGeometry.clearButtonRect(content: shell.content.bounds.size, below: shell.trailingStateChipFrame)
         model.report(hoveredPlayback: StagePlaybackOverlay(
-            displayID: id, rect: shell.content.convert(row, to: root), intendsToPlay: display.intendsToPlay,
+            displayID: id, rect: shell.content.convert(row, to: root), clearRect: shell.content.convert(clear, to: root),
+            intendsToPlay: display.intendsToPlay,
             glyph: display.playbackGlyph, showsPlaylistControls: display.showsPlaylistControls,
             canToggle: display.canTogglePlayback, canChangeEntry: display.canChangePlaylistEntry
         ))
@@ -1969,7 +1971,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 displayAction(String(localized: "Paste URL", bundle: .appLanguage), emitting: .emptyActionTapped(id, .pasteURL)),
             ]
         }
-        return (displayLayers[id]?.accessiblePlaybackActions ?? []).map { action in
+        let transport = (displayLayers[id]?.accessiblePlaybackActions ?? []).map { action in
             let name = switch action {
             case .previous: String(localized: "Previous Wallpaper", bundle: .appLanguage)
             case .toggle where display.intendsToPlay: String(localized: "Pause", bundle: .appLanguage)
@@ -1978,6 +1980,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             return displayAction(name, emitting: .playbackTapped(id, action))
         }
+        return transport + [
+            displayAction(String(localized: "Clear Wallpaper", bundle: .appLanguage), emitting: .clearWallpaperTapped(id)),
+        ]
     }
 
     private func rebuildAccessibility() {

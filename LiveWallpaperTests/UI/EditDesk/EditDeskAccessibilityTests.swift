@@ -43,7 +43,7 @@ struct EditDeskAccessibilityTests {
         let actions = try #require(empty.accessibilityCustomActions())
         #expect(actions.map(\.name) == [label("Choose File"), label("Paste URL")])
         // A display that already has a wallpaper must not offer them.
-        #expect(filled.accessibilityCustomActions()?.isEmpty == true)
+        #expect(filled.accessibilityCustomActions()?.map(\.name) == [label("Clear Wallpaper")])
         try #require(actions[0].handler?() == true)
         #expect(await events.next() == .emptyActionTapped(1, .chooseFile))
         try #require(actions[1].handler?() == true)

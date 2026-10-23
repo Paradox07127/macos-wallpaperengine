@@ -222,6 +222,8 @@ struct StagePlaybackOverlay: Equatable {
     let displayID: StageDisplay.ID
     /// The button row's slot in stage coordinates, as the stage transform draws it; the buttons centre on it.
     let rect: CGRect
+    /// The Clear Wallpaper button's frame in the same coordinates.
+    let clearRect: CGRect
     let intendsToPlay: Bool
     let glyph: String
     let showsPlaylistControls: Bool
@@ -255,6 +257,7 @@ enum StageEvent: Equatable, Sendable {
     case filesDroppedOnShelf([URL])
     case dropCancelled(card: StageCard.ID)
     case playbackTapped(StageDisplay.ID, StagePlaybackAction)
+    case clearWallpaperTapped(StageDisplay.ID)
     case snapped(Int)
 }
 

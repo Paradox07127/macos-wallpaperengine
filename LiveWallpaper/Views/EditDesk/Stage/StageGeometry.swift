@@ -516,6 +516,18 @@ enum StageGeometry {
         )
     }
 
+    static let clearButtonChipGap: CGFloat = 6
+
+    /// The hovered display's Clear Wallpaper button, top-right and as far in from that corner as the transport's
+    /// last button is from its own. `chip` is a state capsule already in that corner; the button drops below it.
+    static func clearButtonRect(content size: CGSize, below chip: CGRect?) -> CGRect {
+        CGRect(
+            x: size.width - playbackTrailingMargin - playbackInset.width - playbackButtonSide,
+            y: chip.map { $0.maxY + clearButtonChipGap } ?? playbackBottomMargin + playbackInset.height,
+            width: playbackButtonSide, height: playbackButtonSide
+        )
+    }
+
     // MARK: Empty screen (S9)
 
     static let emptyScreenSymbolMaxSide: CGFloat = 64

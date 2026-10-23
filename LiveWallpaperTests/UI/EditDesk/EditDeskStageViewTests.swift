@@ -3256,7 +3256,7 @@ struct EditDeskStageViewTests {
         #expect(await events.next() == .displayTapped(2))
     }
 
-    @Test("VoiceOver reaches both entry points on an empty display and neither on a wallpapered one")
+    @Test("VoiceOver reaches both entry points on an empty display, and a wallpapered one offers only Clear Wallpaper")
     func emptyScreenAccessibilityActions() async throws {
         let model = makeModel()
         let view = EditDeskStageView(model: model)
@@ -3271,7 +3271,9 @@ struct EditDeskStageViewTests {
             String(localized: "Choose File", bundle: .appLanguage),
             String(localized: "Paste URL", bundle: .appLanguage),
         ])
-        #expect((filled as? NSAccessibilityElement)?.accessibilityCustomActions()?.isEmpty == true)
+        #expect((filled as? NSAccessibilityElement)?.accessibilityCustomActions()?.map(\.name) == [
+            String(localized: "Clear Wallpaper", bundle: .appLanguage),
+        ])
         var events = model.events.makeAsyncIterator()
         #expect(actions[1].handler?() == true)
         #expect(await events.next() == .emptyActionTapped(2, .pasteURL))
@@ -3409,6 +3411,17 @@ struct EditDeskStageViewTests {
         show { $0.canTogglePlayback = false }
         #expect(try hover(1)?.canToggle == false)
 
+        // The Clear Wallpaper button takes the top-right corner, and drops below a state capsule already there.
+        let shell = try #require(view.displayLayers[1])
+        let size = shell.content.bounds.size
+        let corner = StageGeometry.clearButtonRect(content: size, below: nil)
+        #expect(try hover(1)?.clearRect == shell.content.convert(corner, to: root))
+        show { $0.state = .paused(reasonText: "Paused") }
+        let chip = try #require(shell.trailingStateChipFrame, "a paused display's capsule is not top-right")
+        let below = try #require(try hover(1)).clearRect
+        #expect(below == shell.content.convert(StageGeometry.clearButtonRect(content: size, below: chip), to: root))
+        #expect(!shell.content.convert(chip, to: root).intersects(below), "the button covers the state capsule")
+
         #expect(try hover(2) == nil, "an empty display has nothing to play")
     }
 
@@ -3433,18 +3446,21 @@ struct EditDeskStageViewTests {
             String(localized: "Previous Wallpaper", bundle: .appLanguage),
             String(localized: "Pause", bundle: .appLanguage),
             String(localized: "Next Wallpaper", bundle: .appLanguage),
+            String(localized: "Clear Wallpaper", bundle: .appLanguage),
         ])
         var events = model.events.makeAsyncIterator()
         for (action, expected) in zip(offered, [StagePlaybackAction.previous, .toggle, .next]) {
             try #require(action.handler?() == true)
             #expect(await events.next() == .playbackTapped(1, expected))
         }
-        // Control: all three buttons still drawn, but dimmed, so none is offered.
+        try #require(offered[3].handler?() == true)
+        #expect(await events.next() == .clearWallpaperTapped(1))
+        // Control: all three transport buttons still drawn, but dimmed, so only Clear Wallpaper is offered.
         model.displays[0].canChangePlaylistEntry = false
         model.displays[0].canTogglePlayback = false
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()
-        #expect(try actions().isEmpty)
+        #expect(try actions().map(\.name) == [String(localized: "Clear Wallpaper", bundle: .appLanguage)])
     }
 
     @Test("The shell's state pill rounds to at most half its size")
