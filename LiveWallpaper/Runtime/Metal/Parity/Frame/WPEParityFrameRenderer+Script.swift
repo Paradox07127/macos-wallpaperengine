@@ -517,7 +517,9 @@ extension WPEParityFrameRenderer {
     func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, pointer: SIMD2<Float>,
                          edges: [(position: SIMD2<Float>, down: Bool)], buttonDown: Bool,
                          timeOfDay: Float) throws {
-        try script.updateCursorTargets(state: instance.state, quad: { try cursorQuad($0, camera: camera) })
+        var placed = layers
+        placed.camera = camera
+        try script.updateCursorTargets(state: instance.state, quad: { try cursorQuad($0, placed: placed) })
         for edge in edges {
             script.cursor(at: edge.position * logicalSize, world: camera.cursorWorld(normalizedPointer: edge.position),
                           leftDown: edge.down, timeOfDay: timeOfDay, state: &instance.state)
@@ -529,13 +531,19 @@ extension WPEParityFrameRenderer {
     /// A layer's mesh corners in client pixels, y down, with its frame's parallax (140189e10.c:124-156).
     func cursorQuad(_ id: String,
                     camera: WPEParityCamera) throws -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)? {
-        guard let size = layers.layers[id]?.size, size.x > 0, size.y > 0 else { return nil }
         var placed = layers
         placed.camera = camera
+        return try cursorQuad(id, placed: placed)
+    }
+
+    /// `placed` is the frame's layer set already carrying the cursor pass's camera.
+    func cursorQuad(_ id: String, placed: WPEParityLayerTransformSet)
+        throws -> (SIMD2<Float>, SIMD2<Float>, SIMD2<Float>, SIMD2<Float>)? {
+        guard let size = placed.layers[id]?.size, size.x > 0, size.y > 0 else { return nil }
         var model = placed.model(id)
         // A text box also takes its glyphs' anchor (1402585c0.c:35-148) and block offset (140256f20.c:302-325).
         if let text = texts[id] {
-            let anchor = WPEParityTextMatrices.anchorOffset(text.object.anchor, margins: camera.cropMargins,
+            let anchor = WPEParityTextMatrices.anchorOffset(text.object.anchor, margins: placed.camera.cropMargins,
                                                             orthographic: text.orthographic)
             model = WPEParityTextMatrices.layerModel(model, anchorOffset: anchor, blockOffset: text.layout.blockOffset)
         }

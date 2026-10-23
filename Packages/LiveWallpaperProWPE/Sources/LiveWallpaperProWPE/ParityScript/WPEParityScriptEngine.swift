@@ -652,14 +652,17 @@ public final class WPEParityScriptEngine {
         if input.leftDown, !wasDown {
             globals[13] = 1
         }
-        let payload = "{\"world\":[\(input.cursorWorld.x),\(input.cursorWorld.y),\(input.cursorWorld.z)],"
-            + "\"local\":[\(input.cursorWorld.x),\(input.cursorWorld.y),\(input.cursorWorld.z)],\"hitBox\":null}"
-        run(state: &state) {
-            for dispatch in dispatches {
-                guard !executionLimiter.didTimeOut else { break }
-                guard let target = layers.firstIndex(where: { $0.id == dispatch.id }) else { continue }
-                count(dispatch.event)
-                invokeHost("dispatch", withArguments: [dispatch.event.rawValue, target, payload])
+        // Without events no JS runs, so the mirror and flush of `run` are left to the next entry this frame.
+        if !dispatches.isEmpty {
+            let payload = "{\"world\":[\(input.cursorWorld.x),\(input.cursorWorld.y),\(input.cursorWorld.z)],"
+                + "\"local\":[\(input.cursorWorld.x),\(input.cursorWorld.y),\(input.cursorWorld.z)],\"hitBox\":null}"
+            run(state: &state) {
+                for dispatch in dispatches {
+                    guard !executionLimiter.didTimeOut else { break }
+                    guard let target = layers.firstIndex(where: { $0.id == dispatch.id }) else { continue }
+                    count(dispatch.event)
+                    invokeHost("dispatch", withArguments: [dispatch.event.rawValue, target, payload])
+                }
             }
         }
         if !input.leftDown, wasDown {
