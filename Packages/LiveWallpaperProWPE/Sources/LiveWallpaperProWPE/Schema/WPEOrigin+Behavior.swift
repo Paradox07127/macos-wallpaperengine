@@ -10,14 +10,6 @@ extension WPEOrigin {
         return sourcePreviewURL(in: sourceFolder)
     }
 
-    public var sourceEntryURL: URL? {
-        guard entryFile != nil,
-              let sourceFolder = try? SecurityScopedBookmarkResolver.shared.resolve(sourceFolderBookmark, target: .transient).get().url else {
-            return nil
-        }
-        return sourceEntryURL(in: sourceFolder)
-    }
-
     /// Best-effort check.
     public static func matchesBookmark(_ bookmarkData: Data, origin: WPEOrigin) -> Bool {
         switch origin.resourceLocation {

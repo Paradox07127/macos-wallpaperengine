@@ -217,11 +217,6 @@ public struct WPETexInfo: Sendable, Equatable {
     public var noInterpolation: Bool {
         flags & Self.noInterpolationFlag != 0
     }
-
-    /// Sample as LUMINANCE_ALPHA → (R, R, R, G): R luminance to RGB, G alpha. Uploading RG88 as `.rg8Unorm` samples (R, G, 0, 1) and renders opaque.
-    public var isRG88LuminanceAlpha: Bool {
-        format == .rg88
-    }
 }
 
 public struct WPETexMipmap: Sendable, Equatable {
@@ -480,34 +475,5 @@ public struct DecodedRGBAImage: Sendable, Equatable {
         self.width = width
         self.height = height
         self.pixels = pixels
-    }
-}
-
-public extension DecodedRGBAImage {
-    func makeCGImage() throws -> CGImage {
-        let bitsPerComponent = 8
-        let bitsPerPixel = 32
-        let bytesPerRow = width * 4
-        guard let provider = CGDataProvider(data: pixels as CFData) else {
-            throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "CGDataProvider init failed")
-        }
-        let space = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue)
-        guard let image = CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: bitsPerComponent,
-            bitsPerPixel: bitsPerPixel,
-            bytesPerRow: bytesPerRow,
-            space: space,
-            bitmapInfo: bitmapInfo,
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-        ) else {
-            throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "CGImage init failed")
-        }
-        return image
     }
 }
