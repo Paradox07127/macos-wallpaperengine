@@ -112,6 +112,26 @@ final class ParityTextPipelineTests: XCTestCase {
         try Self.assertUVsMatchAtlas(pipeline, "A")
     }
 
+    func testAtlasGrowthPutsEveryLayerSharingItIntoTheUpdateInSceneOrder() throws {
+        let pipeline = try Self.makePipeline()
+        try pipeline.add(Self.object("B", "cd", pointSize: 256), effectCount: 0, glyphMode: .bitmap)
+        try pipeline.add(Self.object("A", "ab", pointSize: 256), effectCount: 0, glyphMode: .bitmap)
+        pipeline.refreshUVs()
+        let key = try XCTUnwrap(pipeline.texts["A"]?.atlasKey)
+        XCTAssertEqual(pipeline.texts["B"]?.atlasKey, key)
+        let atlas = try XCTUnwrap(pipeline.atlases[key]).mono
+        let prepared = try XCTUnwrap(pipeline.prepareRelayouts([.init(Self.object("A", "ABCDEFGH", pointSize: 256))]))
+        let grown = try XCTUnwrap(prepared.atlases[key]).mono
+        XCTAssertGreaterThan(grown.width, atlas.width, "the new glyphs fit without growing the atlas")
+        XCTAssertEqual(grown.resetGeneration, atlas.resetGeneration, "the atlas reset instead of growing")
+        XCTAssertEqual(prepared.changedObjectIDs, ["B", "A"], "a layer sharing the grown atlas is missing from the update")
+        XCTAssertEqual(prepared.delta.changes.map(\.current.object.id), ["B", "A"],
+                       "the delta drops the other reader's halved UVs or leaves scene order")
+        _ = try pipeline.accept(prepared)
+        try Self.assertUVsMatchAtlas(pipeline, "B")
+        try Self.assertUVsMatchAtlas(pipeline, "A")
+    }
+
     func testRelayoutDeltaCarriesDrawAndFBOChangesWithoutSpeculativeLayout() throws {
         let pipeline = try Self.makePipeline()
         try pipeline.add(Self.object("D", "Hi"), effectCount: 0, glyphMode: .bitmap)

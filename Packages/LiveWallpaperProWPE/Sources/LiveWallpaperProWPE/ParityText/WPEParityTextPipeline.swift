@@ -148,7 +148,7 @@ public final class WPEParityTextPipeline {
                     throw WPEParityTextPreparationError.nonfiniteDrawParameters
                 }
             }
-            let beforeStep = next
+            var beforeStep: [String: WPEParitySceneText] = [object.id: current]
             if !object.needsRebuild(from: current.object), effects == current.effectCount, glyphMode == previousMode {
                 next[object.id] = WPEParitySceneText(object: object, effectCount: current.effectCount,
                                                      layout: current.layout, atlasKey: current.atlasKey, hdr: hdr,
@@ -166,22 +166,27 @@ public final class WPEParityTextPipeline {
                 for id in order {
                     guard var text = next[id], text.atlasKey == key || text.atlasKey == current.atlasKey,
                           id == object.id || text.atlasKey != stale else { continue }
+                    if beforeStep[id] == nil {
+                        beforeStep[id] = text
+                    }
                     planner.refreshUVs(&text.layout, atlasKey: text.atlasKey, prepared: plan)
                     next[id] = text
                 }
             }
-            for id in order where beforeStep[id] != next[id] {
+            for (id, previous) in beforeStep where previous != next[id] {
                 changed.insert(id)
             }
         }
         guard !changed.isEmpty else { return nil }
-        let delta = WPEParityTextRelayoutDelta(changes: order.compactMap { id in
+        // An id never entered into `changed` was never written to a different value, so it still equals `texts`.
+        let changedObjectIDs = order.filter { changed.contains($0) }
+        let delta = WPEParityTextRelayoutDelta(changes: changedObjectIDs.compactMap { id in
             guard let previous = texts[id], let current = next[id], previous != current else { return nil }
             return WPEParityTextRelayoutDelta.Change(previous: previous, current: current)
         })
         return PreparedUpdate(owner: self, revision: revision, texts: next,
                               atlases: prepared?.atlases ?? planner.atlases, delta: delta,
-                              changedObjectIDs: order.filter { changed.contains($0) }, plan: prepared)
+                              changedObjectIDs: changedObjectIDs, plan: prepared)
     }
 
     /// The caller must publish its successful GPU candidate immediately after this, with no throw or await
