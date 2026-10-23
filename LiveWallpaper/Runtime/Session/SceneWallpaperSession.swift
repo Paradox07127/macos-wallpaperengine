@@ -337,7 +337,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let didCommit = await renderActor.commitScenePropertyPatch(
             prepared, updatedDescriptor: updatedDescriptor
         )
-        scenePropertyPosterCommitGate.resolve(posterCommit, result: didCommit)
         return didCommit
     }
 
@@ -662,7 +661,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let wake = wakeTask
         wakeTask?.cancel()
         wakeTask = nil
-        scenePropertyPosterCommitGate.invalidate()
         requiresSystemAudioCapture = false
         reconcileSystemAudioCaptureDemand()
         hasPresentedFrame = nil
