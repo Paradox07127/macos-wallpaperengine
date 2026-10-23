@@ -98,7 +98,7 @@ final class WPEParityFrameCostTests: XCTestCase {
         XCTAssertTrue(before.draws.keys.contains { !textOperations.contains($0) }, "the scene needs another draw")
         let layouts = renderer.frameLayoutCalls
 
-        renderer.state.setScriptField("text", of: Self.textID, to: .string("12:10"), invalidating: .textLayout)
+        renderer.instance.state.setScriptField("text", of: Self.textID, to: .string("12:10"), invalidating: .textLayout)
         try await encode(renderer, label: "12:10")
         let after = renderer.textPreparationState
         let previous = try XCTUnwrap(before.texts[Self.textID])

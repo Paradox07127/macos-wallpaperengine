@@ -144,7 +144,7 @@ extension WPEParitySceneDriverTests {
         try renderer.applyUserProperties(unchanged, changedJSON: next, mergedJSON: next)
         try await frame(5, eye: SIMD2(4, 0), point: SIMD2(4, 8))
         // Finite Mac formula admission for speed/roughness; no new UCRT/Darwin native0ULP oracle.
-        let t = Float(renderer.clock.timeUniform + renderer.clock.frametime) * 4
+        let t = Float(renderer.instance.clock.timeUniform + renderer.instance.clock.frametime) * 4
         let x = cos(t), y = sin(Float(1.333) * t)
         let length = sqrt(x * x + y * y)
         let remap = pow(length, Float(8))
@@ -156,9 +156,9 @@ extension WPEParitySceneDriverTests {
                                          changedJSON: paused, mergedJSON: paused)
         for (name, value): (String, Float) in [("camerashake", 1), ("camerashakespeed", 2),
                                                ("camerashakeamplitude", 1), ("camerashakeroughness", 2)] {
-            XCTAssertEqual(renderer.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+            XCTAssertEqual(renderer.instance.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
         }
-        XCTAssertEqual(renderer.state.object("1")?.visible, false)
+        XCTAssertEqual(renderer.instance.state.object("1")?.visible, false)
         let coldDriver = try WPEParitySceneDriver(device: device)
         defer { coldDriver.cleanup() }
         let cold = try document(enabled: "true", speed: "3", amplitude: false, roughness: [1], scripts: false, witness: false)
@@ -170,7 +170,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertFalse(coldDriver.needsContinuousFrames)
         for (name, value): (String, Float) in [("camerashake", 0), ("camerashakespeed", 3),
                                                ("camerashakeamplitude", 0.5), ("camerashakeroughness", 1)] {
-            XCTAssertEqual(coldRenderer.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+            XCTAssertEqual(coldRenderer.instance.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
         }
         let enabled = try document(enabled: true, scripts: false, witness: false)
         try coldRenderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: cold, to: enabled)))

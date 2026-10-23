@@ -24,11 +24,11 @@ extension WPEParitySceneDriverTests {
         """)
         defer { driver.cleanup() }
         let renderer = try XCTUnwrap(driver.renderer)
-        XCTAssertEqual(renderer.state.scriptField("solid", of: "20"), .vector(SIMD4(1, 0, 0, 0)),
+        XCTAssertEqual(renderer.instance.state.scriptField("solid", of: "20"), .vector(SIMD4(1, 0, 0, 0)),
                        "init must write through the real script engine before the first cursor pass")
         for (frame, top, below, nextSolid) in [(1, 1, 1, false), (2, 1, 2, true), (3, 2, 3, true)] {
             try await cursorFlagsFrame(driver, layer: layer, frame: frame, topMoves: top, belowMoves: below)
-            XCTAssertEqual(renderer.state.scriptField("solid", of: "20"),
+            XCTAssertEqual(renderer.instance.state.scriptField("solid", of: "20"),
                            .vector(SIMD4(nextSolid ? 1 : 0, 0, 0, 0)), "frame \(frame)")
         }
     }
@@ -52,13 +52,13 @@ extension WPEParitySceneDriverTests {
         """)
         defer { driver.cleanup() }
         let renderer = try XCTUnwrap(driver.renderer)
-        XCTAssertEqual(renderer.state.scriptField("disablepropagation", of: "20"), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.scriptField("disablepropagation", of: "20"), .vector(SIMD4(1, 0, 0, 0)))
         // Native visibility qualifies only the propagation break. An invisible hit still gets its cursor event.
         for (frame, below) in [(1, 0), (2, 1), (3, 1), (4, 2), (5, 3), (6, 3)] {
             try await cursorFlagsFrame(driver, layer: layer, frame: frame, topMoves: frame, belowMoves: below)
-            XCTAssertEqual(renderer.state.scriptField("disablepropagation", of: "20"),
+            XCTAssertEqual(renderer.instance.state.scriptField("disablepropagation", of: "20"),
                            .vector(SIMD4(frame == 1 ? 0 : 1, 0, 0, 0)), "frame \(frame)")
-            XCTAssertEqual(renderer.state.isVisible("20"), frame != 3 && frame != 4,
+            XCTAssertEqual(renderer.instance.state.isVisible("20"), frame != 3 && frame != 4,
                            "update changes this frame's drawing and the next cursor pass; frame \(frame)")
         }
     }
@@ -151,7 +151,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(driver.loadDiagnostics)
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script, "actual product load must attach SceneScript")
+        let script = try XCTUnwrap(renderer.instance.script, "actual product load must attach SceneScript")
         XCTAssertTrue(script.handlesCursor)
         XCTAssertEqual(script.engine.bindings.filter(\.compiled).count, 2)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
@@ -177,11 +177,11 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(command.error)
         XCTAssertTrue(driver.hasPresentedFrame)
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script)
+        let script = try XCTUnwrap(renderer.instance.script)
         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(try XCTUnwrap(renderer.state.object("20")).alpha, Float(topMoves) / 8, "top frame \(frame)")
-        XCTAssertEqual(try XCTUnwrap(renderer.state.object("10")).alpha, Float(belowMoves) / 8, "below frame \(frame)")
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("20")).alpha, Float(topMoves) / 8, "top frame \(frame)")
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("10")).alpha, Float(belowMoves) / 8, "below frame \(frame)")
         let texture = try XCTUnwrap(layer.lastTexture, "required actual presented drawable")
         XCTAssertEqual([texture.width, texture.height], [160, 96])
         let pixels = try readBack(texture, device: texture.device)

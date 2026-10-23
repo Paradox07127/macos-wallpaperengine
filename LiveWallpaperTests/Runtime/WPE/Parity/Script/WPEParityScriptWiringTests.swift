@@ -126,7 +126,7 @@ final class WPEParityScriptWiringTests: XCTestCase {
         var seen: [Float] = []
         for frame in 1 ... 4 {
             try await encode(fixture.renderer)
-            XCTAssertEqual(fixture.renderer.state.scriptField("fov", of: "901"), .vector(SIMD4(10 + Float(frame), 0, 0, 0)))
+            XCTAssertEqual(fixture.renderer.instance.state.scriptField("fov", of: "901"), .vector(SIMD4(10 + Float(frame), 0, 0, 0)))
             let camera = fixture.renderer.pathCamera
             let fov = try XCTUnwrap(camera.scenePerspective).fov
             seen.append(fov)
@@ -278,8 +278,8 @@ final class WPEParityScriptWiringTests: XCTestCase {
             try await encode(fixture.renderer)
             XCTAssertTrue(fixture.renderer.skipped.isEmpty, "\(fixture.renderer.skipped)")
             XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
-            XCTAssertEqual(fixture.renderer.state.constant("querycolor", of: first)?.value, SIMD4(0.5, 1, 1, 0))
-            XCTAssertEqual(fixture.renderer.state.constant("querycolor", of: last)?.value,
+            XCTAssertEqual(fixture.renderer.instance.state.constant("querycolor", of: first)?.value, SIMD4(0.5, 1, 1, 0))
+            XCTAssertEqual(fixture.renderer.instance.state.constant("querycolor", of: last)?.value,
                            frame == 1 ? SIMD4(1, 0.5, 1, 0) : SIMD4(1, 1, 0.25, 0))
             for entry in fixture.renderer.lastFrameDraws {
                 if let pipeline = pipelines[entry.operation] {
@@ -347,7 +347,7 @@ final class WPEParityScriptWiringTests: XCTestCase {
                               host: WPEParitySceneScript.Host = .init()) throws -> WPEParitySceneScript {
         let renderer = fixture.renderer
         let script = try WPEParitySceneScript(
-            document: fixture.plan.document, state: renderer.state, assets: fixture.plan.scene.assets,
+            document: fixture.plan.document, state: renderer.instance.state, assets: fixture.plan.scene.assets,
             canvasSize: renderer.pathCamera.size,
             screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
             materialConstants: fixture.plan.materialConstants, resolvedEffectRecords: fixture.plan.scene.resolvedEffectRecords,

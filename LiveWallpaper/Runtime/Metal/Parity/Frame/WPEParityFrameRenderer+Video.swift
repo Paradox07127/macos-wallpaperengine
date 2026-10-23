@@ -24,7 +24,7 @@ extension WPEParityFrameRenderer {
     }
 
     private var videoLayoutStamp: [Int] {
-        [state.membershipGeneration, state.effectVisibilityGeneration, plannerRevision]
+        [instance.state.membershipGeneration, instance.state.effectVisibilityGeneration, plannerRevision]
     }
 
     var pendingVideoAdmission: VideoAdmission? {
@@ -65,13 +65,13 @@ extension WPEParityFrameRenderer {
         guard pendingVideoAdmission?.id == request.id, var pending = pendingVideoLayout else { return false }
         // Visibility, post settings and model buffers can keep changing while disk admission suspends.
         // Re-plan their current versions using the candidate's already discovered video identities.
-        let candidateLayers = plan.modelDataTransforms(state: state, existing: layers)
+        let candidateLayers = plan.modelDataTransforms(state: instance.state, existing: layers)
         pending.planner.adoptModelDataTransforms(candidateLayers)
-        let planned = try plan.layout(effects: state, texts: pending.planner.texts,
+        let planned = try plan.layout(effects: instance.state, texts: pending.planner.texts,
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
-        let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+        let layout = try Self.makeLayout(planned, effects: instance.state.effectVisibility, artifacts: artifacts,
                                          planner: &pending.planner, encoder: drawEncoder,
-                                         state: state, reusing: pending.layout)
+                                         state: instance.state, reusing: pending.layout)
         guard pending.planner.videos.allSatisfy({ videos.contains($0.texture) || prepared.contains($0.texture) }) else {
             // A legal ModelData material replacement can reveal another stream while preparation suspends.
             // Keep the latest candidate private and requeue its full stream set; the old temporary pool retires.
@@ -95,10 +95,10 @@ extension WPEParityFrameRenderer {
         retireRemovedObjects(from: previous.planned)
         packedConstants.removeAll()
         fadeConstants.removeAll()
-        seenMembership = state.membershipGeneration
-        seenModelData = state.modelDataGeneration
-        seenVisibility = state.visibilityGeneration
-        seenEffects = state.effectVisibilityGeneration
+        seenMembership = instance.state.membershipGeneration
+        seenModelData = instance.state.modelDataGeneration
+        seenVisibility = instance.state.visibilityGeneration
+        seenEffects = instance.state.effectVisibilityGeneration
         refreshVideoOwners()
         repackBloom()
         return true

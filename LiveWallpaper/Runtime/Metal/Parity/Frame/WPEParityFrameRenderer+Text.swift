@@ -88,8 +88,8 @@ extension WPEParityFrameRenderer {
     #endif
     /// The native text dirty hook is consumed only after this ordered cohort is admitted.
     func applyScriptText() {
-        let textGeneration = state.generation(.textLayout)
-        let effectsGeneration = state.effectVisibilityGeneration
+        let textGeneration = instance.state.generation(.textLayout)
+        let effectsGeneration = instance.state.effectVisibilityGeneration
         let changed = textGeneration != (pendingScriptTextGeneration ?? seenScriptText)
         let effectsChanged = effectsGeneration != (pendingTextEffectsGeneration ?? seenEffects)
         guard changed || effectsChanged else { return }
@@ -103,10 +103,10 @@ extension WPEParityFrameRenderer {
         for sceneObject in plan.scene.scene.objects {
             guard var object = latest[sceneObject.id] else { continue }
             if projectFields {
-                object = WPEParityTextFields.applying(to: object, state: state)
+                object = WPEParityTextFields.applying(to: object, state: instance.state)
             }
-            let effects = state.effects.indices.count {
-                state.effects[$0].objectID == object.id && state.effectVisibility[$0]
+            let effects = instance.state.effects.indices.count {
+                instance.state.effects[$0].objectID == object.id && instance.state.effectVisibility[$0]
             }
             textRequests.append(.init(object, effectCount: effects))
         }
@@ -165,15 +165,15 @@ extension WPEParityFrameRenderer {
     /// Extent is not an input to a direct glyph operation or its graph resource descriptors. Only admit
     /// an already composed scene-destination pass; a transform-only group parent is not a composite owner.
     private func canReuseDirectTextExtents(_ changes: [WPEParityTextRelayoutDelta.Change], in current: Layout) -> Bool {
-        guard state.membershipGeneration == seenMembership, state.modelDataGeneration == seenModelData,
-              state.visibilityGeneration == seenVisibility, state.effectVisibilityGeneration == seenEffects,
-              current.effects == state.effectVisibility,
+        guard instance.state.membershipGeneration == seenMembership, instance.state.modelDataGeneration == seenModelData,
+              instance.state.visibilityGeneration == seenVisibility, instance.state.effectVisibilityGeneration == seenEffects,
+              current.effects == instance.state.effectVisibility,
               changes.allSatisfy({
                   $0.previous.atlasKey == $0.current.atlasKey
                       && $0.previous.layout.mesh?.colorAtlasScale == $0.current.layout.mesh?.colorAtlasScale
                       && $0.previous.fieldParameters?.combos == $0.current.fieldParameters?.combos
               }) else { return false }
-        let post = plan.postConfig(state: state, mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
+        let post = plan.postConfig(state: instance.state, mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
         guard post.bloomEnabled == current.post.bloomEnabled,
               post.sceneMipMappedFrameBufferEnabled == current.post.sceneMipMappedFrameBufferEnabled,
               !post.hdrEnabled || !post.bloomEnabled || post.hdrBloomLevelCount == current.post.hdrBloomLevelCount
@@ -276,15 +276,15 @@ extension WPEParityFrameRenderer {
         if keepsFrame {
             planned = current.planned
             layout = Self.replanDraws(of: changed, in: current, keeping: kept, artifacts: artifacts,
-                                      planner: &candidatePlanner, encoder: drawEncoder, state: state)
+                                      planner: &candidatePlanner, encoder: drawEncoder, state: instance.state)
         } else {
-            planned = try plan.layout(effects: state, texts: prepared.texts,
+            planned = try plan.layout(effects: instance.state, texts: prepared.texts,
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
             let reuse = Layout(planned: current.planned, effects: current.effects, draws: kept,
                                skipped: current.skipped, fade: current.fade)
-            layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+            layout = try Self.makeLayout(planned, effects: instance.state.effectVisibility, artifacts: artifacts,
                                          planner: &candidatePlanner, encoder: drawEncoder,
-                                         state: state, reusing: reuse)
+                                         state: instance.state, reusing: reuse)
         }
         // makeLayout records per-draw failures as skips. Required readers of this changed text cohort cannot
         // be silently dropped while its CPU atlas/ref/layout is accepted.
@@ -351,7 +351,7 @@ extension WPEParityFrameRenderer {
         }
         for id in prepared.changedObjectIDs {
             guard let text = prepared.texts[id] else { continue }
-            state.setScriptField("size", of: id, to: .vector(SIMD4(lowHalf: text.scriptSize, highHalf: .zero)),
+            instance.state.setScriptField("size", of: id, to: .vector(SIMD4(lowHalf: text.scriptSize, highHalf: .zero)),
                                  invalidating: .none)
         }
         consumeTextRequests(attemptedCount)
@@ -372,16 +372,16 @@ extension WPEParityFrameRenderer {
             }
         }
         var candidate = planner
-        candidate.adoptModelDataTransforms(plan.modelDataTransforms(state: state, existing: layers))
-        let planned = try plan.layout(effects: state, texts: candidate.texts,
+        candidate.adoptModelDataTransforms(plan.modelDataTransforms(state: instance.state, existing: layers))
+        let planned = try plan.layout(effects: instance.state, texts: candidate.texts,
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
-        let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
-                                         planner: &candidate, encoder: drawEncoder, state: state, reusing: graphs.layout)
+        let layout = try Self.makeLayout(planned, effects: instance.state.effectVisibility, artifacts: artifacts,
+                                         planner: &candidate, encoder: drawEncoder, state: instance.state, reusing: graphs.layout)
         guard candidate.videos.contains(where: { !videos.contains($0.texture) }) else {
             // Keep the original rejection if the committed-text layout cannot independently admit that stream.
             throw WPEParityFrameSkip.videoTexture("Text preparation requires an unprepared video stream")
         }
-        let cachePrevious = state.membershipGeneration == seenMembership && state.modelDataGeneration == seenModelData
+        let cachePrevious = instance.state.membershipGeneration == seenMembership && instance.state.modelDataGeneration == seenModelData
         // The guard above guarantees installVideoReadyLayout only stages its private request, never graphs.
         _ = try installVideoReadyLayout(layout, planner: candidate, cachePrevious: cachePrevious)
         staged = true

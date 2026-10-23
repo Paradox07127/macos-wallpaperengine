@@ -254,7 +254,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
                 throw error
             }
             if index >= warmup {
-                times.append(renderer.clock.time)
+                times.append(renderer.instance.clock.time)
             }
         }
         record["backbufferSize"] = [renderer.backbuffer.width, renderer.backbuffer.height]

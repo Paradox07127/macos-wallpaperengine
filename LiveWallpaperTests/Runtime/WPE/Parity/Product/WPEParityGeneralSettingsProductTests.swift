@@ -29,20 +29,20 @@ extension WPEParitySceneDriverTests {
         try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
                               drawableSize: CGSize(width: 160, height: 96), pixelFormat: .rgba8Unorm,
                               compiler: compiler, diskCache: .init(cachesURL: scratch))
-        XCTAssertEqual(try XCTUnwrap(driver.renderer?.state.object("20")?.alpha), 0.1, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer?.instance.state.object("20")?.alpha), 0.1, accuracy: 0.001)
         driver.setSceneScriptLanguage("german")
         driver.setSceneScriptLanguage("german")
-        XCTAssertEqual(try XCTUnwrap(driver.renderer?.state.object("20")?.alpha), 0.2, accuracy: 0.001)
-        XCTAssertEqual(driver.renderer?.state.object("20")?.brightness, 0.5)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer?.instance.state.object("20")?.alpha), 0.2, accuracy: 0.001)
+        XCTAssertEqual(driver.renderer?.instance.state.object("20")?.brightness, 0.5)
         driver.updateSurfaceGeometry(drawableSize: CGSize(width: 320, height: 192))
         let replanned = await driver.replan()
         XCTAssertTrue(replanned)
-        XCTAssertEqual(try XCTUnwrap(driver.renderer?.state.object("20")?.alpha), 0.2, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer?.instance.state.object("20")?.alpha), 0.2, accuracy: 0.001)
         try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
                               drawableSize: CGSize(width: 160, height: 96), pixelFormat: .rgba8Unorm,
                               compiler: compiler, diskCache: .init(cachesURL: scratch))
-        XCTAssertEqual(try XCTUnwrap(driver.renderer?.state.object("20")?.alpha), 0.1, accuracy: 0.001)
-        XCTAssertEqual(driver.renderer?.state.object("20")?.brightness, 0.5)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer?.instance.state.object("20")?.alpha), 0.1, accuracy: 0.001)
+        XCTAssertEqual(driver.renderer?.instance.state.object("20")?.brightness, 0.5)
         XCTAssertNil(driver.runtimeFailure)
     }
 }

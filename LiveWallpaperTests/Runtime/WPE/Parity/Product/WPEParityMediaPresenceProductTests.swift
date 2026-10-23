@@ -31,8 +31,8 @@ extension WPEParitySceneDriverTests {
                                     presence: expectedPresence, label: "initial \(label)")
             let renderer = try XCTUnwrap(driver.renderer)
             let reason = artwork == nil ? "absent" : artwork?.isEmpty == true ? "empty" : "undecodable"
-            XCTAssertTrue(renderer.mediaDiagnostics.contains("media.artwork-\(reason)-native-behavior-unverified"),
-                          "Mac decode/fallback uncertainty remains explicit: \(renderer.mediaDiagnostics)")
+            XCTAssertTrue(renderer.instance.mediaDiagnostics.contains("media.artwork-\(reason)-native-behavior-unverified"),
+                          "Mac decode/fallback uncertainty remains explicit: \(renderer.instance.mediaDiagnostics)")
         }
     }
 
@@ -56,7 +56,7 @@ extension WPEParitySceneDriverTests {
             source.push(artwork: invalidA)
             try await present(driver, layer: layer, label: "valid → invalid A")
             try assertMediaPresence(driver, layer: layer, calls: 2, presence: true, label: "invalid A still has raw bytes")
-            XCTAssertTrue(try XCTUnwrap(driver.renderer).mediaDiagnostics.contains(
+            XCTAssertTrue(try XCTUnwrap(driver.renderer).instance.mediaDiagnostics.contains(
                 "media.artwork-undecodable-native-behavior-unverified"
             ))
 
@@ -168,7 +168,7 @@ extension WPEParitySceneDriverTests {
                                      calls: Int, presence: Bool, label: String,
                                      file: StaticString = #filePath, line: UInt = #line) throws {
         let renderer = try XCTUnwrap(driver.renderer, label, file: file, line: line)
-        let color = try XCTUnwrap(renderer.state.value(.color, of: "1"), label, file: file, line: line)
+        let color = try XCTUnwrap(renderer.instance.state.value(.color, of: "1"), label, file: file, line: line)
         XCTAssertEqual(color.x, Float(calls) / 8, "real handler delivery count: \(label)", file: file, line: line)
         XCTAssertEqual(color.y, presence ? 1 : 0, "real handler raw presence: \(label)", file: file, line: line)
         XCTAssertEqual(color.z, 0.125, "playback seed proves the source and script are active: \(label)", file: file, line: line)

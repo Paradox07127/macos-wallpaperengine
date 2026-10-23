@@ -37,7 +37,7 @@ final class WPEParitySceneStateTests: XCTestCase {
         var alphas: [Float] = []
         for frame in 1 ... 10 {
             try await encode(fixture.renderer)
-            reference.advance(dt: fixture.renderer.clock.frametime)
+            reference.advance(dt: fixture.renderer.instance.clock.frametime)
             let expected = try XCTUnwrap(reference.value).x
             let draw = try XCTUnwrap(fixture.renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
             let alpha = try XCTUnwrap(Self.float(draw.constants[.fragment]?["g_Alpha"]), "frame \(frame)")
@@ -74,7 +74,7 @@ final class WPEParitySceneStateTests: XCTestCase {
                 try await encode(fixture.renderer)
             }
             let after = try XCTUnwrap(fixture.renderer.uniforms(operation)).matrices.modelViewProjection
-            return (simd_length(after.columns.3 - before.columns.3), fixture.renderer.state.object("17"))
+            return (simd_length(after.columns.3 - before.columns.3), fixture.renderer.instance.state.object("17"))
         }
         let (moved, animated) = try await mvpMove(["origin": origin])
         let (still, scaled) = try await mvpMove(["scale": scale])
@@ -109,7 +109,7 @@ final class WPEParitySceneStateTests: XCTestCase {
         for frame in 1 ... 40 {
             let packs = fixture.renderer.constantPacks
             try await encode(fixture.renderer)
-            reference.advance(dt: fixture.renderer.clock.frametime)
+            reference.advance(dt: fixture.renderer.instance.clock.frametime)
             let expected = try XCTUnwrap(reference.value).x
             let draw = try XCTUnwrap(fixture.renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
             XCTAssertEqual(try XCTUnwrap(Self.float(draw.constants[.fragment]?["g_Speed"])), expected, accuracy: 1e-6,
@@ -137,10 +137,10 @@ final class WPEParitySceneStateTests: XCTestCase {
         try await encode(fixture.renderer)
         let shown = drawsOf17()
         XCTAssertGreaterThan(shown, 0)
-        XCTAssertTrue(fixture.renderer.state.set(.visible, of: "17", to: .zero))
+        XCTAssertTrue(fixture.renderer.instance.state.set(.visible, of: "17", to: .zero))
         try await encode(fixture.renderer)
         XCTAssertEqual(drawsOf17(), 0)
-        fixture.renderer.state.set(.visible, of: "17", to: .one)
+        fixture.renderer.instance.state.set(.visible, of: "17", to: .one)
         try await encode(fixture.renderer)
         XCTAssertEqual(drawsOf17(), shown)
     }
@@ -154,8 +154,8 @@ final class WPEParitySceneStateTests: XCTestCase {
         }
         try await encode(fixture.renderer)
         XCTAssertTrue(fixture.renderer.lastFrameDraws.contains { Self.object(fixture.plan, $0.operation) == "17" })
-        XCTAssertTrue(fixture.renderer.state.set(.visible, of: "900", to: .zero))
-        XCTAssertFalse(fixture.renderer.state.isVisible("17"))
+        XCTAssertTrue(fixture.renderer.instance.state.set(.visible, of: "900", to: .zero))
+        XCTAssertFalse(fixture.renderer.instance.state.isVisible("17"))
         try await encode(fixture.renderer)
         XCTAssertFalse(fixture.renderer.lastFrameDraws.contains { Self.object(fixture.plan, $0.operation) == "17" })
     }
@@ -170,13 +170,13 @@ final class WPEParitySceneStateTests: XCTestCase {
             try await encode(fixture.renderer)
         }
         XCTAssertGreaterThan(fixture.renderer.particleLiveCount("560") ?? 0, 0)
-        fixture.renderer.state.set(.visible, of: "560", to: .zero)
+        fixture.renderer.instance.state.set(.visible, of: "560", to: .zero)
         for _ in 1 ... 3 {
             try await encode(fixture.renderer)
             XCTAssertFalse(fixture.renderer.lastFrameDraws.contains { Self.object(fixture.plan, $0.operation) == "560" })
         }
         XCTAssertEqual(fixture.renderer.particleLiveCount("560"), 0)
-        fixture.renderer.state.set(.visible, of: "560", to: .one)
+        fixture.renderer.instance.state.set(.visible, of: "560", to: .one)
         XCTAssertEqual(fixture.renderer.particleLiveCount("560"), 0)
         for _ in 1 ... 10 {
             try await encode(fixture.renderer)

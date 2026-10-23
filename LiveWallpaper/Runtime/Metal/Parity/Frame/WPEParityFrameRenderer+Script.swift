@@ -11,10 +11,10 @@ extension WPEParityFrameRenderer {
                              mergedJSON: String = "{}") throws {
         try replaceConditionalProperties(changed: Self.propertySnapshot(changedJSON),
                                          merged: Self.propertySnapshot(mergedJSON))
-        update.apply(to: &state)
+        update.apply(to: &instance.state)
         let updatedBloom = bloomSettingsFromState(update.bloom)
-        if updatedBloom != bloom {
-            bloom = updatedBloom
+        if updatedBloom != instance.bloom {
+            instance.bloom = updatedBloom
             repackBloom()
         }
         if !update.texts.isEmpty {
@@ -23,10 +23,10 @@ extension WPEParityFrameRenderer {
         for text in update.texts {
             textRequests.append(.init(text))
             for (name, value) in WPEParityTextFields.seed(text) {
-                state.setScriptField(name, of: text.id, to: value, invalidating: .textLayout)
+                instance.state.setScriptField(name, of: text.id, to: value, invalidating: .textLayout)
             }
         }
-        script?.applyUserProperties(changedJSON: changedJSON, mergedJSON: mergedJSON, state: &state)
+        instance.script?.applyUserProperties(changedJSON: changedJSON, mergedJSON: mergedJSON, state: &instance.state)
     }
 
     static func propertySnapshot(_ json: String) throws -> WPESceneJSONValue {
@@ -54,11 +54,11 @@ extension WPEParityFrameRenderer {
         let reuse = Layout(planned: current.planned, effects: current.effects,
                            draws: current.draws.filter { !prepared.affectedOperations.contains($0.key) },
                            skipped: current.skipped, fade: current.fade)
-        let planned = try plan.layout(effects: state, texts: candidate.texts,
+        let planned = try plan.layout(effects: instance.state, texts: candidate.texts,
                                       mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
-        let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+        let layout = try Self.makeLayout(planned, effects: instance.state.effectVisibility, artifacts: artifacts,
                                          planner: &candidate, encoder: drawEncoder,
-                                         state: state, reusing: reuse)
+                                         state: instance.state, reusing: reuse)
         for (index, name) in Self.drawNames(planned.frames[0])
             where affectedNames.contains(name) && planned.programs[index] != nil && layout.draws[index] == nil {
             throw layout.skipped[index] ?? WPEParityFrameSkip.noMaterial
@@ -72,7 +72,7 @@ extension WPEParityFrameRenderer {
 
     /// Runs `script`'s init against the loaded state; its events and update then run inside every frame.
     func attachScript(_ script: WPEParitySceneScript) throws {
-        self.script = script
+        instance.script = script
         script.engine.materialFunctionHandler = scriptMaterialFunction
         script.engine.transformMatrixHandler = scriptTransformMatrix
         script.engine.videoTextureHandler = scriptVideoCommand
@@ -80,9 +80,11 @@ extension WPEParityFrameRenderer {
         script.engine.animationLayerHandler = scriptAnimationLayer
         script.engine.puppetHandler = scriptPuppet
         script.engine.particleSystemHandler = scriptParticleSystem
-        script.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
+        script.engine.propertyAnimationLookup = { [animations = instance.animations] in
+            animations.animation(objectID: $0, pass: $1, name: $2)
+        }
         script.engine.modelDataAdmissionHandler = scriptModelDataAdmission
-        try script.start(state: &state)
+        try script.start(state: &instance.state)
     }
 
     var scriptModelDataProvider: WPEParityScriptModelDataProvider {
@@ -124,7 +126,7 @@ extension WPEParityFrameRenderer {
         guard let description = plan.scene.createdImageObject(id: "", image: image) else {
             throw WPEParityModelDataFailure.safety("image model \(model) is unavailable")
         }
-        var candidate = state
+        var candidate = instance.state
         let id = try String(candidate.appendImageLayer(image, id: nil, transparent: description.transparentMember,
                                                        fullscreen: description.fullscreen) { _ in })
         let planned = try plan.layout(effects: candidate, texts: planner.texts)
@@ -163,20 +165,20 @@ extension WPEParityFrameRenderer {
     }
 
     func attachMedia(_ mailbox: WPESceneMediaEventMailbox?, generation: Int) {
-        media = mailbox
-        mediaGeneration = generation
+        instance.media = mailbox
+        instance.mediaGeneration = generation
     }
 
     /// The same accepted input supplies both textures and script properties/events before animation and update.
     func consumeMediaInputs() {
-        guard let media else { return }
-        for input in media.drainParityInputs(generation: mediaGeneration) {
+        guard let media = instance.media else { return }
+        for input in media.drainParityInputs(generation: instance.mediaGeneration) {
             if let textures = input.textures {
-                mediaTextures = textures
+                instance.mediaTextures = textures
                 mediaCrops.removeAll()
             }
-            mediaDiagnostics = input.diagnostics
-            script?.applyMedia(properties: input.systemProperties, events: input.events, state: &state)
+            instance.mediaDiagnostics = input.diagnostics
+            instance.script?.applyMedia(properties: input.systemProperties, events: input.events, state: &instance.state)
         }
     }
 
@@ -188,7 +190,7 @@ extension WPEParityFrameRenderer {
 
     /// The snapshot image centre-cropped to the slot `aspect` (width / height); whole for keepaspect (nil).
     func croppedMediaTexture(_ kind: WPEMediaSystemTexture, aspect: Float?) -> MTLTexture? {
-        guard let image = mediaTextures?.texture(for: kind) else { return nil }
+        guard let image = instance.mediaTextures?.texture(for: kind) else { return nil }
         guard let aspect else { return image }
         let key = MediaCrop(image: ObjectIdentifier(image), tenths: Int((aspect * 10).rounded()))
         if let cropped = mediaCrops[key] {
@@ -210,52 +212,52 @@ extension WPEParityFrameRenderer {
 
     /// Event 3 to every binding; later frames run no script.
     func destroyScript() {
-        script?.engine.destroy(state: &state)
-        script = nil
+        instance.script?.engine.destroy(state: &instance.state)
+        instance.script = nil
     }
 
     /// Object updates precede camera selection; scripts/animations of this frame affect the next selection.
     /// The last effectively visible camera owns the world pose. Root paths hold while an object is active.
     func selectCamera(dt: Float) {
-        let active = WPEParityCamera.activeObjectID(document: plan.document, state: state)
+        let active = WPEParityCamera.activeObjectID(document: plan.document, state: instance.state)
         var selected = rootCamera
-        if case let .vector(value)? = state.scriptField("perspectiveoverridefov", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("perspectiveoverridefov", of: "") {
             selected.perspectiveFOV = value.x
         }
         // 1891a0 selects effective O148 from raw O140; 183a70 reads near/far before the manager tick.
         // Camera objects and queues may replace only effective FOV after this canonical snapshot.
         if selected.scenePerspective != nil {
-            if case let .vector(value)? = state.scriptField("fov", of: "") {
+            if case let .vector(value)? = instance.state.scriptField("fov", of: "") {
                 selected.scenePerspective?.fov = value.x
             }
-            if case let .vector(value)? = state.scriptField("nearz", of: "") {
+            if case let .vector(value)? = instance.state.scriptField("nearz", of: "") {
                 selected.scenePerspective?.near = value.x
             }
-            if case let .vector(value)? = state.scriptField("farz", of: "") {
+            if case let .vector(value)? = instance.state.scriptField("farz", of: "") {
                 selected.scenePerspective?.far = value.x
             }
         }
         var sceneZoom = generalZoom
-        if case let .vector(value)? = state.scriptField("zoom", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("zoom", of: "") {
             sceneZoom = value.x
         }
         if let active {
             selected = selected.applyingObject(world: layers.world(active), objectID: active, document: plan.document,
-                                               state: state, generalZoom: sceneZoom)
-            if let queue = cameraQueues[active], queue.selectedIndex != nil {
+                                               state: instance.state, generalZoom: sceneZoom)
+            if let queue = instance.cameraQueues[active], queue.selectedIndex != nil {
                 selected.zoom = sceneZoom * (queue.selectedZoom ?? 1)
                 if selected.scenePerspective != nil {
                     selected.scenePerspective?.fov = queue.selectedFOV ?? 50
                 }
             }
         } else {
-            cameraPose = cameraPaths.advance(dt: dt)
-            if let pose = cameraPose {
+            instance.cameraPose = instance.cameraPaths.advance(dt: dt)
+            if let pose = instance.cameraPose {
                 selected = selected.posed(pose, generalZoom: sceneZoom)
             } else {
                 // 1401891a0.c:72-75, :132-139: without a path, pose and zoom are the root values.
                 func root(_ name: String) -> SIMD4<Float>? {
-                    guard case let .vector(value)? = state.scriptField("cameraTransforms.\(name)", of: "") else {
+                    guard case let .vector(value)? = instance.state.scriptField("cameraTransforms.\(name)", of: "") else {
                         return nil
                     }
                     return value
@@ -269,61 +271,61 @@ extension WPEParityFrameRenderer {
             }
         }
         selected.shake = cameraShake
-        selected = selected.shaken(time: clock.timeUniform)
-        if camera != selected || activeCameraID != active {
+        selected = selected.shaken(time: instance.clock.timeUniform)
+        if instance.camera != selected || instance.activeCameraID != active {
             layersMoved = true
         }
-        camera = selected
-        activeCameraID = active
+        instance.camera = selected
+        instance.activeCameraID = active
     }
 
     /// One common-scene sweep shares the native scene RNG across particle and camera queue consumers.
     func updateSceneObjects(camera: WPEParityCamera, timeOfDay: Float) {
-        particles.beginFrame()
-        particles.scene.applyScriptInstanceFields(state: state)
+        instance.particles.beginFrame()
+        instance.particles.scene.applyScriptInstanceFields(state: instance.state)
         let viewProjection = camera.projection * camera.view
         // `audio` advances later in the frame, so particles read the previous frame's spectrum.
-        let spectrum = audio.bands16
-        for id in state.commonOrder {
-            if let queue = cameraQueues[id],
-               let output = queue.advance(dt: clock.frametime, world: layers.world(id),
-                                          orthographic: plan.scene.engineFlags.orthographicProjection, state: state) {
-                state.set(.origin, of: id, to: SIMD4(output.origin, 0))
-                state.set(.angles, of: id, to: SIMD4(output.angles, 0))
+        let spectrum = instance.audio.bands16
+        for id in instance.state.commonOrder {
+            if let queue = instance.cameraQueues[id],
+               let output = queue.advance(dt: instance.clock.frametime, world: layers.world(id),
+                                          orthographic: plan.scene.engineFlags.orthographicProjection, state: instance.state) {
+                instance.state.set(.origin, of: id, to: SIMD4(output.origin, 0))
+                instance.state.set(.angles, of: id, to: SIMD4(output.angles, 0))
                 applyTransforms()
-            } else if particles.scene.liveCount(id) != nil {
-                let frame = state.isVisible(id)
-                    ? WPEParityParticleFrameContext(time: clock.timeUniform, cursor: pointer.position,
+            } else if instance.particles.scene.liveCount(id) != nil {
+                let frame = instance.state.isVisible(id)
+                    ? WPEParityParticleFrameContext(time: instance.clock.timeUniform, cursor: instance.pointer.position,
                                                     viewProjection: viewProjection, objectMatrix: layers.world(id),
-                                                    timeOfDay: timeOfDay, previousFrametime: clock.previousFrametime,
-                                                    frametime: clock.frametime,
+                                                    timeOfDay: timeOfDay, previousFrametime: instance.clock.previousFrametime,
+                                                    frametime: instance.clock.frametime,
                                                     spectrumLeft: spectrum.left, spectrumRight: spectrum.right) : nil
-                particles.scene.advance(objectID: id, dt: clock.frametime, frame: frame)
+                instance.particles.scene.advance(objectID: id, dt: instance.clock.frametime, frame: frame)
             }
         }
     }
 
     func applyLayerFields() {
-        guard seenLayerFields != state.scriptFieldsGeneration else { return }
-        if layers.applyFields(state: state) {
+        guard seenLayerFields != instance.state.scriptFieldsGeneration else { return }
+        if layers.applyFields(state: instance.state) {
             layersMoved = true
         }
-        seenLayerFields = state.scriptFieldsGeneration
+        seenLayerFields = instance.state.scriptFieldsGeneration
     }
 
     /// Only changed fields are pushed: replaying an unchanged blendin would re-arm a ramp the animator finished.
     func applyAnimationLayerFields() {
-        guard seenAnimationLayerFields != state.scriptFieldsGeneration else { return }
-        seenAnimationLayerFields = state.scriptFieldsGeneration
-        if animationLayerFields?.membership != state.membershipGeneration {
-            animationLayerFields = (state.membershipGeneration, makeAnimationLayerFields())
+        guard seenAnimationLayerFields != instance.state.scriptFieldsGeneration else { return }
+        seenAnimationLayerFields = instance.state.scriptFieldsGeneration
+        if animationLayerFields?.membership != instance.state.membershipGeneration {
+            animationLayerFields = (instance.state.membershipGeneration, makeAnimationLayerFields())
         }
         for layer in animationLayerFields?.layers ?? [] {
             var changed: [String: WPEParitySceneState.ScriptValue] = [:]
             for field in layer.fields {
-                guard let value = state.scriptFields[field.key],
-                      value != (pushedAnimationLayerFields[field.key] ?? field.seed) else { continue }
-                pushedAnimationLayerFields[field.key] = value
+                guard let value = instance.state.scriptFields[field.key],
+                      value != (instance.pushedAnimationLayerFields[field.key] ?? field.seed) else { continue }
+                instance.pushedAnimationLayerFields[field.key] = value
                 changed[field.name] = value
             }
             guard !changed.isEmpty else { continue }
@@ -338,7 +340,7 @@ extension WPEParityFrameRenderer {
             if case let .string(value)? = changed["name"] {
                 name = value
             }
-            puppets[layer.objectID]?.updateLayer(at: layer.sceneIndex, enabled: flag("visible"), rate: float("rate"),
+            instance.puppets[layer.objectID]?.updateLayer(at: layer.sceneIndex, enabled: flag("visible"), rate: float("rate"),
                                                  blend: float("blend"), name: name, additive: flag("additive"),
                                                  blendIn: flag("blendin"), blendOut: flag("blendout"),
                                                  blendTime: float("blendtime"))
@@ -354,7 +356,7 @@ extension WPEParityFrameRenderer {
             .vector(SIMD4(Float(value), 0, 0, 0))
         }
         var result: [AnimationLayerFields] = []
-        for (id, puppet) in puppets {
+        for (id, puppet) in instance.puppets {
             let scenes = authored[id] ?? []
             for layer in puppet.layers where scenes.indices.contains(layer.sceneIndex) {
                 let scene = scenes[layer.sceneIndex]
@@ -379,28 +381,28 @@ extension WPEParityFrameRenderer {
     /// A full settings snapshot must not replace unchanged or rejected seeds over live values.
     private func bloomSettingsFromState(_ source: WPEParityBloomSettings) -> WPEParityBloomSettings {
         var settings = source
-        if case let .vector(value)? = state.scriptField("bloomstrength", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("bloomstrength", of: "") {
             settings.strength = value.x
         }
-        if case let .vector(value)? = state.scriptField("bloomthreshold", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("bloomthreshold", of: "") {
             settings.threshold = value.x
         }
-        if case let .vector(value)? = state.scriptField("bloomhdrstrength", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("bloomhdrstrength", of: "") {
             settings.hdrStrength = value.x
         }
-        if case let .vector(value)? = state.scriptField("bloomhdrthreshold", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("bloomhdrthreshold", of: "") {
             settings.hdrThreshold = value.x
         }
-        if case let .vector(value)? = state.scriptField("bloomhdrfeather", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("bloomhdrfeather", of: "") {
             settings.hdrFeather = value.x
         }
-        if case let .vector(value)? = state.scriptField("bloomhdrscatter", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("bloomhdrscatter", of: "") {
             settings.hdrScatter = value.x
         }
-        if case let .integer(value)? = state.scriptField("bloomhdriterations", of: "") {
+        if case let .integer(value)? = instance.state.scriptField("bloomhdriterations", of: "") {
             settings.hdrIterations = Int(value)
         }
-        if case let .vector(value)? = state.scriptField("bloomtint", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("bloomtint", of: "") {
             settings.tint = SIMD3(value.x, value.y, value.z)
         }
         return settings
@@ -408,11 +410,11 @@ extension WPEParityFrameRenderer {
 
     /// LDR/HDR bloom fields scripts wrote, rebuilt after the tick (14017fa70.c:478-481).
     func applyScriptBloom() {
-        guard state.generation(.bloom) != seenScriptBloom else { return }
-        seenScriptBloom = state.generation(.bloom)
-        let settings = bloomSettingsFromState(bloom)
-        guard settings != bloom else { return }
-        bloom = settings
+        guard instance.state.generation(.bloom) != instance.seenScriptBloom else { return }
+        instance.seenScriptBloom = instance.state.generation(.bloom)
+        let settings = bloomSettingsFromState(instance.bloom)
+        guard settings != instance.bloom else { return }
+        instance.bloom = settings
         repackBloom()
     }
 
@@ -422,12 +424,12 @@ extension WPEParityFrameRenderer {
         let quality = plan.scene.engineFlags.shadowQuality
         let atlasID = WPEParitySceneResource.shadowAtlas
         let shadows = quality != 0 && targets[atlasID] != nil
-        guard shadows || seenScriptLighting != state.generation(.lighting)
-            || seenLightTransforms != state.transformGeneration || seenLightVisibility != state.visibilityGeneration
+        guard shadows || instance.seenScriptLighting != instance.state.generation(.lighting)
+            || seenLightTransforms != instance.state.transformGeneration || seenLightVisibility != instance.state.visibilityGeneration
             || layers.hasAttachments else { return }
         if shadows {
             let layout = WPEParityShadowLayout(
-                document: plan.document, transforms: layers, state: state, quality: quality, eye: camera.eyePosition,
+                document: plan.document, transforms: layers, state: instance.state, quality: quality, eye: camera.eyePosition,
                 forward: WPEParityUniformParallax.viewVectors(view: camera.view).forward,
                 orthographic: plan.scene.engineFlags.orthographicProjection, previousAtlasSize: shadowLayout?.atlasSize
             )
@@ -446,11 +448,11 @@ extension WPEParityFrameRenderer {
                 retiredTextures.append(atlas)
             }
         }
-        lights = WPEParityUniformLights(document: plan.document, transforms: layers, state: state,
+        lights = WPEParityUniformLights(document: plan.document, transforms: layers, state: instance.state,
                                         shadowQuality: quality, shadows: shadowLayout)
-        seenScriptLighting = state.generation(.lighting)
-        seenLightTransforms = state.transformGeneration
-        seenLightVisibility = state.visibilityGeneration
+        instance.seenScriptLighting = instance.state.generation(.lighting)
+        seenLightTransforms = instance.state.transformGeneration
+        seenLightVisibility = instance.state.visibilityGeneration
     }
 
     var scriptFieldDefaults: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] {
@@ -473,20 +475,20 @@ extension WPEParityFrameRenderer {
 
     func takeSoundVisibility(_ body: (String, Bool) -> Void) {
         // Removal bumps only membership, and a removed object reads invisible.
-        let generation = SIMD2(state.visibilityGeneration, state.membershipGeneration)
+        let generation = SIMD2(instance.state.visibilityGeneration, instance.state.membershipGeneration)
         guard seenSoundVisibility != generation else { return }
         for sound in plan.document.soundObjects {
-            body(sound.id, state.isVisible(sound.id))
+            body(sound.id, instance.state.isVisible(sound.id))
         }
         seenSoundVisibility = generation
     }
 
     /// Sound volumes scripts wrote since the last call, by sound object; the runtime applies volume² × master.
     func takeScriptSoundVolumes(_ body: (String, Float) -> Void) {
-        guard let script, state.generation(.soundGain) != seenScriptSound else { return }
-        seenScriptSound = state.generation(.soundGain)
+        guard let script = instance.script, instance.state.generation(.soundGain) != instance.seenScriptSound else { return }
+        instance.seenScriptSound = instance.state.generation(.soundGain)
         for id in script.soundIDs {
-            if case let .vector(volume)? = state.scriptField("volume", of: id) {
+            if case let .vector(volume)? = instance.state.scriptField("volume", of: id) {
                 body(id, volume.x)
             }
         }
@@ -494,15 +496,15 @@ extension WPEParityFrameRenderer {
 
     /// These descriptors have no native onChanged hook; consume their stored fields at the next sound update.
     func takeScriptSoundBounds(_ body: (String, Double?, Double?) -> Void) {
-        guard let script, seenSoundBoundsFields != state.scriptFieldsGeneration else { return }
-        seenSoundBoundsFields = state.scriptFieldsGeneration
+        guard let script = instance.script, instance.seenSoundBoundsFields != instance.state.scriptFieldsGeneration else { return }
+        instance.seenSoundBoundsFields = instance.state.scriptFieldsGeneration
         for id in script.soundIDs {
-            let minimum: Double? = if case let .vector(value)? = state.scriptField("mintime", of: id) {
+            let minimum: Double? = if case let .vector(value)? = instance.state.scriptField("mintime", of: id) {
                 Double(value.x)
             } else {
                 nil
             }
-            let maximum: Double? = if case let .vector(value)? = state.scriptField("maxtime", of: id) {
+            let maximum: Double? = if case let .vector(value)? = instance.state.scriptField("maxtime", of: id) {
                 Double(value.x)
             } else {
                 nil
@@ -515,13 +517,13 @@ extension WPEParityFrameRenderer {
     func runScriptEvents(_ script: WPEParitySceneScript, camera: WPEParityCamera, pointer: SIMD2<Float>,
                          edges: [(position: SIMD2<Float>, down: Bool)], buttonDown: Bool,
                          timeOfDay: Float) throws {
-        try script.updateCursorTargets(state: state, quad: { try cursorQuad($0, camera: camera) })
+        try script.updateCursorTargets(state: instance.state, quad: { try cursorQuad($0, camera: camera) })
         for edge in edges {
             script.cursor(at: edge.position * logicalSize, world: camera.cursorWorld(normalizedPointer: edge.position),
-                          leftDown: edge.down, timeOfDay: timeOfDay, state: &state)
+                          leftDown: edge.down, timeOfDay: timeOfDay, state: &instance.state)
         }
         script.cursor(at: pointer * logicalSize, world: camera.cursorWorld(normalizedPointer: pointer),
-                      leftDown: buttonDown, timeOfDay: timeOfDay, state: &state)
+                      leftDown: buttonDown, timeOfDay: timeOfDay, state: &instance.state)
     }
 
     /// A layer's mesh corners in client pixels, y down, with its frame's parallax (140189e10.c:124-156).
@@ -537,7 +539,7 @@ extension WPEParityFrameRenderer {
                                                             orthographic: text.orthographic)
             model = WPEParityTextMatrices.layerModel(model, anchorOffset: anchor, blockOffset: text.layout.blockOffset)
         }
-        let matrix = try placed.projection(id) * placed.view(id, parallax: parallax.smoothed) * model
+        let matrix = try placed.projection(id) * placed.view(id, parallax: instance.parallax.smoothed) * model
         let pixels = logicalSize
         func corner(_ x: Float, _ y: Float) -> SIMD2<Float> {
             let clip = matrix * SIMD4(x, y, 0, 1)

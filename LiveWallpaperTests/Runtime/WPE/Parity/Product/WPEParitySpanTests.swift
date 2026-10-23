@@ -155,7 +155,7 @@ final class WPEParitySpanTests: XCTestCase {
         let wroteAlpha = try await harness.actor.run { actor in
             let renderer = try XCTUnwrap(actor.parityDriverForTesting?.renderer)
             // The same typed field SceneScript writes; adding a script to the document would make it nonstatic.
-            return renderer.state.set(.alpha, of: "17", to: SIMD4(repeating: 0.5))
+            return renderer.instance.state.set(.alpha, of: "17", to: SIMD4(repeating: 0.5))
         }
         XCTAssertTrue(wroteAlpha)
         XCTAssertEqual(harness.surface.lastIsPaused, false)
@@ -262,12 +262,12 @@ final class WPEParitySpanTests: XCTestCase {
         return Observation(
             rendererID: ObjectIdentifier(renderer), generation: driver.loadGeneration,
             size: SIMD2(renderer.backbuffer.width, renderer.backbuffer.height), drawableSize: driver.drawableSize,
-            time: renderer.clock.time, pauseRamp: renderer.clock.pauseRamp,
-            alpha: renderer.state.value(.alpha, of: "17")?.x,
-            mediaCurrentID: renderer.mediaTextures?.current.map { ObjectIdentifier($0) },
-            mediaPreviousID: renderer.mediaTextures?.previous.map { ObjectIdentifier($0) },
-            mediaRevision: renderer.mediaTextures?.revision, mediaCurrentName: renderer.mediaTextures?.currentSystemName,
-            mediaPreviousName: renderer.mediaTextures?.previousSystemName,
+            time: renderer.instance.clock.time, pauseRamp: renderer.instance.clock.pauseRamp,
+            alpha: renderer.instance.state.value(.alpha, of: "17")?.x,
+            mediaCurrentID: renderer.instance.mediaTextures?.current.map { ObjectIdentifier($0) },
+            mediaPreviousID: renderer.instance.mediaTextures?.previous.map { ObjectIdentifier($0) },
+            mediaRevision: renderer.instance.mediaTextures?.revision, mediaCurrentName: renderer.instance.mediaTextures?.currentSystemName,
+            mediaPreviousName: renderer.instance.mediaTextures?.previousSystemName,
             usedMetalFX: driver.executor.lastPresentPass?.usedMetalFX,
             verdict: driver.executor.upscalePlan.verdict.rawValue, shaderErrors: driver.shaderErrorSummary.count,
             isStatic: renderer.isStatic

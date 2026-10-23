@@ -710,7 +710,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
         particle["maxcount"] = 8
         let (renderer, _) = try await syntheticRenderer(["particles/root.json": particle],
                                                         instanceOverride: ["alpha": ["value": 1, "script": script]])
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         for frame in 1 ... 105 {
             try await renderParticleFrame(renderer, elapsed: 1.0 / 30)
             if frame < 29 {
@@ -864,7 +864,7 @@ final class WPEParityParticleSceneTests: XCTestCase {
                                                         particleSeed: 7, particleArenaBytes: budget)
         if WPEParitySceneScript.hasScripts(document) {
             try renderer.attachScript(WPEParitySceneScript(
-                document: plan.document, state: renderer.state, assets: plan.scene.assets,
+                document: plan.document, state: renderer.instance.state, assets: plan.scene.assets,
                 canvasSize: renderer.pathCamera.size,
                 screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
                 materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,

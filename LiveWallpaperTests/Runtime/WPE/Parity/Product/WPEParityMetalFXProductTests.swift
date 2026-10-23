@@ -59,12 +59,12 @@ extension WPEParitySceneDriverTests {
                 XCTAssertEqual(renderer.pathCamera.renderTargetSize, SIMD2(384, 256))
                 XCTAssertEqual(renderer.pathCamera.projection.columns.0.x, 2 / 384, accuracy: 0.000001)
                 XCTAssertEqual(renderer.pathCamera.projection.columns.1.y, 2 / 256, accuracy: 0.000001)
-                let probe = try XCTUnwrap(renderer.state.object("900"))
+                let probe = try XCTUnwrap(renderer.instance.state.object("900"))
                 XCTAssertEqual(probe.origin, SIMD3(384, 256, 96), "script sees logical screen and cursor pixels")
-                let script = try XCTUnwrap(renderer.script)
+                let script = try XCTUnwrap(renderer.instance.script)
                 XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
                 XCTAssertEqual(script.engine.dispatchCount(.cursorClick), 1, "the fixed logical point hits layer10")
-                XCTAssertEqual(try XCTUnwrap(renderer.state.object("10")).alpha, 0.375)
+                XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("10")).alpha, 0.375)
                 let quad = try XCTUnwrap(renderer.cursorQuad("10", camera: renderer.pathCamera))
                 // The 1/192 Float32 projection cannot represent the left edge exactly. Keep subpixel error
                 // below two Float32 ULPs here; confusing physical and logical pixels misses by tens of pixels.
@@ -161,9 +161,9 @@ extension WPEParitySceneDriverTests {
             let generation = driver.loadGeneration
             var originalHiVertices: [SIMD2<Float>]?
             for caption in ["Hi", "Hello", "Hi"] {
-                renderer.state.setScriptField("text", of: "5", to: .string(caption), invalidating: .textLayout)
+                renderer.instance.state.setScriptField("text", of: "5", to: .string(caption), invalidating: .textLayout)
                 for effects in [true, false, true] {
-                    XCTAssertTrue(renderer.state.setEffect("9", of: "5", visible: effects))
+                    XCTAssertTrue(renderer.instance.state.setEffect("9", of: "5", visible: effects))
                     try await present(driver, layer: layer, label: "caption \(caption) effects \(effects)")
                     XCTAssertEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer)), rendererID)
                     XCTAssertEqual(driver.loadGeneration, generation)
@@ -359,8 +359,8 @@ extension WPEParitySceneDriverTests {
                                     label: "unpresented resized B retains A source and pass")
             try await present(driver, layer: layer, label: "resized B")
             let pixelsB = try readBack(XCTUnwrap(layer.lastTexture), device: device)
-            let time = try XCTUnwrap(driver.renderer).clock.time
-            let scriptID = try ObjectIdentifier(XCTUnwrap(XCTUnwrap(driver.renderer).script))
+            let time = try XCTUnwrap(driver.renderer).instance.clock.time
+            let scriptID = try ObjectIdentifier(XCTUnwrap(XCTUnwrap(driver.renderer).instance.script))
             // Real consumer seam: no scaler is available; encodePresent must demote the active reduced plan.
             driver.executor.metalFXUpscaler = nil
             let declined = try XCTUnwrap(driver.renderAndPresentFrame(
@@ -379,8 +379,8 @@ extension WPEParitySceneDriverTests {
             XCTAssertTrue(nativeReplanned)
             let native = try XCTUnwrap(driver.renderer)
             XCTAssertEqual([native.backbuffer.width, native.backbuffer.height], [513, 385])
-            XCTAssertGreaterThanOrEqual(native.clock.time, time)
-            XCTAssertEqual(try ObjectIdentifier(XCTUnwrap(native.script)), scriptID)
+            XCTAssertGreaterThanOrEqual(native.instance.clock.time, time)
+            XCTAssertEqual(try ObjectIdentifier(XCTUnwrap(native.instance.script)), scriptID)
             let retainedResult = await capture(driver, colorSpace: colorSpace)
             let retained = try XCTUnwrap(retainedResult)
             try assertMetalFXPixels(readBack(retained.texture, device: device), declinedPixels, hdr: false,

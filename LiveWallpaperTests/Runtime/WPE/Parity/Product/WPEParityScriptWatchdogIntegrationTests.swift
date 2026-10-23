@@ -46,19 +46,19 @@ extension WPEParitySceneDriverTests {
         XCTAssertTrue(driver.hasPresentedFrame)
         XCTAssertNil(driver.runtimeFailure)
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script)
+        let script = try XCTUnwrap(renderer.instance.script)
 
         XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(), pointer: SIMD2(0.5, 0.5)))
         let failure = try XCTUnwrap(driver.runtimeFailure)
         XCTAssertEqual(script.engine.executionFailure, .executionTimedOut(operation: .update, seconds: 0.25))
         XCTAssertFalse(driver.needsContinuousFrames)
-        let stoppedTime = renderer.clock.time
+        let stoppedTime = renderer.instance.clock.time
         let exceptionCount = script.engine.exceptionCount
         for _ in 0 ..< 3 {
             XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(), pointer: SIMD2(0.5, 0.5)))
         }
         XCTAssertEqual(driver.runtimeFailure, failure)
-        XCTAssertEqual(renderer.clock.time, stoppedTime, "A disabled scene must not step its clock or execute more JS")
+        XCTAssertEqual(renderer.instance.clock.time, stoppedTime, "A disabled scene must not step its clock or execute more JS")
         XCTAssertEqual(script.engine.exceptionCount, exceptionCount)
         XCTAssertEqual(driver.inFlightCount, 0, "The terminated update must not submit GPU work")
     }

@@ -141,11 +141,11 @@ extension WPEParitySceneDriverTests {
         // Invalid typed scene seeds preserve live values while a real unrelated visibility write commits.
         let invalidUpdate = try XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: invalid))
         try renderer.applyUserProperties(invalidUpdate, changedJSON: host(drive: false), mergedJSON: host(drive: false))
-        XCTAssertEqual(renderer.state.scriptField("cameraparallax", of: ""), .vector(SIMD4(1, 0, 0, 0)))
-        XCTAssertEqual(renderer.state.scriptField("cameraparallaxamount", of: ""), .vector(SIMD4(0.5, 0, 0, 0)))
-        XCTAssertEqual(renderer.state.scriptField("cameraparallaxdelay", of: ""), .vector(.zero))
-        XCTAssertEqual(renderer.state.scriptField("cameraparallaxmouseinfluence", of: ""), .vector(SIMD4(1, 0, 0, 0)))
-        XCTAssertEqual(renderer.state.object("1")?.visible, false)
+        XCTAssertEqual(renderer.instance.state.scriptField("cameraparallax", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.scriptField("cameraparallaxamount", of: ""), .vector(SIMD4(0.5, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.scriptField("cameraparallaxdelay", of: ""), .vector(.zero))
+        XCTAssertEqual(renderer.instance.state.scriptField("cameraparallaxmouseinfluence", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.object("1")?.visible, false)
         // Restore only the unrelated visible bit; the same invalid scene seeds still preserve live values.
         let restored = try document(enabled: 1, amount: "0.5", delay: false, influence: [1])
         try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: invalid, to: restored)))
@@ -153,8 +153,8 @@ extension WPEParitySceneDriverTests {
         let recovered = try document(enabled: false, amount: 0.25)
         try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: restored, to: recovered)))
         try await frame(5, 8)
-        XCTAssertEqual(renderer.state.scriptField("cameraparallax", of: ""), .vector(.zero))
-        XCTAssertEqual(renderer.state.scriptField("cameraparallaxamount", of: ""), .vector(SIMD4(0.25, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.scriptField("cameraparallax", of: ""), .vector(.zero))
+        XCTAssertEqual(renderer.instance.state.scriptField("cameraparallaxamount", of: ""), .vector(SIMD4(0.25, 0, 0, 0)))
         let coldDriver = try WPEParitySceneDriver(device: device)
         defer { coldDriver.cleanup() }
         let cold = try document(amount: false, delay: "0.1", influence: [1], scripts: false, witness: false)
@@ -166,7 +166,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertFalse(coldDriver.needsContinuousFrames)
         for (name, value): (String, Float) in [("cameraparallaxamount", 0.5), ("cameraparallaxdelay", 0.1),
                                                ("cameraparallaxmouseinfluence", 0.5)] {
-            XCTAssertEqual(coldRenderer.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+            XCTAssertEqual(coldRenderer.instance.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
         }
         let enabled = try document(enabled: true, scripts: false, witness: false)
         try coldRenderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: cold, to: enabled)))

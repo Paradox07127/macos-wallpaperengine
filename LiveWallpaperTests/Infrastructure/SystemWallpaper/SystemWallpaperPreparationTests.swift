@@ -501,11 +501,11 @@ struct SystemWallpaperPreparationTests {
             if suspended {
                 await actor.applyPerformanceProfile(.suspended)
             }
-            let before = try #require(await actor.run { $0.parityDriverForTesting?.renderer?.clock })
+            let before = try #require(await actor.run { $0.parityDriverForTesting?.renderer?.instance.clock })
             try await Task.sleep(for: .milliseconds(1200))
             let second = try await settledPixel(actor: actor, pool: pool)
             #expect(first != second, "the clock-dependent scene was frozen")
-            let after = try #require(await actor.run { $0.parityDriverForTesting?.renderer?.clock })
+            let after = try #require(await actor.run { $0.parityDriverForTesting?.renderer?.instance.clock })
             if suspended {
                 #expect(after.time == before.time, "a headless wall-clock snapshot advanced suspended scene time")
                 #expect(after.frametime == 0, "suspended snapshots must run Date scripts with zero simulation delta")

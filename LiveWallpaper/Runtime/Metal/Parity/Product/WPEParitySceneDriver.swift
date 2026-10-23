@@ -167,7 +167,7 @@ final class WPEParitySceneDriver {
     }
 
     var excludedObjectIDs: Set<String> = [] {
-        didSet { renderer?.state.excludedObjectIDs = excludedObjectIDs }
+        didSet { renderer?.instance.state.excludedObjectIDs = excludedObjectIDs }
     }
 
     let executor: WPEMetalPresenter
@@ -185,7 +185,7 @@ final class WPEParitySceneDriver {
     private var shaderRequiresAudio = false
     var requiresSystemAudioCapture: Bool {
         guard let renderer else { return false }
-        return shaderRequiresAudio || renderer.script?.engine.audioResolutions.isEmpty == false
+        return shaderRequiresAudio || renderer.instance.script?.engine.audioResolutions.isEmpty == false
     }
 
     private var planSource: PlanSource?
@@ -364,7 +364,7 @@ final class WPEParitySceneDriver {
 
     /// Some script of the loaded scene exports a media handler.
     var scriptHandlesMedia: Bool {
-        renderer?.script?.handlesMedia == true
+        renderer?.instance.script?.handlesMedia == true
     }
 
     var hasMediaTextureDemand: Bool {
@@ -386,7 +386,7 @@ final class WPEParitySceneDriver {
 
     /// Suspended while the pause ramp still moves scene time; the frame that ends it is skipped (140110630.c:671-707).
     var isPauseRamping: Bool {
-        paused && (renderer?.clock.pauseRamp ?? 0) > 0
+        paused && (renderer?.instance.clock.pauseRamp ?? 0) > 0
     }
 
     /// Applies the user ceiling and adaptive throttle floor.
@@ -520,11 +520,11 @@ final class WPEParitySceneDriver {
                 textureCompression: textureCompression, reuseDirectTextExtentLayouts: reuseDirectTextExtentLayouts
             )
             guard generation == loadGeneration else { throw CancellationError() }
-            renderer.state.excludedObjectIDs = excludedObjectIDs
+            renderer.instance.state.excludedObjectIDs = excludedObjectIDs
             if paused {
                 renderer.applyPerformanceProfile(.suspended)
             }
-            renderer.userShortcutIcons = userShortcutIcons
+            renderer.instance.userShortcutIcons = userShortcutIcons
             // Built here so the first present does not compile its pipeline on the frame path.
             _ = try executor.renderPipeline(
                 vertexName: "wpe_present_vertex",
@@ -597,7 +597,7 @@ final class WPEParitySceneDriver {
                         connectedHost.modelData = renderer.scriptModelDataProvider
                     }
                     let script = try WPEParitySceneScript(
-                        document: document, state: renderer.state, assets: assets,
+                        document: document, state: renderer.instance.state, assets: assets,
                         canvasSize: renderer.pathCamera.size,
                         screenResolution: SIMD2(Float(target.width), Float(target.height)),
                         materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
@@ -657,7 +657,7 @@ final class WPEParitySceneDriver {
     }
 
     /// Builds a renderer for the current drawable size and fit mode and swaps it in between two frames. The scene
-    /// clock, engine inputs, puppets and particles carry over and sound keeps playing; video playback restarts.
+    /// clock, engine inputs, puppets and particles carry over and sound keeps playing; the video sources carry over.
     /// False when the build failed or a load or cleanup superseded it.
     @discardableResult
     nonisolated(nonsending) func replan() async -> Bool {
@@ -691,8 +691,8 @@ final class WPEParitySceneDriver {
                 let current = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
                                             pixelFormat: planSource.pixelFormat, renderScale: planSource.renderScale)
                 guard current == selection else { continue }
-                try withScriptSound(previous.script?.engine) {
-                    try renderer.continueScene(from: previous, userPropertiesJSON: scriptUserProperties)
+                try withScriptSound(previous.instance.script?.engine) {
+                    try renderer.adoptView(from: previous, userPropertiesJSON: scriptUserProperties)
                 }
                 self.renderer = renderer
                 cadenceSubmissions?.rendererRevision += 1
@@ -745,7 +745,7 @@ final class WPEParitySceneDriver {
         )
         update.resolveMaterialFiles(of: planSource.scene, values: patch.newValues, changed: patch.changedKeys)
         do {
-            try withScriptSound(renderer.script?.engine) {
+            try withScriptSound(renderer.instance.script?.engine) {
                 try renderer.applyUserProperties(update, changedJSON: WPEParitySceneScript.changedUserPropertiesJSON(
                     merged, keys: patch.changedKeys
                 ), mergedJSON: merged)
@@ -809,7 +809,7 @@ final class WPEParitySceneDriver {
     /// over 30% of the view is left out.
     func interactiveZones() -> [CGRect] {
         guard let renderer, let plannedTarget,
-              let quads = renderer.script?.buttonQuads(state: renderer.state), !quads.isEmpty else { return [] }
+              let quads = renderer.instance.script?.buttonQuads(state: renderer.instance.state), !quads.isEmpty else { return [] }
         let present = WPEPresentUniforms.make(
             fitMode: plannedTarget.presentFit, sourceWidth: plannedTarget.width, sourceHeight: plannedTarget.height,
             targetWidth: Int(drawableSize.width), targetHeight: Int(drawableSize.height)
@@ -1023,7 +1023,7 @@ final class WPEParitySceneDriver {
                     state.recordGPUFailure(generation: generation, reason: buffer.error?.localizedDescription ?? "Scene command buffer failed")
                 }
             }
-            let submission = try withScriptSound(renderer.script?.engine) {
+            let submission = try withScriptSound(renderer.instance.script?.engine) {
                 if resumingVideoFrame {
                     try renderer.resumeVideoFrame(completion: completion)
                 } else {
@@ -1068,11 +1068,11 @@ final class WPEParitySceneDriver {
 
     private func deliverScriptLanguage(to renderer: WPEParityFrameRenderer) throws {
         guard let language = sceneScriptLanguage, deliveredScriptLanguage != language,
-              let script = renderer.script,
+              let script = renderer.instance.script,
               let data = try? JSONSerialization.data(withJSONObject: ["language": language]),
               let payload = String(data: data, encoding: .utf8) else { return }
         withScriptSound(script.engine) {
-            script.engine.dispatch(.applyGeneralSettings, payloadJSON: payload, state: &renderer.state)
+            script.engine.dispatch(.applyGeneralSettings, payloadJSON: payload, state: &renderer.instance.state)
         }
         if let failure = script.engine.executionFailure {
             throw failure

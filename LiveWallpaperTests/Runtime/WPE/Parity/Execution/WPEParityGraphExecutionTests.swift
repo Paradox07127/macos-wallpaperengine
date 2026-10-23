@@ -192,18 +192,18 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         let output = try XCTUnwrap(renderer.targets["O_7"])
         try await submit(renderer)
         try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
-        XCTAssertTrue(renderer.state.set(.visible, of: "900", to: .zero))
+        XCTAssertTrue(renderer.instance.state.set(.visible, of: "900", to: .zero))
         try await submit(renderer)
         try assertEvery(readBack(harness, output), equals: [0, 255, 0, 255])
-        XCTAssertTrue(renderer.state.set(.visible, of: "900", to: .one))
+        XCTAssertTrue(renderer.instance.state.set(.visible, of: "900", to: .one))
         try await submit(renderer)
         try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
-        XCTAssertTrue(renderer.state.setEffect("7", of: "1", visible: false))
+        XCTAssertTrue(renderer.instance.state.setEffect("7", of: "1", visible: false))
         for _ in 0 ..< 2 {
             try await submit(renderer)
             try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
         }
-        XCTAssertTrue(renderer.state.setEffect("7", of: "1", visible: true))
+        XCTAssertTrue(renderer.instance.state.setEffect("7", of: "1", visible: true))
         try await submit(renderer)
         try assertEvery(readBack(harness, output), equals: [0, 255, 0, 255])
     }
@@ -218,7 +218,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
                         second: .init(red: 0, green: 1, blue: 0, alpha: 1))
         try await submit(original) // Its effect now binds logical A to physical B.
         let resized = try await commandRenderer(harness, directory: directory, authoredClear: false, width: 8, height: 8)
-        try resized.continueScene(from: original)
+        try resized.adoptView(from: original)
         XCTAssertTrue(resized.targets["A_7"] === a)
         XCTAssertTrue(resized.targets["B_7"] === b)
         try await submit(resized)
@@ -235,7 +235,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         try seedHistory(harness, a: a, b: b, first: .init(red: 0, green: 0, blue: 1, alpha: 1),
                         second: .init(red: 1, green: 0, blue: 1, alpha: 1))
         let resized = try await commandRenderer(harness, directory: directory, authoredClear: true, width: 8, height: 8)
-        try resized.continueScene(from: original)
+        try resized.adoptView(from: original)
         try await submit(resized)
         // Native resize clears flagged FBOs even if their explicit size stays 4x4. The effect's saved swap still
         // selects B's restored green, rather than the magenta pixels written before resize.
@@ -685,8 +685,8 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         let renderer = try await captureRenderer("3509243656", aliasing: true)
         try await submit(renderer)
         XCTAssertFalse(renderer.aliasedRenderTargets.isEmpty, "the scene aliases no render target")
-        let id = try XCTUnwrap(renderer.state.ids.first { renderer.state.isVisible($0) })
-        XCTAssertTrue(renderer.state.set(.visible, of: id, to: .zero))
+        let id = try XCTUnwrap(renderer.instance.state.ids.first { renderer.instance.state.isVisible($0) })
+        XCTAssertTrue(renderer.instance.state.set(.visible, of: id, to: .zero))
         try await submit(renderer)
         XCTAssertEqual(renderer.retainedGraphHeaps.reduce(0) { $0 + $1.size }, renderer.heapBytes,
                        "a replaced graph still holds its heap")
@@ -827,7 +827,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         }
         XCTAssertEqual(try XCTUnwrap(caught as? WPEParityExecutionError),
                        .textureDimensionMismatch("g_Texture1", expected: "3d", actual: MTLTextureType.type2D.rawValue))
-        let media = try XCTUnwrap(renderer.mediaTextures?.current)
+        let media = try XCTUnwrap(renderer.instance.mediaTextures?.current)
         XCTAssertEqual(media.textureType, .type2D)
         let failedDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == late }?.draw)
         XCTAssertTrue(failedDraw.textures["g_Texture1"] === media, "The actual late emit must receive the uploaded image")
@@ -849,7 +849,7 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         assertEvery(Array(UnsafeRawBufferPointer(start: bytes.contents(), count: 64)), equals: [0, 255, 0, 255])
 
         // Normal visibility hides only the failed layer. Its media snapshot remains installed; no gap policy is invented.
-        XCTAssertTrue(renderer.state.set(.visible, of: "2", to: .zero))
+        XCTAssertTrue(renderer.instance.state.set(.visible, of: "2", to: .zero))
         try await submitCaller()
         try assertEvery(readBack(harness, output), equals: [255, 0, 0, 255])
         XCTAssertFalse(renderer.lastFrameDraws.contains { $0.draw.textures["g_Texture1"] === media })

@@ -535,7 +535,7 @@ final class WPEParitySceneDriverTests: XCTestCase {
     }
 
     private func sceneClock(_ driver: WPEParitySceneDriver) throws -> WPEParityClock {
-        try XCTUnwrap(driver.renderer).clock
+        try XCTUnwrap(driver.renderer).instance.clock
     }
 
     func sceneInputs(sceneID: String = "3815666789") throws -> (WPESceneDocument, WPEParityProgramAssets) {

@@ -112,9 +112,9 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
         let renderer = try XCTUnwrap(driver.renderer)
         XCTAssertEqual(renderer.pathCamera.size, SIMD2<Float>(48, 32), "explicit camera qualifies the pixel coordinates")
-        let script = try XCTUnwrap(renderer.script)
+        let script = try XCTUnwrap(renderer.instance.script)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 7)
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("1")).brightness, 7)
         let layer = RecordingLayer()
         layer.device = device
         layer.pixelFormat = .bgra8Unorm_srgb
@@ -125,7 +125,7 @@ extension WPEParitySceneDriverTests {
         try await settle(driver, label: "opaque registered wide-index model")
         XCTAssertNil(submitted.error)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 8)
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("1")).brightness, 8)
         let pixels = try readBack(renderer.backbuffer, device: device)
         for (x, expected) in [(24, 255), (8, 0), (40, 0)] {
             for lane in 0 ..< 3 {

@@ -55,7 +55,7 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         XCTAssertEqual(renderer.executedDrawCount + renderer.skipped.count, renderer.drawCount)
         XCTAssertEqual(renderer.executedDrawCount, 55)
         XCTAssertEqual(plan.frames[0].draws.keys.count { renderer.particleRenderer($0) != nil }, 13)
-        XCTAssertEqual(renderer.puppets.keys.sorted(), ["43", "47", "51"])
+        XCTAssertEqual(renderer.instance.puppets.keys.sorted(), ["43", "47", "51"])
 
         try await renderFrame(renderer, elapsed: 0, label: "frame 0")
         let first = try readBack(renderer.backbuffer, device: device, queue: queue)
@@ -136,7 +136,7 @@ final class WPEParityPuppetSceneTests: XCTestCase {
                                               cache: scratch.appending(path: "shader-cache", directoryHint: .isDirectory),
                                               device: device, queue: queue)
         let sceneScript = try WPEParitySceneScript(
-            document: plan.document, state: renderer.state, assets: plan.scene.assets,
+            document: plan.document, state: renderer.instance.state, assets: plan.scene.assets,
             canvasSize: renderer.pathCamera.size,
             screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
             materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
@@ -144,10 +144,10 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         )
         try renderer.attachScript(sceneScript)
         XCTAssertEqual(sceneScript.engine.exceptionCount, 0, sceneScript.engine.exceptions.joined(separator: "\n"))
-        let seeked = try XCTUnwrap(renderer.puppets["47"]?.layers[0])
+        let seeked = try XCTUnwrap(renderer.instance.puppets["47"]?.layers[0])
         XCTAssertEqual(seeked.frame, 0.5 * Float(seeked.animation.frameCount), accuracy: 1e-3)
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 1")
-        let advanced = try XCTUnwrap(renderer.puppets["47"]?.layers[0])
+        let advanced = try XCTUnwrap(renderer.instance.puppets["47"]?.layers[0])
         XCTAssertEqual(advanced.frame, seeked.frame + seeked.fps / 60, accuracy: 1e-3)
     }
 
@@ -162,7 +162,7 @@ final class WPEParityPuppetSceneTests: XCTestCase {
                                               cache: scratch.appending(path: "shader-cache", directoryHint: .isDirectory),
                                               device: device, queue: queue)
         func write(_ name: String, of id: String, _ value: Float) {
-            renderer.state.setScriptField(name, of: id, to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
+            renderer.instance.state.setScriptField(name, of: id, to: .vector(SIMD4(value, 0, 0, 0)), invalidating: .none)
         }
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 1")
         let builds = renderer.animationLayerFieldIndexBuilds
@@ -171,20 +171,20 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         XCTAssertEqual(renderer.animationLayerFieldIndexBuilds, builds, "an unrelated field rebuilt the puppet keys")
         write("animationlayers.0.rate", of: "47", 3)
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "rate field")
-        XCTAssertEqual(try XCTUnwrap(renderer.puppets["47"]?.layers.first { $0.sceneIndex == 0 }).rate, 3)
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.puppets["47"]?.layers.first { $0.sceneIndex == 0 }).rate, 3)
         XCTAssertEqual(renderer.animationLayerFieldIndexBuilds, builds)
 
         let template = try XCTUnwrap(plan.scene.scene.objects.first { object in
             guard case .image = object.kind else { return false }
-            return object.puppet == nil && object.effects.isEmpty && renderer.state.index(of: object.id) != nil
+            return object.puppet == nil && object.effects.isEmpty && renderer.instance.state.index(of: object.id) != nil
         })
-        let clone = try String(renderer.state.appendImageLayer(cloning: template.id, id: nil) { _ in })
+        let clone = try String(renderer.instance.state.appendImageLayer(cloning: template.id, id: nil) { _ in })
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "created layer")
-        XCTAssertTrue(renderer.state.removeObject(clone))
+        XCTAssertTrue(renderer.instance.state.removeObject(clone))
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "removed layer")
         write("animationlayers.0.rate", of: "47", 2)
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "rate after layer churn")
-        XCTAssertEqual(try XCTUnwrap(renderer.puppets["47"]?.layers.first { $0.sceneIndex == 0 }).rate, 2)
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.puppets["47"]?.layers.first { $0.sceneIndex == 0 }).rate, 2)
         XCTAssertEqual(renderer.animationLayerFieldIndexBuilds, builds + 1,
                        "layer membership changes did not refresh the puppet keys exactly once")
     }
@@ -199,7 +199,7 @@ final class WPEParityPuppetSceneTests: XCTestCase {
                                               cache: scratch.appending(path: "shader-cache", directoryHint: .isDirectory),
                                               device: device, queue: queue)
         let sceneScript = try WPEParitySceneScript(
-            document: plan.document, state: renderer.state, assets: plan.scene.assets,
+            document: plan.document, state: renderer.instance.state, assets: plan.scene.assets,
             canvasSize: renderer.pathCamera.size,
             screenResolution: SIMD2(Float(renderer.backbuffer.width), Float(renderer.backbuffer.height)),
             materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
@@ -209,11 +209,11 @@ final class WPEParityPuppetSceneTests: XCTestCase {
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 1")
         let exceptions = sceneScript.engine.exceptionCount
         sceneScript.engine.dispatch(.cursorClick, payloadJSON: #"{"world":[0,0,0],"local":[0,0,0],"hitBox":null}"#,
-                                    target: "64", state: &renderer.state)
+                                    target: "64", state: &renderer.instance.state)
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 2")
         try await renderFrame(renderer, elapsed: 1.0 / 60, label: "frame 3")
         XCTAssertEqual(sceneScript.engine.exceptionCount, exceptions, sceneScript.engine.exceptions.joined(separator: "\n"))
-        let puppet = try XCTUnwrap(renderer.puppets["545"])
+        let puppet = try XCTUnwrap(renderer.instance.puppets["545"])
         let sss = try XCTUnwrap(puppet.layers.first { $0.sceneIndex == 1 })
         XCTAssertFalse(sss.isPlaying)
         XCTAssertEqual(sss.frame, 0)

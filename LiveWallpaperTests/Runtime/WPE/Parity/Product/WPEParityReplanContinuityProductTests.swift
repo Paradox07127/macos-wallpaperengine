@@ -97,7 +97,7 @@ extension WPEParitySceneDriverTests {
         for index in 0 ..< 6 {
             try await continuityFrame(driver, layer: layer, index: index)
         }
-        let script = try XCTUnwrap(driver.renderer?.script)
+        let script = try XCTUnwrap(driver.renderer?.instance.script)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
         let before = try replanContinuitySnapshot(XCTUnwrap(driver.renderer))
         XCTAssertTrue(before.puppets.contains { $0.time > 0 }, "\(before.puppets)")
@@ -160,7 +160,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(try center("first_7"), [255, 0, 0, 255])
         XCTAssertEqual(try center("second_7"), [0, 255, 0, 255])
         try await continuityFrame(driver, layer: layer, index: 3)
-        let script = try XCTUnwrap(driver.renderer?.script)
+        let script = try XCTUnwrap(driver.renderer?.instance.script)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
         XCTAssertEqual(try center("first_7"), [0, 0, 255, 255], "reverseTwo clears first with its declared colour")
         XCTAssertEqual(try center("second_7"), [255, 0, 0, 255], "reverseTwo clears second with its declared colour")
@@ -568,13 +568,8 @@ private extension Equatable {
     }
 }
 
-/// `frameIndex`, `sceneRNG`, `textureSlots` and `renderVars` are private to the renderer, so they are read by reflection.
 private func replanContinuitySnapshot(_ renderer: WPEParityFrameRenderer) throws -> ReplanContinuitySnapshot {
-    let stored = Dictionary(Mirror(reflecting: renderer).children.compactMap { child in child.label.map { ($0, child.value) } }) { first, _ in first }
-    func value<T>(_ name: String, as _: T.Type) throws -> T {
-        try XCTUnwrap(stored[name] as? T, "WPEParityFrameRenderer has no stored \(name) of type \(T.self)")
-    }
-    var particleScene = renderer.particles.scene
+    var particleScene = renderer.instance.particles.scene
     let particles = renderer.plan.document.particleObjects.map(\.id).sorted().compactMap { id in
         let live = particleScene.liveCount(id) ?? 0
         return particleScene.control(objectID: id) { system in
@@ -583,46 +578,46 @@ private func replanContinuitySnapshot(_ renderer: WPEParityFrameRenderer) throws
                                                            ages: slots.map { system.age[$0] })
         }
     }
-    let puppets = renderer.puppets.keys.sorted().flatMap { id in
-        (renderer.puppets[id]?.layers ?? []).map {
+    let puppets = renderer.instance.puppets.keys.sorted().flatMap { id in
+        (renderer.instance.puppets[id]?.layers ?? []).map {
             ReplanContinuitySnapshot.PuppetLayer(objectID: id, sceneIndex: $0.sceneIndex, time: $0.time,
                                                  weight: $0.weight, paused: $0.paused)
         }
     }
-    let propertyAnimations = ([""] + renderer.state.ids).compactMap { id in
-        renderer.animations.animation(objectID: id, pass: nil, name: "").map {
+    let propertyAnimations = ([""] + renderer.instance.state.ids).compactMap { id in
+        renderer.instance.animations.animation(objectID: id, pass: nil, name: "").map {
             ReplanContinuitySnapshot.PropertyAnimation(objectID: id, animation: .init(object: $0), time: $0.time)
         }
     }
-    let textureAnimations = renderer.textureAnimations.sorted { $0.key < $1.key }.map { id, animation in
+    let textureAnimations = renderer.instance.textureAnimations.sorted { $0.key < $1.key }.map { id, animation in
         ReplanContinuitySnapshot.TextureAnimation(objectID: id, frame: animation.frame, time: animation.time,
                                                   rate: animation.rate, playing: animation.playing)
     }
-    let state = renderer.state
-    let textureSlots = try value("textureSlots", as: [String: WPECBufferValue].self)
-    return try ReplanContinuitySnapshot(
-        clockTime: renderer.clock.time,
-        frametime: renderer.clock.frametime,
-        frameIndex: value("frameIndex", as: Int.self),
-        sceneRandom: .init(object: value("sceneRNG", as: WPEParityMT19937.self)),
+    let state = renderer.instance.state
+    let textureSlots = renderer.instance.textureSlots
+    return ReplanContinuitySnapshot(
+        clockTime: renderer.instance.clock.time,
+        frametime: renderer.instance.clock.frametime,
+        frameIndex: renderer.instance.frameIndex,
+        sceneRandom: .init(object: renderer.instance.sceneRNG),
         particles: particles,
         puppets: puppets,
         propertyAnimations: propertyAnimations,
         textureAnimations: textureAnimations,
-        pushedAnimationLayerFields: renderer.pushedAnimationLayerFields,
-        pointer: .init(position: renderer.pointer.position, lastPosition: renderer.pointer.lastPosition,
-                       isDown: renderer.pointer.isDown, wasDown: renderer.pointer.wasDown),
-        parallax: [renderer.parallax.smoothed, renderer.parallax.position],
-        audio: renderer.audio.bins,
-        cameraPaths: renderer.cameraPaths,
-        activeCameraID: renderer.activeCameraID,
-        cameraQueues: renderer.cameraQueues.mapValues { .init(object: $0) },
-        bloom: renderer.bloom,
-        seenScriptSound: renderer.seenScriptSound,
-        seenSoundBoundsFields: renderer.seenSoundBoundsFields,
-        seenScriptLighting: renderer.seenScriptLighting,
-        seenScriptBloom: renderer.seenScriptBloom,
-        mediaDiagnostics: renderer.mediaDiagnostics,
+        pushedAnimationLayerFields: renderer.instance.pushedAnimationLayerFields,
+        pointer: .init(position: renderer.instance.pointer.position, lastPosition: renderer.instance.pointer.lastPosition,
+                       isDown: renderer.instance.pointer.isDown, wasDown: renderer.instance.pointer.wasDown),
+        parallax: [renderer.instance.parallax.smoothed, renderer.instance.parallax.position],
+        audio: renderer.instance.audio.bins,
+        cameraPaths: renderer.instance.cameraPaths,
+        activeCameraID: renderer.instance.activeCameraID,
+        cameraQueues: renderer.instance.cameraQueues.mapValues { .init(object: $0) },
+        bloom: renderer.instance.bloom,
+        seenScriptSound: renderer.instance.seenScriptSound,
+        seenSoundBoundsFields: renderer.instance.seenSoundBoundsFields,
+        seenScriptLighting: renderer.instance.seenScriptLighting,
+        seenScriptBloom: renderer.instance.seenScriptBloom,
+        mediaDiagnostics: renderer.instance.mediaDiagnostics,
         state: .init(ids: state.ids, objects: state.objects, commonOrder: state.commonOrder,
                      transparentOrder: state.transparentOrder, effectVisibility: state.effectVisibility,
                      scriptFields: state.scriptFields,
@@ -630,9 +625,9 @@ private func replanContinuitySnapshot(_ renderer: WPEParityFrameRenderer) throws
                                    state.effectVisibilityGeneration, state.constantsGeneration,
                                    state.scriptFieldsGeneration]
                          + WPEParitySceneState.Invalidation.allCases.map { state.generation($0) }),
-        script: .init(object: renderer.script),
+        script: .init(object: renderer.instance.script),
         textureSlots: textureSlots.mapValues { String(describing: $0) },
-        renderVars: value("renderVars", as: WPEParityRenderVarState.self),
+        renderVars: renderer.instance.renderVars,
         videos: .init(object: renderer.videos),
         videoSources: renderer.videos.authoredSourcesForTesting.map { .init(object: $0) },
         texts: renderer.texts.mapValues(\.object)

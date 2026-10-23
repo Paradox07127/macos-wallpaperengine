@@ -70,7 +70,7 @@ extension WPEParitySceneDriverTests {
                                       SIMD4(0, 0, 1, 0), SIMD4(1, 0, 0, 0)]
         let rgb = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 0, 0]]
         for frame in colors.indices {
-            XCTAssertTrue(renderer.state.set(.color, of: "1", to: colors[frame]))
+            XCTAssertTrue(renderer.instance.state.set(.color, of: "1", to: colors[frame]))
             try await present(driver, layer: layer, label: "child-only mip frame\(frame)")
             XCTAssertEqual(renderer.skipped, [:])
             XCTAssertEqual(renderer.particleMaterialSkips, [:])

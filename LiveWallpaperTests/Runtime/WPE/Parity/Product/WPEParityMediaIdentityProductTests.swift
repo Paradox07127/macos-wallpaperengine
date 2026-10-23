@@ -43,7 +43,7 @@ extension WPEParitySceneDriverTests {
                 // G witnesses nonempty/new current and previous == the last delivered current, without parsing names.
                 // B witnesses the actual bound scriptproperties and event4 before the media callback.
                 try assertMediaIdentityPixel(driver, layer: layer, rgb: SIMD3(Float(deliveries) / 8, 1, 1), label: step)
-                XCTAssertTrue(try XCTUnwrap(driver.renderer).mediaDiagnostics.contains(
+                XCTAssertTrue(try XCTUnwrap(driver.renderer).instance.mediaDiagnostics.contains(
                     "media.artwork-\(diagnostic)-native-behavior-unverified"
                 ), "Raw identity must not qualify the Mac GPU decoder: \(step)")
             }
@@ -78,14 +78,14 @@ extension WPEParitySceneDriverTests {
         try assertMediaIdentityPixel(driver, layer: layer, rgb: SIMD3(0.125, 1, 0.125), label: "typed entry retained")
         XCTAssertEqual(driver.loadGeneration, generation)
         XCTAssertEqual(try ObjectIdentifier(XCTUnwrap(driver.renderer)), rendererIdentity)
-        let controlAlpha = try XCTUnwrap(XCTUnwrap(driver.renderer).state.value(.alpha, of: "2"))
+        let controlAlpha = try XCTUnwrap(XCTUnwrap(driver.renderer).instance.state.value(.alpha, of: "2"))
         XCTAssertEqual(controlAlpha.x, 0.75)
 
         source.push(artwork: Data("event4-invalid-next-artwork".utf8))
         try await present(driver, layer: layer, label: "media after typed project commit")
         try assertMediaIdentityPixel(driver, layer: layer, rgb: SIMD3(0.125, 1, 0.25),
                                      label: "media keys excluded while merged state and observers advance")
-        XCTAssertTrue(try XCTUnwrap(driver.renderer).mediaDiagnostics.contains(
+        XCTAssertTrue(try XCTUnwrap(driver.renderer).instance.mediaDiagnostics.contains(
             "media.artwork-undecodable-native-behavior-unverified"
         ))
     }
@@ -228,7 +228,7 @@ extension WPEParitySceneDriverTests {
                                           rgb: SIMD3<Float>, label: String,
                                           file: StaticString = #filePath, line: UInt = #line) throws {
         let renderer = try XCTUnwrap(driver.renderer, label, file: file, line: line)
-        let color = try XCTUnwrap(renderer.state.value(.color, of: "1"), label, file: file, line: line)
+        let color = try XCTUnwrap(renderer.instance.state.value(.color, of: "1"), label, file: file, line: line)
         for channel in 0 ..< 3 {
             XCTAssertEqual(color[channel], rgb[channel], label, file: file, line: line)
         }

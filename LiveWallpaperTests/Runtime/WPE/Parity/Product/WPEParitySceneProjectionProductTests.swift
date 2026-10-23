@@ -149,11 +149,11 @@ extension WPEParitySceneDriverTests {
         let paused = try host(drive: false)
         try renderer.applyUserProperties(unchanged, changedJSON: paused, mergedJSON: paused)
         try await frame(3, fov: 250, focal: focalUpper, near: 1, far: 9)
-        XCTAssertEqual(renderer.state.scriptField("fov", of: ""), .vector(SIMD4(250, 0, 0, 0)), "Clamp must not change public raw FOV")
+        XCTAssertEqual(renderer.instance.state.scriptField("fov", of: ""), .vector(SIMD4(250, 0, 0, 0)), "Clamp must not change public raw FOV")
         let object = try document(fov: 90, near: 1, far: 9, activeObject: true)
         try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: object)))
         try await frame(4, fov: 60, focal: focal60, near: 1, far: 9)
-        XCTAssertEqual(renderer.state.scriptField("fov", of: ""), .vector(SIMD4(90, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.scriptField("fov", of: ""), .vector(SIMD4(90, 0, 0, 0)))
         let queue = try document(fov: 90, near: 1, far: 9, activeQueue: true)
         try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: object, to: queue)))
         try await frame(5, fov: 90, focal: focal90, near: 1, far: 9)
@@ -167,9 +167,9 @@ extension WPEParitySceneDriverTests {
         for name in ["fov", "nearz", "farz"] {
             XCTAssertNil(WPEParityScriptProperty.sceneFloatValue(fromJSON: invalid.resolvedGeneralJSON[name]))
         }
-        let generation = current.state.scriptFieldsGeneration
+        let generation = current.instance.state.scriptFieldsGeneration
         try current.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: queue, to: invalid)))
-        XCTAssertEqual(current.state.scriptFieldsGeneration, generation)
+        XCTAssertEqual(current.instance.state.scriptFieldsGeneration, generation)
         try await frame(7, fov: 90, focal: focal90, near: 1, far: 9, reused: false)
         let cold = try WPEParitySceneDriver(device: device)
         defer { cold.cleanup() }
@@ -178,14 +178,14 @@ extension WPEParitySceneDriverTests {
                             drawableSize: CGSize(width: 64, height: 64), pixelFormat: .bgra8Unorm_srgb,
                             compiler: compiler, diskCache: .init(cachesURL: scratch.appending(path: "projection-cold-cache")))
         let coldRenderer = try XCTUnwrap(cold.renderer)
-        XCTAssertNil(coldRenderer.script)
+        XCTAssertNil(coldRenderer.instance.script)
         for (name, value): (String, Float) in [("fov", 50), ("nearz", 0.1), ("farz", 10000)] {
-            XCTAssertEqual(coldRenderer.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+            XCTAssertEqual(coldRenderer.instance.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
         }
         let accepted = try document(fov: 90, near: 1, far: 9, scripted: false)
         try coldRenderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: coldDocument, to: accepted)))
         for (name, value): (String, Float) in [("fov", 90), ("nearz", 1), ("farz", 9)] {
-            XCTAssertEqual(coldRenderer.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+            XCTAssertEqual(coldRenderer.instance.state.scriptField(name, of: ""), .vector(SIMD4(value, 0, 0, 0)))
         }
         layer.drawableSize = CGSize(width: 64, height: 64)
         let command = try XCTUnwrap(cold.renderAndPresentFrame(layer: layer, timestamp: 100,
@@ -223,7 +223,7 @@ extension WPEParitySceneDriverTests {
                             scriptHost: .init(userPropertiesJSON: host(fov: 60)))
         let overrideRenderer = try XCTUnwrap(cold.renderer)
         XCTAssertEqual(overrideRenderer.pathCamera.perspectiveFOV, 95, "Bool cannot replace the native Float seed")
-        XCTAssertEqual(overrideRenderer.state.scriptField("perspectiveoverridefov", of: ""), .vector(SIMD4(95, 0, 0, 0)))
+        XCTAssertEqual(overrideRenderer.instance.state.scriptField("perspectiveoverridefov", of: ""), .vector(SIMD4(95, 0, 0, 0)))
         var distances: [Float] = []
         for (index, expectedFOV): (Int, Float) in [(0, 95), (1, 60)] {
             let command = try XCTUnwrap(cold.renderAndPresentFrame(layer: layer, timestamp: 200 + Double(index) * 0.25,
@@ -234,7 +234,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertTrue(cold.renderer === overrideRenderer)
             XCTAssertTrue(overrideRenderer.skipped.isEmpty, "\(overrideRenderer.skipped)")
             XCTAssertEqual(overrideRenderer.pathCamera.perspectiveFOV, expectedFOV)
-            XCTAssertEqual(overrideRenderer.state.scriptField("perspectiveoverridefov", of: ""), .vector(SIMD4(60, 0, 0, 0)))
+            XCTAssertEqual(overrideRenderer.instance.state.scriptField("perspectiveoverridefov", of: ""), .vector(SIMD4(60, 0, 0, 0)))
             let draw = try XCTUnwrap(overrideRenderer.lastFrameDraws.first {
                 $0.draw.values(for: .vertex)["g_ModelViewProjectionMatrix"] != nil
             })

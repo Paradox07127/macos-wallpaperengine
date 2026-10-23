@@ -50,7 +50,7 @@ final class WPEParityTextDrawTests: XCTestCase {
             // A sorted perspective scene replans on its first frame, so indices come from the encoded layout.
             let operations = renderer.frames[0].draws.compactMap { index, draw -> Int? in
                 guard case let .scene(scene) = draw, texts.contains(scene.objectID),
-                      renderer.state.isVisible(scene.objectID) else { return nil }
+                      renderer.instance.state.isVisible(scene.objectID) else { return nil }
                 return index
             }.sorted()
             print("scene \(sceneID): text objects \(texts.sorted()), visible text draws \(operations)")
@@ -69,7 +69,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(renderer.skipped, [:])
         try await encode(renderer, label: "text shown")
         let shown = try readBack(renderer.backbuffer, fixture)
-        XCTAssertTrue(renderer.state.set(.visible, of: Self.textID, to: .zero))
+        XCTAssertTrue(renderer.instance.state.set(.visible, of: Self.textID, to: .zero))
         try await encode(renderer, label: "text hidden")
         let hidden = try readBack(renderer.backbuffer, fixture)
 
@@ -172,7 +172,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         let creations = renderer.pipelineCreations
         var firstDraw: WPEParityDraw?
         for perspective in [true, false, true] {
-            renderer.state.setScriptField("perspective", of: Self.textID,
+            renderer.instance.state.setScriptField("perspective", of: Self.textID,
                                           to: .vector(SIMD4(perspective ? 1 : 0, 0, 0, 0)), invalidating: .none)
             try await encode(renderer, label: "child perspective=\(perspective)")
             let draw = try textDraw(renderer, geometry: .textGlyphs(.mono))
@@ -229,7 +229,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         var firstPixels: [UInt8]?
         var firstPresented: [UInt8]?
         for perspective in [true, false] {
-            renderer.state.setScriptField("perspective", of: Self.textID,
+            renderer.instance.state.setScriptField("perspective", of: Self.textID,
                                           to: .vector(SIMD4(perspective ? 1 : 0, 0, 0, 0)), invalidating: .none)
             try await encode(renderer, label: "FBO child perspective=\(perspective)")
             _ = try textDraw(renderer, geometry: .textGlyphs(.mono))
@@ -300,18 +300,18 @@ final class WPEParityTextDrawTests: XCTestCase {
         try await encode(renderer, label: "root-equivalent object camera")
         let original = try centroid()
         XCTAssertEqual(try vector("g_LPoint_Origin"), [11, 22, 3, 2])
-        renderer.state.set(.visible, of: "102", to: SIMD4(1, 0, 0, 0))
-        renderer.state.set(.color, of: "103", to: SIMD4(0.5, 0.25, 0.125, 0))
-        renderer.state.setScriptField("ambientcolor", of: "", to: .vector(SIMD4(0.1, 0.2, 0.3, 0)), invalidating: .lighting)
+        renderer.instance.state.set(.visible, of: "102", to: SIMD4(1, 0, 0, 0))
+        renderer.instance.state.set(.color, of: "103", to: SIMD4(0.5, 0.25, 0.125, 0))
+        renderer.instance.state.setScriptField("ambientcolor", of: "", to: .vector(SIMD4(0.1, 0.2, 0.3, 0)), invalidating: .lighting)
         try await encode(renderer, label: "last-visible camera and live light color")
         XCTAssertEqual(try centroid(), original - 80, accuracy: 0.05)
         XCTAssertEqual(try vector("g_LPoint_Color"), [1, 0.5, 0.25, 9])
-        renderer.state.set(.origin, of: "103", to: SIMD4(4, 5, 6, 0))
+        renderer.instance.state.set(.origin, of: "103", to: SIMD4(4, 5, 6, 0))
         try await encode(renderer, label: "moving light keeps ambient")
         XCTAssertEqual(try vector("g_LPoint_Origin"), [14, 25, 6, 2])
         XCTAssertEqual(try vector("g_LightAmbientColor"), [0.1, 0.2, 0.3])
-        renderer.state.set(.visible, of: "100", to: .zero)
-        renderer.state.set(.visible, of: "101", to: .zero)
+        renderer.instance.state.set(.visible, of: "100", to: .zero)
+        renderer.instance.state.set(.visible, of: "101", to: .zero)
         try await encode(renderer, label: "hidden camera ancestors restore authored root")
         XCTAssertEqual(try centroid(), original, accuracy: 0.05)
         XCTAssertNil(try constants()["g_LPoint_Origin"], "a hidden light must not leave the previous frame's array")
@@ -892,8 +892,8 @@ final class WPEParityTextDrawTests: XCTestCase {
             throw Injected.beforeAccept
         }
         defer { renderer.textPreparationCheckpoint = nil }
-        renderer.state.setScriptField("text", of: Self.textID, to: .string("WWWW"), invalidating: .textLayout)
-        renderer.state.setScriptField("text", of: "6", to: .string("MMM"), invalidating: .textLayout)
+        renderer.instance.state.setScriptField("text", of: Self.textID, to: .string("WWWW"), invalidating: .textLayout)
+        renderer.instance.state.setScriptField("text", of: "6", to: .string("MMM"), invalidating: .textLayout)
         XCTAssertThrowsError(try renderer.encodeFrame(elapsed: 1.0 / 60)) { error in
             XCTAssertTrue(error is Injected, "Must reach the late checkpoint, not fail at prerequisites: \(error)")
         }
@@ -944,11 +944,11 @@ final class WPEParityTextDrawTests: XCTestCase {
         // Only the effect generation advances after the failure. The unconsumed canonical text fields
         // must be re-projected after discarding the failed prefix, rather than replacing WWWW/MMM with Hi.
         renderer.textPreparationCheckpoint = nil
-        let textGeneration = renderer.state.generation(.textLayout)
-        let effectsGeneration = renderer.state.effectVisibilityGeneration
-        XCTAssertTrue(renderer.state.setEffect("7", of: Self.textID, visible: false))
-        XCTAssertEqual(renderer.state.generation(.textLayout), textGeneration)
-        XCTAssertEqual(renderer.state.effectVisibilityGeneration, effectsGeneration + 1)
+        let textGeneration = renderer.instance.state.generation(.textLayout)
+        let effectsGeneration = renderer.instance.state.effectVisibilityGeneration
+        XCTAssertTrue(renderer.instance.state.setEffect("7", of: Self.textID, visible: false))
+        XCTAssertEqual(renderer.instance.state.generation(.textLayout), textGeneration)
+        XCTAssertEqual(renderer.instance.state.effectVisibilityGeneration, effectsGeneration + 1)
         try await encode(renderer, label: "text admission recovery after effect-only input")
         let after = renderer.textPreparationState
         XCTAssertEqual(after.pendingRequests, 0)
@@ -1170,7 +1170,7 @@ final class WPEParityTextDrawTests: XCTestCase {
                 let previous = try XCTUnwrap(fast.renderer.texts[Self.textID]).layout.fboSize
                 let reused = try XCTUnwrap(fast.renderer.textReplanDiagnostics).directExtentLayoutReuseCohorts
                 for fixture in [slow, fast] {
-                    fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string(caption), invalidating: .textLayout)
+                    fixture.renderer.instance.state.setScriptField("text", of: Self.textID, to: .string(caption), invalidating: .textLayout)
                     try await encode(fixture.renderer, label: "direct extent \(caption)", input: fixedInput)
                     try assertFullTextReference(fixture)
                     try assertSamplesAndResolve(fixture, samples: samples)
@@ -1216,7 +1216,7 @@ final class WPEParityTextDrawTests: XCTestCase {
             let accepted = try XCTUnwrap(fast.renderer.textReplanDiagnostics).acceptedCohorts
             fast.renderer.textPreparationCheckpoint = { _ in throw Injected.beforeAccept }
             for fixture in [slow, fast] {
-                fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string("MMMM"), invalidating: .textLayout)
+                fixture.renderer.instance.state.setScriptField("text", of: Self.textID, to: .string("MMMM"), invalidating: .textLayout)
             }
             XCTAssertThrowsError(try fast.renderer.encodeFrame(elapsed: 1.0 / 60, input: fixedInput)) { XCTAssertTrue($0 is Injected) }
             let rejected = fast.renderer.textPreparationState
@@ -1241,8 +1241,8 @@ final class WPEParityTextDrawTests: XCTestCase {
             if parented {
                 let reused = try XCTUnwrap(fast.renderer.textReplanDiagnostics).directExtentLayoutReuseCohorts
                 for fixture in [slow, fast] {
-                    XCTAssertTrue(fixture.renderer.state.setParent(Self.textID, to: nil))
-                    fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string("Hello"), invalidating: .textLayout)
+                    XCTAssertTrue(fixture.renderer.instance.state.setParent(Self.textID, to: nil))
+                    fixture.renderer.instance.state.setScriptField("text", of: Self.textID, to: .string("Hello"), invalidating: .textLayout)
                     try await encode(fixture.renderer, label: "pending parent generation slow control", input: fixedInput)
                     try assertFullTextReference(fixture)
                     try assertSamplesAndResolve(fixture, samples: samples)
@@ -1271,7 +1271,7 @@ final class WPEParityTextDrawTests: XCTestCase {
             }
             for caption in ["Hello", "", "Hi"] {
                 for fixture in [slow, fast] {
-                    fixture.renderer.state.setScriptField("text", of: Self.textID, to: .string(caption), invalidating: .textLayout)
+                    fixture.renderer.instance.state.setScriptField("text", of: Self.textID, to: .string(caption), invalidating: .textLayout)
                     try await encode(fixture.renderer, label: "extent fallback \(caption.debugDescription)", input: fixedInput)
                     try assertFullTextReference(fixture)
                 }
@@ -1284,7 +1284,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         let direct = try await makeSyntheticRenderer(effect: false, reuseDirectTextExtents: true)
         try await encode(direct.renderer, label: "empty direct initial", input: fixedInput)
         direct.renderer.startTextReplanDiagnostics()
-        direct.renderer.state.setScriptField("text", of: Self.textID, to: .string(""), invalidating: .textLayout)
+        direct.renderer.instance.state.setScriptField("text", of: Self.textID, to: .string(""), invalidating: .textLayout)
         try await encode(direct.renderer, label: "empty direct slow control", input: fixedInput)
         XCTAssertEqual(direct.renderer.textReplanDiagnostics?.directExtentLayoutReuseCohorts, 0)
         XCTAssertEqual(direct.renderer.textReplanDiagnostics?.frameRebuildCohorts, 1)
@@ -1294,7 +1294,7 @@ final class WPEParityTextDrawTests: XCTestCase {
     /// Full CPU composition is an independent oracle used only by tests, never by eligibility on the hot path.
     private func assertFullTextReference(_ fixture: Fixture) throws {
         let renderer = fixture.renderer
-        let expected = try fixture.plan.layout(effects: renderer.state, texts: renderer.texts)
+        let expected = try fixture.plan.layout(effects: renderer.instance.state, texts: renderer.texts)
         let actual = renderer.textFrameLayoutForTesting
         XCTAssertEqual(actual.frames, expected.frames)
         XCTAssertEqual(actual.programs.mapValues(\.hlsl), expected.programs.mapValues(\.hlsl))
@@ -1587,7 +1587,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         let atlasTexture = try XCTUnwrap(beforeDraw.textures["g_Texture0"])
         let atlasGeneration = try XCTUnwrap(renderer.textAtlases[before.atlasKey]).mono.contentGeneration
         let initialPipelines = renderer.pipelineCreations
-        let initialLayout = renderer.state.generation(.textLayout)
+        let initialLayout = renderer.instance.state.generation(.textLayout)
         let beforePixels = try readBack(renderer.backbuffer, fixture)
 
         try await encode(renderer, label: "justified wrapped row")
@@ -1609,7 +1609,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(after.atlasKey, before.atlasKey)
         XCTAssertEqual(try XCTUnwrap(renderer.textAtlases[after.atlasKey]).mono.contentGeneration, atlasGeneration)
         XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
-        XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout + 1)
+        XCTAssertEqual(renderer.instance.state.generation(.textLayout), initialLayout + 1)
         let afterPixels = try readBack(renderer.backbuffer, fixture)
         // Origin(100,400), top anchor ascender143: first row screen y153...287, final row y335...438.
         // The old ink ends at x642. New g ink occupies x636...700; x>=701 must stay black.
@@ -1641,9 +1641,9 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(sameDraw.indexBuffer) === XCTUnwrap(afterDraw.indexBuffer))
         XCTAssertTrue(try XCTUnwrap(sameDraw.textures["g_Texture0"]) === atlasTexture)
         XCTAssertTrue(sameDraw.pipeline.state === beforeDraw.pipeline.state)
-        XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout + 1)
+        XCTAssertEqual(renderer.instance.state.generation(.textLayout), initialLayout + 1)
         XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
-        let script = try XCTUnwrap(renderer.script)
+        let script = try XCTUnwrap(renderer.instance.script)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
@@ -1669,18 +1669,18 @@ final class WPEParityTextDrawTests: XCTestCase {
         try await encode(renderer, label: "first size read")
         let first = try XCTUnwrap(renderer.texts[Self.textID])
         let mesh = try XCTUnwrap(first.layout.mesh)
-        let firstOrigin = try XCTUnwrap(renderer.state.object(Self.textID)?.origin)
+        let firstOrigin = try XCTUnwrap(renderer.instance.state.object(Self.textID)?.origin)
         XCTAssertEqual(SIMD2(firstOrigin.x, firstOrigin.y), first.scriptSize)
         XCTAssertEqual(first.scriptSize, SIMD2(mesh.maxX - mesh.minX, mesh.top - mesh.bottom))
 
         try await encode(renderer, label: "text write")
         try await encode(renderer, label: "relaid size read")
         let relaid = try XCTUnwrap(renderer.texts[Self.textID])
-        let origin = try XCTUnwrap(renderer.state.object(Self.textID)?.origin)
+        let origin = try XCTUnwrap(renderer.instance.state.object(Self.textID)?.origin)
         XCTAssertEqual(origin.z, 3)
         XCTAssertEqual(SIMD2(origin.x, origin.y), relaid.scriptSize)
         XCTAssertNotEqual(relaid.scriptSize, first.scriptSize)
-        let engine = try XCTUnwrap(renderer.script).engine
+        let engine = try XCTUnwrap(renderer.instance.script).engine
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
     }
 
@@ -1721,7 +1721,7 @@ final class WPEParityTextDrawTests: XCTestCase {
                 let text = try XCTUnwrap(renderer.texts[Self.textID])
                 let atlas = try XCTUnwrap(glyph.textures["g_Texture0"])
                 let generation = try XCTUnwrap(renderer.textAtlases[text.atlasKey]).mono.contentGeneration
-                XCTAssertEqual(renderer.state.scriptField("backgroundbrightness", of: Self.textID),
+                XCTAssertEqual(renderer.instance.state.scriptField("backgroundbrightness", of: Self.textID),
                                .vector(SIMD4(brightness, 0, 0, 0)))
                 guard case let .float(alpha)? = background.constants[.fragment]?["g_Alpha"] else {
                     return XCTFail("missing real background alpha constant")
@@ -1773,7 +1773,7 @@ final class WPEParityTextDrawTests: XCTestCase {
                     originalGlyph = glyph
                     originalAtlas = atlas
                     originalGeneration = generation
-                    initialLayout = renderer.state.generation(.textLayout)
+                    initialLayout = renderer.instance.state.generation(.textLayout)
                     initialPipelines = renderer.pipelineCreations
                 } else {
                     let initialBackground = try XCTUnwrap(originalBackground)
@@ -1787,15 +1787,15 @@ final class WPEParityTextDrawTests: XCTestCase {
                     XCTAssertTrue(glyph.pipeline.state === initialGlyph.pipeline.state)
                     XCTAssertTrue(atlas === initialAtlas)
                     XCTAssertEqual(generation, originalGeneration)
-                    XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout)
+                    XCTAssertEqual(renderer.instance.state.generation(.textLayout), initialLayout)
                     XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
                     if frame == 2 {
-                        XCTAssertEqual(renderer.state.scriptFieldsGeneration, priorFields, "same scale schedules no new work")
+                        XCTAssertEqual(renderer.instance.state.scriptFieldsGeneration, priorFields, "same scale schedules no new work")
                     }
                 }
-                priorFields = renderer.state.scriptFieldsGeneration
+                priorFields = renderer.instance.state.scriptFieldsGeneration
             }
-            let script = try XCTUnwrap(renderer.script)
+            let script = try XCTUnwrap(renderer.instance.script)
             XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
         }
     }
@@ -1870,7 +1870,7 @@ final class WPEParityTextDrawTests: XCTestCase {
                 originalEffect = effect.draw
                 originalAtlas = atlas
                 originalGeneration = generation
-                initialLayout = renderer.state.generation(.textLayout)
+                initialLayout = renderer.instance.state.generation(.textLayout)
                 initialPipelines = renderer.pipelineCreations
             } else {
                 let initialGlyph = try XCTUnwrap(originalGlyph)
@@ -1884,15 +1884,15 @@ final class WPEParityTextDrawTests: XCTestCase {
                 XCTAssertTrue(effect.draw.pipeline.state === initialEffect.pipeline.state)
                 XCTAssertTrue(atlas === initialAtlas)
                 XCTAssertEqual(generation, originalGeneration)
-                XCTAssertEqual(renderer.state.generation(.textLayout), initialLayout)
+                XCTAssertEqual(renderer.instance.state.generation(.textLayout), initialLayout)
                 XCTAssertEqual(renderer.pipelineCreations, initialPipelines)
                 if frame == 2 {
-                    XCTAssertEqual(renderer.state.scriptFieldsGeneration, priorFields)
+                    XCTAssertEqual(renderer.instance.state.scriptFieldsGeneration, priorFields)
                 }
             }
-            priorFields = renderer.state.scriptFieldsGeneration
+            priorFields = renderer.instance.state.scriptFieldsGeneration
         }
-        let script = try XCTUnwrap(renderer.script)
+        let script = try XCTUnwrap(renderer.instance.script)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
     }
 
@@ -2115,7 +2115,7 @@ final class WPEParityTextDrawTests: XCTestCase {
         )
         if scripted {
             try renderer.attachScript(WPEParitySceneScript(
-                document: document, state: renderer.state, assets: assets, canvasSize: renderer.pathCamera.size,
+                document: document, state: renderer.instance.state, assets: assets, canvasSize: renderer.pathCamera.size,
                 screenResolution: SIMD2(Float(Self.width), Float(Self.height)), fieldDefaults: renderer.scriptFieldDefaults, host: .init()
             ))
         }

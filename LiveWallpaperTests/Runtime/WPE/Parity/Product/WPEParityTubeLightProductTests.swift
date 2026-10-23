@@ -78,7 +78,7 @@ extension WPEParitySceneDriverTests {
             }
             try await present(driver, layer: layer, label: "tube original lighting frame \(frame)")
             let renderer = try XCTUnwrap(driver.renderer)
-            let script = try XCTUnwrap(renderer.script)
+            let script = try XCTUnwrap(renderer.instance.script)
             XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
             XCTAssertTrue(renderer.fallbackTextures.isEmpty, "\(renderer.fallbackTextures)")

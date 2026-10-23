@@ -92,7 +92,7 @@ extension WPEParitySceneDriverTests {
         do {
             let renderer = try XCTUnwrap(driver.renderer)
             XCTAssertEqual(renderer.pathCamera.size, SIMD2<Float>(48, 32), "explicit camera qualifies the pixel coordinates")
-            XCTAssertNotNil(renderer.state.object("700001"))
+            XCTAssertNotNil(renderer.instance.state.object("700001"))
             let event = try XCTUnwrap(device.makeSharedEvent())
             defer { event.signaledValue = 1 }
             let queue = driver.executor.textureSourceCommandQueue
@@ -103,8 +103,8 @@ extension WPEParitySceneDriverTests {
             XCTAssertTrue(first.retainedReferences)
             weak var oldVertices: MTLBuffer?
             weak var oldPrepared: WPEParityModelDataMetalShape?
-            let modelToken = try XCTUnwrap(renderer.state.object("700001")?.modelDataToken)
-            oldPrepared = try XCTUnwrap(renderer.state.modelData(modelToken)?.shapes.first?.prepared as? WPEParityModelDataMetalShape)
+            let modelToken = try XCTUnwrap(renderer.instance.state.object("700001")?.modelDataToken)
+            oldPrepared = try XCTUnwrap(renderer.instance.state.modelData(modelToken)?.shapes.first?.prepared as? WPEParityModelDataMetalShape)
             var oldIndices: MTLBuffer?
             var oldPipeline: MTLRenderPipelineState?
             do {
@@ -124,7 +124,7 @@ extension WPEParitySceneDriverTests {
             let materialReads = fixture.reads.count("materials/model-data.json")
             let shaderReads = fixture.reads.shaderCount
             let second = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.1, pointer: .zero))
-            XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 1)
+            XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("1")).brightness, 1)
             XCTAssertNil(oldPrepared, "the planner operation view must retire the replaced CPU/GPU wrapper")
             let nextDraw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.draw.indexBuffer === oldIndices }?.draw)
             XCTAssertTrue(nextDraw.pipeline.state === oldPipeline, "an equal-layout buffer write must keep the actual PSO")
@@ -160,10 +160,10 @@ extension WPEParitySceneDriverTests {
         layer.drawableSize = CGSize(width: 96, height: 64)
         do {
             let renderer = try XCTUnwrap(driver.renderer)
-            XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).brightness, 2,
+            XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("1")).brightness, 2,
                            "new material reflection must not preempt the later native index-width error")
-            let token = try XCTUnwrap(renderer.state.object("700001")?.modelDataToken)
-            let committed = try XCTUnwrap(renderer.state.modelData(token)?.shapes[1])
+            let token = try XCTUnwrap(renderer.instance.state.object("700001")?.modelDataToken)
+            let committed = try XCTUnwrap(renderer.instance.state.modelData(token)?.shapes[1])
             XCTAssertEqual(committed.vertices.data.withUnsafeBytes { $0.loadUnaligned(as: Float.self) }, -18,
                            "the VB prefix commits before the later index-width error and material tail observer")
             XCTAssertEqual(committed.indices?.elementWidth, .uint16)
@@ -186,7 +186,7 @@ extension WPEParitySceneDriverTests {
             await third.completed()
             try await settle(driver, label: "ModelData material observer after index error")
             XCTAssertNil(third.error)
-            let engine = try XCTUnwrap(renderer.script?.engine)
+            let engine = try XCTUnwrap(renderer.instance.script?.engine)
             XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
             let afterError = try readBack(renderer.backbuffer, device: device)
             modelDataPixel(afterError, width: 96, x: 72, y: 32, white: true)
@@ -201,7 +201,7 @@ extension WPEParitySceneDriverTests {
         try await settle(driver, label: "ModelData replacement")
         let current = try XCTUnwrap(driver.renderer)
         XCTAssertTrue(current.skipped.isEmpty, "\(current.skipped)")
-        XCTAssertEqual(try XCTUnwrap(current.script?.engine).exceptionCount, 0)
+        XCTAssertEqual(try XCTUnwrap(current.instance.script?.engine).exceptionCount, 0)
         let rebuilt = try XCTUnwrap(current.lastFrameDraws.first { item in
             item.draw.vertexCount == 3 && item.draw.indexType == .uint16
                 && item.draw.vertexBuffer.contents().assumingMemoryBound(to: Float.self).pointee == 8
@@ -214,7 +214,7 @@ extension WPEParitySceneDriverTests {
         let removed = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100.4, pointer: .zero))
         await removed.completed()
         try await settle(driver, label: "ModelData layer destruction")
-        XCTAssertNil(current.state.object("700001"))
+        XCTAssertNil(current.instance.state.object("700001"))
         try modelDataPixel(readBack(current.backbuffer, device: device), width: 192, x: 144, y: 64, white: false)
     }
 
@@ -253,9 +253,9 @@ extension WPEParitySceneDriverTests {
         await command.completed()
         try await settle(driver, label: "reparented ModelData layer")
         XCTAssertNil(command.error)
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(renderer.state.parentID(of: "3"), "2")
+        XCTAssertEqual(renderer.instance.state.parentID(of: "3"), "2")
         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
         let pixels = try readBack(renderer.backbuffer, device: device)
         // Canvas pixel (x, y), y up.
@@ -304,7 +304,7 @@ extension WPEParitySceneDriverTests {
         let renderer = try XCTUnwrap(driver.renderer)
         let first = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
         await first.completed()
-        XCTAssertEqual(renderer.state.parentID(of: "3"), "2")
+        XCTAssertEqual(renderer.instance.state.parentID(of: "3"), "2")
         let layouts = renderer.frameLayoutCalls
         let executors = renderer.graphExecutorIdentities
         for (index, timestamp) in [100.1, 100.2].enumerated() {
@@ -315,7 +315,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertEqual(renderer.graphExecutorIdentities, executors, "applyData \(index + 1) replaced the graphs")
         }
         try await settle(driver, label: "composite ModelData update")
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
         let updated = try readBack(renderer.backbuffer, device: device)
@@ -372,10 +372,10 @@ extension WPEParitySceneDriverTests {
         let renderer = try XCTUnwrap(driver.renderer)
         let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
         await command.completed()
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(renderer.state.object("2")?.alpha, 0.5)
-        XCTAssertNotNil(renderer.state.object("3")?.modelDataToken)
+        XCTAssertEqual(renderer.instance.state.object("2")?.alpha, 0.5)
+        XCTAssertNotNil(renderer.instance.state.object("3")?.modelDataToken)
         XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.indexCount == 3 })
     }
 
@@ -405,16 +405,16 @@ extension WPEParitySceneDriverTests {
         layer.drawableSize = CGSize(width: 48, height: 32)
         layer.framebufferOnly = false
         let renderer = try XCTUnwrap(driver.renderer)
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         XCTAssertEqual(engine.bindings.flatMap(\.registeredAssets).map(\.flag), [false])
         let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
         await command.completed()
         try await settle(driver, label: "unflagged registered material")
         XCTAssertNil(command.error)
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(renderer.state.object("1")?.alpha, 0.5)
-        let token = try XCTUnwrap(renderer.state.object("700002")?.modelDataToken)
-        XCTAssertNotNil(renderer.state.modelData(token))
+        XCTAssertEqual(renderer.instance.state.object("1")?.alpha, 0.5)
+        let token = try XCTUnwrap(renderer.instance.state.object("700002")?.modelDataToken)
+        XCTAssertNotNil(renderer.instance.state.modelData(token))
         XCTAssertTrue(renderer.lastFrameDraws.contains { $0.draw.indexCount == 3 })
         try modelDataPixel(readBack(renderer.backbuffer, device: device), width: 48, x: 24, y: 16, white: true)
     }
@@ -434,9 +434,9 @@ extension WPEParitySceneDriverTests {
         XCTAssertTrue(driver.didLoad)
         XCTAssertNil(driver.loadDiagnostics)
         let renderer = try XCTUnwrap(driver.renderer)
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(renderer.state.object("1")?.alpha, 0.5)
+        XCTAssertEqual(renderer.instance.state.object("1")?.alpha, 0.5)
         for path in ["models/foo.mdl", "particles/x.json"] {
             XCTAssertEqual(fixture.reads.count(path), 0, "registration must not read \(path)")
         }
@@ -456,7 +456,7 @@ extension WPEParitySceneDriverTests {
                               diskCache: .init(cachesURL: scratch.appending(path: "missing-registered-cache")))
         XCTAssertTrue(driver.didLoad)
         XCTAssertNil(driver.loadDiagnostics)
-        XCTAssertEqual(driver.renderer?.state.object("1")?.alpha, 0.5)
+        XCTAssertEqual(driver.renderer?.instance.state.object("1")?.alpha, 0.5)
         XCTAssertGreaterThan(fixture.reads.count("materials/missing.json"), 0)
         XCTAssertEqual(fixture.reads.count("models/foo.mdl"), 0)
         let warnings = LogFileSink.shared.recentDiagnosticLines(maxLines: 50, maxContextLines: 0)
@@ -484,7 +484,7 @@ extension WPEParitySceneDriverTests {
                               compiler: fixture.compiler, diskCache: .init(cachesURL: scratch.appending(path: "precache-cache")))
         XCTAssertTrue(driver.didLoad)
         XCTAssertNil(driver.loadDiagnostics)
-        XCTAssertEqual(driver.renderer?.state.object("1")?.alpha, 0.5)
+        XCTAssertEqual(driver.renderer?.instance.state.object("1")?.alpha, 0.5)
         XCTAssertGreaterThan(fixture.reads.count("materials/model-data.json"), 0)
         XCTAssertGreaterThan(fixture.reads.count("materials/missing-model-data.json"), 0)
         XCTAssertEqual(fixture.reads.count("models/b.json"), 0, "a non-materials precache entry must be skipped")
@@ -518,8 +518,8 @@ extension WPEParitySceneDriverTests {
         layer.drawableSize = CGSize(width: 48, height: 32)
         layer.framebufferOnly = false
         let renderer = try XCTUnwrap(driver.renderer)
-        let engine = try XCTUnwrap(renderer.script?.engine)
-        XCTAssertEqual(renderer.state.object("1")?.alpha, 0.5)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
+        XCTAssertEqual(renderer.instance.state.object("1")?.alpha, 0.5)
         let command = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: 100, pointer: .zero))
         await command.completed()
         try await settle(driver, label: "unregistered ModelData material")
@@ -541,7 +541,7 @@ extension WPEParitySceneDriverTests {
                               drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
                               compiler: fixture.compiler, diskCache: .init(cachesURL: scratch.appending(path: "no-base-cache")))
         XCTAssertTrue(driver.didLoad)
-        XCTAssertNil(driver.renderer?.script)
+        XCTAssertNil(driver.renderer?.instance.script)
         guard case let .other(layer, _)? = driver.loadDiagnostics else {
             return XCTFail("script init failure is missing from the load diagnostics: \(String(describing: driver.loadDiagnostics))")
         }

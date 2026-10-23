@@ -61,10 +61,10 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(driver.loadDiagnostics)
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script, "the actual Driver must attach SceneScript")
+        let script = try XCTUnwrap(renderer.instance.script, "the actual Driver must attach SceneScript")
         XCTAssertEqual(script.engine.bindings.filter(\.compiled).count, 1)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(renderer.state.scriptField("solid", of: "1"), .vector(SIMD4(0, 0, 0, 0)),
+        XCTAssertEqual(renderer.instance.state.scriptField("solid", of: "1"), .vector(SIMD4(0, 0, 0, 0)),
                        "init must return from the real missing-function host call before writing its witness")
         let layer = RecordingLayer()
         layer.device = device
@@ -87,7 +87,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertEqual(renderer.skipped, [:], "\(label): \(renderer.skipped)")
             XCTAssertTrue(renderer.fallbackTextures.isEmpty, "\(label): \(renderer.fallbackTextures)")
             XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
-            XCTAssertEqual(try XCTUnwrap(renderer.state.object("1")).origin.z, completionZ,
+            XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("1")).origin.z, completionZ,
                            "\(label): the update must return from executeMaterialFunction")
             let frame = try XCTUnwrap(renderer.frames.first)
             let encodedEffect = renderer.lastFrameDraws.filter { entry in

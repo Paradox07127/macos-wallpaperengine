@@ -129,7 +129,7 @@ extension WPEParitySceneDriverTests {
                         let colours: [SIMD4<Float>] = [SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0)]
                         let bytes = [[255, 0, 0], [0, 255, 0], [0, 0, 255]]
                         for frame in colours.indices {
-                            XCTAssertTrue(renderer.state.set(.color, of: "1", to: colours[frame]))
+                            XCTAssertTrue(renderer.instance.state.set(.color, of: "1", to: colours[frame]))
                             let label = "slot=\(historySlot), explicit=\(explicit), quality=\(quality), frame=\(frame)"
                             try await present(driver, layer: layer, label: label)
                             let sampled = quality && frame > 0 ? bytes[frame - 1] : [0, 0, 0]
@@ -214,8 +214,8 @@ extension WPEParitySceneDriverTests {
             try await present(driver, layer: layer, label: "hidden effect seeds red history")
             try assertMipPixel(readBack(renderer.backbuffer, device: device), width: 64,
                                x: 16, y: 32, rgb: [255, 255, 0], label: "effect really begins disabled")
-            XCTAssertTrue(renderer.state.setEffect("5", of: "2", visible: true))
-            XCTAssertTrue(renderer.state.set(.color, of: "1", to: SIMD4(0, 1, 0, 0)))
+            XCTAssertTrue(renderer.instance.state.setEffect("5", of: "2", visible: true))
+            XCTAssertTrue(renderer.instance.state.set(.color, of: "1", to: SIMD4(0, 1, 0, 0)))
             try await present(driver, layer: layer, label: "first hidden-effect toggle")
             try assertMipPixel(readBack(renderer.backbuffer, device: device), width: 64,
                                x: 16, y: 32, rgb: [255, 0, 0], label: "newly enabled effect really samples prior red")
@@ -223,7 +223,7 @@ extension WPEParitySceneDriverTests {
                 renderer.frames[0].operations[$0.operation].pass.rawValue == "2/5/0"
             }?.draw)
             XCTAssertTrue(try XCTUnwrap(effect.textures["g_Texture1"]) === history)
-            XCTAssertTrue(renderer.state.setEffect("5", of: "2", visible: false))
+            XCTAssertTrue(renderer.instance.state.setEffect("5", of: "2", visible: false))
             try await present(driver, layer: layer, label: "hide effect again")
             try assertMipPixel(readBack(renderer.backbuffer, device: device), width: 64,
                                x: 16, y: 32, rgb: [255, 255, 0], label: "normal effect cache rebuild")
@@ -266,7 +266,7 @@ extension WPEParitySceneDriverTests {
                 try assertMipPixel(mipBytes(history, level: 2, queue: driver.executor.textureSourceCommandQueue),
                                    width: 16, x: 12, y: 8, rgb: [255, 0, 0],
                                    label: "compatible replan must not apply an initialClear to retained history")
-                XCTAssertTrue(renderer.state.set(.color, of: "1", to: SIMD4(0, 1, 0, 0)))
+                XCTAssertTrue(renderer.instance.state.set(.color, of: "1", to: SIMD4(0, 1, 0, 0)))
                 try await present(driver, layer: layer, label: "green after compatible replan")
                 try assertMipPixel(readBack(renderer.backbuffer, device: device), width: 64,
                                    x: 16, y: 32, rgb: [255, 0, 0], label: "retained red sampled after replan")
@@ -328,7 +328,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertEqual(originalLUT.textureType, .type3D)
 
             try source.push(artwork: mipFailureArtwork())
-            XCTAssertTrue(renderer.state.set(.color, of: "1", to: SIMD4(0, 1, 0, 0)))
+            XCTAssertTrue(renderer.instance.state.set(.color, of: "1", to: SIMD4(0, 1, 0, 0)))
             var caught: (any Error)?
             do {
                 _ = try renderer.encodeFrame(elapsed: 1.0 / 60)
@@ -338,7 +338,7 @@ extension WPEParitySceneDriverTests {
             }
             XCTAssertEqual(try XCTUnwrap(caught as? WPEParityExecutionError),
                            .textureDimensionMismatch("g_Texture1", expected: "3d", actual: MTLTextureType.type2D.rawValue))
-            let media = try XCTUnwrap(renderer.mediaTextures?.current)
+            let media = try XCTUnwrap(renderer.instance.mediaTextures?.current)
             let failed = try XCTUnwrap(renderer.lastFrameDraws.last)
             XCTAssertTrue(try XCTUnwrap(failed.draw.textures["g_Texture1"]) === media)
             XCTAssertEqual(media.textureType, .type2D)
@@ -353,7 +353,7 @@ extension WPEParitySceneDriverTests {
             try assertMipPixel(prefix, width: 64, x: 16, y: 32, rgb: [255, 0, 0], label: "prefix really sampled red history")
             try assertMipPixel(mipBytes(history, level: 2, queue: driver.executor.textureSourceCommandQueue),
                                width: 16, x: 12, y: 8, rgb: [255, 0, 0], label: "unreached tail leaves history red")
-            XCTAssertTrue(renderer.state.set(.visible, of: "3", to: .zero))
+            XCTAssertTrue(renderer.instance.state.set(.visible, of: "3", to: .zero))
             try await present(driver, layer: layer, label: "recover by hiding only the failing layer")
             try assertMipPixel(readBack(renderer.backbuffer, device: device), width: 64,
                                x: 16, y: 32, rgb: [255, 0, 0], label: "recovery still reads the last executed tail")

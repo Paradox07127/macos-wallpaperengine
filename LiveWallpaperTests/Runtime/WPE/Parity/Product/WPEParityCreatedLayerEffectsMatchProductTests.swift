@@ -49,7 +49,7 @@ extension WPEParitySceneDriverTests {
         let (driver, layer) = try await effectsMatchDriver(objects: objects, files: files)
         defer { driver.cleanup() }
         func created() throws -> [String] {
-            try XCTUnwrap(driver.renderer).state.commonOrder.filter { !["101", "20"].contains($0) }
+            try XCTUnwrap(driver.renderer).instance.state.commonOrder.filter { !["101", "20"].contains($0) }
         }
 
         try await effectsMatchFrame(driver, layer: layer, label: "before create")
@@ -99,7 +99,7 @@ extension WPEParitySceneDriverTests {
                               compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
         XCTAssertTrue(driver.didLoad)
         XCTAssertNil(driver.loadDiagnostics)
-        let script = try XCTUnwrap(XCTUnwrap(driver.renderer).script, "actual Driver load must attach SceneScript")
+        let script = try XCTUnwrap(XCTUnwrap(driver.renderer).instance.script, "actual Driver load must attach SceneScript")
         XCTAssertEqual(script.engine.bindings.filter(\.compiled).count, 1)
         let layer = RecordingLayer()
         layer.device = device
@@ -112,7 +112,7 @@ extension WPEParitySceneDriverTests {
 
     private func effectsMatchFrame(_ driver: WPEParitySceneDriver, layer: RecordingLayer, label: String) async throws {
         try await present(driver, layer: layer, label: label)
-        let script = try XCTUnwrap(XCTUnwrap(driver.renderer).script)
+        let script = try XCTUnwrap(XCTUnwrap(driver.renderer).instance.script)
         XCTAssertEqual(script.engine.exceptionCount, 0, "\(label): " + script.engine.exceptions.joined(separator: "\n"))
     }
 }

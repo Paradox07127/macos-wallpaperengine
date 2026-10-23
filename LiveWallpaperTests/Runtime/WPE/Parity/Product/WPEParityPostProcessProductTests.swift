@@ -102,7 +102,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 XCTAssertNil(command.error)
             }
             for elapsed in [0.25, 0.0] {
-                let generation = renderer.state.generation(.bloom)
+                let generation = renderer.instance.state.generation(.bloom)
                 if elapsed == 0 {
                     try renderer.applyUserProperties(unchanged)
                 }
@@ -114,10 +114,10 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 if elapsed == 0 {
                     // Clock clamps to a positive minimum step. Sample inside a plateau so it cannot re-dirty
                     // the unchanged field and mask a document snapshot restoring the authored strength.
-                    XCTAssertEqual(renderer.state.generation(.bloom), generation)
+                    XCTAssertEqual(renderer.instance.state.generation(.bloom), generation)
                 }
                 let draw = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == operation }?.draw)
-                guard case let .vector(canonical)? = renderer.state.scriptField("bloomstrength", of: "") else {
+                guard case let .vector(canonical)? = renderer.instance.state.scriptField("bloomstrength", of: "") else {
                     return XCTFail("Animated strength must be present in canonical State")
                 }
                 // The existing sampler may round the authored plateau by one ULP; this guard qualifies the
@@ -185,14 +185,14 @@ final class WPEParityPostProcessProductTests: XCTestCase {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
         let renderer = try await makeRenderer(plan, device: device, queue: queue)
-        let script = try WPEParitySceneScript(document: initial, state: renderer.state, assets: assets,
+        let script = try WPEParitySceneScript(document: initial, state: renderer.instance.state, assets: assets,
                                               canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32),
                                               materialConstants: plan.materialConstants,
                                               host: .init(userPropertiesJSON: host(false)))
         try renderer.attachScript(script)
         let defaultValues = [Float(2), 1, 0.1, 1.619]
         for (field, value) in zip(fields, defaultValues) {
-            XCTAssertEqual(renderer.state.scriptField(field, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+            XCTAssertEqual(renderer.instance.state.scriptField(field, of: ""), .vector(SIMD4(value, 0, 0, 0)))
         }
         let validUsers = Dictionary(uniqueKeysWithValues: zip(fields, [0.0, 0.3, 0.4, 2.0]).map { ($0, WallpaperEngineProjectPropertyValue.number($1)) })
         let faded = try document(["fade": .number(0.25)])
@@ -234,7 +234,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 XCTAssertEqual(components(entry.draw.constants[.fragment]?["g_BloomScatter"]), [scatter])
             }
             for (field, value) in zip(fields, values) {
-                XCTAssertEqual(renderer.state.scriptField(field, of: ""), .vector(SIMD4(value, 0, 0, 0)))
+                XCTAssertEqual(renderer.instance.state.scriptField(field, of: ""), .vector(SIMD4(value, 0, 0, 0)))
             }
             let pixels = try await present(renderer, device: device, queue: queue)
             if step == 1 {
@@ -312,7 +312,7 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             let plan = try WPEParityFramePlan(document: initial, assets: assets,
                                               settings: .init(bloom: true, hdrPostProcessing: hdr), width: 32, height: 32)
             let renderer = try await makeRenderer(plan, device: device, queue: queue)
-            let script = try WPEParitySceneScript(document: initial, state: renderer.state, assets: assets,
+            let script = try WPEParitySceneScript(document: initial, state: renderer.instance.state, assets: assets,
                                                   canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32),
                                                   materialConstants: plan.materialConstants,
                                                   host: .init(userPropertiesJSON: host(drive: false)))
@@ -334,8 +334,8 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             let pipelines = renderer.pipelineCreations
             func check(_ raw: Int32, _ tint: SIMD3<Float>) async throws -> [UInt8] {
                 try await render(renderer)
-                XCTAssertEqual(renderer.state.scriptField("bloomhdriterations", of: ""), .integer(raw))
-                XCTAssertEqual(renderer.state.scriptField("bloomtint", of: ""), .vector(SIMD4(tint, 0)))
+                XCTAssertEqual(renderer.instance.state.scriptField("bloomhdriterations", of: ""), .integer(raw))
+                XCTAssertEqual(renderer.instance.state.scriptField("bloomtint", of: ""), .vector(SIMD4(tint, 0)))
                 let post = renderer.lastFrameDraws.compactMap { entry -> (WPEParityPostProcessDraw, WPEParityDraw)? in
                     guard case let .post(draw)? = renderer.frames[0].draws[entry.operation] else { return nil }
                     return (draw, entry.draw)
@@ -381,15 +381,15 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             }
             let unrelated = try document(hdr: hdr, visible: false)
             let invalid = try document(hdr: hdr, iterations: false, tint: [0, 0, 0], visible: false)
-            let generation = renderer.state.generation(.bloom)
+            let generation = renderer.instance.state.generation(.bloom)
             let preservationUpdates = try [unchanged, XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: unrelated)),
                                            XCTUnwrap(WPEParityUserPropertyUpdate(from: unrelated, to: invalid))]
             for (index, update) in preservationUpdates.enumerated() {
                 let json = host(drive: false)
                 try renderer.applyUserProperties(update, changedJSON: json, mergedJSON: json)
                 _ = try await check(2, SIMD3(0, 0, 1))
-                XCTAssertEqual(renderer.state.generation(.bloom), generation)
-                XCTAssertEqual(renderer.state.object("1")?.visible, index == 0,
+                XCTAssertEqual(renderer.instance.state.generation(.bloom), generation)
+                XCTAssertEqual(renderer.instance.state.object("1")?.visible, index == 0,
                                "The unrelated update must reach a real non-bloom State consumer")
             }
             let recovered = try document(hdr: hdr, iterations: 3.9, tint: "0.25 0.5 0.75", visible: false)
@@ -407,8 +407,8 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             XCTAssertEqual(plan.post.bloomEnabled, enabled && quality)
             XCTAssertEqual(plan.post.bloomSettings.hdrIterations, Int(Int32.min))
             let renderer = try await makeRenderer(plan, device: device, queue: queue)
-            XCTAssertEqual(renderer.state.scriptField("bloomhdriterations", of: ""), .integer(.min))
-            XCTAssertEqual(renderer.state.scriptField("bloomtint", of: ""), .vector(SIMD4(0.25, 0.5, 0.75, 0)))
+            XCTAssertEqual(renderer.instance.state.scriptField("bloomhdriterations", of: ""), .integer(.min))
+            XCTAssertEqual(renderer.instance.state.scriptField("bloomtint", of: ""), .vector(SIMD4(0.25, 0.5, 0.75, 0)))
             for level in 1 ... plan.post.hdrBloomCapacity {
                 XCTAssertNotNil(renderer.targets[WPEResourceID("_rt_\(1 << level)FrameBuffer")])
             }
@@ -457,13 +457,13 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             let renderer = try await makeRenderer(plan, device: device, queue: queue)
             let backbuffer = renderer.backbuffer
             let script = try WPEParitySceneScript(
-                document: document, state: renderer.state, assets: assets,
+                document: document, state: renderer.instance.state, assets: assets,
                 canvasSize: SIMD2(32, 32), screenResolution: SIMD2(32, 32),
                 materialConstants: plan.materialConstants, resolvedEffectRecords: plan.scene.resolvedEffectRecords,
                 host: .init(userPropertiesJSON: properties(initial))
             )
             try renderer.attachScript(script)
-            let hookGeneration = renderer.state.generation(.bloom)
+            let hookGeneration = renderer.instance.state.generation(.bloom)
             let unchanged = try XCTUnwrap(WPEParityUserPropertyUpdate(from: document, to: document))
             var firstPixels: [UInt8] = []
             var firstExecutors: [ObjectIdentifier] = []
@@ -487,8 +487,8 @@ final class WPEParityPostProcessProductTests: XCTestCase {
                 XCTAssertTrue(renderer.backbuffer === backbuffer)
                 XCTAssertEqual(renderer.backbuffer.pixelFormat, hdr ? .rgba16Float : .rgba8Unorm)
                 XCTAssertEqual(renderer.colorTransfer, hdr ? .linear : .authored)
-                XCTAssertEqual(renderer.state.scriptField("bloom", of: ""), .vector(SIMD4(enabled ? 1 : 0, 0, 0, 0)))
-                XCTAssertEqual(renderer.state.generation(.bloom), hookGeneration, "Bool must not fabricate the Float hook")
+                XCTAssertEqual(renderer.instance.state.scriptField("bloom", of: ""), .vector(SIMD4(enabled ? 1 : 0, 0, 0, 0)))
+                XCTAssertEqual(renderer.instance.state.generation(.bloom), hookGeneration, "Bool must not fabricate the Float hook")
                 let pixels = try await present(renderer, device: device, queue: queue)
                 for channel in 0 ..< 3 {
                     if hdr, on {
@@ -516,10 +516,10 @@ final class WPEParityPostProcessProductTests: XCTestCase {
             }
             // A live true Bool alone cannot bypass Main's nonempty common-vector gate.
             try renderer.applyUserProperties(unchanged, changedJSON: properties(true), mergedJSON: properties(true))
-            XCTAssertTrue(renderer.state.removeObject("1"))
+            XCTAssertTrue(renderer.instance.state.removeObject("1"))
             try await render(renderer)
-            XCTAssertTrue(renderer.state.commonOrder.isEmpty)
-            XCTAssertEqual(renderer.state.scriptField("bloom", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+            XCTAssertTrue(renderer.instance.state.commonOrder.isEmpty)
+            XCTAssertEqual(renderer.instance.state.scriptField("bloom", of: ""), .vector(SIMD4(1, 0, 0, 0)))
             let pixels = try await present(renderer, device: device, queue: queue)
             for channel in 0 ..< 3 {
                 XCTAssertLessThanOrEqual(abs(Int(pixels[channel]) - 128), hdr ? 2 : 1)

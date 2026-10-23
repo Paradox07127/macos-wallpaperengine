@@ -38,10 +38,10 @@ extension WPEParitySceneDriverTests {
                               diskCache: .init(cachesURL: scratch.appending(path: "transform-matrix-cache")))
         XCTAssertNil(driver.loadDiagnostics)
         let renderer = try XCTUnwrap(driver.renderer)
-        let host = try XCTUnwrap(renderer.script, "the actual Driver must attach SceneScript")
+        let host = try XCTUnwrap(renderer.instance.script, "the actual Driver must attach SceneScript")
         XCTAssertEqual(host.engine.exceptionCount, 0, host.engine.exceptions.joined(separator: "\n"))
-        XCTAssertEqual(try XCTUnwrap(renderer.state.object("2")?.alpha), 0.16, accuracy: 0.000001)
-        XCTAssertEqual(try XCTUnwrap(renderer.state.object("2")?.brightness), 0.18, accuracy: 0.000001)
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("2")?.alpha), 0.16, accuracy: 0.000001)
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("2")?.brightness), 0.18, accuracy: 0.000001)
     }
 }
 #endif

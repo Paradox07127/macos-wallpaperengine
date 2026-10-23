@@ -63,7 +63,7 @@ extension WPEParitySceneDriverTests {
         try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
                               drawableSize: CGSize(width: 160, height: 96), pixelFormat: .rgba8Unorm,
                               compiler: compiler, diskCache: WPEParityShaderDiskCache(cachesURL: scratch))
-        let script = try XCTUnwrap(driver.renderer?.script, "actual product load must attach SceneScript")
+        let script = try XCTUnwrap(driver.renderer?.instance.script, "actual product load must attach SceneScript")
         XCTAssertEqual(script.engine.bindings.filter(\.compiled).count, 5)
         XCTAssertEqual(driver.interactiveZones(), [], "no cursor pass has run yet")
 

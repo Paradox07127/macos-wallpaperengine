@@ -29,7 +29,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertFalse(bindings.isEmpty)
         XCTAssertTrue(bindings.allSatisfy { $0.action == .incremental })
         let renderer = try XCTUnwrap(driver.renderer)
-        XCTAssertNil(renderer.script, "A TEX-only dependency must work without any SceneScript binding")
+        XCTAssertNil(renderer.instance.script, "A TEX-only dependency must work without any SceneScript binding")
         let generation = driver.loadGeneration
         let rendererIdentity = ObjectIdentifier(renderer)
         let layer = RecordingLayer()

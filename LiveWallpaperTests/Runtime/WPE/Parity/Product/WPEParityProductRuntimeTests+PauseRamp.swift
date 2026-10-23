@@ -28,7 +28,7 @@ extension WPEParityProductRuntimeTests {
             try await renderPauseRampFrame(harness)
             frames += 1
         }
-        let ramp = await harness.actor.run { $0.parityDriverForTesting?.renderer?.clock.pauseRamp }
+        let ramp = await harness.actor.run { $0.parityDriverForTesting?.renderer?.instance.clock.pauseRamp }
         XCTAssertEqual(ramp, 0, "after \(frames) suspended frames")
         XCTAssertEqual(harness.surface.lastIsPaused, true, "the link still runs after \(frames) suspended frames")
         XCTAssertGreaterThan(frames, 1, "the ramp ended within one frame")

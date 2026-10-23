@@ -118,7 +118,7 @@ extension WPEParitySceneDriverTests {
         var firstFill: [UInt8]?
         var publicationMVPs: [[Float]] = []
         for perspective in [false, true, false] {
-            renderer.state.setScriptField("perspective", of: "5", to: .vector(SIMD4(perspective ? 1 : 0, 0, 0, 0)),
+            renderer.instance.state.setScriptField("perspective", of: "5", to: .vector(SIMD4(perspective ? 1 : 0, 0, 0, 0)),
                                           invalidating: .none)
             try await present(driver, layer: layer, label: "text clear \(context), perspective=\(perspective)")
             XCTAssertEqual(driver.loadGeneration, generation)

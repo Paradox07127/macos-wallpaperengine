@@ -482,7 +482,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             guard let driver = $0.parityDriverForTesting, let renderer = driver.renderer else { return false }
             return driver.hasPresentedFrame && driver.shaderErrorSummary.count == 0
                 && renderer.skipped.isEmpty && renderer.fallbackTextures.isEmpty
-                && renderer.mediaDiagnostics.allSatisfy { $0 == allowedDiagnostic }
+                && renderer.instance.mediaDiagnostics.allSatisfy { $0 == allowedDiagnostic }
         }
         XCTAssertTrue(valid)
     }
@@ -590,7 +590,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         let initial = try await present(driver, layer: layer)
         let offset = (16 * 80 + 16) * 4
         XCTAssertEqual(Array(initial[offset ..< offset + 3]), [0, 0, 0])
-        XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
+        XCTAssertTrue(renderer.instance.state.setEffect("10", of: "1", visible: true))
 
         var decodedGrayValues: Set<UInt8> = []
         let deadline = Date().addingTimeInterval(6)
@@ -614,9 +614,9 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         XCTAssertEqual(renderer.videoSourceCount, 1, "The first enabled effect must admit its video decoder")
         XCTAssertGreaterThan(decodedGrayValues.count, 1, "Decoded changing video pixels must reach the presented effect")
         let video = try XCTUnwrap(renderer.videoTextures.first)
-        XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: false))
+        XCTAssertTrue(renderer.instance.state.setEffect("10", of: "1", visible: false))
         _ = try await present(driver, layer: layer)
-        XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
+        XCTAssertTrue(renderer.instance.state.setEffect("10", of: "1", visible: true))
         _ = try await present(driver, layer: layer)
         XCTAssertEqual(renderer.videoSourceCount, 1)
         XCTAssertTrue(try XCTUnwrap(renderer.videoTextures.first) === video, "Re-enabling an admitted effect must reuse its decoder texture")
@@ -650,8 +650,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             renderer.startTextReplanDiagnostics()
 
             // Both canonical mutations reach applyScriptText/selectGraphs in the very same render tick.
-            XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
-            renderer.state.setScriptField("text", of: "4", to: .string("MMMM"), invalidating: .textLayout)
+            XCTAssertTrue(renderer.instance.state.setEffect("10", of: "1", visible: true))
+            renderer.instance.state.setScriptField("text", of: "4", to: .string("MMMM"), invalidating: .textLayout)
             XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)))
             XCTAssertNil(driver.runtimeFailure)
             _ = try XCTUnwrap(driver.pendingVideoAdmissionID, "The text cohort must not block first video admission")
@@ -706,7 +706,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             let renderer = try XCTUnwrap(driver.renderer)
             let oldTexture = try XCTUnwrap(renderer.videoTextures.first)
             XCTAssertEqual(renderer.videoSourceCount, 1)
-            XCTAssertTrue(renderer.state.setEffect("10", of: "1", visible: true))
+            XCTAssertTrue(renderer.instance.state.setEffect("10", of: "1", visible: true))
             XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)))
             XCTAssertNotNil(driver.pendingVideoAdmissionID)
             var resume: CheckedContinuation<Void, Never>?
@@ -724,7 +724,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             XCTAssertNotNil(try XCTUnwrap(unpublishedSource).playerForTesting)
             XCTAssertEqual(renderer.videoSourceCount, 1, "A prepared decoder must not mutate the committed pool")
             if interruption == 0 {
-                renderer.state.setEffect("10", of: "1", visible: false)
+                renderer.instance.state.setEffect("10", of: "1", visible: false)
                 XCTAssertNil(driver.pendingVideoAdmissionID)
             } else if interruption == 1 {
                 preparation.cancel()
@@ -777,7 +777,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         let initial = await actor.run { $0.parityDriverForTesting?.renderer?.videoSourceCount }
         XCTAssertEqual(initial, 0)
         let changed = await actor.run { actor in
-            let changed = actor.parityDriverForTesting?.renderer?.state.setEffect("10", of: "1", visible: true)
+            let changed = actor.parityDriverForTesting?.renderer?.instance.state.setEffect("10", of: "1", visible: true)
             actor.forceContentRerender()
             return changed
         }
@@ -819,8 +819,8 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         shape.vertices = vertices.withUnsafeBytes { Data($0) }
         shape.vertexFormat = 1 | 8 // The shipped IModelData POSITION | UV mask.
         shape.material = Data("materials/model-white.json".utf8)
-        let token = try renderer.state.createModelData(.init(shapes: [shape], bounds: nil), admitShape: admit)
-        try renderer.state.appendModelDataLayer(.init(
+        let token = try renderer.instance.state.createModelData(.init(shapes: [shape], bounds: nil), admitShape: admit)
+        try renderer.instance.state.appendModelDataLayer(.init(
             id: "700001", name: "late video material", modelDataToken: token, parentObjectID: nil,
             origin: SIMD3(56, 16, 0), scale: .one, angles: .zero,
             localOrigin: SIMD3(56, 16, 0), localScale: .one, localAngles: .zero,
@@ -828,7 +828,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         ))
         _ = try await present(driver, layer: layer)
         XCTAssertEqual(renderer.videoSourceCount, 0)
-        renderer.state.setEffect("10", of: "1", visible: true)
+        renderer.instance.state.setEffect("10", of: "1", visible: true)
         XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)))
         let firstRequest = try XCTUnwrap(driver.pendingVideoAdmissionID)
         var resume: CheckedContinuation<Void, Never>?
@@ -839,12 +839,12 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         let preparation = Task { try await driver.preparePendingVideos() }
         defer { preparation.cancel(); resume?.resume(); resume = nil }
         try await waitUntil("The first stream never reached its real decoder checkpoint") { resume != nil }
-        let membership = renderer.state.membershipGeneration
+        let membership = renderer.instance.state.membershipGeneration
         var replacement = WPEParityModelDataShapePatch()
         replacement.material = Data("materials/model-video.json".utf8)
-        try renderer.state.updateModelData(token, patch: .init(shapes: [replacement], bounds: nil),
+        try renderer.instance.state.updateModelData(token, patch: .init(shapes: [replacement], bounds: nil),
                                            replacing: true, admitShape: admit)
-        XCTAssertEqual(renderer.state.membershipGeneration, membership)
+        XCTAssertEqual(renderer.instance.state.membershipGeneration, membership)
         resume?.resume()
         resume = nil
         let firstAccepted = try await preparation.value
@@ -882,12 +882,12 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
             let renderer = try XCTUnwrap(driver.renderer)
             let beforeText = try XCTUnwrap(renderer.texts["4"])
             XCTAssertEqual(beforeText.object.text, "I")
-            renderer.state.setEffect("10", of: "1", visible: true)
-            renderer.state.setScriptField("text", of: "4", to: .string("MMMM"), invalidating: .textLayout)
+            renderer.instance.state.setEffect("10", of: "1", visible: true)
+            renderer.instance.state.setScriptField("text", of: "4", to: .string("MMMM"), invalidating: .textLayout)
             if supersede {
                 driver.videoAdmissionCheckpoint = { point in
                     guard case .beforeCommit = point else { return }
-                    renderer.state.setEffect("10", of: "1", visible: false)
+                    renderer.instance.state.setEffect("10", of: "1", visible: false)
                 }
             }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb,
@@ -919,7 +919,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
                 XCTAssertGreaterThan(textWitnessColumns(pixels).count, 3,
                                      "The exported frame must draw the wider caption before returning")
             }
-            XCTAssertEqual(try XCTUnwrap(renderer.state.object("3")).color.x, 1.0 / 8, accuracy: 0.00001,
+            XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("3")).color.x, 1.0 / 8, accuracy: 0.00001,
                            "One movie timestamp dispatches update exactly once, even when admission suspends")
             XCTAssertNil(driver.pendingVideoAdmissionID)
             XCTAssertNil(driver.runtimeFailure)
@@ -1251,13 +1251,13 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         }
         try requireCompleted(command)
         try await waitUntil("Present completion handlers did not settle") { driver.inFlightCount == 0 }
-        let diagnostics = try XCTUnwrap(driver.renderer).mediaDiagnostics
+        let diagnostics = try XCTUnwrap(driver.renderer).instance.mediaDiagnostics
         XCTAssertTrue(diagnostics.allSatisfy { $0 == Self.nativeSizingDiagnostic }, "\(diagnostics)")
         return try readBack(XCTUnwrap(layer.lastTexture))
     }
 
     private func pair(_ driver: WPEParitySceneDriver) throws -> Pair {
-        let textures = try XCTUnwrap(driver.renderer?.mediaTextures)
+        let textures = try XCTUnwrap(driver.renderer?.instance.mediaTextures)
         return Pair(revision: textures.revision, currentName: textures.currentSystemName,
                     previousName: textures.previousSystemName, currentID: textures.current.map(ObjectIdentifier.init),
                     previousID: textures.previous.map(ObjectIdentifier.init),
@@ -1269,7 +1269,7 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
     @discardableResult
     private func assertBoundEffects(_ driver: WPEParitySceneDriver) throws -> [any MTLTexture] {
         let renderer = try XCTUnwrap(driver.renderer)
-        let media = try XCTUnwrap(renderer.mediaTextures)
+        let media = try XCTUnwrap(renderer.instance.mediaTextures)
         let draws = renderer.lastFrameDraws.map(\.draw)
         let bound = draws.compactMap { $0.textures["g_Texture1"] }
         var crops: [any MTLTexture] = []

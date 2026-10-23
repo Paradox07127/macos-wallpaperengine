@@ -34,7 +34,7 @@ final class WPEParityEffectToggleTests: XCTestCase {
         try await encode(renderer)
         XCTAssertTrue(Self.drawnEffects(renderer).isSuperset(of: ["19", "50"]))
 
-        XCTAssertTrue(renderer.state.setEffect("19", of: "17", visible: false))
+        XCTAssertTrue(renderer.instance.state.setEffect("19", of: "17", visible: false))
         for _ in 1 ... 2 {
             try await encode(renderer)
             XCTAssertEqual(Self.drawnEffects(renderer), ["50"])
@@ -50,7 +50,7 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertTrue(try hidden == readBack(without.renderer.backbuffer, without),
                       "hiding effect 19 differs from a scene loaded without it")
 
-        renderer.state.setEffect("19", of: "17", visible: true)
+        renderer.instance.state.setEffect("19", of: "17", visible: true)
         for _ in 1 ... 2 {
             try await encode(renderer)
         }
@@ -75,8 +75,8 @@ final class WPEParityEffectToggleTests: XCTestCase {
         ]
         for (index, step) in steps.enumerated() {
             for fixture in [plain, aliased] {
-                fixture.renderer.state.setEffect("19", of: "17", visible: step.ripple)
-                fixture.renderer.state.setEffect("50", of: "17", visible: step.sway)
+                fixture.renderer.instance.state.setEffect("19", of: "17", visible: step.ripple)
+                fixture.renderer.instance.state.setEffect("50", of: "17", visible: step.sway)
             }
             for frame in 1 ... 3 {
                 try await encode(plain.renderer)
@@ -139,9 +139,9 @@ final class WPEParityEffectToggleTests: XCTestCase {
         defer { harness.driver.cleanup() }
         let renderer = try XCTUnwrap(harness.driver.renderer)
         try await encode(renderer)
-        renderer.state.setEffect("4", of: "2", visible: false)
+        renderer.instance.state.setEffect("4", of: "2", visible: false)
         try await encode(renderer)
-        renderer.state.setEffect("4", of: "2", visible: true)
+        renderer.instance.state.setEffect("4", of: "2", visible: true)
         try await encode(renderer)
         XCTAssertEqual(Self.drawnEffects(renderer), ["4"])
 

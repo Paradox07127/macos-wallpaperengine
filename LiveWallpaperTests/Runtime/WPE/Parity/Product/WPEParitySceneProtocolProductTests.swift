@@ -54,10 +54,10 @@ extension WPEParitySceneDriverTests {
         let (driver, layer) = try await sceneProtocolDriver(objects: objects)
         defer { driver.cleanup() }
         let renderer = try XCTUnwrap(driver.renderer)
-        XCTAssertEqual(try XCTUnwrap(renderer.state.object("101")).color, SIMD3<Float>(1, 1, 0),
+        XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object("101")).color, SIMD3<Float>(1, 1, 0),
                        "init must query the loaded scene, after all eight global calls were attempted")
         for index in 0 ..< 8 {
-            XCTAssertEqual(try XCTUnwrap(renderer.state.object(String(201 + index))).color, SIMD3<Float>(0, 1, 0),
+            XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object(String(201 + index))).color, SIMD3<Float>(0, 1, 0),
                            "global scene callback \(index) must reject before inspecting its arguments")
         }
         let pixels = try await sceneProtocolFrame(driver, layer: layer, label: "phase update")
@@ -103,7 +103,7 @@ extension WPEParitySceneDriverTests {
         defer { driver.cleanup() }
         let renderer = try XCTUnwrap(driver.renderer)
         for id in ["101", "23", "303"] {
-            XCTAssertEqual(try XCTUnwrap(renderer.state.object(id)).color, SIMD3<Float>(0, 1, 0), "init \(id)")
+            XCTAssertEqual(try XCTUnwrap(renderer.instance.state.object(id)).color, SIMD3<Float>(0, 1, 0), "init \(id)")
         }
         for frame in 1 ... 2 {
             let pixels = try await sceneProtocolFrame(driver, layer: layer, label: "resolver frame \(frame)")
@@ -197,20 +197,20 @@ extension WPEParitySceneDriverTests {
             sceneProtocolPixel(pixels, x: 136, y: 48, rgb: frame < 3 ? [0, 255, 0] : [0, 0, 0])
             let renderer = try XCTUnwrap(driver.renderer)
             if frame > 1 {
-                XCTAssertNil(renderer.state.object("20"), "Removal must leave live membership, not just hide a draw")
-                XCTAssertNil(renderer.state.object("40"))
+                XCTAssertNil(renderer.instance.state.object("20"), "Removal must leave live membership, not just hide a draw")
+                XCTAssertNil(renderer.instance.state.object("40"))
                 XCTAssertFalse(renderer.frames.contains { $0.owners.values.contains("20") },
                                "The actual composed graph must no longer contain the removed owner")
-                XCTAssertEqual(renderer.state.object("101")?.brightness, 2,
+                XCTAssertEqual(renderer.instance.state.object("101")?.brightness, 2,
                                "Destroy must query the actual common scene after removal, then enqueue the next sweep")
                 if frame == 2 {
-                    XCTAssertNotNil(renderer.state.object("303"), "Callback requests wait for the next flush")
+                    XCTAssertNotNil(renderer.instance.state.object("303"), "Callback requests wait for the next flush")
                 } else {
-                    XCTAssertNil(renderer.state.object("303"))
+                    XCTAssertNil(renderer.instance.state.object("303"))
                     XCTAssertFalse(renderer.frames.contains { $0.owners.values.contains("303") })
                 }
             } else {
-                XCTAssertNotNil(renderer.state.object("20"))
+                XCTAssertNotNil(renderer.instance.state.object("20"))
             }
         }
     }
@@ -265,7 +265,7 @@ extension WPEParitySceneDriverTests {
         blocked.commit()
         let second = try XCTUnwrap(driver.renderAndPresentFrame(layer: layer, timestamp: nextTimestamp(),
                                                                 pointer: SIMD2(0.5, 0.5)))
-        XCTAssertNil(try XCTUnwrap(driver.renderer).state.object("20"))
+        XCTAssertNil(try XCTUnwrap(driver.renderer).instance.state.object("20"))
         XCTAssertTrue(try owned("20").isEmpty, "The destroyed owner must leave the submitted frame")
         XCTAssertFalse(try owned("30").isEmpty)
         XCTAssertNotNil(retired, "The frame that dropped the texture has not completed on the GPU")
@@ -316,8 +316,8 @@ extension WPEParitySceneDriverTests {
 
         _ = try await sceneProtocolFrame(driver, layer: layer, label: "sound destroy frame")
         let renderer = try XCTUnwrap(driver.renderer)
-        XCTAssertEqual(renderer.state.object("101")?.brightness, 2, "destroyLayer on the sound layer returned false")
-        XCTAssertNil(renderer.state.object("50"))
+        XCTAssertEqual(renderer.instance.state.object("101")?.brightness, 2, "destroyLayer on the sound layer returned false")
+        XCTAssertNil(renderer.instance.state.object("50"))
         XCTAssertEqual(try soundVisibility(), ["50": false], "The destroyed sound must be reported invisible so it stops")
     }
 
@@ -364,7 +364,7 @@ extension WPEParitySceneDriverTests {
             }.map(\.draw)
         }
         func createdID() throws -> String? {
-            try XCTUnwrap(driver.renderer).state.commonOrder.first { !["101", "20"].contains($0) }
+            try XCTUnwrap(driver.renderer).instance.state.commonOrder.first { !["101", "20"].contains($0) }
         }
         var pixels = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
         sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
@@ -393,7 +393,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertTrue(try XCTUnwrap(owned(id).first).textures["g_Texture0"] === templateTexture)
 
         pixels = try await sceneProtocolFrame(driver, layer: layer, label: "destroy frame")
-        XCTAssertNil(try XCTUnwrap(driver.renderer).state.object(id))
+        XCTAssertNil(try XCTUnwrap(driver.renderer).instance.state.object(id))
         XCTAssertTrue(try owned(id).isEmpty, "The destroyed created layer must leave the frame")
         sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
         sceneProtocolPixel(pixels, x: 80, y: 48, rgb: templateColor)
@@ -430,10 +430,10 @@ extension WPEParitySceneDriverTests {
         sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
 
         pixels = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
-        let created = try XCTUnwrap(driver.renderer).state.commonOrder.filter { $0 != "101" }
+        let created = try XCTUnwrap(driver.renderer).instance.state.commonOrder.filter { $0 != "101" }
         XCTAssertEqual(created.count, 2, "createLayer must admit both image layers without a scene template")
         let (compose, solid) = try (XCTUnwrap(created.first), XCTUnwrap(created.last))
-        XCTAssertTrue(try XCTUnwrap(driver.renderer).state.isVisible(compose))
+        XCTAssertTrue(try XCTUnwrap(driver.renderer).instance.state.isVisible(compose))
         XCTAssertTrue(try ownsDraws(compose), "The copybackground composelayer must compose the background")
         XCTAssertTrue(try ownsDraws(solid))
         sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [255, 0, 255])
@@ -441,8 +441,8 @@ extension WPEParitySceneDriverTests {
 
         pixels = try await sceneProtocolFrame(driver, layer: layer, label: "destroy frame")
         let renderer = try XCTUnwrap(driver.renderer)
-        XCTAssertNil(renderer.state.object(compose))
-        XCTAssertNil(renderer.state.object(solid))
+        XCTAssertNil(renderer.instance.state.object(compose))
+        XCTAssertNil(renderer.instance.state.object(solid))
         XCTAssertFalse(try ownsDraws(compose))
         XCTAssertFalse(try ownsDraws(solid))
         sceneProtocolPixel(pixels, x: 136, y: 48, rgb: [0, 0, 0])
@@ -509,7 +509,7 @@ extension WPEParitySceneDriverTests {
             }.map(\.draw)
         }
         func createdID() throws -> String? {
-            try XCTUnwrap(driver.renderer).state.commonOrder.first { !["101", "20"].contains($0) }
+            try XCTUnwrap(driver.renderer).instance.state.commonOrder.first { !["101", "20"].contains($0) }
         }
         func assertRed(_ pixel: [Int], _ label: String, line: UInt = #line) {
             XCTAssertTrue(pixel[0] >= 200 && pixel[1] <= 8, "\(label) pixel \(pixel) is not red", line: line)
@@ -566,8 +566,8 @@ extension WPEParitySceneDriverTests {
         _ = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
         _ = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
         let renderer = try XCTUnwrap(driver.renderer)
-        let id = try XCTUnwrap(renderer.state.commonOrder.first { !["101", "102"].contains($0) })
-        XCTAssertTrue(renderer.state.transparentOrder.contains(id), "A passthrough without copybackground is transparent")
+        let id = try XCTUnwrap(renderer.instance.state.commonOrder.first { !["101", "102"].contains($0) })
+        XCTAssertTrue(renderer.instance.state.transparentOrder.contains(id), "A passthrough without copybackground is transparent")
         let loaded = try XCTUnwrap(draws("102").first { $0.pass.rawValue.hasSuffix("/passthrough4") })
         let created = try draws(id)
         let publish = try XCTUnwrap(created.first { $0.pass.rawValue.hasSuffix("/passthrough4") },
@@ -617,7 +617,7 @@ extension WPEParitySceneDriverTests {
         defer { driver.cleanup() }
         _ = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
         _ = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
-        let state = try XCTUnwrap(driver.renderer).state
+        let state = try XCTUnwrap(driver.renderer).instance.state
         let created = state.commonOrder.filter { !["101", "20"].contains($0) }.compactMap { state.object($0) }
         XCTAssertEqual(created.map { $0.templateID != nil }, [true, false])
         XCTAssertEqual(created.map(\.brightness), [0, 0])
@@ -652,7 +652,7 @@ extension WPEParitySceneDriverTests {
         defer { driver.cleanup() }
         _ = try await sceneProtocolFrame(driver, layer: layer, label: "before create")
         _ = try await sceneProtocolFrame(driver, layer: layer, label: "create frame")
-        XCTAssertEqual(try XCTUnwrap(driver.renderer).state.commonOrder, ["101"])
+        XCTAssertEqual(try XCTUnwrap(driver.renderer).instance.state.commonOrder, ["101"])
     }
 
     @objc func testSceneSortReordersActualDrawCursorAndSurvivesResize() async throws {
@@ -742,7 +742,7 @@ extension WPEParitySceneDriverTests {
             XCTAssertEqual(command.status, .completed)
             XCTAssertNil(command.error)
             let renderer = try XCTUnwrap(driver.renderer)
-            let script = try XCTUnwrap(renderer.script)
+            let script = try XCTUnwrap(renderer.instance.script)
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
             XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
             let pixels = try readBack(XCTUnwrap(layer.lastTexture), device: renderer.backbuffer.device)
@@ -750,7 +750,7 @@ extension WPEParitySceneDriverTests {
             sceneProtocolPixel(pixels, x: 24, y: 48, rgb: reds[frame - 1])
             sceneProtocolPixel(pixels, x: 136, y: 48, rgb: greens[frame - 1])
             if frame >= 2 {
-                XCTAssertEqual(renderer.state.object("101")?.brightness, frame < 4 ? 2 : 4)
+                XCTAssertEqual(renderer.instance.state.object("101")?.brightness, frame < 4 ? 2 : 4)
             }
         }
     }
@@ -828,7 +828,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(driver.loadDiagnostics)
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script, "actual Driver load must attach SceneScript")
+        let script = try XCTUnwrap(renderer.instance.script, "actual Driver load must attach SceneScript")
         XCTAssertEqual(script.engine.bindings.filter(\.compiled).count, expectedScripts)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
         let layer = RecordingLayer()
@@ -845,7 +845,7 @@ extension WPEParitySceneDriverTests {
                                     label: String) async throws -> [UInt8] {
         try await present(driver, layer: layer, label: label)
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script)
+        let script = try XCTUnwrap(renderer.instance.script)
         XCTAssertTrue(driver.hasPresentedFrame)
         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))

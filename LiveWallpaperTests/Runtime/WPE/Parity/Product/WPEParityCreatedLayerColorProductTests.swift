@@ -44,7 +44,7 @@ extension WPEParitySceneDriverTests {
             }.map(\.draw)
         }
         func createdID() throws -> String? {
-            try XCTUnwrap(driver.renderer).state.commonOrder.first { !["101", "20"].contains($0) }
+            try XCTUnwrap(driver.renderer).instance.state.commonOrder.first { !["101", "20"].contains($0) }
         }
         func alpha(_ id: String) throws -> Float? {
             guard case let .float(value)? = try owned(id).first?.constants[.fragment]?["g_Alpha"] else { return nil }
@@ -72,7 +72,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertEqual(try alpha("20"), 1)
         XCTAssertEqual(try color("20"), [0, 1, 0])
         createdColorPixel(pixels, x: 80, rgb: [0, 255, 0], tolerance: 1)
-        XCTAssertEqual(try XCTUnwrap(driver.renderer).state.object("20")?.alpha, 1)
+        XCTAssertEqual(try XCTUnwrap(driver.renderer).instance.state.object("20")?.alpha, 1)
     }
 
     /// Script writes to a clone's effect constants reach only the clone's effect pass (1401e7170.c:441-464).
@@ -188,7 +188,7 @@ extension WPEParitySceneDriverTests {
         XCTAssertNil(driver.loadDiagnostics)
         XCTAssertEqual(driver.shaderErrorSummary.count, 0, "\(driver.shaderErrorSummary.entries)")
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script, "actual Driver load must attach SceneScript")
+        let script = try XCTUnwrap(renderer.instance.script, "actual Driver load must attach SceneScript")
         XCTAssertEqual(script.engine.bindings.filter(\.compiled).count, 1)
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))
         let layer = RecordingLayer()
@@ -205,7 +205,7 @@ extension WPEParitySceneDriverTests {
                                    label: String) async throws -> [UInt8] {
         try await present(driver, layer: layer, label: label)
         let renderer = try XCTUnwrap(driver.renderer)
-        let script = try XCTUnwrap(renderer.script)
+        let script = try XCTUnwrap(renderer.instance.script)
         XCTAssertTrue(driver.hasPresentedFrame)
         XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
         XCTAssertEqual(script.engine.exceptionCount, 0, script.engine.exceptions.joined(separator: "\n"))

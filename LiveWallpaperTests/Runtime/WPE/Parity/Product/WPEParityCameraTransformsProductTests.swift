@@ -83,7 +83,7 @@ extension WPEParitySceneDriverTests {
         try renderer.applyUserProperties(XCTUnwrap(WPEParityUserPropertyUpdate(from: initial, to: withCamera)),
                                          changedJSON: big(true), mergedJSON: big(true))
         try await frame(2, zoom: 1.5, scale: 0.01171875)
-        XCTAssertEqual(renderer.state.scriptField("cameraTransforms.zoom", of: ""), .vector(SIMD4(2, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.scriptField("cameraTransforms.zoom", of: ""), .vector(SIMD4(2, 0, 0, 0)))
     }
 
     /// A user value on a camera object's zoom and a root layer's parallaxDepth reaches the next frame's V/P
@@ -265,13 +265,13 @@ extension WPEParitySceneDriverTests {
             XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
             return renderer.lastFrameDraws.count
         }
-        XCTAssertEqual(renderer.state.scriptField("camerafade", of: ""), .vector(SIMD4(1, 0, 0, 0)))
+        XCTAssertEqual(renderer.instance.state.scriptField("camerafade", of: ""), .vector(SIMD4(1, 0, 0, 0)))
         // The flag is read before this frame's script update, so the first frame still draws the fade.
         let faded = try await frame(0)
         let fadeAlpha = try XCTUnwrap(renderer.lastFrameDraws.last?.draw.constants[.fragment]?["g_Alpha"])
         guard case let .float(alpha) = fadeAlpha else { return XCTFail("fade g_Alpha is not a Float: \(fadeAlpha)") }
         XCTAssertGreaterThan(alpha, 0, "the first frame sits inside the path's opening fade")
-        XCTAssertEqual(renderer.state.scriptField("camerafade", of: ""), .vector(.zero))
+        XCTAssertEqual(renderer.instance.state.scriptField("camerafade", of: ""), .vector(.zero))
         let cleared = try await frame(1)
         XCTAssertEqual(cleared, faded - 1, "the fade draw still ran after the script cleared camerafade")
     }

@@ -115,11 +115,9 @@ final class WPEParityFrameRenderer {
 
     /// `targets` with the planner's layer images over them, as the frame encodes; nil once either changed.
     private var frameTextures: [WPEResourceID: MTLTexture]?
-    /// Object and material state the draws read every frame; animations write it, and so may callers between frames.
-    var state: WPEParitySceneState
+    var instance: WPEParitySceneInstance
     /// Material constant re-packs after a pass's constants changed, over the renderer's life.
     private(set) var constantPacks = 0
-    var animations: WPEParitySceneAnimations
     var packedConstants: [Int: (generation: Int, constants: [WPEHLSLStage: [String: WPECBufferValue]])] = [:]
     var seenTransforms = 0
     /// Set once a layer transform left its loaded value: draws then place themselves from `layers` every frame.
@@ -159,7 +157,6 @@ final class WPEParityFrameRenderer {
     /// Every program the plan can draw with, compiled at load.
     var artifacts: [WPEHLSLProgram: Result<WPEParityShaderArtifact, WPEParityFrameSkip>]
     let mipMappedFrameBufferRequested: Bool
-    var bloom: WPEParityBloomSettings
     /// Post-process draw constants for `bloom`, by draw operation, where they differ from the planned ones.
     var postConstants: [Int: [WPEHLSLStage: [String: WPECBufferValue]]] = [:]
     let device: MTLDevice
@@ -170,36 +167,18 @@ final class WPEParityFrameRenderer {
     private let screen: WPEParityUniformScreen
     /// The scene camera; a camera path pose replaces it for the frame.
     let rootCamera: WPEParityCamera
-    /// The camera pose published by the last camera update, including that update's shake.
-    var camera: WPEParityCamera
-    var activeCameraID: String?
-    private var sceneRNG: WPEParityMT19937
-    var cameraQueues: [String: WPEParityCameraQueue]
-    /// The scene's SceneScript engine; nil for a scene without property scripts.
-    var script: WPEParitySceneScript?
-    var media: WPESceneMediaEventMailbox?
-    var mediaGeneration = 0
-    var mediaTextures: WPEMediaTextureStore.ParitySnapshot?
     /// Centre crops of `mediaTextures` images; keyed by identity, so they are dropped with the snapshot.
     var mediaCrops: [MediaCrop: MTLTexture] = [:]
-    var userShortcutIcons: WPEUserShortcutIconStore?
-    var mediaDiagnostics: [String] = []
     var hasMediaTextureDemand: Bool {
         graphs.layout.draws.values.contains { !$0.mediaSlots.isEmpty }
     }
 
-    var seenScriptBloom = 0
-    var seenScriptSound = 0
-    var seenSoundBoundsFields = -1
     /// (visibility, membership) generations last reported to the sound runtime.
     var seenSoundVisibility = SIMD2(-1, -1)
-    var seenScriptLighting = -1
     var seenLightTransforms = -1
     var seenLightVisibility = -1
     var seenLayerFields = -1
     var seenAnimationLayerFields = -1
-    /// Animation-layer script fields last pushed into `puppets`; an absent key compares with its scene JSON value.
-    var pushedAnimationLayerFields: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue] = [:]
     /// Each puppet animation layer's field keys; `seed` is the scene JSON value a key compares with before any push.
     struct AnimationLayerFields {
         let objectID: String
@@ -213,58 +192,43 @@ final class WPEParityFrameRenderer {
     /// This frame's shadow atlas layout; nil when shadow quality is 0 or the plan declares no atlas.
     var shadowLayout: WPEParityShadowLayout?
     let generalZoom: Float
-    var cameraPaths: WPEParityCameraPaths
-    var cameraPose: WPEParityCameraPose?
     /// The fade draw's planned constants with this frame's g_Alpha.
     var fadeConstants: [WPEHLSLStage: [String: WPECBufferValue]] = [:]
     /// Native no-hook fields are polled at the camera-update and layer-render read points.
     private var cameraParallax: WPESceneCameraParallaxSettings {
         var settings = WPESceneCameraParallaxSettings.disabled
-        if case let .vector(value)? = state.scriptField("cameraparallax", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("cameraparallax", of: "") {
             settings.enabled = value.x != 0
         }
-        if case let .vector(value)? = state.scriptField("cameraparallaxamount", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("cameraparallaxamount", of: "") {
             settings.amount = Double(value.x)
         }
-        if case let .vector(value)? = state.scriptField("cameraparallaxdelay", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("cameraparallaxdelay", of: "") {
             settings.delay = Double(value.x)
         }
-        if case let .vector(value)? = state.scriptField("cameraparallaxmouseinfluence", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("cameraparallaxmouseinfluence", of: "") {
             settings.mouseInfluence = Double(value.x)
         }
         return settings
     }
 
     var cameraShake: WPEParityCameraShake? {
-        guard case let .vector(enabled)? = state.scriptField("camerashake", of: ""), enabled.x != 0 else { return nil }
+        guard case let .vector(enabled)? = instance.state.scriptField("camerashake", of: ""), enabled.x != 0 else { return nil }
         var settings = WPEParityCameraShake(orthographic: rootCamera.scenePerspective == nil)
-        if case let .vector(value)? = state.scriptField("camerashakespeed", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("camerashakespeed", of: "") {
             settings.speed = value.x
         }
-        if case let .vector(value)? = state.scriptField("camerashakeamplitude", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("camerashakeamplitude", of: "") {
             settings.amplitude = value.x
         }
-        if case let .vector(value)? = state.scriptField("camerashakeroughness", of: "") {
+        if case let .vector(value)? = instance.state.scriptField("camerashakeroughness", of: "") {
             settings.roughness = value.x
         }
         return settings
     }
 
-    private(set) var clock = WPEParityClock()
-    private(set) var pointer = WPEParityUniformPointer()
     /// Left-button edges in backbuffer UV (y down) for the next committed frame's cursor pass, in order.
     var buttonEdges: [(position: SIMD2<Float>, down: Bool)] = []
-    var parallax = WPEParityUniformParallax()
-    var audio = WPEParityAudioSpectrum()
-    /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
-    private var textureSlots: [String: WPECBufferValue] = [:]
-    /// g_RenderVar0/1 as the last draw left them, in frame draw order and across frames.
-    private var renderVars = WPEParityRenderVarState()
-    /// One bone animator per skinned puppet layer, keyed by object id.
-    var puppets: [String: WPEParityPuppetAnimator] = [:]
-    /// Script texture animation of each image layer that asked for one, keyed by object id.
-    private(set) var textureAnimations: [String: WPEParityTextureAnimation] = [:]
-    var particles: WPEParityParticleFrame
     private let particleFullFrameBuffer: [String: [[WPEParityParticlePathElement]: Bool]]
     private let particleBaseFailures: [String: [[WPEParityParticlePathElement]: WPEParityFrameSkip]]
     let particleSnapshotObjects: Set<String>
@@ -290,14 +254,13 @@ final class WPEParityFrameRenderer {
 
     /// Counts from the last selected executor; skipped submissions must not be treated as measured work.
     var lastFrameCopyCount: Int? {
-        guard frameIndex > 0, !graphs.executors.isEmpty else { return nil }
-        let executor = graphs.executors[(frameIndex - 1) % graphs.executors.count]
+        guard instance.frameIndex > 0, !graphs.executors.isEmpty else { return nil }
+        let executor = graphs.executors[(instance.frameIndex - 1) % graphs.executors.count]
         return executor.copyEncoded
     }
 
     /// `lastFrameDraws`' operations, so per-frame reads of them do not copy each draw.
     private var lastFrameOperations: [Int] = []
-    private var frameIndex = 0
     var targetSamplers: [ObjectIdentifier: WPEParitySamplerState] = [:]
     var resourceBindings: WPEParityResourceBindings = [:]
     var seenScriptText = 0
@@ -336,7 +299,7 @@ final class WPEParityFrameRenderer {
 
     /// Reads the current graph's actual allocation, including heap/memoryless targets; owns no extra resources.
     func renderTarget(_ id: WPEResourceID, scope: WPEResourceBindingScope = .frame) -> MTLTexture? {
-        let variant = max(0, frameIndex - 1) % graphs.executors.count
+        let variant = max(0, instance.frameIndex - 1) % graphs.executors.count
         let physical = resourceBindings[scope]?[id] ?? id
         return graphs.executors[variant].transientTextures[physical] ?? targets[physical]
     }
@@ -398,18 +361,18 @@ final class WPEParityFrameRenderer {
 
     /// Particle batches dropped because a frame's particle draws outgrew their arena share or the arena.
     var droppedParticleBatches: Int {
-        let current = graphs.executors.reduce(particles.dropped + retiredDrops) { $0 + $1.droppedDraws }
+        let current = graphs.executors.reduce(instance.particles.dropped + retiredDrops) { $0 + $1.droppedDraws }
         return previousGraphs?.executors.reduce(current) { $0 + $1.droppedDraws } ?? current
     }
 
     /// Arena bytes a frame's particle draws may take now.
     var particleShare: Int {
-        particles.budget
+        instance.particles.budget
     }
 
     /// Live particles of a particle object, children included.
     func particleLiveCount(_ objectID: String) -> Int? {
-        particles.scene.liveCount(objectID)
+        instance.particles.scene.liveCount(objectID)
     }
 
     /// Per encoded draw, declared textures the frame does not have, bound to a transparent texel.
@@ -429,13 +392,13 @@ final class WPEParityFrameRenderer {
 
     /// The engine matrices draw `operation` packs for the current frame.
     func uniforms(_ operation: Int) throws -> WPEParityUniformDraw? {
-        try draws[operation]?.frameUniforms(parallax: parallax.smoothed, camera: pathCamera,
+        try draws[operation]?.frameUniforms(parallax: instance.parallax.smoothed, camera: pathCamera,
                                             layers: layersMoved ? layers : nil)
     }
 
     /// The published camera pose with the layer renderer's current parallax controls.
     var pathCamera: WPEParityCamera {
-        var selected = camera
+        var selected = instance.camera
         let parallax = cameraParallax
         selected.parallaxAmount = parallax.enabled && selected.scenePerspective == nil ? Float(parallax.amount) : nil
         return selected
@@ -453,9 +416,9 @@ final class WPEParityFrameRenderer {
     /// camera shake or parallax, multi-frame sprite sheet, script, audio processing, or program reading a per-frame engine input.
     private let hasStaticBase: Bool
     var isStatic: Bool {
-        hasStaticBase && videos.sourceCount == 0 && !cameraParallax.enabled && cameraShake == nil && !cameraQueues.values.contains {
-            $0.hasEligibleItems && state.isAlive($0.objectID) && state.isVisible($0.objectID)
-        } && userShortcutIcons?.videoURLs.isEmpty != false
+        hasStaticBase && videos.sourceCount == 0 && !cameraParallax.enabled && cameraShake == nil && !instance.cameraQueues.values.contains {
+            $0.hasEligibleItems && instance.state.isAlive($0.objectID) && instance.state.isVisible($0.objectID)
+        } && instance.userShortcutIcons?.videoURLs.isEmpty != false
     }
 
     var dedicatedTextureBytes: Int {
@@ -500,8 +463,8 @@ final class WPEParityFrameRenderer {
             guard let self else { return nil }
             let steps = planner.layerSprites(id)
             guard !steps.isEmpty else { return nil }
-            return textureAnimations[id, default: WPEParityTextureAnimation()].perform(
-                command, value: value, shared: WPEParityFrameDrawPlan.sharedSprite(steps, at: clock.time),
+            return instance.textureAnimations[id, default: WPEParityTextureAnimation()].perform(
+                command, value: value, shared: WPEParityFrameDrawPlan.sharedSprite(steps, at: instance.clock.time),
                 durations: steps.map { Float($0.duration) }
             )
         }
@@ -510,12 +473,12 @@ final class WPEParityFrameRenderer {
     /// Nil when the layer has no puppet or the puppet has no layer at that `animationlayers` index.
     var scriptAnimationLayer: (String, Int, WPEParityScriptEngine.AnimationLayerCommand, Double) -> Double? {
         { [weak self] id, index, command, value in
-            guard let self, let layer = puppets[id]?.layers.first(where: { $0.sceneIndex == index }) else { return nil }
+            guard let self, let layer = instance.puppets[id]?.layers.first(where: { $0.sceneIndex == index }) else { return nil }
             switch command {
-            case .play: puppets[id]?.controlLayer(at: index, action: .play)
-            case .pause: puppets[id]?.controlLayer(at: index, action: .pause)
-            case .stop: puppets[id]?.controlLayer(at: index, action: .stop)
-            case .setFrame: puppets[id]?.controlLayer(at: index, action: .setFrame(Float(value)))
+            case .play: instance.puppets[id]?.controlLayer(at: index, action: .play)
+            case .pause: instance.puppets[id]?.controlLayer(at: index, action: .pause)
+            case .stop: instance.puppets[id]?.controlLayer(at: index, action: .stop)
+            case .setFrame: instance.puppets[id]?.controlLayer(at: index, action: .setFrame(Float(value)))
             case .isPlaying: return layer.isPlaying ? 1 : 0
             case .getFrame: return Double(layer.frame)
             case .fps: return Double(layer.fps)
@@ -529,8 +492,8 @@ final class WPEParityFrameRenderer {
     /// Writes land in the puppet the draw planner reads after this frame's script tick.
     var scriptPuppet: (String, (inout WPEParityPuppetAnimator) -> Void) -> Bool {
         { [weak self] id, body in
-            guard let self, puppets[id] != nil else { return false }
-            body(&puppets[id]!)
+            guard let self, instance.puppets[id] != nil else { return false }
+            body(&instance.puppets[id]!)
             return true
         }
     }
@@ -538,7 +501,7 @@ final class WPEParityFrameRenderer {
     /// Nil when the object has no loaded particle system.
     var scriptParticleSystem: (String, WPEParityScriptEngine.ParticleCommand, Int32) -> Double? {
         { [weak self] id, command, count in
-            self?.particles.scene.control(objectID: id) { system in
+            self?.instance.particles.scene.control(objectID: id) { system in
                 switch command {
                 case .play: system.play()
                 case .pause: system.pause()
@@ -560,7 +523,7 @@ final class WPEParityFrameRenderer {
                 let object = state.objects[index]
                 transforms.setTransform(objectID, origin: object.origin, angles: object.angles, scale: object.scale)
             }
-            transforms.refreshWorlds { self.puppets[$0]?.boneWorld }
+            transforms.refreshWorlds { self.instance.puppets[$0]?.boneWorld }
             // 1401fd3f0: an image answers its alignment-shifted W′; other objects answer W.
             return kind == .image ? transforms.model(id) : transforms.world(id)
         }
@@ -732,7 +695,7 @@ final class WPEParityFrameRenderer {
         }
         // Objects the continued scene removed must not be planned, or their images would load again.
         var loaded = plan.state
-        for id in plan.state.ids where previous?.state.isAlive(id) == false {
+        for id in plan.state.ids where previous?.instance.state.isAlive(id) == false {
             loaded.removeObject(id)
         }
         let planned = mipRequested || loaded.membershipGeneration != plan.state.membershipGeneration
@@ -834,10 +797,8 @@ final class WPEParityFrameRenderer {
         particleBaseFailures = baseFailures
         particleSnapshotObjects = snapshotObjects
         particleMaterialSkips = particleFailures
-        bloom = plan.post.bloomSettings
         self.device = device
         drawEncoder = encoder
-        state = plan.state
         var constantComponents: [WPEParityMaterialPassKey: [String: Int]] = [:]
         for binding in plan.bindings.joined().map(\.value) {
             guard let pass = binding.materialPass else { continue }
@@ -847,7 +808,6 @@ final class WPEParityFrameRenderer {
         }
         let animations = WPEParitySceneAnimations(document: plan.document, state: plan.state,
                                                   constantComponents: constantComponents)
-        self.animations = animations
         self.backbuffer = backbuffer
         self.targets = targets
         targetSamplers = Self.targetSamplers(graphs, targets: targets)
@@ -863,9 +823,7 @@ final class WPEParityFrameRenderer {
                                           alignment: plan.alignment,
                                           orthoWithoutPaths: plan.scene.engineFlags.orthographicProjection
                                               && plan.scene.cameraPaths.paths.isEmpty)
-        camera = rootCamera
         generalZoom = Float(plan.document.general.zoom)
-        cameraPaths = plan.scene.cameraPaths
         layers = planner.layers
         let particleObjects = plan.scene.scene.objects.compactMap { object -> (id: String, index: Int?)? in
             if case .particle = object.kind {
@@ -877,12 +835,13 @@ final class WPEParityFrameRenderer {
         self.particleObjects = particleObjects
         let prewarm = Self.particleFrames(particleObjects, state: plan.state, layers: planner.layers,
                                           camera: planner.layers.camera, time: 0, cursor: nil)
-        let sceneRNG = previous?.sceneRNG ?? WPEParityMT19937(seed: particleSeed)
-        self.sceneRNG = sceneRNG
+        let sceneRNG = previous?.instance.sceneRNG ?? WPEParityMT19937(seed: particleSeed)
+        let particles: WPEParityParticleFrame
+        let cameraQueues: [String: WPEParityCameraQueue]
         if let previous {
             // Replanning must not prewarm new systems or consume the continuing scene random stream.
-            particles = previous.particles
-            cameraQueues = previous.cameraQueues
+            particles = previous.instance.particles
+            cameraQueues = previous.instance.cameraQueues
         } else {
             particles = WPEParityParticleFrame(
                 scene: WPEParityParticleScene(document: plan.document, assets: plan.scene.assets,
@@ -910,11 +869,21 @@ final class WPEParityFrameRenderer {
             && !draws.values.contains { $0.sprites.values.contains { $0.count > 1 } }
             && !plan.loadPrograms.contains(where: Self.readsFrameInputs)
             && !WPEParitySceneScript.hasScripts(document)
+        var puppets: [String: WPEParityPuppetAnimator] = [:]
         for object in skinned {
             guard let model = plan.scene.puppetModels[object.id] else { continue }
             let layers = plan.document.imageObjects.first { $0.id == object.id }?.animationLayers ?? []
             puppets[object.id] = WPEParityPuppetAnimator(model: model, layers: layers)
         }
+        instance = WPEParitySceneInstance(
+            clock: WPEParityClock(), pointer: WPEParityUniformPointer(), parallax: WPEParityUniformParallax(),
+            cameraPaths: plan.scene.cameraPaths, cameraPose: nil, activeCameraID: nil, audio: WPEParityAudioSpectrum(),
+            textureSlots: [:], renderVars: WPEParityRenderVarState(), puppets: puppets, pushedAnimationLayerFields: [:],
+            textureAnimations: [:], particles: particles, sceneRNG: sceneRNG, cameraQueues: cameraQueues, frameIndex: 0,
+            state: plan.state, animations: animations, camera: rootCamera, script: nil, media: nil, mediaGeneration: 0,
+            mediaTextures: nil, userShortcutIcons: nil, mediaDiagnostics: [], seenScriptSound: 0,
+            seenSoundBoundsFields: -1, seenScriptLighting: -1, seenScriptBloom: 0, bloom: plan.post.bloomSettings
+        )
     }
 
     /// WPE's HLSL declares only the engine uniforms its combos leave live, so a mention is a read.
@@ -927,27 +896,12 @@ final class WPEParityFrameRenderer {
     }
 
     /// Picks up `previous`'s scene where it stopped, for the same document planned at another size.
-    func continueScene(from previous: WPEParityFrameRenderer, userPropertiesJSON: String? = nil) throws {
+    func adoptView(from previous: WPEParityFrameRenderer, userPropertiesJSON: String? = nil) throws {
         try previous.submitMaterialClears()
-        clock = previous.clock
-        pointer = previous.pointer
-        parallax = previous.parallax
-        cameraPaths = previous.cameraPaths
-        cameraPose = previous.cameraPose
-        activeCameraID = previous.activeCameraID
-        audio = previous.audio
-        textureSlots = previous.textureSlots
-        renderVars = previous.renderVars
-        puppets = previous.puppets
-        pushedAnimationLayerFields = previous.pushedAnimationLayerFields
-        textureAnimations = previous.textureAnimations
-        particles = previous.particles
-        sceneRNG = previous.sceneRNG
+        instance = previous.instance.copy()
         // Script registrations belong to the same scene and shader store; resizing changes draw targets only.
         artifacts.merge(previous.artifacts) { current, _ in current }
-        cameraQueues = previous.cameraQueues
-        arena.capacity = baseArenaBytes + particles.budget
-        frameIndex = previous.frameIndex
+        arena.capacity = baseArenaBytes + instance.particles.budget
         resourceBindings = try migratedBindings(from: previous)
         // A resize is a real storage transaction. Compatible named RTs preserve history unless authored clear
         // requests initialization at resize; the new backbuffer always belongs to the new renderer.
@@ -960,32 +914,17 @@ final class WPEParityFrameRenderer {
         let clearColors = Self.clearColors(graphs.layout, targets: targets)
         try Self.clear(targets.values.filter { clearColors[ObjectIdentifier($0)] != nil }, queue: queue,
                        colors: clearColors)
-        state = previous.state
-        animations = previous.animations
-        camera = previous.camera
-        camera.renderTargetSize = rootCamera.renderTargetSize
-        camera.size = rootCamera.size
-        script = previous.script
-        media = previous.media
-        mediaGeneration = previous.mediaGeneration
-        mediaTextures = previous.mediaTextures
-        userShortcutIcons = previous.userShortcutIcons
-        mediaDiagnostics = previous.mediaDiagnostics
-        seenScriptSound = previous.seenScriptSound
-        seenSoundBoundsFields = previous.seenSoundBoundsFields
-        seenScriptLighting = previous.seenScriptLighting
+        instance.camera.renderTargetSize = rootCamera.renderTargetSize
+        instance.camera.size = rootCamera.size
         lights = previous.lights
         shadowLayout = previous.shadowLayout
         reserveArena(for: graphs.layout)
-        // A script's bloom write reaches `bloom` below; the generation only marks it consumed.
-        seenScriptBloom = previous.seenScriptBloom
         // The next frame takes the transforms, visibility and effects over from the copied state.
         seenTransforms = previous.layersMoved ? -1 : 0
         seenVisibility = -1
         seenEffects = -1
         seenMembership = -1
         seenModelData = -1
-        bloom = previous.bloom
         for object in previous.plan.scene.scene.objects {
             guard let text = previous.planner.texts[object.id] else { continue }
             textRequests.append(.init(text.object, effectCount: text.effectCount))
@@ -999,16 +938,18 @@ final class WPEParityFrameRenderer {
             let snapshot = try Self.propertySnapshot(userPropertiesJSON)
             try replaceConditionalProperties(changed: snapshot, merged: snapshot)
         }
-        script?.engine.materialFunctionHandler = scriptMaterialFunction
-        script?.engine.transformMatrixHandler = scriptTransformMatrix
-        script?.engine.textureAnimationHandler = scriptTextureAnimation
-        script?.engine.animationLayerHandler = scriptAnimationLayer
-        script?.engine.puppetHandler = scriptPuppet
-        script?.engine.particleSystemHandler = scriptParticleSystem
-        script?.engine.propertyAnimationLookup = { [animations] in animations.animation(objectID: $0, pass: $1, name: $2) }
-        script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
-        script?.resize(canvasSize: camera.size, screenResolution: logicalSize,
-                       state: &state)
+        instance.script?.engine.materialFunctionHandler = scriptMaterialFunction
+        instance.script?.engine.transformMatrixHandler = scriptTransformMatrix
+        instance.script?.engine.textureAnimationHandler = scriptTextureAnimation
+        instance.script?.engine.animationLayerHandler = scriptAnimationLayer
+        instance.script?.engine.puppetHandler = scriptPuppet
+        instance.script?.engine.particleSystemHandler = scriptParticleSystem
+        instance.script?.engine.propertyAnimationLookup = { [animations = instance.animations] in
+            animations.animation(objectID: $0, pass: $1, name: $2)
+        }
+        instance.script?.engine.modelDataAdmissionHandler = scriptModelDataAdmission
+        instance.script?.resize(canvasSize: instance.camera.size, screenResolution: logicalSize,
+                                state: &instance.state)
         repackBloom()
     }
 
@@ -1021,77 +962,77 @@ final class WPEParityFrameRenderer {
         // Native object updates precede this frame's camera selection and matrix-stack publication.
         let objectCamera = pathCamera
         if forceExternalFrame, paused {
-            clock.holdForExternalFrame()
+            instance.clock.holdForExternalFrame()
         } else {
-            guard clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
+            guard instance.clock.advance(elapsed: elapsed, paused: paused) else { return .skipped }
         }
         let edges = buttonEdges
         buttonEdges.removeAll()
-        let shortcutIcons = userShortcutIcons
+        let shortcutIcons = instance.userShortcutIcons
         videos.bindUserVideos(shortcutIcons?.videoURLs ?? [:])
         let time = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: input.date)
         let daytime = WPEParityClock.daytime(hour: time.hour ?? 0, minute: time.minute ?? 0,
                                              second: time.second ?? 0, millisecond: (time.nanosecond ?? 0) / 1_000_000)
         applyAnimationLayerFields()
         // Scene time, so a paused clock holds the pose.
-        for id in puppets.keys {
-            puppets[id]?.advance(dt: Double(clock.frametime))
+        for id in instance.puppets.keys {
+            instance.puppets[id]?.advance(dt: Double(instance.clock.frametime))
         }
-        for id in textureAnimations.keys {
-            textureAnimations[id]?.step(dt: clock.frametime, durations: planner.layerSprites(id).map { Float($0.duration) })
+        for id in instance.textureAnimations.keys {
+            instance.textureAnimations[id]?.step(dt: instance.clock.frametime, durations: planner.layerSprites(id).map { Float($0.duration) })
         }
-        pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
+        instance.pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
         let scriptPointer = (input.scriptCursor ?? input.cursor) / screen.size
         let scriptCursor = scriptPointer * logicalSize
         applyTransforms()
         applyLayerFields()
         updateSceneObjects(camera: objectCamera, timeOfDay: daytime)
-        selectCamera(dt: clock.frametime)
+        selectCamera(dt: instance.clock.frametime)
         // A cleared camerafade flag hides the fade each frame; setting it back cannot add a fade that never loaded.
-        var fadeAlpha = cameraPaths.fadeAlpha
-        if case let .vector(value)? = state.scriptField("camerafade", of: ""), value.x == 0 {
+        var fadeAlpha = instance.cameraPaths.fadeAlpha
+        if case let .vector(value)? = instance.state.scriptField("camerafade", of: ""), value.x == 0 {
             fadeAlpha = 0
         }
         let camera = pathCamera
         // 1401891a0.c:288: the smoothed parallax only moves while camera parallax is on.
         let updateParallax = cameraParallax
         if updateParallax.enabled {
-            parallax.advance(pointer: pointer.position, mouseInfluence: Float(updateParallax.mouseInfluence),
-                             delay: Float(updateParallax.delay), eye: SIMD2(camera.eye.x, camera.eye.y),
-                             ortho: camera.size,
-                             frametime: clock.frametime)
+            instance.parallax.advance(pointer: instance.pointer.position, mouseInfluence: Float(updateParallax.mouseInfluence),
+                                      delay: Float(updateParallax.delay), eye: SIMD2(camera.eye.x, camera.eye.y),
+                                      ortho: camera.size,
+                                      frametime: instance.clock.frametime)
         }
-        audio.advance(left: input.audio?.left ?? Self.silence, right: input.audio?.right ?? Self.silence,
-                      dt: clock.frametime, silence: input.audio == nil)
-        var frameUniforms = WPEParityUniformFrame(clock: clock, daytime: daytime, screen: screen, pointer: pointer,
-                                                  parallax: parallax, eyePosition: camera.eyePosition,
-                                                  view: camera.view, audio: audio)
-        if let script {
-            script.prepareFrame(frame: UInt64(frameIndex), dt: clock.frametime, runtime: clock.timeUniform,
+        instance.audio.advance(left: input.audio?.left ?? Self.silence, right: input.audio?.right ?? Self.silence,
+                               dt: instance.clock.frametime, silence: input.audio == nil)
+        var frameUniforms = WPEParityUniformFrame(clock: instance.clock, daytime: daytime, screen: screen, pointer: instance.pointer,
+                                                  parallax: instance.parallax, eyePosition: camera.eyePosition,
+                                                  view: camera.view, audio: instance.audio)
+        if let script = instance.script {
+            script.prepareFrame(frame: UInt64(instance.frameIndex), dt: instance.clock.frametime, runtime: instance.clock.timeUniform,
                                 cursor: scriptCursor, world: camera.cursorWorld(normalizedPointer: scriptPointer),
                                 leftDown: input.buttonDown, timeOfDay: daytime)
-            script.updateAudio(audio.bins)
+            script.updateAudio(instance.audio.bins)
             try runScriptEvents(script, camera: camera, pointer: scriptPointer, edges: edges,
                                 buttonDown: input.buttonDown, timeOfDay: daytime)
         }
         consumeMediaInputs()
         // Animations run after the object update and the camera, and render reads their values.
-        animations.advance(dt: clock.frametime, state: &state)
-        if let script {
-            for event in animations.firedEvents {
-                script.engine.dispatch(.animationEvent, payloadJSON: event.payloadJSON, target: event.objectID, state: &state)
+        instance.animations.advance(dt: instance.clock.frametime, state: &instance.state)
+        if let script = instance.script {
+            for event in instance.animations.firedEvents {
+                script.engine.dispatch(.animationEvent, payloadJSON: event.payloadJSON, target: event.objectID, state: &instance.state)
             }
-            script.engine.videoEnded(ownerIDs: videos.takeEndedOwnerIDs(), state: &state)
+            script.engine.videoEnded(ownerIDs: videos.takeEndedOwnerIDs(), state: &instance.state)
             // 140171440.c:888-896: the tick after the animations, so update sees this frame's animated values.
-            script.tick(dt: clock.frametime, cursor: scriptCursor,
-                        world: camera.cursorWorld(normalizedPointer: scriptPointer), leftDown: input.buttonDown, timeOfDay: daytime, state: &state)
+            script.tick(dt: instance.clock.frametime, cursor: scriptCursor,
+                        world: camera.cursorWorld(normalizedPointer: scriptPointer), leftDown: input.buttonDown, timeOfDay: daytime, state: &instance.state)
         }
-        if let failure = script?.engine.executionFailure {
+        if let failure = instance.script?.engine.executionFailure {
             throw failure
         }
         // 18aac0 reads the post-tick Bool/amount with the smoother already advanced by 1891a0 above.
         let renderCamera = pathCamera
-        videos.applyScriptFields(state: &state)
+        videos.applyScriptFields(state: &instance.state)
         applyTransforms()
         applyLayerFields()
         applyScriptBloom()
@@ -1107,7 +1048,7 @@ final class WPEParityFrameRenderer {
         }
         // 14018aac0.c:206 keys with g_ViewForward, which comes from the pre-script camera (14017fa70.c:383-387).
         if plan.scene.scene.transparentSorting {
-            state.sortTransparentMembers(viewForward: WPEParityUniformParallax.viewVectors(view: camera.view).forward)
+            instance.state.sortTransparentMembers(viewForward: WPEParityUniformParallax.viewVectors(view: camera.view).forward)
         }
         if !textsReady {
             // Sorting may change membershipGeneration; stamp the private admission only after that change.
@@ -1122,18 +1063,18 @@ final class WPEParityFrameRenderer {
 
     func encodeSelectedFrame(uniforms: WPEParityUniformFrame, renderCamera: WPEParityCamera, fadeAlpha: Float,
                              completion: (@Sendable (MTLCommandBuffer) -> Void)?) throws -> WPEParityGraphExecutor.Submission {
-        let shortcutIcons = userShortcutIcons
+        let shortcutIcons = instance.userShortcutIcons
         let graphs = graphs
         let draws = graphs.layout.draws
         let live = layersMoved ? layers : nil
-        let variant = frameIndex % graphs.executors.count
-        frameIndex += 1
+        let variant = instance.frameIndex % graphs.executors.count
+        instance.frameIndex += 1
         let dropped = droppedParticleBatches
         defer {
             videos.finishFrame()
-            if growsParticleShare, droppedParticleBatches > dropped, particles.budget < Self.maxParticleShare {
-                particles.budget = min(particles.budget * 2, Self.maxParticleShare)
-                arena.capacity = baseArenaBytes + particles.budget
+            if growsParticleShare, droppedParticleBatches > dropped, instance.particles.budget < Self.maxParticleShare {
+                instance.particles.budget = min(instance.particles.budget * 2, Self.maxParticleShare)
+                arena.capacity = baseArenaBytes + instance.particles.budget
             }
         }
         lastFrameDraws.removeAll(keepingCapacity: true)
@@ -1156,7 +1097,7 @@ final class WPEParityFrameRenderer {
             let worldModel = particleBlock.compositeOwnerID.map { layers.model($0).inverse }
                 ?? matrix_identity_float4x4
             let stream = Result {
-                try particles.scene.drawStream(objectID: objectID, ownerModel: layers.world(objectID),
+                try instance.particles.scene.drawStream(objectID: objectID, ownerModel: layers.world(objectID),
                                                worldModel: worldModel) { path in
                     if failures[path] != nil {
                         return nil
@@ -1180,9 +1121,9 @@ final class WPEParityFrameRenderer {
             }
         }
         // The arena takes a new capacity only when a frame begins, so the share is sized before encoding.
-        if growsParticleShare, particleDemand > particles.budget {
-            particles.budget = min(max(particleDemand, particles.budget * 2), Self.maxParticleShare)
-            arena.capacity = baseArenaBytes + particles.budget
+        if growsParticleShare, particleDemand > instance.particles.budget {
+            instance.particles.budget = min(max(particleDemand, instance.particles.budget * 2), Self.maxParticleShare)
+            arena.capacity = baseArenaBytes + instance.particles.budget
         }
         var submitted = false
         defer {
@@ -1249,15 +1190,15 @@ final class WPEParityFrameRenderer {
                                                     let batch = stream.batches[index]
                                                     guard let operation = graphs.particleDraws[batch.key], let plan = draws[operation] else { continue }
                                                     if let provided = try plan.makeParticleDraw(batch, frame: uniforms, camera: renderCamera, variant: variant,
-                                                                                                textures: textures, arena: arena, textureSlots: &textureSlots,
-                                                                                                renderVars: &renderVars, particles: &particles, layers: live,
+                                                                                                textures: textures, arena: arena, textureSlots: &instance.textureSlots,
+                                                                                                renderVars: &instance.renderVars, particles: &instance.particles, layers: live,
                                                                                                 mediaTexture: { croppedMediaTexture($0, aspect: $1) },
                                                                                                 userShortcutTexture: { videos.userTexture(for: $0) ?? shortcutIcons?.texture(for: $0) }) {
                                                         // Encode argument tables before the next batch reserves any vertex bytes.
                                                         try encode(provided, operation: operation)
                                                     } else if loggedParticleDrops.insert(batch.key.objectID).inserted {
                                                         Logger.warning("Particle object \(batch.key.objectID) dropped draw batches: frame demand "
-                                                            + "\(particleDemand) bytes, share \(particles.budget) bytes", category: .wpeRender)
+                                                            + "\(particleDemand) bytes, share \(instance.particles.budget) bytes", category: .wpeRender)
                                                     }
                                                 }
                                             case let .layout(operation):
@@ -1270,16 +1211,16 @@ final class WPEParityFrameRenderer {
                                                     }
                                                     fadeConstants[.fragment]?["g_Alpha"] = .float(fadeAlpha)
                                                 }
-                                                plan.applyRenderVarWrites(to: &renderVars)
+                                                plan.applyRenderVarWrites(to: &instance.renderVars)
                                                 let frameDraw = graphs.layout.frames[variant].draws[operation]
                                                 let color = drawColor(frameDraw, plan: plan)
                                                 let provided = try plan.makeDraw(frame: uniforms, camera: renderCamera, variant: variant, textures: textures,
-                                                                                 textureSlots: &textureSlots, puppets: puppets,
-                                                                                 textureAnimations: textureAnimations, layers: live,
+                                                                                 textureSlots: &instance.textureSlots, puppets: instance.puppets,
+                                                                                 textureAnimations: instance.textureAnimations, layers: live,
                                                                                  constants: fade ? fadeConstants : postConstants[operation] ?? materialConstants(operation, plan),
                                                                                  layerColor: color == plan.layerColor?.loaded ? nil : color,
-                                                                                 renderVar0: plan.clipMaskInverted == nil ? nil : renderVars.rv0,
-                                                                                 textRenderVarState: plan.textRenderVars == nil ? nil : renderVars,
+                                                                                 renderVar0: plan.clipMaskInverted == nil ? nil : instance.renderVars.rv0,
+                                                                                 textRenderVarState: plan.textRenderVars == nil ? nil : instance.renderVars,
                                                                                  mediaTexture: { croppedMediaTexture($0, aspect: $1) },
                                                                                  userShortcutTexture: { videos.userTexture(for: $0) ?? shortcutIcons?.texture(for: $0) })
                                                 guard case let .scene(description)? = frameDraw,
@@ -1310,7 +1251,7 @@ final class WPEParityFrameRenderer {
     private func drawColor(_ frameDraw: WPEParityFrameDraw?, plan: WPEParityFrameDrawPlan) -> SIMD4<Float>? {
         guard case let .scene(description)? = frameDraw,
               description.geometry == .textBackground else {
-            return plan.layerColor.map { state.layerColor(at: $0.object) }
+            return plan.layerColor.map { instance.state.layerColor(at: $0.object) }
         }
         return backgroundColor(of: description.objectID)
     }
@@ -1318,24 +1259,24 @@ final class WPEParityFrameRenderer {
     private func backgroundColor(of objectID: String) -> SIMD4<Float>? {
         guard let text = planner.texts[objectID] else { return nil }
         var brightness = text.object.backgroundBrightness
-        if case let .vector(value)? = state.scriptField("backgroundbrightness", of: objectID) {
+        if case let .vector(value)? = instance.state.scriptField("backgroundbrightness", of: objectID) {
             brightness = value.x
         }
-        return SIMD4(text.object.backgroundColor * (state.hdr ? brightness : 1),
-                     state.object(objectID)?.alpha ?? text.object.alpha)
+        return SIMD4(text.object.backgroundColor * (instance.state.hdr ? brightness : 1),
+                     instance.state.object(objectID)?.alpha ?? text.object.alpha)
     }
 
     /// The draw's constants, re-packed from the state only after its material pass changed.
     private func materialConstants(_ operation: Int,
                                    _ plan: WPEParityFrameDrawPlan) -> [WPEHLSLStage: [String: WPECBufferValue]] {
         guard let pass = plan.materialPass else { return plan.constants }
-        let generation = state.constantGeneration(pass: pass)
+        let generation = instance.state.constantGeneration(pass: pass)
         guard generation != 0 else { return plan.constants }
         if let packed = packedConstants[operation], packed.generation == generation {
             return packed.constants
         }
         var constants = plan.constants
-        let values = state.constants(pass: pass)
+        let values = instance.state.constants(pass: pass)
         for (stage, uniforms) in plan.materialConstants {
             for uniform in uniforms {
                 guard let value = values[uniform.material] else { continue }
@@ -1345,6 +1286,108 @@ final class WPEParityFrameRenderer {
         packedConstants[operation] = (generation, constants)
         constantPacks += 1
         return constants
+    }
+}
+
+/// The scene's logical state that one renderer owns and a replanned renderer continues from a copy of.
+final class WPEParitySceneInstance {
+    // Not a struct: exclusivity is checked per stored property, so as a struct field two inout fields would trap.
+
+    var clock: WPEParityClock
+    var pointer: WPEParityUniformPointer
+    var parallax: WPEParityUniformParallax
+    var cameraPaths: WPEParityCameraPaths
+    var cameraPose: WPEParityCameraPose?
+    var activeCameraID: String?
+    var audio: WPEParityAudioSpectrum
+    /// Last TEXS rotation and translation per slot, which draws without a sprite frame upload again.
+    var textureSlots: [String: WPECBufferValue]
+    /// g_RenderVar0/1 as the last draw left them, in frame draw order and across frames.
+    var renderVars: WPEParityRenderVarState
+    /// One bone animator per skinned puppet layer, keyed by object id.
+    var puppets: [String: WPEParityPuppetAnimator]
+    /// Animation-layer script fields last pushed into `puppets`; an absent key compares with its scene JSON value.
+    var pushedAnimationLayerFields: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue]
+    /// Script texture animation of each image layer that asked for one, keyed by object id.
+    var textureAnimations: [String: WPEParityTextureAnimation]
+    var particles: WPEParityParticleFrame
+    var sceneRNG: WPEParityMT19937
+    var cameraQueues: [String: WPEParityCameraQueue]
+    var frameIndex: Int
+    /// Object and material state the draws read every frame; animations write it, and so may callers between frames.
+    var state: WPEParitySceneState
+    var animations: WPEParitySceneAnimations
+    /// The camera pose published by the last camera update, including that update's shake.
+    var camera: WPEParityCamera
+    /// The scene's SceneScript engine; nil for a scene without property scripts.
+    var script: WPEParitySceneScript?
+    var media: WPESceneMediaEventMailbox?
+    var mediaGeneration: Int
+    var mediaTextures: WPEMediaTextureStore.ParitySnapshot?
+    var userShortcutIcons: WPEUserShortcutIconStore?
+    var mediaDiagnostics: [String]
+    var seenScriptSound: Int
+    var seenSoundBoundsFields: Int
+    var seenScriptLighting: Int
+    var seenScriptBloom: Int
+    var bloom: WPEParityBloomSettings
+
+    init(clock: WPEParityClock, pointer: WPEParityUniformPointer, parallax: WPEParityUniformParallax,
+         cameraPaths: WPEParityCameraPaths, cameraPose: WPEParityCameraPose?, activeCameraID: String?,
+         audio: WPEParityAudioSpectrum, textureSlots: [String: WPECBufferValue], renderVars: WPEParityRenderVarState,
+         puppets: [String: WPEParityPuppetAnimator],
+         pushedAnimationLayerFields: [WPEParitySceneState.ScriptFieldKey: WPEParitySceneState.ScriptValue],
+         textureAnimations: [String: WPEParityTextureAnimation], particles: WPEParityParticleFrame,
+         sceneRNG: WPEParityMT19937, cameraQueues: [String: WPEParityCameraQueue], frameIndex: Int,
+         state: WPEParitySceneState, animations: WPEParitySceneAnimations, camera: WPEParityCamera,
+         script: WPEParitySceneScript?, media: WPESceneMediaEventMailbox?, mediaGeneration: Int,
+         mediaTextures: WPEMediaTextureStore.ParitySnapshot?, userShortcutIcons: WPEUserShortcutIconStore?,
+         mediaDiagnostics: [String], seenScriptSound: Int, seenSoundBoundsFields: Int, seenScriptLighting: Int,
+         seenScriptBloom: Int, bloom: WPEParityBloomSettings) {
+        self.clock = clock
+        self.pointer = pointer
+        self.parallax = parallax
+        self.cameraPaths = cameraPaths
+        self.cameraPose = cameraPose
+        self.activeCameraID = activeCameraID
+        self.audio = audio
+        self.textureSlots = textureSlots
+        self.renderVars = renderVars
+        self.puppets = puppets
+        self.pushedAnimationLayerFields = pushedAnimationLayerFields
+        self.textureAnimations = textureAnimations
+        self.particles = particles
+        self.sceneRNG = sceneRNG
+        self.cameraQueues = cameraQueues
+        self.frameIndex = frameIndex
+        self.state = state
+        self.animations = animations
+        self.camera = camera
+        self.script = script
+        self.media = media
+        self.mediaGeneration = mediaGeneration
+        self.mediaTextures = mediaTextures
+        self.userShortcutIcons = userShortcutIcons
+        self.mediaDiagnostics = mediaDiagnostics
+        self.seenScriptSound = seenScriptSound
+        self.seenSoundBoundsFields = seenSoundBoundsFields
+        self.seenScriptLighting = seenScriptLighting
+        self.seenScriptBloom = seenScriptBloom
+        self.bloom = bloom
+    }
+
+    func copy() -> WPEParitySceneInstance {
+        WPEParitySceneInstance(
+            clock: clock, pointer: pointer, parallax: parallax, cameraPaths: cameraPaths, cameraPose: cameraPose,
+            activeCameraID: activeCameraID, audio: audio, textureSlots: textureSlots, renderVars: renderVars,
+            puppets: puppets, pushedAnimationLayerFields: pushedAnimationLayerFields,
+            textureAnimations: textureAnimations, particles: particles, sceneRNG: sceneRNG, cameraQueues: cameraQueues,
+            frameIndex: frameIndex, state: state, animations: animations, camera: camera, script: script, media: media,
+            mediaGeneration: mediaGeneration, mediaTextures: mediaTextures, userShortcutIcons: userShortcutIcons,
+            mediaDiagnostics: mediaDiagnostics, seenScriptSound: seenScriptSound,
+            seenSoundBoundsFields: seenSoundBoundsFields, seenScriptLighting: seenScriptLighting,
+            seenScriptBloom: seenScriptBloom, bloom: bloom
+        )
     }
 }
 #endif

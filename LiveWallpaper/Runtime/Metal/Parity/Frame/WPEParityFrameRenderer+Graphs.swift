@@ -9,16 +9,16 @@ extension WPEParityFrameRenderer {
     /// Moves the layer worlds to the state's transforms when any changed, and every frame while a child hangs on a
     /// puppet attachment point, whose bones this frame's animator step moved.
     func applyTransforms() {
-        let moved = state.transformGeneration != seenTransforms
+        let moved = instance.state.transformGeneration != seenTransforms
         guard moved || layers.hasAttachments else { return }
         if moved {
-            seenTransforms = state.transformGeneration
-            for (index, id) in state.ids.enumerated() {
-                let object = state.objects[index]
+            seenTransforms = instance.state.transformGeneration
+            for (index, id) in instance.state.ids.enumerated() {
+                let object = instance.state.objects[index]
                 layers.setTransform(id, origin: object.origin, angles: object.angles, scale: object.scale)
             }
         }
-        layers.refreshWorlds { puppets[$0]?.boneWorld }
+        layers.refreshWorlds { instance.puppets[$0]?.boneWorld }
         layersMoved = true
     }
 
@@ -32,45 +32,45 @@ extension WPEParityFrameRenderer {
         if Self.renderTargetAliasingFailed.withLock({ $0 }), !graphs.aliasedTargets.isEmpty {
             try installGraphs(graphs.layout, cachePrevious: false)
         }
-        let currentPost = plan.postConfig(state: state)
+        let currentPost = plan.postConfig(state: instance.state)
         let effectiveN = currentPost.hdrEnabled && currentPost.bloomEnabled ? currentPost.hdrBloomLevelCount : 0
         func matchesPost(_ post: WPEParityPostProcessConfig) -> Bool {
             post.bloomEnabled == currentPost.bloomEnabled
                 && (post.hdrEnabled && post.bloomEnabled ? post.hdrBloomLevelCount : 0) == effectiveN
         }
-        if state.membershipGeneration == seenMembership, state.modelDataGeneration != seenModelData,
+        if instance.state.membershipGeneration == seenMembership, instance.state.modelDataGeneration != seenModelData,
            refreshModelDataDrawVersions() {
-            seenModelData = state.modelDataGeneration
+            seenModelData = instance.state.modelDataGeneration
         }
-        if state.membershipGeneration != seenMembership || state.modelDataGeneration != seenModelData {
+        if instance.state.membershipGeneration != seenMembership || instance.state.modelDataGeneration != seenModelData {
             var candidatePlanner = planner
-            if state.membershipGeneration != seenMembership {
-                layers = plan.modelDataTransforms(state: state, existing: layers)
+            if instance.state.membershipGeneration != seenMembership {
+                layers = plan.modelDataTransforms(state: instance.state, existing: layers)
                 candidatePlanner.adoptModelDataTransforms(layers)
                 layersMoved = true
             }
             let previous = graphs.layout
-            let planned = try plan.layout(effects: state, texts: planner.texts,
+            let planned = try plan.layout(effects: instance.state, texts: planner.texts,
                                           mipMappedFrameBufferRequested: mipMappedFrameBufferRequested)
-            let layout = try Self.makeLayout(planned, effects: state.effectVisibility, artifacts: artifacts,
+            let layout = try Self.makeLayout(planned, effects: instance.state.effectVisibility, artifacts: artifacts,
                                              planner: &candidatePlanner, encoder: drawEncoder,
-                                             state: state, reusing: previous)
+                                             state: instance.state, reusing: previous)
             // Removed owners cannot return through the visibility cache. Existing command buffers retain
             // their submitted resource versions; this drops the renderer's obsolete draw/graph references.
             guard try installVideoReadyLayout(layout, planner: candidatePlanner, cachePrevious: false) else { return false }
             retireRemovedObjects(from: previous.planned)
             packedConstants.removeAll()
             fadeConstants.removeAll()
-            seenMembership = state.membershipGeneration
-            seenModelData = state.modelDataGeneration
+            seenMembership = instance.state.membershipGeneration
+            seenModelData = instance.state.modelDataGeneration
             repackBloom()
         }
-        guard state.visibilityGeneration != seenVisibility || state.effectVisibilityGeneration != seenEffects
+        guard instance.state.visibilityGeneration != seenVisibility || instance.state.effectVisibilityGeneration != seenEffects
             || !matchesPost(graphs.layout.post) else {
             return true
         }
-        let hidden = state.objects.indices.map { !state.isVisible(at: $0) }
-        let effects = state.effectVisibility
+        let hidden = instance.state.objects.indices.map { !instance.state.isVisible(at: $0) }
+        let effects = instance.state.effectVisibility
         if hidden != graphs.hidden || effects != graphs.layout.effects || !matchesPost(graphs.layout.post) {
             if let previous = previousGraphs, previous.hidden == hidden, previous.layout.effects == effects,
                matchesPost(previous.layout.post),
@@ -90,10 +90,10 @@ extension WPEParityFrameRenderer {
                 var candidatePlanner = planner
                 var layout = graphs.layout
                 if effects != layout.effects || !matchesPost(layout.post) {
-                    layout = try Self.makeLayout(plan.layout(effects: state, texts: planner.texts,
+                    layout = try Self.makeLayout(plan.layout(effects: instance.state, texts: planner.texts,
                                                              mipMappedFrameBufferRequested: mipMappedFrameBufferRequested), effects: effects,
                                                  artifacts: artifacts, planner: &candidatePlanner, encoder: drawEncoder,
-                                                 state: state, reusing: layout)
+                                                 state: instance.state, reusing: layout)
                 }
                 guard try installVideoReadyLayout(layout, planner: candidatePlanner, cachePrevious: true) else { return false }
             }
@@ -101,14 +101,14 @@ extension WPEParityFrameRenderer {
             fadeConstants.removeAll()
             repackBloom()
         }
-        seenVisibility = state.visibilityGeneration
-        seenEffects = state.effectVisibilityGeneration
+        seenVisibility = instance.state.visibilityGeneration
+        seenEffects = instance.state.effectVisibilityGeneration
         return true
     }
 
     /// Drops the images and targets only objects removed since `previous` used; the next committed frame retires them.
     func retireRemovedObjects(from previous: WPEParityFrameLayout) {
-        let removed = Set(previous.frames.flatMap(\.owners.values).filter { !state.isAlive($0) })
+        let removed = Set(previous.frames.flatMap(\.owners.values).filter { !instance.state.isAlive($0) })
         guard !removed.isEmpty else { return }
         retiredTextures += planner.releaseImages(of: removed, droppedFrom: previous)
         var kept = Set(graphs.layout.frames.flatMap(\.resources).map(\.id))
@@ -150,8 +150,8 @@ extension WPEParityFrameRenderer {
         var indices: [String: Set<Int>] = [:]
         for (operation, description) in layout.frames[0].draws {
             guard case let .scene(description) = description,
-                  let token = state.object(description.objectID)?.modelDataToken else { continue }
-            guard description.geometry == .modelMesh, let model = state.modelData(token),
+                  let token = instance.state.object(description.objectID)?.modelDataToken else { continue }
+            guard description.geometry == .modelMesh, let model = instance.state.modelData(token),
                   let index = WPEParitySceneModel.meshIndex(description.pass, objectID: description.objectID),
                   model.shapes.indices.contains(index),
                   let prepared = model.shapes[index].prepared as? WPEParityModelDataMetalShape,
@@ -169,8 +169,8 @@ extension WPEParityFrameRenderer {
             draws[operation] = draw
             shapes[operation] = model.shapes[index]
         }
-        for id in state.commonOrder {
-            guard let token = state.object(id)?.modelDataToken, let model = state.modelData(token) else { continue }
+        for id in instance.state.commonOrder {
+            guard let token = instance.state.object(id)?.modelDataToken, let model = instance.state.modelData(token) else { continue }
             guard indices[id] == Set(model.shapes.indices) else { return false }
         }
         var planned = layout.planned
@@ -196,7 +196,7 @@ extension WPEParityFrameRenderer {
 
     func prepareGraphs(_ layout: Layout) throws -> PreparedGraphs {
         var candidateTargets = targets
-        let made = try Self.makeGraphs(layout: layout, state: state, device: device, encoder: drawEncoder,
+        let made = try Self.makeGraphs(layout: layout, state: instance.state, device: device, encoder: drawEncoder,
                                        arena: arena, targets: &candidateTargets, resourceBindings: resourceBindings,
                                        snapshotObjects: particleSnapshotObjects, aliasing: Self.aliasesRenderTargets(plan))
         let added = candidateTargets.filter { id, texture in
@@ -313,9 +313,9 @@ extension WPEParityFrameRenderer {
     func repackBloom() {
         postConstants.removeAll()
         let layout = graphs.layout
-        guard bloom != layout.post.bloomSettings else { return }
+        guard instance.bloom != layout.post.bloomSettings else { return }
         var config = layout.post
-        config.bloomSettings = bloom
+        config.bloomSettings = instance.bloom
         // A State write may precede this frame's selectGraphs. Its new N must first publish an admitted layout;
         // otherwise index-zipping constants could apply to different down/up passes or silently drop the update.
         guard !layout.post.hdrEnabled || !layout.post.bloomEnabled

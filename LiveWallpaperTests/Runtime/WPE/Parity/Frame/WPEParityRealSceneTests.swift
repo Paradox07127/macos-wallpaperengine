@@ -184,7 +184,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         defer { driver.cleanup() }
         let renderer = try XCTUnwrap(driver.renderer)
         try await presentFrames(driver, count: 3, label: "scene 2955378002")
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         let created = engine.createdLayers.map(\.id)
         XCTAssertEqual(created.count, 7, "exceptions: \(engine.exceptions)")
         for id in created {
@@ -204,13 +204,13 @@ final class WPEParityRealSceneTests: XCTestCase {
         defer { driver.cleanup() }
         let renderer = try XCTUnwrap(driver.renderer)
         try await presentFrames(driver, count: 3, label: "scene 3798688689")
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         let created = engine.createdLayers.map(\.id)
         XCTAssertEqual(created.count, 27 * 2 + 4, "exceptions: \(engine.exceptions)")
         let encodedOperations = Set(renderer.lastFrameDraws.map(\.operation))
         var encoded = 0
         for id in created {
-            let parent = renderer.state.parentID(of: id)
+            let parent = renderer.instance.state.parentID(of: id)
             XCTAssertTrue(parent == "92001" || parent == "92002", "created layer \(id) has parent \(parent ?? "none")")
             let draws = sceneDraws(renderer, objectID: id)
             XCTAssertFalse(draws.isEmpty, "created layer \(id) has no planned draw")
@@ -283,11 +283,11 @@ final class WPEParityRealSceneTests: XCTestCase {
         defer { driver.cleanup() }
         try await presentFrames(driver, count: 3, label: "scene \(workshopID)")
         let renderer = try XCTUnwrap(driver.renderer)
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         let created = engine.createdLayers.map(\.id)
         XCTAssertFalse(created.isEmpty, "exceptions: \(engine.exceptions)")
         for id in created {
-            XCTAssertEqual(renderer.state.object(id)?.createdImage?.model, model, "created layer \(id)")
+            XCTAssertEqual(renderer.instance.state.object(id)?.createdImage?.model, model, "created layer \(id)")
             let draws = sceneDraws(renderer, objectID: id)
             XCTAssertFalse(draws.isEmpty, "created layer \(id) has no planned draw")
             for (operation, _) in draws {
@@ -383,7 +383,7 @@ final class WPEParityRealSceneTests: XCTestCase {
         let held = try await bones(pointer: press, buttonDown: true)
         let dragged = try await bones(pointer: press + SIMD2(30, 0) / SIMD2(Double(Self.width), Double(Self.height)),
                                       buttonDown: true)
-        let engine = try XCTUnwrap(renderer.script?.engine)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
         XCTAssertFalse(engine.exceptions.contains { $0.contains("TypeError") }, engine.exceptions.joined(separator: "\n"))
         XCTAssertNotNil(idle, "objects[16] uploads no g_Bones")
         XCTAssertEqual(first, idle, "bones moved without a script write")

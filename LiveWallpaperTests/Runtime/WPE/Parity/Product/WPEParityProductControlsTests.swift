@@ -66,18 +66,18 @@ final class WPEParityProductControlsTests: XCTestCase {
         XCTAssertTrue(driver.needsReplan)
         try await present("frame before the re-plan lands")
         XCTAssertTrue(driver.renderer === before, "frames keep the old plan until the new one is built")
-        let time = before.clock.time
+        let time = before.instance.clock.time
         let replanned = await driver.replan()
         XCTAssertTrue(replanned)
         XCTAssertFalse(driver.needsReplan)
         let after = try XCTUnwrap(driver.renderer)
         XCTAssertEqual([after.backbuffer.width, after.backbuffer.height], [1280, 720])
-        XCTAssertEqual(after.clock.time, time, "the scene clock carries over")
+        XCTAssertEqual(after.instance.clock.time, time, "the scene clock carries over")
         for frame in 1 ... 2 {
             try await present("frame \(frame) at 1280x720")
         }
         XCTAssertEqual(driver.executor.lastPresentedDrawableSize, small)
-        XCTAssertGreaterThan(after.clock.time, time)
+        XCTAssertGreaterThan(after.instance.clock.time, time)
         driver.cleanup()
     }
 
@@ -145,7 +145,7 @@ final class WPEParityProductControlsTests: XCTestCase {
         func pointer(at location: CGPoint) async throws -> WPEParityUniformPointer {
             mailbox.publishMouseLocation(location, timestampNanos: 1)
             await actor.renderFrame()
-            let pointer = await actor.run { $0.parityDriverForTesting?.renderer?.pointer }
+            let pointer = await actor.run { $0.parityDriverForTesting?.renderer?.instance.pointer }
             return try XCTUnwrap(pointer)
         }
 
@@ -392,8 +392,8 @@ final class WPEParityProductControlsTests: XCTestCase {
 
     private func clickCounts(_ actor: WPEDisplayRenderActor) async throws -> ClickCounts {
         let counts = await actor.run { actor -> ClickCounts? in
-            guard let renderer = actor.parityDriverForTesting?.renderer, let engine = renderer.script?.engine,
-                  let witness = renderer.state.object("20")?.alpha else { return nil }
+            guard let renderer = actor.parityDriverForTesting?.renderer, let engine = renderer.instance.script?.engine,
+                  let witness = renderer.instance.state.object("20")?.alpha else { return nil }
             return ClickCounts(click: engine.dispatchCount(.cursorClick), down: engine.dispatchCount(.cursorDown),
                                up: engine.dispatchCount(.cursorUp), leave: engine.dispatchCount(.cursorLeave),
                                witness: witness)
