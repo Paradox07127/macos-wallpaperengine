@@ -989,6 +989,34 @@ final class WPEParityTextDrawTests: XCTestCase {
         XCTAssertEqual(readPixels, oldPixels, "Old reader retains the entire earlier atlas, including areas that were empty")
     }
 
+    func testUnchangedTextRebindsTheAtlasItSharesWhenAnotherTextReplacesIt() async throws {
+        let fixture = try await makeTextAdmissionFixture()
+        let renderer = fixture.renderer
+        try await encode(renderer, label: "shared atlas baseline")
+        let before = renderer.textPreparationState
+        XCTAssertEqual(before.atlases.atlases.count, 1, "Both objects must actually share one atlas")
+        let text = try XCTUnwrap(before.texts[Self.textID])
+        let key = WPEParityTextAtlasTextures.Key(atlasKey: text.atlasKey, atlas: .mono)
+        let oldAtlas = try XCTUnwrap(before.atlases.textures[key])
+
+        renderer.instance.state.setScriptField("text", of: Self.textID, to: .string("WWWW"), invalidating: .textLayout)
+        try await encode(renderer, label: "only one text adds glyphs")
+        let after = renderer.textPreparationState
+        XCTAssertEqual(after.texts["6"], before.texts["6"], "The other text must not be re-laid")
+        let newAtlas = try XCTUnwrap(after.atlases.textures[key])
+        XCTAssertFalse(newAtlas === oldAtlas, "The new glyphs must replace the shared atlas texture")
+        let unchanged = after.frames[0].draws.compactMap { index, description -> Int? in
+            guard case let .scene(draw) = description, case .textGlyphs = draw.geometry, draw.objectID == "6" else { return nil }
+            return index
+        }
+        XCTAssertFalse(unchanged.isEmpty, "the unchanged text has no glyph draw left to check")
+        for index in unchanged {
+            let emitted = try XCTUnwrap(renderer.lastFrameDraws.first { $0.operation == index }?.draw)
+            XCTAssertTrue(emitted.textures["g_Texture0"] === newAtlas,
+                          "an unchanged text sharing the atlas still binds the replaced texture")
+        }
+    }
+
     /// Bounded diagnosis of already-read RGBA8 targets; no extra images, allocations or shader inputs.
     private func printTextPixels(_ pixels: [UInt8], in texture: MTLTexture, label: String) {
         guard texture.pixelFormat == .rgba8Unorm, pixels.count == texture.width * texture.height * 4 else { return }

@@ -264,12 +264,15 @@ extension WPEParityFrameRenderer {
             recordTextReplanReasons(prepared.delta.changes, changedObjectCount: prepared.changedObjectIDs.count,
                                     requiresRebuild: requiresRebuild, keepsFrame: keepsFrame)
         }
-        let kept = current.draws.filter { index, _ in
-            guard case let .scene(draw)? = current.frames[0].draws[index], changed.contains(draw.objectID) else { return true }
+        var kept = current.draws
+        for (index, description) in current.frames[0].draws {
+            guard case let .scene(draw) = description, changed.contains(draw.objectID), kept[index] != nil else { continue }
             // makeLayout still checks the actual program/source, resources and frame compatibility before reuse.
-            guard case .textGlyphs = draw.geometry, let before = planner.texts[draw.objectID],
-                  let after = prepared.texts[draw.objectID] else { return false }
-            return before.layout == after.layout && before.atlasKey == after.atlasKey
+            if case .textGlyphs = draw.geometry, let before = planner.texts[draw.objectID],
+               let after = prepared.texts[draw.objectID], before.layout == after.layout, before.atlasKey == after.atlasKey {
+                continue
+            }
+            kept[index] = nil
         }
         let planned: WPEParityFrameLayout
         var layout: Layout
@@ -300,13 +303,25 @@ extension WPEParityFrameRenderer {
             completed = true
             return false
         }
-        var rebound = layout.draws
-        for index in rebound.keys {
-            candidatePlanner.refreshTextParameters(&rebound[index]!, operation: index)
-            try candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
+        // Every other draw already holds its object's unchanged parameters and a still-current atlas texture.
+        let replacedAtlases = Set(planner.textAtlases.textures.compactMap { key, texture in
+            candidatePlanner.textAtlases.textures[key] === texture ? nil : key
+        })
+        let affected = layout.draws.keys.filter { index in
+            if case let .scene(draw)? = layout.frames[0].draws[index], changed.contains(draw.objectID) {
+                return true
+            }
+            return !replacedAtlases.isEmpty && candidatePlanner.samplesTextAtlas(replacedAtlases, operation: index)
         }
-        layout = Layout(planned: layout.planned, effects: layout.effects, draws: rebound,
-                        skipped: layout.skipped, fade: layout.fade)
+        if !affected.isEmpty {
+            var rebound = layout.draws
+            for index in affected {
+                candidatePlanner.refreshTextParameters(&rebound[index]!, operation: index)
+                try candidatePlanner.refreshAtlasBindings(&rebound[index]!, operation: index)
+            }
+            layout = Layout(planned: layout.planned, effects: layout.effects, draws: rebound,
+                            skipped: layout.skipped, fade: layout.fade)
+        }
         let readinessChanged = Set(layout.draws.keys) != Set(current.draws.keys)
         if var counts = textReplanDiagnostics {
             let effectsChanged = layout.effects != current.effects

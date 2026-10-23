@@ -210,8 +210,22 @@ struct WPEParityFrameDrawPlanner {
                 guard let texture = textAtlases.textures[.init(atlasKey: key, atlas: atlas, colorScale: scale, plane: plane)] else {
                     throw .texture("Text atlas \(key) \(atlas) scale\(scale) \(plane) has no prepared texture")
                 }
-                draw.textures[variant]["g_Texture\(slot)"] = .image(texture)
+                let name = "g_Texture\(slot)"
+                if case let .image(bound)? = draw.textures[variant][name], bound === texture {
+                    continue
+                }
+                draw.textures[variant][name] = .image(texture)
             }
+        }
+    }
+
+    /// Whether the draw at `operation` samples any of `keys` in some frame variant.
+    func samplesTextAtlas(_ keys: Set<WPEParityTextAtlasTextures.Key>, operation: Int) -> Bool {
+        layout.bindings.contains { bindings in
+            bindings[operation]?.textures.values.contains { source in
+                guard case let .textAtlas(key, atlas, scale, plane) = source else { return false }
+                return keys.contains(.init(atlasKey: key, atlas: atlas, colorScale: scale, plane: plane))
+            } == true
         }
     }
 
