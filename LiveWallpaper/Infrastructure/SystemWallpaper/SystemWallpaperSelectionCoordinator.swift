@@ -4,6 +4,16 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
+extension Notification.Name {
+    /// Only an explicit per-display clear posts this; turning wallpapers off or unplugging a display must not.
+    static let wallpaperSelectionCleared = Notification.Name("WallpaperSelectionCleared")
+}
+
+extension Notification {
+    /// `UInt32` display ID carried by `wallpaperSelectionCleared`.
+    static let clearedDisplayIDKey = "displayID"
+}
+
 /// Serial preparation with the latest selection winning on each display. Never starts web capture.
 @MainActor
 @Observable
@@ -13,11 +23,12 @@ final class SystemWallpaperSelectionCoordinator {
         let title: String
         let key: String
         let clearGeneration: Int
+        let displayClearGeneration: Int
         let options: SystemWallpaperPreparationOptions
         let copyID: String
 
         var token: String {
-            "\(clearGeneration)-\(copyID)"
+            "\(clearGeneration)-\(displayClearGeneration)-\(copyID)"
         }
     }
 
@@ -32,14 +43,25 @@ final class SystemWallpaperSelectionCoordinator {
     @ObservationIgnored private var preparingDisplay: UInt32?
     @ObservationIgnored private var preparingToken: String?
 
+    @ObservationIgnored private var displayClearGenerations: [UInt32: Int] = [:]
+    @ObservationIgnored private let notificationCenter: NotificationCenter
+    @ObservationIgnored private var clearObserver: (any NSObjectProtocol)?
+
     init(service: WallpaperExportService, defaults: UserDefaults = .appScoped(),
+         notificationCenter: NotificationCenter = .default,
          displaySize: @escaping (UInt32) -> CGSize = { display in
              guard let mode = CGDisplayCopyDisplayMode(display) else { return .zero }
              return CGSize(width: mode.pixelWidth, height: mode.pixelHeight)
          }) {
         self.service = service
         self.defaults = defaults
+        self.notificationCenter = notificationCenter
         self.displaySize = displaySize
+        // Posted from the main actor; a nil queue runs the block on the posting thread.
+        clearObserver = notificationCenter.addObserver(forName: .wallpaperSelectionCleared, object: nil, queue: nil) { [weak self] note in
+            guard let displayID = note.userInfo?[Notification.clearedDisplayIDKey] as? UInt32 else { return }
+            MainActor.assumeIsolated { self?.clear(displayID: displayID) }
+        }
         service.onItemPublished = { [weak self] key in
             guard let self else { return }
             for (display, selection) in selections where selection.key == key {
@@ -76,9 +98,11 @@ final class SystemWallpaperSelectionCoordinator {
                 encoder.outputFormatting = [.sortedKeys]
                 try copyID += "-" + SHA256.hash(data: encoder.encode(options)).map { String(format: "%02x", $0) }.joined()
             }
-            let selection = Selection(configuration: configuration, title: title, key: key,
-                                      clearGeneration: service.clearGeneration, options: options, copyID: copyID)
             let display = configuration.screenID
+            let selection = Selection(configuration: configuration, title: title, key: key,
+                                      clearGeneration: service.clearGeneration,
+                                      displayClearGeneration: displayClearGenerations[display, default: 0],
+                                      options: options, copyID: copyID)
             if selections[display]?.token != selection.token, preparingDisplay == display,
                followState.displays[display]?.phase == .preparing {
                 service.cancelPreparation()
@@ -104,7 +128,28 @@ final class SystemWallpaperSelectionCoordinator {
         follow(selection.configuration, title: selection.title)
     }
 
+    /// The bumped generation keeps a late result of the old token from passing `isCurrent`, and lets the same content be followed again.
+    func clear(displayID: UInt32) {
+        displayClearGenerations[displayID, default: 0] += 1
+        if preparingDisplay == displayID, followState.displays[displayID]?.phase == .preparing {
+            service.cancelPreparation()
+        }
+        selections[displayID] = nil
+        pending[displayID] = nil
+        attempted[displayID] = nil
+        followState.displays[displayID] = nil
+        do {
+            try service.clearSelection(for: displayID, generation: displayClearGenerations[displayID, default: 0])
+        } catch {
+            service.reportPublishFailures([error.localizedDescription])
+        }
+    }
+
     func stop() {
+        if let clearObserver {
+            notificationCenter.removeObserver(clearObserver)
+            self.clearObserver = nil
+        }
         worker?.cancel()
         pending.removeAll()
         selections.removeAll()

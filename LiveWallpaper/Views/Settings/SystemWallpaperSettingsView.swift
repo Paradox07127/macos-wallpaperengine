@@ -18,6 +18,22 @@ struct SystemWallpaperSettingsView: View {
 
     var body: some View {
         Form {
+            if let message = service.lastError {
+                Section {
+                    InlineNoticeBanner(
+                        tint: DesignTokens.Colors.Status.warning,
+                        symbol: "exclamationmark.triangle.fill",
+                        title: Text("Couldn't update System Wallpaper"),
+                        message: Text(verbatim: message),
+                        surface: .content
+                    ) {
+                        Button("Dismiss") { service.clearLastError() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
+            }
+
             Section {
                 SettingRow(
                     icon: "play.rectangle",
@@ -55,13 +71,19 @@ struct SystemWallpaperSettingsView: View {
                     icon: "trash",
                     iconColor: DesignTokens.Colors.Status.danger,
                     title: "Remove All from System Wallpaper",
-                    info: "System Wallpaper plays exported videos independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
+                    info: "System Wallpaper plays live scenes and video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
                 ) {
                     Button("Remove All", role: .destructive) {
                         pendingDestructive = PendingDestructive(.clearSystemWallpaperLibrary(
                             itemCount: service.items.count,
                             formattedSize: usedSpace
-                        )) { try? service.clearLibrary() }
+                        )) {
+                            do {
+                                try service.clearLibrary()
+                            } catch {
+                                service.reportPublishFailures([error.localizedDescription])
+                            }
+                        }
                     }
                     .disabled(service.items.isEmpty)
                     .fixedSize()

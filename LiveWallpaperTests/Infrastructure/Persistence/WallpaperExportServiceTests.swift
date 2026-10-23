@@ -345,6 +345,99 @@ struct WallpaperExportServiceTests {
         #expect(try rig.manifestOnDisk().displaySelections == ["42": "large30", "43": "small30"])
     }
 
+    @Test("A cleared display stays empty on disk instead of falling back to another copy", .timeLimit(.minutes(1)))
+    func clearedDisplayDoesNotFallBack() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let first = try rig.makeVideoBookmark(named: "first.mp4")
+        let other = try rig.makeVideoBookmark(named: "other.mp4")
+        try rig.showSelectedTile(on: [42, 43])
+        let center = NotificationCenter()
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, notificationCenter: center)
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: first.content), title: "First")
+        coordinator.follow(ScreenConfiguration(screenID: 43, wallpaper: other.content), title: "Other")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections.count == 2 }
+        center.post(name: .wallpaperSelectionCleared, object: nil, userInfo: [Notification.clearedDisplayIDKey: UInt32(42)])
+        let reloaded = try rig.manifestOnDisk()
+        #expect(reloaded.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42) == nil,
+                "a cleared display resolved another display's or the newest copy")
+        #expect(reloaded.isCleared(displayID: 42), "the clear did not survive a reload of the manifest")
+        #expect(reloaded.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 43)?.title == "Other")
+        #expect(reloaded.items.map(\.title) == ["Other"], "the cleared display's copy was kept")
+
+        rig.service.refreshProviderStatus()
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(try rig.manifestOnDisk().isCleared(displayID: 42), "a heartbeat revived the cleared selection")
+        #expect(coordinator.followState.displays[42] == nil)
+
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: first.content), title: "First")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        let reselected = try rig.manifestOnDisk()
+        #expect(!reselected.isCleared(displayID: 42), "selecting again left the clear in place")
+        #expect(reselected.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42)?.title == "First")
+    }
+
+    @Test("Clearing a display drops its queued and in-flight preparations", .timeLimit(.minutes(1)))
+    func clearCancelsQueuedAndPreparingSelection() async throws {
+        let hook = PublishHook()
+        let rig = try makeRig(duringThumbnail: hook)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let preparing = try rig.makeVideoBookmark(named: "preparing.mp4")
+        let queued = try rig.makeVideoBookmark(named: "queued.mp4")
+        try rig.showSelectedTile(on: [42, 43])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, notificationCenter: NotificationCenter())
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: preparing.content), title: "Preparing")
+        coordinator.follow(ScreenConfiguration(screenID: 43, wallpaper: queued.content), title: "Queued")
+        coordinator.clear(displayID: 43)
+        hook.run = { coordinator.clear(displayID: 42) }
+        try await waitUntil { coordinator.followState.displays.isEmpty && rig.service.preparationProgress == nil }
+        try await Task.sleep(for: .milliseconds(100))
+        let manifest = try rig.manifestOnDisk()
+        #expect(manifest.displaySelections.isEmpty, "a cleared display's preparation still published a selection")
+        #expect(manifest.isCleared(displayID: 42) && manifest.isCleared(displayID: 43))
+
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: preparing.content), title: "Preparing")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        #expect(try rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42)?.title == "Preparing",
+                "the same content could not be selected again after its preparation was cleared")
+    }
+
+    @Test("Stopping the follow coordinator is not a clear and writes no tombstone", .timeLimit(.minutes(1)))
+    func stoppingFollowWritesNoTombstone() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, notificationCenter: NotificationCenter())
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: bookmark.content), title: "Kept")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        coordinator.stop()
+        let manifest = try rig.manifestOnDisk()
+        #expect(manifest.clearedDisplays.isEmpty, "turning following off wrote a clear")
+        #expect(manifest.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42)?.title == "Kept")
+    }
+
+    @Test("A manifest from before display clears decodes as unset, and a clear round-trips")
+    func clearedDisplaysDecodeCompatibly() throws {
+        let item = #"{"id":"a","title":"A","fileName":"a.mov","addedAt":0}"#
+        let legacy = Data(#"{"version":1,"items":[\#(item)],"displaySelections":{"43":"a"}}"#.utf8)
+        let old = try SystemWallpaperCoding.decoder.decode(SystemWallpaperManifest.self, from: legacy)
+        #expect(old.clearedDisplays.isEmpty)
+        #expect(old.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42)?.id == "a", "an unset display stopped falling back")
+        var cleared = old
+        cleared.clearedDisplays["42"] = 3
+        let decoded = try SystemWallpaperCoding.decoder.decode(
+            SystemWallpaperManifest.self, from: SystemWallpaperCoding.encoder.encode(cleared)
+        )
+        #expect(decoded.clearedDisplays == ["42": 3])
+        #expect(decoded.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42) == nil)
+    }
+
     private func waitUntil(_ condition: () throws -> Bool) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(5))

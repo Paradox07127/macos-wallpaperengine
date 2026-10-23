@@ -543,7 +543,8 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionNumberDownloadXPCPr
                                       manifest: SystemWallpaperManifest?, registry: SurfaceRegistry, store: SharedLibraryStore,
                                       replyOnFirstFrame: (@Sendable (Error?) -> Void)?) {
         guard let (item, url) = playable(choiceID, displayID: surface.displayID, in: manifest, store: store) else {
-            if choiceID == SystemWallpaperManifest.selectedChoiceID, manifest?.items.isEmpty == true {
+            if choiceID == SystemWallpaperManifest.selectedChoiceID,
+               manifest?.items.isEmpty == true || manifest?.isCleared(displayID: surface.displayID) == true {
                 replyOnFirstFrame?(nil)
                 return
             }

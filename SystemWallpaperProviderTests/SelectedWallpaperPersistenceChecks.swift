@@ -12,6 +12,14 @@ struct SelectedWallpaperPersistenceChecks {
             print("FAIL: selected item and distinct per-display selections must survive manifest serialization")
             exit(1)
         }
-        print("PASS: selected item and distinct per-display selections survive manifest serialization")
+        let clearedInput = Data(#"{"version":1,"items":[],"displaySelections":{"2":"video-b"},"clearedDisplays":{"1":4}}"#.utf8)
+        let cleared = try JSONDecoder().decode(SystemWallpaperManifest.self, from: JSONEncoder().encode(
+            JSONDecoder().decode(SystemWallpaperManifest.self, from: clearedInput)
+        ))
+        guard cleared.clearedDisplays == ["1": 4], cleared.isCleared(displayID: 1), !cleared.isCleared(displayID: 2) else {
+            print("FAIL: an explicitly cleared display must survive manifest serialization")
+            exit(1)
+        }
+        print("PASS: selected item, distinct per-display selections and cleared displays survive manifest serialization")
     }
 }

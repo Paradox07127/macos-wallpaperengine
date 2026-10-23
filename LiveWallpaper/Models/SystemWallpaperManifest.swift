@@ -21,6 +21,8 @@ struct SystemWallpaperManifest: Codable, Equatable {
     var playbackMode: SystemWallpaperPlaybackMode
     var selectedItemID: String?
     var displaySelections: [String: String]
+    /// Display key → generation of an explicit clear. Such a display resolves to nothing; a key is never also in `displaySelections`.
+    var clearedDisplays: [String: Int]
     var hideClockCalendarOnLockScreen: Bool
 
     static let selectedChoiceID = "loomscreen-selected"
@@ -31,8 +33,13 @@ struct SystemWallpaperManifest: Codable, Equatable {
         if choiceID != Self.selectedChoiceID {
             return items.first { $0.id == choiceID }
         }
+        guard !isCleared(displayID: displayID) else { return nil }
         let selected = displayID.flatMap { displaySelections[String($0)] } ?? selectedItemID
         return items.first { $0.id == selected } ?? items.max { $0.addedAt < $1.addedAt }
+    }
+
+    func isCleared(displayID: UInt32?) -> Bool {
+        displayID.map { clearedDisplays[String($0)] != nil } ?? false
     }
 
     static let currentVersion = 1
@@ -44,16 +51,19 @@ struct SystemWallpaperManifest: Codable, Equatable {
 
     init(version: Int, items: [Item], playbackMode: SystemWallpaperPlaybackMode = .always,
          selectedItemID: String? = nil, displaySelections: [String: String] = [:],
-         hideClockCalendarOnLockScreen: Bool = true) {
+         clearedDisplays: [String: Int] = [:], hideClockCalendarOnLockScreen: Bool = true) {
         self.version = version
         self.items = items
         self.playbackMode = playbackMode
         self.selectedItemID = selectedItemID
         self.displaySelections = displaySelections
+        self.clearedDisplays = clearedDisplays
         self.hideClockCalendarOnLockScreen = hideClockCalendarOnLockScreen
     }
 
-    private enum CodingKeys: String, CodingKey { case version, items, playbackMode, selectedItemID, displaySelections, hideClockCalendarOnLockScreen }
+    private enum CodingKeys: String, CodingKey {
+        case version, items, playbackMode, selectedItemID, displaySelections, clearedDisplays, hideClockCalendarOnLockScreen
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -68,6 +78,7 @@ struct SystemWallpaperManifest: Codable, Equatable {
         playbackMode = try c.decodeIfPresent(SystemWallpaperPlaybackMode.self, forKey: .playbackMode) ?? .always
         selectedItemID = try c.decodeIfPresent(String.self, forKey: .selectedItemID)
         displaySelections = try c.decodeIfPresent([String: String].self, forKey: .displaySelections) ?? [:]
+        clearedDisplays = try c.decodeIfPresent([String: Int].self, forKey: .clearedDisplays) ?? [:]
         hideClockCalendarOnLockScreen = try c.decodeIfPresent(Bool.self, forKey: .hideClockCalendarOnLockScreen) ?? true
     }
 

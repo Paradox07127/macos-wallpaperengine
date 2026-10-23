@@ -148,18 +148,39 @@ final class WallpaperExportService {
             guard manifest.items.contains(where: { $0.id == itemID }) else { throw ServiceError.unsupportedContent }
             manifest.selectedItemID = itemID
             manifest.displaySelections[String(displayID)] = itemID
+            manifest.clearedDisplays[String(displayID)] = nil
             try writeManifest(manifest)
-            let selected = Set(manifest.displaySelections.values)
-            for item in manifest.items where item.id.hasPrefix(Self.selectionCopyIDPrefix) && !selected.contains(item.id) {
-                manifest = try SystemWallpaperLibrary.remove(
-                    id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) }
-                ) ?? manifest
-            }
-            return manifest
+            return try removeUnselectedCopies(from: manifest)
         }
         items = manifest.items
         refreshDiskUsage()
         postLibraryChanged()
+    }
+
+    /// Persists the explicit clear so neither a heartbeat nor a relaunch brings the display's old copy back; `selectItem` replaces it.
+    func clearSelection(for displayID: UInt32, generation: Int) throws {
+        let manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+            var manifest = try loadManifestForMutation()
+            manifest.displaySelections[String(displayID)] = nil
+            manifest.clearedDisplays[String(displayID)] = generation
+            try writeManifest(manifest)
+            return try removeUnselectedCopies(from: manifest)
+        }
+        items = manifest.items
+        refreshDiskUsage()
+        postLibraryChanged()
+    }
+
+    /// Caller holds the manifest lock.
+    private func removeUnselectedCopies(from manifest: SystemWallpaperManifest) throws -> SystemWallpaperManifest {
+        var manifest = manifest
+        let selected = Set(manifest.displaySelections.values)
+        for item in manifest.items where item.id.hasPrefix(Self.selectionCopyIDPrefix) && !selected.contains(item.id) {
+            manifest = try SystemWallpaperLibrary.remove(
+                id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) }
+            ) ?? manifest
+        }
+        return manifest
     }
 
     @ObservationIgnored private(set) var preparationCancellationGeneration = 0

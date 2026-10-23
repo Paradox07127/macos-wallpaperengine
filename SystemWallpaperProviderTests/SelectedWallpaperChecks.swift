@@ -39,8 +39,18 @@ enum ProviderStaleness {
         precondition(store.loadManifest().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 43)?.id == b.id)
         let old = try JSONSerialization.data(withJSONObject: ["version": 1, "items": []])
         let legacy = try JSONDecoder().decode(SystemWallpaperManifest.self, from: old)
-        precondition(legacy.displaySelections.isEmpty)
+        precondition(legacy.displaySelections.isEmpty && legacy.clearedDisplays.isEmpty)
+        manifest.displaySelections["42"] = nil
+        manifest.clearedDisplays["42"] = 1
+        try store.writeManifest(manifest)
+        let cleared = store.loadManifest()
+        guard cleared.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42) == nil else {
+            print("FAIL: a cleared display resolved another display's or the newest copy")
+            exit(1)
+        }
+        precondition(cleared.item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 43)?.id == b.id)
+        precondition(cleared.item(for: a.id, displayID: 42)?.id == a.id, "a per-item choice must ignore the selected-tile clear")
         precondition(SettingsViewModelsEncoder.makeXPCObject(settings.makeViewModels()) != nil)
-        print("PASS: native macOS picker-model decoding, stable picker identity, empty-library tile, retargeting, per-display resolution and legacy manifest decoding")
+        print("PASS: native macOS picker-model decoding, stable picker identity, empty-library tile, retargeting, per-display resolution, cleared displays and legacy manifest decoding")
     }
 }

@@ -100,6 +100,8 @@ extension ScreenManager {
         releaseRuntimeSession(screen)
         configurationController.remove(for: screen.id)
         notifyWallpaperSessionChanged()
+        NotificationCenter.default.post(name: .wallpaperSelectionCleared, object: self,
+                                        userInfo: [Notification.clearedDisplayIDKey: screen.id])
     }
 
     /// `isDeleted` names the queue and library entries that point at the content being removed.

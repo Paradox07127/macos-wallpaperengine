@@ -70547,36 +70547,36 @@
         }
       }
     },
-    "System Wallpaper plays exported videos independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here." : {
+    "System Wallpaper plays live scenes and video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "System Wallpaper plays exported videos independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
+            "value" : "System Wallpaper plays live scenes and video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El fondo del sistema reproduce los vídeos exportados independientemente de Loomscreen. Los efectos, las superposiciones y los controles de reproducción de la app no se aplican aquí."
+            "value" : "El fondo del sistema reproduce escenas en directo y copias de vídeo independientemente de Loomscreen. Los efectos, las superposiciones y los controles de reproducción de la app no se aplican aquí."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "システム壁紙は Loomscreen とは独立して書き出したビデオを再生します。アプリ内の壁紙エフェクト、オーバーレイ、再生操作は適用されません。"
+            "value" : "システム壁紙は Loomscreen とは独立してライブシーンとビデオコピーを再生します。アプリ内の壁紙エフェクト、オーバーレイ、再生操作は適用されません。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "系统壁纸独立于 Loomscreen 播放导出的视频。应用内壁纸的特效、叠加层和播放控制不适用于此处。"
+            "value" : "系统壁纸独立于 Loomscreen 播放实时场景和视频副本。应用内壁纸的特效、叠加层和播放控制不适用于此处。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "系統桌布獨立於 Loomscreen 播放匯出的影片。應用程式內桌布的特效、疊加層和播放控制不適用於此處。"
+            "value" : "系統桌布獨立於 Loomscreen 播放即時場景和影片副本。應用程式內桌布的特效、疊加層和播放控制不適用於此處。"
           }
         }
       }
