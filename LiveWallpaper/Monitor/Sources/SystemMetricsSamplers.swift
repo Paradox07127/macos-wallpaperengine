@@ -8,13 +8,42 @@ enum SystemMetricsSamplers {
 
     // MARK: - CPU (total + per-core)
 
+    /// One core's kernel tick counters; they wrap at 32 bits, so only same-core deltas mean anything.
     struct CPUTicks: Sendable, Equatable {
-        var user: UInt64
-        var system: UInt64
-        var idle: UInt64
-        var nice: UInt64
-        var total: UInt64 { user &+ system &+ idle &+ nice }
-        var busy: UInt64 { user &+ system &+ nice }
+        var user: UInt32
+        var system: UInt32
+        var idle: UInt32
+        var nice: UInt32
+
+        func delta(since previous: CPUTicks) -> CPUTickDelta {
+            CPUTickDelta(
+                user: UInt64(user &- previous.user),
+                system: UInt64(system &- previous.system),
+                idle: UInt64(idle &- previous.idle),
+                nice: UInt64(nice &- previous.nice)
+            )
+        }
+    }
+
+    struct CPUTickDelta: Sendable, Equatable {
+        var user: UInt64 = 0
+        var system: UInt64 = 0
+        var idle: UInt64 = 0
+        var nice: UInt64 = 0
+        var total: UInt64 {
+            user + system + idle + nice
+        }
+
+        var busy: UInt64 {
+            user + system + nice
+        }
+
+        mutating func add(_ other: CPUTickDelta) {
+            user += other.user
+            system += other.system
+            idle += other.idle
+            nice += other.nice
+        }
     }
 
     struct CPUSample: Sendable {
@@ -26,7 +55,6 @@ enum SystemMetricsSamplers {
     }
 
     struct CPURawCounters: Sendable {
-        var aggregate: CPUTicks?
         var perCore: [CPUTicks]
     }
 
@@ -49,7 +77,7 @@ enum SystemMetricsSamplers {
 
         guard result == KERN_SUCCESS, let infoArray else {
             let zero = CPUSample(total: 0, user: 0, system: 0, perCore: [], available: false)
-            return (zero, CPURawCounters(aggregate: nil, perCore: []))
+            return (zero, CPURawCounters(perCore: []))
         }
         defer {
             vm_deallocate(
@@ -59,46 +87,56 @@ enum SystemMetricsSamplers {
             )
         }
 
+        let loadInfo = UnsafeBufferPointer(start: infoArray, count: Int(infoCount))
+        return cpuSample(loadInfo: loadInfo, cpuCount: Int(cpuCount), previous: previous)
+    }
+
+    static func cpuSample(
+        loadInfo infoArray: UnsafeBufferPointer<integer_t>,
+        cpuCount: Int,
+        previous: CPURawCounters?
+    ) -> (sample: CPUSample, counters: CPURawCounters) {
         let stride = Int(CPU_STATE_MAX)
         var perCoreTicks: [CPUTicks] = []
-        perCoreTicks.reserveCapacity(Int(cpuCount))
-        var aggUser: UInt64 = 0, aggSys: UInt64 = 0, aggIdle: UInt64 = 0, aggNice: UInt64 = 0
+        perCoreTicks.reserveCapacity(cpuCount)
 
-        for core in 0..<Int(cpuCount) {
-            let base = core * stride
-            let user = UInt64(infoArray[base + Int(CPU_STATE_USER)])
-            let system = UInt64(infoArray[base + Int(CPU_STATE_SYSTEM)])
-            let idle = UInt64(infoArray[base + Int(CPU_STATE_IDLE)])
-            let nice = UInt64(infoArray[base + Int(CPU_STATE_NICE)])
-            perCoreTicks.append(CPUTicks(user: user, system: system, idle: idle, nice: nice))
-            aggUser &+= user; aggSys &+= system; aggIdle &+= idle; aggNice &+= nice
+        // integer_t is signed but the kernel counters are unsigned 32-bit ticks.
+        func ticks(_ index: Int) -> UInt32 {
+            UInt32(bitPattern: infoArray[index])
         }
+        for core in 0 ..< cpuCount {
+            let base = core * stride
+            perCoreTicks.append(CPUTicks(
+                user: ticks(base + Int(CPU_STATE_USER)),
+                system: ticks(base + Int(CPU_STATE_SYSTEM)),
+                idle: ticks(base + Int(CPU_STATE_IDLE)),
+                nice: ticks(base + Int(CPU_STATE_NICE))
+            ))
+        }
+        let counters = CPURawCounters(perCore: perCoreTicks)
 
-        let aggregate = CPUTicks(user: aggUser, system: aggSys, idle: aggIdle, nice: aggNice)
-        let counters = CPURawCounters(aggregate: aggregate, perCore: perCoreTicks)
-
-        guard let previous, let prevAgg = previous.aggregate else {
+        guard let previous, !perCoreTicks.isEmpty, previous.perCore.count == perCoreTicks.count else {
             return (CPUSample(total: 0, user: 0, system: 0, perCore: [], available: false), counters)
         }
 
-        let (total, user, system) = fraction(current: aggregate, previous: prevAgg)
+        var aggregate = CPUTickDelta()
         var perCore: [Double] = []
-        if previous.perCore.count == perCoreTicks.count {
-            perCore.reserveCapacity(perCoreTicks.count)
-            for index in perCoreTicks.indices {
-                perCore.append(fraction(current: perCoreTicks[index], previous: previous.perCore[index]).total)
-            }
+        perCore.reserveCapacity(perCoreTicks.count)
+        for index in perCoreTicks.indices {
+            let delta = perCoreTicks[index].delta(since: previous.perCore[index])
+            aggregate.add(delta)
+            perCore.append(fraction(delta).total)
         }
-
+        let (total, user, system) = fraction(aggregate)
         return (CPUSample(total: total, user: user, system: system, perCore: perCore), counters)
     }
 
-    private static func fraction(current: CPUTicks, previous: CPUTicks) -> (total: Double, user: Double, system: Double) {
-        let totalDelta = Double(current.total &- previous.total)
+    private static func fraction(_ delta: CPUTickDelta) -> (total: Double, user: Double, system: Double) {
+        let totalDelta = Double(delta.total)
         guard totalDelta > 0 else { return (0, 0, 0) }
-        let busyDelta = Double(current.busy &- previous.busy)
-        let userDelta = Double((current.user &+ current.nice) &- (previous.user &+ previous.nice))
-        let sysDelta = Double(current.system &- previous.system)
+        let busyDelta = Double(delta.busy)
+        let userDelta = Double(delta.user + delta.nice)
+        let sysDelta = Double(delta.system)
         return (
             clamp01(busyDelta / totalDelta),
             clamp01(userDelta / totalDelta),
@@ -273,30 +311,35 @@ enum SystemMetricsSamplers {
         var oerrors: UInt64 = 0
         var iqdrops: UInt64 = 0
         var addresses: [String] = []
+        /// False for a row built only from AF_INET/AF_INET6 addresses: its zero byte counts are not a baseline.
+        var hasLinkCounters = true
+    }
+
+    struct NetworkRates: Sendable, Equatable {
+        var rx: Double
+        var tx: Double
+        /// False when there was no baseline to subtract from; the zero rates are not a reading.
+        var available: Bool
     }
 
     struct NetworkCountersSample: Sendable {
-        var rx: UInt64
-        var tx: UInt64
         var interfaces: [InterfaceCounters]
     }
 
-    static func sampleNetworkCounters() -> NetworkCountersSample {
+    /// Nil when getifaddrs fails, so the caller can drop its baseline instead of differencing against nothing.
+    static func sampleNetworkCounters() -> NetworkCountersSample? {
         var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0, let first = head else {
-            return NetworkCountersSample(rx: 0, tx: 0, interfaces: [])
-        }
+        guard getifaddrs(&head) == 0 else { return nil }
+        guard let first = head else { return NetworkCountersSample(interfaces: []) }
         defer { freeifaddrs(head) }
 
-        var rx: UInt64 = 0
-        var tx: UInt64 = 0
         var byName: [String: InterfaceCounters] = [:]
         var order: [String] = []
 
         func entry(for name: String) -> Int {
             if let existing = order.firstIndex(of: name) { return existing }
             order.append(name)
-            byName[name] = InterfaceCounters(name: name)
+            byName[name] = InterfaceCounters(name: name, hasLinkCounters: false)
             return order.count - 1
         }
 
@@ -315,9 +358,8 @@ enum SystemMetricsSamplers {
             if family == UInt8(AF_LINK) {
                 guard flags & IFF_UP != 0, let dataPtr = ifa.ifa_data else { continue }
                 let data = dataPtr.assumingMemoryBound(to: if_data.self).pointee
-                rx &+= UInt64(data.ifi_ibytes)
-                tx &+= UInt64(data.ifi_obytes)
                 _ = entry(for: name)
+                byName[name]?.hasLinkCounters = true
                 byName[name]?.ibytes = UInt64(data.ifi_ibytes)
                 byName[name]?.obytes = UInt64(data.ifi_obytes)
                 byName[name]?.ipackets = UInt64(data.ifi_ipackets)
@@ -334,7 +376,7 @@ enum SystemMetricsSamplers {
         }
 
         let interfaces = order.compactMap { byName[$0] }
-        return NetworkCountersSample(rx: rx, tx: tx, interfaces: interfaces)
+        return NetworkCountersSample(interfaces: interfaces)
     }
 
     private static func interfaceAddressText(_ addr: UnsafeMutablePointer<sockaddr>, family: UInt8) -> String? {
@@ -362,7 +404,7 @@ enum SystemMetricsSamplers {
         var bestFallback: (name: String, rx: Double)?
 
         for counters in current {
-            let prev = previous[counters.name]
+            let prev = linkBaseline(previous[counters.name], for: counters)
             let rxRate = rate(current: counters.ibytes, previous: prev?.ibytes ?? counters.ibytes, interval: interval)
             let txRate = rate(current: counters.obytes, previous: prev?.obytes ?? counters.obytes, interval: interval)
             let rxPk = rate(current: counters.ipackets, previous: prev?.ipackets ?? counters.ipackets, interval: interval)
@@ -395,6 +437,35 @@ enum SystemMetricsSamplers {
             rows[index].isActive = true
         }
         return rows
+    }
+
+    /// Sums per-interface deltas; an interface without a link-counter baseline, or whose counters went backwards, adds nothing.
+    static func networkRates(
+        previous: [String: InterfaceCounters]?,
+        current: NetworkCountersSample?,
+        interval: TimeInterval
+    ) -> NetworkRates {
+        guard let previous, let current else { return NetworkRates(rx: 0, tx: 0, available: false) }
+        var rates = NetworkRates(rx: 0, tx: 0, available: true)
+        for counters in current.interfaces {
+            guard let prev = linkBaseline(previous[counters.name], for: counters) else { continue }
+            rates.rx += rate(current: counters.ibytes, previous: prev.ibytes, interval: interval)
+            rates.tx += rate(current: counters.obytes, previous: prev.obytes, interval: interval)
+        }
+        return rates
+    }
+
+    static func networkBaseline(_ sample: NetworkCountersSample?) -> [String: InterfaceCounters]? {
+        guard let sample else { return nil }
+        return Dictionary(
+            sample.interfaces.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    private static func linkBaseline(_ previous: InterfaceCounters?, for current: InterfaceCounters) -> InterfaceCounters? {
+        guard let previous, previous.hasLinkCounters, current.hasLinkCounters else { return nil }
+        return previous
     }
 
     // MARK: - Disk (IOBlockStorageDriver Statistics)

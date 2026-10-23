@@ -264,4 +264,140 @@ struct SystemMetricsSourceTests {
         #expect(ticks == 1)
         #expect(snapshot.metricSamples?["cpu"]?.available == true)
     }
+
+    private typealias Counters = SystemMetricsSamplers.InterfaceCounters
+
+    private func link(_ name: String, rx: UInt64, tx: UInt64) -> Counters {
+        Counters(name: name, ibytes: rx, obytes: tx)
+    }
+
+    private func netSample(_ interfaces: [Counters]) -> SystemMetricsSamplers.NetworkCountersSample {
+        SystemMetricsSamplers.NetworkCountersSample(interfaces: interfaces)
+    }
+
+    @Test("An interface that leaves and comes back does not count its history as traffic")
+    func interfaceAbsenceThenReturn() throws {
+        let first = netSample([link("en0", rx: 1_000_000, tx: 500_000), link("en5", rx: 5_000_000, tx: 2_000_000)])
+        let absent = netSample([link("en0", rx: 1_000_100, tx: 500_050)])
+        let back = netSample([link("en0", rx: 1_000_300, tx: 500_150), link("en5", rx: 5_000_400, tx: 2_000_200)])
+
+        var baseline = SystemMetricsSamplers.networkBaseline(first)
+        let whileAbsent = SystemMetricsSamplers.networkRates(previous: baseline, current: absent, interval: 1)
+        #expect(whileAbsent == .init(rx: 100, tx: 50, available: true))
+
+        baseline = SystemMetricsSamplers.networkBaseline(absent)
+        let afterReturn = SystemMetricsSamplers.networkRates(previous: baseline, current: back, interval: 1)
+        #expect(afterReturn == .init(rx: 200, tx: 100, available: true),
+                "the returning interface's lifetime bytes would read as one second of traffic")
+
+        let rows = try SystemMetricsSamplers.networkInterfaces(
+            previous: #require(baseline), current: back.interfaces, interval: 1, activeName: nil
+        )
+        #expect(rows.first { $0.name == "en5" }?.rxBytesPerSec == 0)
+    }
+
+    @Test("A counter reset contributes nothing instead of a negative or huge delta")
+    func counterResetContributesNothing() {
+        let before = netSample([link("en0", rx: 9_000_000, tx: 4_000_000), link("en1", rx: 1000, tx: 1000)])
+        let after = netSample([link("en0", rx: 40, tx: 20), link("en1", rx: 1300, tx: 1100)])
+        let rates = SystemMetricsSamplers.networkRates(
+            previous: SystemMetricsSamplers.networkBaseline(before), current: after, interval: 1
+        )
+        #expect(rates == .init(rx: 300, tx: 100, available: true))
+    }
+
+    @Test("A failed interface read drops the baseline so the next read primes instead of reporting history")
+    func failedReadReprimes() {
+        let first = netSample([link("en0", rx: 7_000_000, tx: 3_000_000)])
+        let failed = SystemMetricsSamplers.networkRates(
+            previous: SystemMetricsSamplers.networkBaseline(first), current: nil, interval: 1
+        )
+        #expect(failed.available == false)
+
+        let afterFailure = SystemMetricsSamplers.networkBaseline(nil)
+        #expect(afterFailure == nil)
+        let recovered = SystemMetricsSamplers.networkRates(
+            previous: afterFailure,
+            current: netSample([link("en0", rx: 7_000_100, tx: 3_000_100)]),
+            interval: 0.5
+        )
+        #expect(recovered == .init(rx: 0, tx: 0, available: false))
+    }
+
+    @Test("An address-only row is not a byte baseline when the link counters come back")
+    func addressOnlyRowIsNotABaseline() throws {
+        var down = Counters(name: "en1", addresses: ["10.0.0.2"])
+        down.hasLinkCounters = false
+        var up = link("en1", rx: 9_000_000, tx: 4_000_000)
+        up.addresses = ["10.0.0.2"]
+
+        let baseline = SystemMetricsSamplers.networkBaseline(netSample([down]))
+        let rates = SystemMetricsSamplers.networkRates(previous: baseline, current: netSample([up]), interval: 1)
+        #expect(rates == .init(rx: 0, tx: 0, available: true))
+
+        let rows = try SystemMetricsSamplers.networkInterfaces(
+            previous: #require(baseline), current: [up], interval: 1, activeName: nil
+        )
+        #expect(rows.first?.rxBytesPerSec == 0)
+        #expect(rows.first?.txBytesPerSec == 0)
+    }
+}
+
+@Suite("CPU tick counters")
+struct CPUTickCounterTests {
+    private typealias Core = (user: UInt32, system: UInt32, idle: UInt32, nice: UInt32)
+
+    private func sample(
+        _ cores: [Core],
+        previous: SystemMetricsSamplers.CPURawCounters?
+    ) -> (sample: SystemMetricsSamplers.CPUSample, counters: SystemMetricsSamplers.CPURawCounters) {
+        let stride = Int(CPU_STATE_MAX)
+        var info = [integer_t](repeating: 0, count: cores.count * stride)
+        for (index, core) in cores.enumerated() {
+            info[index * stride + Int(CPU_STATE_USER)] = integer_t(bitPattern: core.user)
+            info[index * stride + Int(CPU_STATE_SYSTEM)] = integer_t(bitPattern: core.system)
+            info[index * stride + Int(CPU_STATE_IDLE)] = integer_t(bitPattern: core.idle)
+            info[index * stride + Int(CPU_STATE_NICE)] = integer_t(bitPattern: core.nice)
+        }
+        return info.withUnsafeBufferPointer {
+            SystemMetricsSamplers.cpuSample(loadInfo: $0, cpuCount: cores.count, previous: previous)
+        }
+    }
+
+    private func close(_ lhs: Double, _ rhs: Double) -> Bool {
+        abs(lhs - rhs) < 1e-9
+    }
+
+    @Test("Counters past Int32.max read as unsigned ticks")
+    func countersWithTheHighBitSet() {
+        let first = sample([(0x7FFF_FFFF, 100, 1000, 0)], previous: nil)
+        let second = sample([(0x8000_0063, 100, 1100, 0)], previous: first.counters)
+        #expect(second.sample.available)
+        #expect(close(second.sample.total, 0.5))
+        #expect(close(second.sample.user, 0.5))
+        #expect(close(second.sample.system, 0))
+        #expect(second.sample.perCore.count == 1)
+        #expect(second.sample.perCore.first.map { close($0, 0.5) } == true)
+    }
+
+    @Test("A counter that wraps past UInt32.max contributes its 32-bit delta")
+    func countersWrapAt32Bits() {
+        let first = sample([(0xFFFF_FFFE, 0, 0, 0), (10, 0, 0xFFFF_FFCE, 0)], previous: nil)
+        let second = sample([(0x30, 0, 150, 0), (110, 0, 0x32, 0)], previous: first.counters)
+        #expect(second.sample.available)
+        #expect(close(second.sample.total, 0.375))
+        #expect(second.sample.perCore.count == 2)
+        #expect(second.sample.perCore.first.map { close($0, 0.25) } == true)
+        #expect(second.sample.perCore.last.map { close($0, 0.5) } == true)
+    }
+
+    @Test("A changed core count starts a new baseline instead of mixing topologies")
+    func topologyChangeReprimes() {
+        let first = sample([(100, 100, 100, 0)], previous: nil)
+        let second = sample([(150, 100, 150, 0), (10, 10, 10, 0)], previous: first.counters)
+        #expect(second.sample.available == false)
+        let third = sample([(250, 100, 250, 0), (20, 10, 20, 0)], previous: second.counters)
+        #expect(third.sample.available)
+        #expect(close(third.sample.total, 0.5))
+    }
 }

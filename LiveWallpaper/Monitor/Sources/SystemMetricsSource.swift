@@ -137,8 +137,8 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         private var updateCount = 0
         private var lastSampleTime: Date?
         private var prevCPU: SystemMetricsSamplers.CPURawCounters?
-        private var prevNet: (rx: UInt64, tx: UInt64)?
-        private var prevNetInterfaces: [String: SystemMetricsSamplers.InterfaceCounters] = [:]
+        /// Per-interface counters the next network tick subtracts from; nil until primed or after a failed read.
+        private var prevNetInterfaces: [String: SystemMetricsSamplers.InterfaceCounters]?
         private var prevDisk: (read: UInt64, written: UInt64)?
         private var lastGPU: SystemMetricsSamplers.GPUSample?
         private var lastGPUSampledAt: Double?
@@ -203,12 +203,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 prevCPU = SystemMetricsSamplers.sampleCPU(previous: nil).counters
             }
             if options.network {
-                let raw = SystemMetricsSamplers.sampleNetworkCounters()
-                prevNet = (raw.rx, raw.tx)
-                prevNetInterfaces = Dictionary(
-                    raw.interfaces.map { ($0.name, $0) },
-                    uniquingKeysWith: { first, _ in first }
-                )
+                prevNetInterfaces = SystemMetricsSamplers.networkBaseline(SystemMetricsSamplers.sampleNetworkCounters())
             }
             if options.disk {
                 let raw = SystemMetricsSamplers.sampleDiskCounters()
@@ -268,21 +263,18 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             var networkAvailable = false
             if options.network {
                 let netRaw = SystemMetricsSamplers.sampleNetworkCounters()
-                networkAvailable = prevNet != nil
-                netRx = SystemMetricsSamplers.rate(current: netRaw.rx, previous: prevNet?.rx ?? netRaw.rx, interval: elapsed)
-                netTx = SystemMetricsSamplers.rate(current: netRaw.tx, previous: prevNet?.tx ?? netRaw.tx, interval: elapsed)
+                let rates = SystemMetricsSamplers.networkRates(previous: prevNetInterfaces, current: netRaw, interval: elapsed)
+                networkAvailable = rates.available
+                netRx = rates.rx
+                netTx = rates.tx
                 pathSnapshot = netPath.currentSnapshot()
                 netInterfaces = SystemMetricsSamplers.networkInterfaces(
-                    previous: prevNetInterfaces,
-                    current: netRaw.interfaces,
+                    previous: prevNetInterfaces ?? [:],
+                    current: netRaw?.interfaces ?? [],
                     interval: elapsed,
                     activeName: pathSnapshot?.activeInterfaceName
                 )
-                prevNet = (netRaw.rx, netRaw.tx)
-                prevNetInterfaces = Dictionary(
-                    netRaw.interfaces.map { ($0.name, $0) },
-                    uniquingKeysWith: { first, _ in first }
-                )
+                prevNetInterfaces = SystemMetricsSamplers.networkBaseline(netRaw)
             }
 
             var diskAvailable = false

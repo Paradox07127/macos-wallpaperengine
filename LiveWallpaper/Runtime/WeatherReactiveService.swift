@@ -8,23 +8,40 @@ final class WeatherReactiveService {
 
     static let refreshInterval: Duration = .seconds(3600)
 
-    private(set) var currentCondition: WeatherDescription?
-    private(set) var currentParticleEffect: ParticleEffect = .none
-    private(set) var currentEffectAdjustments: WeatherEffectAdjustments = .neutral
-    /// How hard it is coming down, kept apart from *what* is coming down so a
-    /// drizzle and a downpour can share one particle effect at two densities.
-    private(set) var currentIntensity: WeatherIntensity = .moderate
-    /// Freezing drizzle / freezing rain. Only the colour grade reads it today.
-    private(set) var currentIsFreezing = false
-    /// Live wind, for particles that should lean into it. Nil until a fetch
-    /// lands, and nil forever if the API stops sending it.
-    private(set) var currentWind: WeatherWind?
-    /// `is_day` as the API reports it for this location; nil when unavailable.
-    private(set) var currentIsDaylight: Bool?
+    /// The last successful fetch, replaced whole so its place and weather never come from different fetches; nil when stale or off.
+    private(set) var currentReading: WeatherReading?
+    var currentCondition: WeatherDescription? {
+        currentReading?.condition
+    }
+
+    var currentParticleEffect: ParticleEffect {
+        currentReading?.particleEffect ?? .none
+    }
+
+    var currentEffectAdjustments: WeatherEffectAdjustments {
+        currentReading?.effectAdjustments ?? .neutral
+    }
+
+    var currentIntensity: WeatherIntensity {
+        currentReading?.intensity ?? .moderate
+    }
+
+    var currentIsFreezing: Bool {
+        currentReading?.isFreezing ?? false
+    }
+
+    var currentWind: WeatherWind? {
+        currentReading?.wind
+    }
+
+    var currentIsDaylight: Bool? {
+        currentReading?.isDaylight
+    }
+
     private(set) var locationStatus: LocationStatus = .notDetermined
     private(set) var lastError: String?
     private(set) var lastSuccessfulUpdate: Date?
-    /// `nil` until at least one resolve completes. Drives the status badge.
+    /// The most recently resolved place, which may not be the one `currentReading` was fetched for. Nil until a resolve completes.
     private(set) var activeLocationLabel: String?
 
     // MARK: - Types
@@ -70,7 +87,25 @@ final class WeatherReactiveService {
         )
     }
 
+    /// One successful fetch: the place it was made for and everything measured there.
+    struct WeatherReading: Equatable {
+        var locationLabel: String?
+        var condition: WeatherDescription
+        /// How hard it is coming down, apart from *what*, so drizzle and downpour share one effect at two densities.
+        var intensity: WeatherIntensity
+        /// Freezing drizzle / freezing rain.
+        var isFreezing: Bool
+        /// `is_day` as the API reports it for this location; nil when unavailable.
+        var isDaylight: Bool?
+        /// Nil when the API omits wind speed or direction.
+        var wind: WeatherWind?
+        var particleEffect: ParticleEffect
+        var effectAdjustments: WeatherEffectAdjustments
+        var fetchedAt: Date
+    }
+
     @ObservationIgnored private let locationProvider: WeatherLocationProviding
+    @ObservationIgnored private let fetchForecast: @Sendable (URL) async throws -> Data
     @ObservationIgnored nonisolated(unsafe) private var updateTask: Task<Void, Never>?
     /// Separate from `updateTask` so an explicit `refresh()` can supersede
     /// the in-flight fetch without tearing down the hourly poll cycle.
@@ -106,8 +141,12 @@ final class WeatherReactiveService {
 
     // MARK: - Initialization
 
-    init(locationProvider: WeatherLocationProviding = WeatherLocationProvider()) {
+    init(
+        locationProvider: WeatherLocationProviding = WeatherLocationProvider(),
+        fetchForecast: @escaping @Sendable (URL) async throws -> Data = { try await URLSession.shared.data(from: $0).0 }
+    ) {
         self.locationProvider = locationProvider
+        self.fetchForecast = fetchForecast
         observePreferenceChanges()
     }
 
@@ -199,18 +238,13 @@ final class WeatherReactiveService {
     private func fetchWeatherIfPossible(force: Bool) async {
         guard !isShutdown else { return }
         if Self.isStale(lastSuccess: lastSuccessfulUpdate, now: Date()) {
-            currentCondition = nil
-            currentParticleEffect = .none
-            currentEffectAdjustments = .neutral
-            currentWind = nil
+            currentReading = nil
         }
         // Off means the entire weather-reactive pipeline is dormant. We still clear the cached state so a previously-rendered particle effect stops driving the wallpaper.
         let preference = SettingsManager.shared.loadGlobalSettings().weatherLocation
         if preference.source == .off {
             lastSuccessfulUpdate = nil
-            currentCondition = nil
-            currentParticleEffect = .none
-            currentEffectAdjustments = .neutral
+            currentReading = nil
             activeLocationLabel = nil
             lastError = nil
             locationStatus = .notDetermined
@@ -260,7 +294,7 @@ final class WeatherReactiveService {
         }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let data = try await fetchForecast(url)
             try Task.checkCancellation()
             guard !isShutdown else { return }
             let response = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
@@ -270,27 +304,32 @@ final class WeatherReactiveService {
             let weatherCode = response.current.weather_code
             let description = Self.description(forWMOCode: weatherCode)
 
-            currentCondition = description
-            currentIntensity = WeatherCodePolicy.intensity(forWMOCode: weatherCode)
-            currentIsFreezing = WeatherCodePolicy.isFreezing(wmoCode: weatherCode)
-            currentIsDaylight = response.current.is_day.map { $0 != 0 }
-            currentWind = response.current.wind_direction_10m.flatMap { direction in
-                response.current.wind_speed_10m.map { speed in
-                    WeatherWind(
-                        speedKPH: speed,
-                        gustKPH: response.current.wind_gusts_10m,
-                        fromDegrees: direction
-                    )
-                }
-            }
-            currentParticleEffect = mapDescriptionToParticle(
-                description, isDaylight: currentIsDaylight
+            let isFreezing = WeatherCodePolicy.isFreezing(wmoCode: weatherCode)
+            let isDaylight = response.current.is_day.map { $0 != 0 }
+            let fetchedAt = Date()
+            currentReading = WeatherReading(
+                locationLabel: resolution.displayName,
+                condition: description,
+                intensity: WeatherCodePolicy.intensity(forWMOCode: weatherCode),
+                isFreezing: isFreezing,
+                isDaylight: isDaylight,
+                wind: response.current.wind_direction_10m.flatMap { direction in
+                    response.current.wind_speed_10m.map { speed in
+                        WeatherWind(
+                            speedKPH: speed,
+                            gustKPH: response.current.wind_gusts_10m,
+                            fromDegrees: direction
+                        )
+                    }
+                },
+                particleEffect: mapDescriptionToParticle(description, isDaylight: isDaylight),
+                effectAdjustments: mapDescriptionToEffects(description, freezing: isFreezing),
+                fetchedAt: fetchedAt
             )
-            currentEffectAdjustments = mapDescriptionToEffects(description, freezing: currentIsFreezing)
             locationStatus = .available
             lastError = nil
-            lastSuccessfulUpdate = Date()
-            lastFetchCompletedAt = lastSuccessfulUpdate
+            lastSuccessfulUpdate = fetchedAt
+            lastFetchCompletedAt = fetchedAt
 
             Logger.info("Weather updated: \(description.rawValue), code=\(weatherCode), intensity=\(currentIntensity.rawValue), particle=\(currentParticleEffect.rawValue), wind=\(currentWind.map { "\(Int($0.speedKPH))km/h@\(Int($0.fromDegrees))°" } ?? "n/a"), source=\(resolution.resolvedSource?.rawValue ?? "none")", category: .screenManager)
         } catch is CancellationError {

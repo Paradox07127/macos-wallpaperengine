@@ -155,7 +155,7 @@ struct ClaudeSessionScanner {
             guard
                 let data = try? Data(contentsOf: file),
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let pid = (object["pid"] as? Int).map(Int32.init) ?? (object["pid"] as? NSNumber).map(\.int32Value),
+                let pid = (object["pid"] as? Int).flatMap({ Int32(exactly: $0) }), pid > 0,
                 let sessionId = object["sessionId"] as? String
             else { continue }
 

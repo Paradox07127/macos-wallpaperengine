@@ -16,13 +16,22 @@ struct WeatherWidgetView: View {
     @Environment(\.monitorWeather) private var weather
     @Environment(\.monitorSuspended) private var suspended
 
+    /// Sky, caption and accessibility name all come from this one reading, never from the service's latest resolved place.
+    static func shownReading(_ weather: WeatherReactiveService?) -> WeatherReactiveService.WeatherReading? {
+        weather?.currentReading
+    }
+
+    private var reading: WeatherReactiveService.WeatherReading? {
+        Self.shownReading(weather)
+    }
+
     private var scene: WeatherScene? {
-        guard let weather, let condition = weather.currentCondition else { return nil }
+        guard let reading else { return nil }
         return WeatherScene.make(
-            condition: condition,
-            isDaylight: weather.currentIsDaylight,
-            intensity: weather.currentIntensity,
-            wind: weather.currentWind
+            condition: reading.condition,
+            isDaylight: reading.isDaylight,
+            intensity: reading.intensity,
+            wind: reading.wind
         )
     }
 
@@ -56,10 +65,11 @@ struct WeatherWidgetView: View {
 
     /// Name the tile even when its visual caption is hidden. The header and Canvas are accessibility-hidden.
     private var tileAccessibilityLabel: Text {
-        guard let weather, let condition = weather.currentCondition else {
+        guard let reading else {
             return Text(verbatim: weather?.locationStatus.localizedTitle ?? WidgetFactory.displayName(.weather))
         }
-        guard let place = weather.activeLocationLabel else { return Text(verbatim: condition.localizedTitle) }
+        let condition = reading.condition
+        guard let place = reading.locationLabel else { return Text(verbatim: condition.localizedTitle) }
         return Text(verbatim: condition.localizedTitle) + Text(verbatim: ", ") + Text(verbatim: place)
     }
 
@@ -81,12 +91,12 @@ struct WeatherWidgetView: View {
 
     @ViewBuilder
     private func caption(scale: Design.TypeScale) -> some View {
-        if let weather, let condition = weather.currentCondition {
+        if let reading {
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: condition.localizedTitle)
+                Text(verbatim: reading.condition.localizedTitle)
                     .font(Design.subFont(size: scale.sub))
                     .foregroundStyle(.white.opacity(0.92))
-                if let place = weather.activeLocationLabel {
+                if let place = reading.locationLabel {
                     Text(verbatim: place)
                         .font(Design.captionFont(size: scale.caption))
                         .foregroundStyle(.white.opacity(0.7))

@@ -115,6 +115,36 @@ struct ClaudeSessionScannerTests {
         }
     }
 
+    private func writeRawDescriptor(root: URL, name: String, json: String) throws {
+        try Data(json.utf8).write(to: root.appendingPathComponent("sessions/\(name).json"))
+    }
+
+    @Test("a pid beyond Int32 is skipped and the other descriptors still load")
+    func outOfRangePIDIsSkipped() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeRawDescriptor(root: root, name: "too-big", json: #"{"pid":2147483648,"sessionId":"too-big"}"#)
+        try writeRawDescriptor(root: root, name: "too-small", json: #"{"pid":-2147483649,"sessionId":"too-small"}"#)
+        try writeDescriptor(root: root, pid: Int32.max, sessionId: "at-max", startedAt: nil)
+
+        let scanner = ClaudeSessionScanner(rootURL: root)
+        #expect(scanner.loadPIDDescriptors().map(\.sessionId) == ["at-max"])
+    }
+
+    @Test("a pid of zero or below is skipped")
+    func nonPositivePIDIsSkipped() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeRawDescriptor(root: root, name: "zero", json: #"{"pid":0,"sessionId":"zero"}"#)
+        try writeRawDescriptor(root: root, name: "negative", json: #"{"pid":-1,"sessionId":"negative"}"#)
+        try writeDescriptor(root: root, pid: 1, sessionId: "launchd", startedAt: nil)
+
+        let scanner = ClaudeSessionScanner(rootURL: root)
+        #expect(scanner.loadPIDDescriptors().map(\.sessionId) == ["launchd"])
+    }
+
     @Test("missing sessions dir yields no descriptors, not an error")
     func missingSessionsDirIsEmpty() throws {
         let root = FileManager.default.temporaryDirectory
