@@ -200,7 +200,7 @@ struct WPEMappedPackageWriteFenceTests {
             ".write(to": 4,
         ],
         // Atomic configuration write inside a fresh temporary copy, never the source scene.
-        "LiveWallpaper/Infrastructure/Services/SystemWallpaperSceneBundle.swift": [".write(to": 1],
+        "LiveWallpaper/Infrastructure/SystemWallpaper/SystemWallpaperSceneBundle.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Audio/OggAudioTranscoder.swift": ["forWriting:": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalPassGPUProfiler.swift": [".write(to": 1],
         // Fresh UUID-named HLSL input and stderr log under the temporary wpe-shaderc work directory.
