@@ -30,10 +30,10 @@ public actor WallpaperPersistenceActor {
         try store.write(configs)
     }
 
-    public func delete(generation: UInt64) {
+    public func delete(generation: UInt64) throws {
         guard generation >= latestGeneration else { return }
         latestGeneration = generation
-        store.delete()
+        try store.delete()
     }
 
     public func writeGlobalSettings(_ settings: GlobalSettings, generation: UInt64) throws {
@@ -54,21 +54,21 @@ public actor WallpaperPersistenceActor {
         try schemesStore.write(schemes)
     }
 
-    public func deleteGlobalSettings(generation: UInt64) {
+    public func deleteGlobalSettings(generation: UInt64) throws {
         guard generation >= latestGlobalGeneration else { return }
         latestGlobalGeneration = generation
-        globalSettingsStore.delete()
+        try globalSettingsStore.delete()
     }
 
-    public func deleteBookmarks(generation: UInt64) {
+    public func deleteBookmarks(generation: UInt64) throws {
         guard generation >= latestBookmarksGeneration else { return }
         latestBookmarksGeneration = generation
-        bookmarksStore.delete()
+        try bookmarksStore.delete()
     }
 
-    public func deleteSchemes(generation: UInt64) {
+    public func deleteSchemes(generation: UInt64) throws {
         guard generation >= latestSchemesGeneration else { return }
         latestSchemesGeneration = generation
-        schemesStore.delete()
+        try schemesStore.delete()
     }
 }

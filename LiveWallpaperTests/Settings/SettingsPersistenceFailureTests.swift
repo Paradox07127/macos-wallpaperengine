@@ -185,10 +185,58 @@ struct SettingsPersistenceFailureTests {
         files.allowPromotions()
         try await actor.write([newest], generation: 2)
         #expect(configs.read() == [newest])
-        await actor.delete(generation: 3)
+        try await actor.delete(generation: 3)
         try await actor.write([old], generation: 2)
         #expect(configs.read() == nil)
         // Intentionally do not call cleanAllSettings: it also reaches shared cover/bookmark owners.
+    }
+
+    @Test("A reset whose file deletes fail stays visibly unsaved until a retry writes the defaults")
+    func failedResetDeleteIsVisibleAndRetryable() async throws {
+        let defaults = try TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.ResetDelete")
+        defer { defaults.discard() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ResetDelete-\(UUID())")
+        let directory = ConfigurationDirectory(root: root)
+        let files = PromotionFailureFileManager()
+        let manager = SettingsManager(directory: directory, defaults: defaults.defaults, fileManager: files)
+        let config = ScreenConfiguration(screenID: 94, wallpaper: .video(bookmarkData: Data([5])))
+        manager.saveConfiguration(config)
+        _ = BookmarkStore(persistence: SettingsManagerBookmarkPersistence(manager: manager))
+            .add(label: "Before", content: .video(bookmarkData: Data([6])))
+        _ = SchemeStore(persistence: SettingsManagerSchemePersistence(manager: manager))
+            .add(name: "Before", configuration: config, overlay: MonitorOverlayConfiguration(enabled: true, level: .front))
+        var global = manager.loadGlobalSettings()
+        global.globalPauseOnBattery = !GlobalSettings().globalPauseOnBattery
+        manager.saveGlobalSettings(global)
+        #expect(await manager.flushPendingWrites())
+
+        let names = ["screen-configurations.json", "global-settings.json", "wallpaper-bookmarks.json", "screen-schemes.json"]
+        files.failRemovals(of: [directory.url(for: .screenConfigurations), directory.url(for: .globalSettings),
+                                directory.url(for: .wallpaperBookmarks), directory.url(for: .screenSchemes)])
+        manager.cleanAllSettings(applyLoginSetting: false)
+        await manager.waitForPendingWrites()
+
+        for domain in SettingsPersistenceDomain.allCases {
+            guard case .some(.failed) = manager.persistenceStatus.phases[domain] else {
+                Issue.record("Reset of \(domain) failed on disk but status is \(String(describing: manager.persistenceStatus.phases[domain]))")
+                continue
+            }
+        }
+        #expect(manager.persistenceStatus.hasUnsavedChanges)
+        for name in names {
+            #expect(files.refusedRemovals(of: name) > 0, "Fault injector never reached \(name)")
+        }
+
+        #expect(await manager.flushPendingWrites()) // Retrying writes the reset defaults over the stale files.
+        #expect(!manager.persistenceStatus.hasFailure)
+        #expect(!manager.persistenceStatus.hasUnsavedChanges)
+        files.allowRemovals()
+        let restarted = SettingsManager(directory: directory, defaults: defaults.defaults)
+        #expect(restarted.loadConfigurations().isEmpty)
+        #expect(restarted.loadWallpaperBookmarks().isEmpty)
+        #expect(restarted.loadScreenSchemes().isEmpty)
+        #expect(restarted.loadGlobalSettings().globalPauseOnBattery == GlobalSettings().globalPauseOnBattery)
+        await TestScratch.discard(root, flushing: manager, restarted)
     }
 }
 
@@ -198,6 +246,40 @@ private final class PromotionFailureFileManager: FileManager, @unchecked Sendabl
     private let gate = NSLock()
     private var blocked: Set<String> = []
     private var receipts: [String: Int] = [:]
+    private var undeletable: Set<String> = []
+    private var removalReceipts: [String: Int] = [:]
+
+    func failRemovals(of urls: [URL]) {
+        gate.lock()
+        undeletable = Set(urls.map(\.standardizedFileURL.path))
+        removalReceipts = [:]
+        gate.unlock()
+    }
+
+    func allowRemovals() {
+        gate.lock()
+        undeletable = []
+        gate.unlock()
+    }
+
+    func refusedRemovals(of name: String) -> Int {
+        gate.lock()
+        defer { gate.unlock() }
+        return removalReceipts[name, default: 0]
+    }
+
+    override func removeItem(at url: URL) throws {
+        gate.lock()
+        let shouldFail = undeletable.contains(url.standardizedFileURL.path)
+        if shouldFail {
+            removalReceipts[url.lastPathComponent, default: 0] += 1
+        }
+        gate.unlock()
+        if shouldFail {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try super.removeItem(at: url)
+    }
 
     func failPromotions(to urls: [URL]) {
         gate.lock()

@@ -131,7 +131,7 @@ struct AtomicFileStoreTests {
 
         try store.write(TestValue(label: "first", count: 1))
         try store.write(TestValue(label: "second", count: 2))
-        store.delete()
+        try store.delete()
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) == false)
         #expect(FileManager.default.fileExists(atPath: fileURL.appendingPathExtension("bak").path(percentEncoded: false)) == false)
@@ -203,6 +203,33 @@ struct AtomicFileStoreTests {
             "rotation moved the primary aside and nothing put it back"
         )
         #expect(store.read() == TestValue(label: "v1", count: 1))
+    }
+
+    @Test("A write that neither F_FULLFSYNC nor fsync can make durable is reported as failed")
+    func writeFailsWhenNoSyncSucceeds() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AtomicFileStore<TestValue>(
+            fileURL: directory.appendingPathComponent("payload.json"),
+            durabilitySync: FileDurabilitySync(fullFsync: { _ in EIO }, fsync: { _ in EIO })
+        )
+
+        #expect(throws: AtomicFileStore<TestValue>.StoreError.self) {
+            try store.write(TestValue(label: "unsynced", count: 1))
+        }
+    }
+
+    @Test("Falling back to fsync when F_FULLFSYNC is unsupported still saves")
+    func fsyncFallbackStillSaves() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AtomicFileStore<TestValue>(
+            fileURL: directory.appendingPathComponent("payload.json"),
+            durabilitySync: FileDurabilitySync(fullFsync: { _ in ENOTSUP }, fsync: FileDurabilitySync.system.fsync)
+        )
+
+        try store.write(TestValue(label: "fallback", count: 2))
+        #expect(store.read() == TestValue(label: "fallback", count: 2))
     }
 
     /// Fails only the temp → primary move and lets rotation through — the only order

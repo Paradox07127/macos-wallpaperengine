@@ -1,13 +1,32 @@
 import Foundation
 
+/// Durability calls on an open descriptor; each returns 0 on success or the failing errno.
+public struct FileDurabilitySync: Sendable {
+    public var fullFsync: @Sendable (Int32) -> Int32
+    public var fsync: @Sendable (Int32) -> Int32
+
+    public init(fullFsync: @escaping @Sendable (Int32) -> Int32, fsync: @escaping @Sendable (Int32) -> Int32) {
+        self.fullFsync = fullFsync
+        self.fsync = fsync
+    }
+
+    public static let system = FileDurabilitySync(
+        fullFsync: { fcntl($0, F_FULLFSYNC) == -1 ? errno : 0 },
+        fsync: { Darwin.fsync($0) == 0 ? 0 : errno }
+    )
+}
+
 public struct AtomicFileStore<Value: Codable> {
     public enum StoreError: Error, CustomStringConvertible {
         case writeFailed(underlying: Error)
+        case deleteFailed(underlying: Error)
 
         public var description: String {
             switch self {
-            case .writeFailed(let error):
-                return "AtomicFileStore: write failed — \(error.localizedDescription)"
+            case let .writeFailed(error):
+                "AtomicFileStore: write failed — \(error.localizedDescription)"
+            case let .deleteFailed(error):
+                "AtomicFileStore: delete failed — \(error.localizedDescription)"
             }
         }
     }
@@ -23,6 +42,7 @@ public struct AtomicFileStore<Value: Codable> {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let fileManager: FileManager
+    private let durabilitySync: FileDurabilitySync
     private let category: Logger.Category
 
     public init(
@@ -30,8 +50,10 @@ public struct AtomicFileStore<Value: Codable> {
         encoder: JSONEncoder = .configurationEncoder(),
         decoder: JSONDecoder = JSONDecoder(),
         fileManager: FileManager = .default,
+        durabilitySync: FileDurabilitySync = .system,
         category: Logger.Category = .settings
     ) {
+        self.durabilitySync = durabilitySync
         self.fileURL = fileURL
         self.backupURL = fileURL.appendingPathExtension("bak")
         self.tempURL = fileURL.appendingPathExtension("tmp")
@@ -115,7 +137,9 @@ public struct AtomicFileStore<Value: Codable> {
         }
     }
 
-    public func delete() {
+    /// Attempts every file even after a failure, then throws the first removal error.
+    public func delete() throws {
+        var firstFailure: Error?
         for url in [fileURL, backupURL, tempURL, lockURL] where fileExists(url) {
             do {
                 try fileManager.removeItem(at: url)
@@ -124,7 +148,11 @@ public struct AtomicFileStore<Value: Codable> {
                     "AtomicFileStore could not remove \(url.lastPathComponent): \(error.localizedDescription)",
                     category: category
                 )
+                firstFailure = firstFailure ?? error
             }
+        }
+        if let firstFailure {
+            throw StoreError.deleteFailed(underlying: firstFailure)
         }
     }
 
@@ -183,9 +211,10 @@ public struct AtomicFileStore<Value: Codable> {
             ofItemAtPath: tempURL.path(percentEncoded: false)
         )
 
-        if let handle = try? FileHandle(forWritingTo: tempURL) {
-            fullSync(handle.fileDescriptor, label: tempURL.lastPathComponent)
-            try? handle.close()
+        do {
+            let handle = try FileHandle(forWritingTo: tempURL)
+            defer { try? handle.close() }
+            try fullSync(handle.fileDescriptor, label: tempURL.lastPathComponent)
         }
 
         var rotated = false
@@ -209,7 +238,7 @@ public struct AtomicFileStore<Value: Codable> {
             throw error
         }
 
-        fsyncParentDirectory(of: fileURL)
+        try fsyncParentDirectory(of: fileURL)
     }
 
     /// Rotating while the primary is corrupt would delete the backup and promote the
@@ -242,29 +271,31 @@ public struct AtomicFileStore<Value: Codable> {
         close(fd)
     }
 
-    private func fsyncParentDirectory(of url: URL) {
+    private func fsyncParentDirectory(of url: URL) throws {
         let parent = url.deletingLastPathComponent().path(percentEncoded: false)
         let fd = open(parent, O_RDONLY)
-        guard fd >= 0 else { return }
-        fullSync(fd, label: url.deletingLastPathComponent().lastPathComponent)
-        close(fd)
+        guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        defer { close(fd) }
+        try fullSync(fd, label: url.deletingLastPathComponent().lastPathComponent)
     }
 
-    /// Best-effort `F_FULLFSYNC`, else `fsync` (ENOTSUP on some FS). Never throws.
-    private func fullSync(_ fd: Int32, label: String) {
-        guard fcntl(fd, F_FULLFSYNC) == -1 else { return }
-        let fullSyncErr = errno
-        if fsync(fd) == 0 {
+    /// `F_FULLFSYNC`, else `fsync` (ENOTSUP on some FS); throws only when neither succeeds.
+    private func fullSync(_ fd: Int32, label: String) throws {
+        let fullSyncErr = durabilitySync.fullFsync(fd)
+        guard fullSyncErr != 0 else { return }
+        let fsyncErr = durabilitySync.fsync(fd)
+        if fsyncErr == 0 {
             Logger.warning(
                 "AtomicFileStore F_FULLFSYNC unsupported for \(label) (errno \(fullSyncErr)); fell back to fsync",
                 category: category
             )
-        } else {
-            Logger.error(
-                "AtomicFileStore durability sync failed for \(label): F_FULLFSYNC errno \(fullSyncErr), fsync errno \(errno)",
-                category: category
-            )
+            return
         }
+        Logger.error(
+            "AtomicFileStore durability sync failed for \(label): F_FULLFSYNC errno \(fullSyncErr), fsync errno \(fsyncErr)",
+            category: category
+        )
+        throw POSIXError(.init(rawValue: fsyncErr) ?? .EIO)
     }
 
     private func fileExists(_ url: URL) -> Bool {

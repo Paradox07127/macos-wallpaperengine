@@ -724,22 +724,19 @@ final class SettingsManager {
         cachedScreenSchemes = []
 
         persistenceStatus.discardedPriorEditsForReset()
-        pendingWriteTasks.removeAll()
-        // Do not cancel older writes: the bumped generations below fence actor ordering.
-        // Route deletes through the same serial actor with bumped generations so an in-flight async write (older generation) can't resurrect the file after the reset.
-        configurationWriteGeneration &+= 1
-        globalSettingsWriteGeneration &+= 1
-        bookmarksWriteGeneration &+= 1
-        schemesWriteGeneration &+= 1
-        let configGeneration = configurationWriteGeneration
-        let globalGeneration = globalSettingsWriteGeneration
-        let bookmarksGeneration = bookmarksWriteGeneration
-        let schemesGeneration = schemesWriteGeneration
-        Task { [configurationPersistenceActor] in
-            await configurationPersistenceActor.delete(generation: configGeneration)
-            await configurationPersistenceActor.deleteGlobalSettings(generation: globalGeneration)
-            await configurationPersistenceActor.deleteBookmarks(generation: bookmarksGeneration)
-            await configurationPersistenceActor.deleteSchemes(generation: schemesGeneration)
+        // Do not cancel older writes: each delete takes a newer generation, so a stale write cannot resurrect the file.
+        // A failed delete stays visible; flushPendingWrites retries by writing the reset defaults over it.
+        queueWrite(.configurations) { actor, generation in
+            try await actor.delete(generation: generation)
+        }
+        queueWrite(.globalSettings) { actor, generation in
+            try await actor.deleteGlobalSettings(generation: generation)
+        }
+        queueWrite(.bookmarks) { actor, generation in
+            try await actor.deleteBookmarks(generation: generation)
+        }
+        queueWrite(.schemes) { actor, generation in
+            try await actor.deleteSchemes(generation: generation)
         }
 
         defaults.removeObject(forKey: Keys.screenConfigurations)
