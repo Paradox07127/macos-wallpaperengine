@@ -158,7 +158,7 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
                 metallib: Data(contentsOf: metallib), reflectionJSON: Data(contentsOf: reflection),
                 stageIn: stageIn ? Data(contentsOf: stageInMetallib) : nil
             )
-            Logger.notice("WPE parity shader output appPID=\(ProcessInfo.processInfo.processIdentifier) "
+            Logger.debug("WPE parity shader output appPID=\(ProcessInfo.processInfo.processIdentifier) "
                 + "childPID=\(result.pid) stage=\(stage.rawValue) minMacOS=\(options.minimumMacOS) "
                 + "boundsCheck=\(options.boundsCheck) inputSHA256=\(Self.digest(source)) "
                 + "metallibBytes=\(output.metallib.count) metallibSHA256=\(Self.digest(output.metallib)) "
@@ -217,7 +217,7 @@ struct WPEParityHelperShaderCompiler: WPEParityShaderCompiling {
                 self.continuation = continuation
                 process.terminationHandler = { [self] child in
                     queue.async { [self] in
-                        Logger.notice("WPE parity shader helper appPID=\(ProcessInfo.processInfo.processIdentifier) "
+                        Logger.debug("WPE parity shader helper appPID=\(ProcessInfo.processInfo.processIdentifier) "
                             + "childPID=\(child.processIdentifier) stage=\(stage.rawValue) "
                             + "exit=\(child.terminationStatus) reason=\(child.terminationReason.rawValue)",
                             category: .wpeRender)
