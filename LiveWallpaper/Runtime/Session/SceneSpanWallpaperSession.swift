@@ -529,14 +529,6 @@ final class SceneSpanWallpaperSession: SceneWallpaperRuntime, WallpaperFrameRate
         group.owner.stageScenePropertyPosterCommit(overrides: overrides)
     }
 
-    func stagedScenePropertyPosterCommit(matching revision: ScenePropertyOverridesRevision) -> ScenePropertyPosterCommit? {
-        group.owner.stagedScenePropertyPosterCommit(matching: revision)
-    }
-
-    func waitForScenePropertyPosterCommit(_ expected: ScenePropertyPosterCommit) async -> Bool {
-        await group.owner.waitForScenePropertyPosterCommit(expected)
-    }
-
     func commitScenePropertyPatch(_ prepared: PreparedScenePropertyPatch, posterCommit: ScenePropertyPosterCommit, updatedDescriptor: SceneDescriptor) async -> Bool {
         let committed = await group.owner.commitScenePropertyPatch(prepared, posterCommit: posterCommit, updatedDescriptor: updatedDescriptor)
         if committed {

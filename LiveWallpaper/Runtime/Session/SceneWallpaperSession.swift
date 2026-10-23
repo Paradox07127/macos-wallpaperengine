@@ -329,17 +329,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         scenePropertyPosterCommitGate.stage(overrides: overrides)
     }
 
-    func stagedScenePropertyPosterCommit(
-        matching revision: ScenePropertyOverridesRevision
-    ) -> ScenePropertyPosterCommit? {
-        scenePropertyPosterCommitGate.staged(matching: revision)
-    }
-
-    func waitForScenePropertyPosterCommit(_ expected: ScenePropertyPosterCommit) async -> Bool {
-        guard hasRenderer else { return false }
-        return await scenePropertyPosterCommitGate.wait(for: expected)
-    }
-
     func commitScenePropertyPatch(
         _ prepared: PreparedScenePropertyPatch,
         posterCommit: ScenePropertyPosterCommit,

@@ -287,23 +287,6 @@ final class WPEImportCoordinator {
         }
     }
 
-    func removeWorkshop(workshopID: String) {
-        guard isLifecycleActive(), !tracker.isTerminated else { return }
-        SettingsManager.shared.removeWPEImport(workshopID: workshopID)
-        // Tombstone so auto-import can't resurrect from a still-present Steam copy.
-        SettingsManager.shared.recordWPEDeleteTombstone(workshopID: workshopID)
-
-        clearRemovedWorkshopReferences(workshopID: workshopID)
-    }
-
-    func clearRemovedWorkshopReferences(workshopID: String) {
-        guard isLifecycleActive(), !tracker.isTerminated else { return }
-        for var config in configurationStore.loadAll() where config.wpeOrigin?.workshopID == workshopID {
-            config.wpeOrigin = nil
-            saveConfiguration(config)
-        }
-    }
-
     // MARK: - Private helpers
 
     private func postDidComplete(

@@ -33,8 +33,6 @@ protocol SceneWallpaperRuntime: WallpaperPlaybackControllable, WallpaperIntentMa
     func prepareScenePropertyPatch(_ patch: WPEScenePropertyPatch,
                                    expectedIntent token: ScenePropertyMutationToken) async -> PreparedScenePropertyPatch?
     func stageScenePropertyPosterCommit(overrides: [String: WallpaperEngineProjectPropertyValue]) -> ScenePropertyPosterCommit
-    func stagedScenePropertyPosterCommit(matching revision: ScenePropertyOverridesRevision) -> ScenePropertyPosterCommit?
-    func waitForScenePropertyPosterCommit(_ expected: ScenePropertyPosterCommit) async -> Bool
     func commitScenePropertyPatch(_ prepared: PreparedScenePropertyPatch, posterCommit: ScenePropertyPosterCommit,
                                   updatedDescriptor: SceneDescriptor) async -> Bool
 }
