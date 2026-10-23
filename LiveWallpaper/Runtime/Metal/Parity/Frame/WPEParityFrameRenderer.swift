@@ -657,6 +657,7 @@ final class WPEParityFrameRenderer {
             }
             return await group.reduce(into: [:]) { $0[$1.0] = $1.1 }
         }
+        try Task.checkCancellation()
         if shaders.requireAllPrograms {
             for artifact in artifacts.values {
                 if case let .failure(reason) = artifact {

@@ -106,5 +106,30 @@ extension WPEParitySceneDriverTests {
         XCTAssertGreaterThanOrEqual(totals.peak, totals.live)
         print("Parity resource ledger after 20 replans: peak \(totals.peak) B, live \(totals.live) B")
     }
+
+    func testCancelledLoadBuildsNoRenderer() async throws {
+        let (document, assets) = try sceneInputs()
+        let compiler = try makeCompiler()
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        let ledger = WPEParityResourceLedger()
+        driver.resourceLedger = ledger
+        defer { driver.cleanup() }
+        withUnsafeCurrentTask { $0?.cancel() }
+        do {
+            try await driver.load(document: document, assets: assets, settings: .init(),
+                                  drawableSize: CGSize(width: 320, height: 180),
+                                  pixelFormat: .bgra8Unorm_srgb, compiler: compiler,
+                                  diskCache: .init(cachesURL: scratch.appending(path: "cancelled-load-cache")),
+                                  renderScaleOverride: 1)
+            XCTFail("a cancelled load must throw")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("a cancelled load threw \(error) instead of CancellationError")
+        }
+        XCTAssertNil(driver.renderer)
+        XCTAssertNil(driver.loadDiagnostics)
+        XCTAssertEqual(ledger.totals().peak, 0, "a cancelled load built a renderer")
+    }
 }
 #endif
