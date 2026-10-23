@@ -194,8 +194,9 @@ private final class GridDragHost {
         return StageGeometry.gridFrame(index: index, windowWidth: size.width, size: model.gridTileSize)
     }
 
-    /// The SwiftUI layers alone: the stage's own layers are hidden for the capture.
-    func render() throws -> ProbeImage {
+    /// The SwiftUI layers alone: the stage's own layers are hidden for the capture. `band`, top-left origin,
+    /// limits it to those rows; the image then starts at the band's top.
+    func render(band: CGRect? = nil) throws -> ProbeImage {
         let stageView = stage
         // Hiding the focused stage hands the keyboard to the next key view, the library's search field.
         let responder = window.firstResponder
@@ -205,19 +206,26 @@ private final class GridDragHost {
             window.makeFirstResponder(responder)
         }
         host.layoutSubtreeIfNeeded()
-        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        let area = band.map {
+            host.convert(CGRect(x: $0.minX, y: size.height - $0.maxY, width: $0.width, height: $0.height), from: nil)
+        } ?? host.bounds
+        let rep = host.bitmapImageRepForCachingDisplay(in: area)
         let bitmap = try #require(rep)
-        host.cacheDisplay(in: host.bounds, to: bitmap)
+        host.cacheDisplay(in: area, to: bitmap)
         let image = bitmap.cgImage
         return try ProbeImage(cgImage: #require(image), viewWidth: host.bounds.width)
     }
 
     /// Thumbnail-wide runs of each display's cover along the row through the strip's middle.
     func stripRuns() throws -> (red: [ProbeRun], magenta: [ProbeRun]) {
-        let image = try render()
+        let top = FloatLayerGeometry.panelTop
+        // The strip's band alone: polling whole-window captures holds the main thread long enough to starve
+        // the strip's slide transition, so it neither arrives nor leaves within a poll's deadline.
+        let image = try render(band: CGRect(x: 0, y: top, width: size.width, height: FloatLayerGeometry.panelHeight))
+        let row = Self.stripRow - top
         return (
-            image.runs(inRow: Self.stripRow) { $0.isRed }.filter { $0.width >= 40 },
-            image.runs(inRow: Self.stripRow) { $0.isMagenta }.filter { $0.width >= 40 }
+            image.runs(inRow: row) { $0.isRed }.filter { $0.width >= 40 },
+            image.runs(inRow: row) { $0.isMagenta }.filter { $0.width >= 40 }
         )
     }
 
