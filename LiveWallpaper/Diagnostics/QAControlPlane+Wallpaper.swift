@@ -138,11 +138,17 @@ extension QAControlPlane {
             #endif
             return entry
         }
-        return [
+        var state: [String: Any] = [
             "screens": entries,
             "note": "Runtime getters exist only for playback and renderer activity. "
                 + "Volume, frame-rate ceiling and fit mode are push-only — verify those by observation, not by reading back.",
         ]
+        #if !LITE_BUILD
+        let ledger = WPEParityResourceLedger.shared.totals()
+        state["parityLedger"] = ["candidateBytes": ledger.candidate, "liveBytes": ledger.live,
+                                 "retiringBytes": ledger.retiring, "peakBytes": ledger.peak]
+        #endif
+        return state
     }
 
     static let screenWritableKeys: Set<String> = [

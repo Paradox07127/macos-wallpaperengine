@@ -171,6 +171,7 @@ final class WPEParitySceneDriver {
     }
 
     let executor: WPEMetalPresenter
+    var resourceLedger = WPEParityResourceLedger.shared
     private(set) var renderer: WPEParityFrameRenderer?
     var didLoad: Bool {
         renderer != nil
@@ -472,6 +473,9 @@ final class WPEParitySceneDriver {
         spanFrames?.reset(generation: generation)
         renderer?.destroyScript()
         renderer?.cancelVideoAdmission()
+        if let renderer {
+            recordResources(renderer, .retiring)
+        }
         renderer = nil
         deliveredScriptLanguage = nil
         executor.lastPresentPass = nil
@@ -519,6 +523,7 @@ final class WPEParitySceneDriver {
                 particleSeed: particleSeed, workshopID: workshopID, userPropertiesJSON: scriptHost.userPropertiesJSON,
                 textureCompression: textureCompression, reuseDirectTextExtentLayouts: reuseDirectTextExtentLayouts
             )
+            recordResources(renderer, .candidate)
             guard generation == loadGeneration else { throw CancellationError() }
             renderer.instance.state.excludedObjectIDs = excludedObjectIDs
             if paused {
@@ -635,6 +640,7 @@ final class WPEParitySceneDriver {
                 }
             }
             self.renderer = renderer
+            recordResources(renderer, .live)
             cadenceSubmissions?.rendererRevision += 1
             lastTimestamp = nil
         } catch {
@@ -686,6 +692,7 @@ final class WPEParitySceneDriver {
                     userPropertiesJSON: scriptUserProperties, textureCompression: planSource.textureCompression,
                     reuseDirectTextExtentLayouts: previous.reusesDirectTextExtentLayouts
                 )
+                recordResources(renderer, .candidate)
                 guard generation == loadGeneration, revision == planRevision, self.renderer === previous else { return false }
                 // A present may decline scaling or discover a new drawable while this candidate is building.
                 let current = currentTarget(sceneSize: planSource.sceneSize, isHDR: isHDR,
@@ -694,7 +701,9 @@ final class WPEParitySceneDriver {
                 try withScriptSound(previous.instance.script?.engine) {
                     try renderer.adoptView(from: previous, userPropertiesJSON: scriptUserProperties)
                 }
+                recordResources(previous, .retiring)
                 self.renderer = renderer
+                recordResources(renderer, .live)
                 cadenceSubmissions?.rendererRevision += 1
                 if reusesPreparedScene {
                     self.planSource?.preparedScene = plan.scene
@@ -1048,6 +1057,7 @@ final class WPEParitySceneDriver {
             }
             cadenceSubmissions?.sceneCommitted += 1
             submittedSceneBuffer = commandBuffer
+            recordResources(renderer, .live)
             return true
         } catch {
             cadenceSubmissions?.sceneErrors += 1
@@ -1298,6 +1308,9 @@ final class WPEParitySceneDriver {
         spanFrames?.reset(generation: loadGeneration)
         renderer?.destroyScript()
         renderer?.cancelVideoAdmission()
+        if let renderer {
+            recordResources(renderer, .retiring)
+        }
         renderer = nil
         planSource = nil
         plannedTarget = nil
@@ -1336,6 +1349,11 @@ final class WPEParitySceneDriver {
                                       height: target.height, alignment: target.alignment,
                                       physicalBackbufferSize: target.pixelSize, pixelScale: target.pixelScale,
                                       preparedScene: preparedScene)
+    }
+
+    private func recordResources(_ renderer: WPEParityFrameRenderer, _ state: WPEParityResourceLedger.State) {
+        resourceLedger.record(renderer, state,
+                              bytes: renderer.arenaBytes + renderer.heapBytes + renderer.dedicatedTextureBytes)
     }
 
     private func logFrameFailure(_ error: Error) {
@@ -1451,6 +1469,104 @@ struct WPEParitySceneInputs: Sendable {
         assets.userValues = WallpaperEngineProjectPropertySchema.effectiveSceneValues(descriptor: descriptor,
                                                                                       cacheRootURL: projectRoot)
         return assets
+    }
+}
+
+/// Retiring bytes leave the ledger when the renderer is freed; a command buffer still executing may hold its textures a few frames longer.
+final class WPEParityResourceLedger: Sendable {
+    enum State: String {
+        case candidate, live, retiring
+    }
+
+    /// Bytes per state; `peak` is the highest three-state sum since the last `resetPeak()`.
+    struct Totals: Equatable {
+        let candidate, live, retiring, peak: Int
+    }
+
+    private struct Entry {
+        weak var owner: AnyObject?
+        var state: State
+        var bytes: Int
+    }
+
+    private struct Book {
+        var entries: [ObjectIdentifier: Entry] = [:]
+        var peak = 0
+
+        var totals: Totals {
+            func sum(_ state: State) -> Int {
+                entries.values.reduce(0) { $1.state == state ? $0 + $1.bytes : $0 }
+            }
+            return Totals(candidate: sum(.candidate), live: sum(.live), retiring: sum(.retiring), peak: peak)
+        }
+
+        var summary: String {
+            let totals = totals
+            return "candidate \(totals.candidate) B, live \(totals.live) B, retiring \(totals.retiring) B, peak \(totals.peak) B"
+        }
+
+        mutating func updatePeak() {
+            let totals = totals
+            peak = max(peak, totals.candidate + totals.live + totals.retiring)
+        }
+
+        /// Drops the entries whose owner was freed and returns one log line for each.
+        mutating func purgeReleased() -> [String] {
+            guard entries.values.contains(where: { $0.owner == nil }) else { return [] }
+            let released = entries.filter { $0.value.owner == nil }
+            for id in released.keys {
+                entries[id] = nil
+            }
+            return released.map { id, entry in
+                "Parity resource ledger \(id): \(entry.state.rawValue) released, \(entry.bytes) B; \(summary)"
+            }
+        }
+    }
+
+    static let shared = WPEParityResourceLedger()
+
+    /// Safe across threads: an owner is only compared for nil or identity inside the lock and never dereferenced.
+    private let book = OSAllocatedUnfairLock<Book>(uncheckedState: Book())
+
+    func record(_ owner: AnyObject, _ state: State, bytes: Int) {
+        let id = ObjectIdentifier(owner)
+        let lines = book.withLockUnchecked { book -> [String] in
+            var lines = book.purgeReleased()
+            let previous = book.entries[id].flatMap { $0.owner === owner ? $0.state : nil }
+            book.entries[id] = Entry(owner: owner, state: state, bytes: bytes)
+            book.updatePeak()
+            if previous != state {
+                lines.append("Parity resource ledger \(id): \(previous?.rawValue ?? "new") -> \(state.rawValue), "
+                    + "\(bytes) B; \(book.summary)")
+            }
+            return lines
+        }
+        log(lines)
+    }
+
+    func totals() -> Totals {
+        let (totals, lines) = book.withLockUnchecked { book -> (Totals, [String]) in
+            let lines = book.purgeReleased()
+            return (book.totals, lines)
+        }
+        log(lines)
+        return totals
+    }
+
+    func resetPeak() {
+        let lines = book.withLockUnchecked { book -> [String] in
+            let lines = book.purgeReleased()
+            book.peak = 0
+            book.updatePeak()
+            return lines
+        }
+        log(lines)
+    }
+
+    private func log(_ lines: [String]) {
+        for line in lines {
+            Logger.info(line, category: .wpeRender)
+        }
     }
 }
 #endif
