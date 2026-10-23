@@ -73,10 +73,10 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertTrue(renderer.instance.state.setEffect("19", of: "17", visible: false))
         try await encode(renderer)
         let toggled = renderer.graphCompilations
-        XCTAssertGreaterThan(toggled, loaded, "hiding an effect compiles a new graph set")
+        XCTAssertGreaterThan(toggled, loaded, "hiding an effect compiles no new graph set")
 
         try await encode(renderer)
-        XCTAssertEqual(renderer.graphCompilations, toggled, "an unchanged frame compiles no graph set")
+        XCTAssertEqual(renderer.graphCompilations, toggled, "an unchanged frame compiles a graph set")
     }
 
     /// Each effect set and every switch between them draws the same bytes whether pooled targets alias or not.
