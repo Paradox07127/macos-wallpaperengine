@@ -166,14 +166,6 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         }
     }
 
-    private func setNeedsRedrawOnMain() {
-        mtkView.setNeedsDisplay(mtkView.bounds)
-    }
-
-    private func drawImmediatelyOnMain() {
-        mtkView.draw()
-    }
-
     private func releaseDrawablesOnMain() {
         mtkView.releaseDrawables()
     }
@@ -275,8 +267,6 @@ protocol WPERenderSurfaceClient: AnyObject {
 
 protocol WPESurfaceControl: Sendable {
     func applyPacing(_ update: WPERenderPacingUpdate)
-    func setNeedsRedraw()
-    func drawImmediately()
     func releaseDrawables()
     func detach()
     func setClickCaptureEnabled(_ enabled: Bool)
@@ -288,14 +278,6 @@ extension WPERenderSurface: WPESurfaceControl {
             desiredPointerEventsEnabled.withLock { $0 = pointerEvents }
         }
         deliver { $0.applyPacingOnMain(update) }
-    }
-
-    nonisolated func setNeedsRedraw() {
-        deliver { $0.setNeedsRedrawOnMain() }
-    }
-
-    nonisolated func drawImmediately() {
-        deliver { $0.drawImmediatelyOnMain() }
     }
 
     nonisolated func releaseDrawables() {
