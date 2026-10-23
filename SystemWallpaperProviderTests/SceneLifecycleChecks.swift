@@ -29,7 +29,7 @@ enum SceneLifecycleChecks {
                 try await Task.sleep(for: .milliseconds(5))
             }
             session.install(task: task)
-            try await session.acquireSlot(now: now)
+            try await session.acquireSlot(clock: { now })
             session.checkDeadline(now: now.advanced(by: .seconds(30)))
             check(waiting.withLock { $0 } && task.isCancelled && failure.withLock { $0 } == "scene.stalled"
                 && !session.isActive && admission.activeCount == 0,
@@ -41,7 +41,7 @@ enum SceneLifecycleChecks {
             let failure = OSAllocatedUnfairLock<String?>(initialState: nil)
             let session = WallpaperSceneLifecycle(running: true, admission: WallpaperSceneAdmission(), now: now.advanced(by: .seconds(-30)),
                                                   onFailure: { code in failure.withLock { $0 = code } })
-            try await session.acquireSlot(now: now.advanced(by: .seconds(-30)))
+            try await session.acquireSlot(clock: { now.advanced(by: .seconds(-30)) })
             for _ in 0 ..< 100 where failure.withLock({ $0 }) == nil {
                 try await Task.sleep(for: .milliseconds(5))
             }
@@ -67,7 +67,7 @@ enum SceneLifecycleChecks {
                                                   onFailure: { code in failure.withLock { $0 = code } })
             session.checkDeadline(now: now)
             check(failure.withLock { $0 } == nil && session.isActive, "work before admission does not consume the first-frame deadline")
-            try await session.acquireSlot(now: now)
+            try await session.acquireSlot(clock: { now })
             session.checkDeadline(now: now.advanced(by: .seconds(29)))
             check(failure.withLock { $0 } == nil, "the first-frame deadline starts when the slot is acquired")
             session.checkDeadline(now: now.advanced(by: .seconds(30)))
@@ -79,7 +79,7 @@ enum SceneLifecycleChecks {
             let failure = OSAllocatedUnfairLock<String?>(initialState: nil)
             let session = WallpaperSceneLifecycle(running: true, admission: admission, now: now,
                                                   onFailure: { code in failure.withLock { $0 = code } })
-            try await session.acquireSlot(now: now)
+            try await session.acquireSlot(clock: { now })
             session.framePresented(now: now)
             session.releaseSlot()
             for _ in 0 ..< 4 {
@@ -114,6 +114,54 @@ enum SceneLifecycleChecks {
             }
             check(codes == ["scene.busy", "scene.busy"] && !admission.isBlocked("busy"),
                   "waiting for a busy slot is not a failure of the waiting scene")
+            for _ in 0 ..< 4 {
+                admission.release()
+            }
+        }
+        do {
+            let admission = WallpaperSceneAdmission()
+            for _ in 0 ..< 4 {
+                _ = try admission.acquire()
+            }
+            let clock = OSAllocatedUnfairLock(initialState: now)
+            let failure = OSAllocatedUnfairLock<String?>(initialState: nil)
+            let session = WallpaperSceneLifecycle(running: true, admission: admission, now: now,
+                                                  onFailure: { code in failure.withLock { $0 = code } })
+            let waiter = Task { try await session.acquireSlot(clock: { clock.withLock { $0 } }) }
+            try await Task.sleep(for: .milliseconds(50))
+            let granted = now.advanced(by: .seconds(29))
+            clock.withLock { $0 = granted }
+            admission.release()
+            try await waiter.value
+            session.checkDeadline(now: granted.advanced(by: .milliseconds(29900)))
+            check(failure.withLock { $0 } == nil && session.isActive,
+                  "queueing for a slot before the first load does not consume the first-frame deadline")
+            session.checkDeadline(now: granted.advanced(by: .seconds(30)))
+            check(failure.withLock { $0 } == "scene.stalled" && !session.isActive,
+                  "no first frame 30 s after a queued admission is a stall")
+            for _ in 0 ..< 3 {
+                admission.release()
+            }
+        }
+        do {
+            let admission = WallpaperSceneAdmission()
+            for _ in 0 ..< 4 {
+                _ = try admission.acquire()
+            }
+            let clock = OSAllocatedUnfairLock(initialState: now)
+            let failure = OSAllocatedUnfairLock<String?>(initialState: nil)
+            let session = WallpaperSceneLifecycle(running: true, admission: admission, now: now,
+                                                  onFailure: { code in failure.withLock { $0 = code } })
+            _ = session.setCapsule("queued")
+            let waiter = Task { try await session.acquireSlot(clock: { clock.withLock { $0 } }) }
+            try await Task.sleep(for: .milliseconds(50))
+            session.checkDeadline(now: now.advanced(by: .seconds(31)))
+            let stillQueued = failure.withLock { $0 } == nil && session.isActive
+            clock.withLock { $0 = now.advanced(by: .seconds(30)) }
+            _ = try? await waiter.value
+            check(stillQueued && failure.withLock { $0 } == "scene.busy" && !admission.isBlocked("queued")
+                && admission.activeCount == 4,
+                "queueing past the admission timeout reports busy, not a stall")
             for _ in 0 ..< 4 {
                 admission.release()
             }
@@ -177,7 +225,7 @@ enum SceneLifecycleChecks {
             let failure = OSAllocatedUnfairLock<String?>(initialState: nil)
             let session = WallpaperSceneLifecycle(running: true, admission: WallpaperSceneAdmission(), now: now,
                                                   onFailure: { code in failure.withLock { $0 = code } })
-            try await session.acquireSlot(now: now)
+            try await session.acquireSlot(clock: { now })
             session.framePresented(now: now)
             session.restartLoad(now: now.advanced(by: .seconds(40)))
             session.checkDeadline(now: now.advanced(by: .seconds(65)))

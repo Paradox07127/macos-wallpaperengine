@@ -144,8 +144,8 @@ final class WallpaperSceneLifecycle: Sendable {
         return isActive
     }
 
-    func acquireSlot(now: ContinuousClock.Instant = .now, timeout: Duration = .seconds(30)) async throws {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
+    func acquireSlot(timeout: Duration = .seconds(30), clock: @Sendable () -> ContinuousClock.Instant = { .now }) async throws {
+        let deadline = clock().advanced(by: timeout)
         while true {
             try Task.checkCancellation()
             let acquired = try state.withLock { value in
@@ -155,14 +155,15 @@ final class WallpaperSceneLifecycle: Sendable {
                 value.ownsSlot = try admission.acquire(capsule: value.capsule)
                 value.waitingForSlot = !value.ownsSlot
                 if value.ownsSlot, value.loadStarted == nil {
-                    value.loadStarted = now
+                    // Read after the grant: time spent queued is the admission timeout's, not the first frame's.
+                    value.loadStarted = clock()
                 }
                 return value.ownsSlot
             }
             if acquired {
                 return
             }
-            guard ContinuousClock.now < deadline else {
+            guard clock() < deadline else {
                 finish(failure: "scene.busy")
                 throw CancellationError()
             }
