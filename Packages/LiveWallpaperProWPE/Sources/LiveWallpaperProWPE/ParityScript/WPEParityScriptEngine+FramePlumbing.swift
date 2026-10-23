@@ -85,6 +85,7 @@ extension WPEParityScriptEngine {
         // State changed since the last mirror or flush by a writer other than this flush: those slots are stale.
         if mirroredGenerations != MirroredGenerations(state) {
             mirroredGenerations = nil
+            mirroredObjectRevisions.removeAll()
         }
         let count = Int(dirty[0])
         // Typed-array capacity includes spare slots. Authored wrapper metadata can address that storage, but
@@ -93,6 +94,7 @@ extension WPEParityScriptEngine {
             dirty[0] = 0
             dirtyFlags.update(repeating: 0, count: capacity)
             mirroredGenerations = nil
+            mirroredObjectRevisions.removeAll()
             return
         }
         if count > 0 {
@@ -134,19 +136,45 @@ extension WPEParityScriptEngine {
             invokeHost("setCommonOrder", withArguments: [state.commonOrder.compactMap { indices[$0] }])
             mirroredMembershipGeneration = state.membershipGeneration
         }
+        if mirrorPlan == nil {
+            mirroredObjectRevisions.removeAll()
+        }
         let plan = mirrorPlan ?? makeMirrorPlan()
         mirrorPlan = plan
         let current = MirroredGenerations(state)
         let effects = mirroredGenerations?.effects != current.effects
         let constants = mirroredGenerations?.constants != current.constants
         let fields = mirroredGenerations?.fields != current.fields
+        let revisions = state.objectRevisions
+        if mirroredObjectRevisions.count < revisions.count {
+            mirroredObjectRevisions += repeatElement(-1, count: revisions.count - mirroredObjectRevisions.count)
+        }
+        // State compares -0 equal to 0 and canonically equal strings as equal, so it can keep a value whose bits
+        // differ from the slot a script wrote; a skipped object or category still restores those slots.
+        for slot in flushedSlots where dirtyFlags[slot] == 0 {
+            guard let entry = plan.entries[slot] else { continue }
+            let skipped = switch entry {
+            case let .object(_, id, _):
+                state.index(of: id).map { mirroredObjectRevisions[$0] == revisions[$0] } ?? false
+            case .effect: !effects
+            case .constant: !constants
+            case .field: !fields
+            }
+            if skipped {
+                mirroredEntries += 1
+                mirror(entry, from: state)
+            }
+        }
+        flushedSlots.removeAll(keepingCapacity: true)
         // Module bodies run in the convenience init outside `run`; their unflushed writes must win over State.
         for (id, entries) in plan.objects {
+            guard let index = state.index(of: id), mirroredObjectRevisions[index] != revisions[index] else { continue }
             mirroredEntries += entries.count
-            guard let object = state.object(id) else { continue }
+            let object = state.objects[index]
             for (slot, property) in entries where dirtyFlags[slot] == 0 {
                 store(Self.value(property, of: object), at: slot)
             }
+            mirroredObjectRevisions[index] = revisions[index]
         }
         if effects {
             mirroredEntries += plan.effects.count
@@ -172,19 +200,6 @@ extension WPEParityScriptEngine {
                 mirror(entry, from: state)
             }
         }
-        // State compares -0 equal to 0 and canonically equal strings as equal, so it can keep a value whose bits
-        // differ from the slot a script wrote; a skipped category still restores those slots.
-        for slot in flushedSlots where dirtyFlags[slot] == 0 {
-            guard let entry = plan.entries[slot] else { continue }
-            switch entry {
-            case .effect where !effects, .constant where !constants, .field where !fields:
-                mirroredEntries += 1
-                mirror(entry, from: state)
-            default:
-                break
-            }
-        }
-        flushedSlots.removeAll(keepingCapacity: true)
         mirroredGenerations = current
         sendStrings()
     }
@@ -195,7 +210,6 @@ extension WPEParityScriptEngine {
         var effects: [Refresh] = []
         var constants: [(key: WPEParityMaterialPassKey, entries: [(slot: Int, name: String)])] = []
         var fields: [Refresh] = []
-        /// Effect, constant and field entries by slot.
         var entries: [Int: Refresh] = [:]
     }
 
@@ -212,6 +226,7 @@ extension WPEParityScriptEngine {
                     plan.objects.append((objectID, []))
                 }
                 plan.objects[group].entries.append((slot, property))
+                plan.entries[slot] = entry
             case .effect:
                 plan.effects.append(entry)
                 plan.entries[entry.slot] = entry

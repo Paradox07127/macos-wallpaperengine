@@ -164,6 +164,8 @@ public struct WPEParitySceneState: Sendable {
 
     public private(set) var ids: [String]
     public private(set) var objects: [Object]
+    /// By object index; bumped when a field `object(_:)` or `value(_:of:)` reads changes.
+    private(set) var objectRevisions: [Int]
     /// Actual common-scene members in current order; transform-only parent placeholders are not members.
     /// Stable object/descriptor slots in `ids` never move when this order changes.
     public private(set) var commonOrder: [String]
@@ -275,6 +277,7 @@ public struct WPEParitySceneState: Sendable {
         indexByID[id] = ids.count
         ids.append(id)
         objects.append(object)
+        objectRevisions.append(0)
         parents.append(nil)
         commonOrder.append(id)
         if transparent {
@@ -356,6 +359,7 @@ public struct WPEParitySceneState: Sendable {
         indexByID[descriptor.id] = ids.count
         ids.append(descriptor.id)
         objects.append(object)
+        objectRevisions.append(0)
         parents.append(nil)
         commonOrder.append(descriptor.id)
         membershipGeneration += 1
@@ -431,6 +435,7 @@ public struct WPEParitySceneState: Sendable {
         }
         self.ids = ids
         self.objects = objects
+        objectRevisions = Array(repeating: 0, count: objects.count)
         self.indexByID = indexByID
         loadedIDs = Set(document.resolvedObjectsJSON.compactMap(WPEParitySceneAnimations.id))
         var commonIDs: Set<String> = []
@@ -519,6 +524,7 @@ public struct WPEParitySceneState: Sendable {
     public mutating func removeObject(_ id: String) -> Bool {
         guard let index = index(of: id) else { return false }
         objects[index].alive = false
+        objectRevisions[index] += 1
         commonOrder.removeAll { $0 == id }
         transparentOrder.removeAll { $0 == id }
         scriptFields = scriptFields.filter { $0.key.objectID != id }
@@ -582,24 +588,32 @@ public struct WPEParitySceneState: Sendable {
         switch property {
         case .origin where objects[index].origin != xyz:
             objects[index].origin = xyz
+            objectRevisions[index] += 1
             transformGeneration += 1
         case .scale where objects[index].scale != xyz:
             objects[index].scale = xyz
+            objectRevisions[index] += 1
             transformGeneration += 1
         case .angles where objects[index].angles != xyz:
             objects[index].angles = xyz
+            objectRevisions[index] += 1
             transformGeneration += 1
-        case .alpha:
+        // Bit-exact: alpha and brightness store any written bits, so -0 over 0 is a change a script can observe.
+        case .alpha where objects[index].alpha.bitPattern != value.x.bitPattern:
             objects[index].alpha = value.x
+            objectRevisions[index] += 1
         case .color where objects[index].color != xyz:
             objects[index].color = xyz
+            objectRevisions[index] += 1
             if lightIDs.contains(ids[index]) {
                 scriptFieldGenerations[Invalidation.lighting.rawValue] += 1
             }
-        case .brightness:
+        case .brightness where objects[index].brightness.bitPattern != value.x.bitPattern:
             objects[index].brightness = value.x
+            objectRevisions[index] += 1
         case .visible where objects[index].visible != (value.x != 0):
             objects[index].visible = value.x != 0
+            objectRevisions[index] += 1
             visibilityGeneration += 1
         default:
             break

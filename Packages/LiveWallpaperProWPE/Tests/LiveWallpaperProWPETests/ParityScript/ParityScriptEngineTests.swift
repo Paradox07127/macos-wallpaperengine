@@ -944,12 +944,68 @@ final class ParityScriptEngineTests: XCTestCase {
         }.count
         XCTAssertLessThan(objectEntries, scene.engine.refresh.count)
         scene.engine.tick(dt: 1 / 60, state: &scene.state)
-        XCTAssertEqual(scene.engine.mirroredEntries, objectEntries, "an unchanged State still mirrors every slot")
+        XCTAssertEqual(scene.engine.mirroredEntries, objectEntries,
+                       "unchanged fields were mirrored, or the alpha the first tick wrote did not remirror its object")
         scene.state.setScriptField("pointsize", of: "1", to: .vector(SIMD4(50, 0, 0, 0)), invalidating: .textLayout)
         scene.engine.tick(dt: 1 / 60, state: &scene.state)
         XCTAssertGreaterThan(scene.engine.mirroredEntries, objectEntries)
         XCTAssertEqual(scene.state.object("1")?.alpha, 0.5)
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testScriptReadsANativeObjectWriteOnTheNextRun() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["origin": "10 0 0"]),
+            Self.layer(2, "B", ["alpha": Self.scripted(1, """
+            export function update(value) { return thisScene.getLayer('A').origin.x / 100; }
+            """)]),
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.state.object("2")?.alpha, 0.1)
+        scene.state.set(.origin, of: "1", to: SIMD4(50, 0, 0, 0))
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.state.object("2")?.alpha, 0.5, "the script read a stale origin after a native write")
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testMirrorRestoresAScriptNegativeZeroThatStateKeptAsZero() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["origin": "0 0 0", "alpha": Self.scripted(1, """
+            let frame = 0;
+            export function update(value) {
+                frame += 1;
+                if (frame === 1) { thisLayer.origin = new Vec3(-0, 0, 0); return value; }
+                return Object.is(thisLayer.origin.x, -0) ? 0.25 : 0.5;
+            }
+            """)]),
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.origin.x.sign, .plus)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.alpha, 0.5, "the slot kept the script's -0 although State holds 0")
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
+    func testMirrorSkipsObjectsWhoseStateDidNotChange() throws {
+        let passthrough = Self.scripted(1, "export function update(value) { return value; }")
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["alpha": passthrough]),
+            Self.layer(2, "B", ["alpha": passthrough]),
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        let entriesOfB = scene.engine.refresh.filter { entry in
+            guard case let .object(_, objectID, _) = entry else { return false }
+            return objectID == "2"
+        }.count
+        XCTAssertGreaterThan(entriesOfB, 0)
+        scene.engine.mirror(scene.state)
+        scene.engine.mirror(scene.state)
+        XCTAssertEqual(scene.engine.mirroredEntries, 0, "an unchanged State rewrote object slots")
+        scene.state.set(.alpha, of: "2", to: SIMD4(0.5, 0, 0, 0))
+        scene.engine.mirror(scene.state)
+        XCTAssertEqual(scene.engine.mirroredEntries, entriesOfB, "a native write did not rewrite exactly its object")
     }
 
     func testReplayRandomSeedCoversModuleInitAndSharedUpdateStreamIncludingZero() throws {

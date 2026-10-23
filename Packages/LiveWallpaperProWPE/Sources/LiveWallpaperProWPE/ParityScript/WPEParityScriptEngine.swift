@@ -361,6 +361,8 @@ public final class WPEParityScriptEngine {
     var mirrorPlan: MirrorPlan?
     /// State's effect, constant and field generations when those slots last matched it; nil = mirror them all.
     var mirroredGenerations: MirroredGenerations?
+    /// State object revisions, by object index, when that object's slots last matched it; -1 or absent = mirror it.
+    var mirroredObjectRevisions: [Int] = []
     var flushedSlots: [Int] = []
     /// Refresh entries the last mirror visited.
     var mirroredEntries = 0
