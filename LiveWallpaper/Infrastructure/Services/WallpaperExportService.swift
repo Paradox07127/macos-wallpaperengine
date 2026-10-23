@@ -115,6 +115,7 @@ final class WallpaperExportService {
     private(set) var lastError: String?
     private(set) var diskUsageBytes: Int64 = 0
     private(set) var playbackMode: SystemWallpaperPlaybackMode = .always
+    private(set) var hidesClockCalendarOnLockScreen = true
     var preparationProgress: Double?
     private(set) var preparingTitle: String?
     @ObservationIgnored private var preparationTask: Task<Void, Error>?
@@ -123,6 +124,8 @@ final class WallpaperExportService {
     @ObservationIgnored private var preparingItemID: String?
     @ObservationIgnored var onItemPublished: (@MainActor (String) -> Void)?
     @ObservationIgnored var onHeartbeatRefreshed: (@MainActor () -> Void)?
+    /// nil until the follow coordinator exists; it is the owner, so the service must not retain it.
+    weak var followCoordinator: SystemWallpaperSelectionCoordinator?
 
     /// Items with this ID prefix are copies the selected tile made; nothing else may use it, because unselected ones are deleted.
     static let selectionCopyIDPrefix = "selected-"
@@ -136,7 +139,7 @@ final class WallpaperExportService {
     /// The beat has no per-display choice, so with different choices on several displays every serving display counts.
     func showsSelectedTile(on displayID: UInt32) -> Bool {
         guard let heartbeat, isFresh(heartbeat), heartbeat.showsChoice(SystemWallpaperManifest.selectedChoiceID) else { return false }
-        return heartbeat.activeDisplayIDs?.contains(displayID) ?? true
+        return heartbeat.selectedTileDisplayIDs?.contains(displayID) ?? true
     }
 
     func selectItem(_ itemID: String, for displayID: UInt32) throws {
@@ -265,15 +268,15 @@ final class WallpaperExportService {
 
     var providerIssue: ProviderIssue? {
         guard let heartbeat else { return nil }
+        if !heartbeat.isFromProvider(matching: dependencies.expectedProvider) {
+            return .differentCopy
+        }
         let hasActiveChoices = heartbeat.activeChoiceIDs?.isEmpty == false || heartbeat.activeChoiceID != nil
         if !providerIsRunning {
             return hasActiveChoices ? .stopped : nil
         }
         if dependencies.now().timeIntervalSince(heartbeat.timestamp) >= Self.heartbeatFreshnessInterval {
             return hasActiveChoices ? .unresponsive : nil
-        }
-        if !heartbeat.isFromProvider(matching: dependencies.expectedProvider) {
-            return .differentCopy
         }
         return nil
     }
@@ -282,6 +285,12 @@ final class WallpaperExportService {
         heartbeat = loadHeartbeat()
         providerIsRunning = heartbeat?.provider.map { dependencies.isProviderRunning($0.pid) } ?? true
         maintenance.considerAutomaticRecovery(service: self)
+        #if !LITE_BUILD
+        if #available(macOS 26.0, *), let heartbeat, isFresh(heartbeat),
+           heartbeat.playbackFailures?.values.contains("scene.load.failed") == true {
+            Task { [weak self] in await self?.reprepareLegacySceneCapsules() }
+        }
+        #endif
         onHeartbeatRefreshed?()
     }
 
@@ -357,14 +366,6 @@ final class WallpaperExportService {
         )
     }
 
-    func publish(fileURL: URL) async throws {
-        try await publish(
-            id: UUID().uuidString,
-            title: fileURL.deletingPathExtension().lastPathComponent,
-            source: .pickedFile(fileURL)
-        )
-    }
-
     func cancelPreparation() {
         preparationCancellationGeneration &+= 1
         hasPendingLegacyRepreparation = false
@@ -397,20 +398,41 @@ final class WallpaperExportService {
             guard items.contains(where: { $0.id == item.id && $0.fileName == item.fileName }) else { continue }
             let bundle = videosDirectory.appendingPathComponent(item.fileName, isDirectory: true)
             do {
-                let configuration = try JSONDecoder().decode(SystemWallpaperSceneConfiguration.self,
-                                                             from: Data(contentsOf: bundle.appendingPathComponent("configuration.json")))
-                guard configuration.parity == nil
-                    || configuration.parity?.bindingABIVersion != WPEParityShaderCompileRequest.currentBindingABIVersion
-                    || configuration.parity?.schemaVersion != 1 else { continue }
+                let configurationResult = Result {
+                    try JSONDecoder().decode(SystemWallpaperSceneConfiguration.self,
+                                             from: Data(contentsOf: bundle.appendingPathComponent("configuration.json")))
+                }
+                let loadFailed = heartbeat.map {
+                    isFresh($0) && $0.playbackFailures?[item.id] == "scene.load.failed"
+                } ?? false
+                guard try loadFailed || configurationResult.get().needsRepreparation else { continue }
+                let fingerprint = try await Task.detached { try Self.sceneContentFingerprint(at: bundle) }.value
+                guard generation == clearGeneration, cancellationGeneration == preparationCancellationGeneration,
+                      !Task.isCancelled, items.contains(where: { $0 == item }) else { return }
+                guard preparationTask == nil else { hasPendingLegacyRepreparation = true; return }
+                var receipts = try loadSceneRecoveryReceipts()
+                guard receipts[item.id]?.contains(fingerprint) != true else { continue }
+                receipts[item.id, default: []].insert(fingerprint)
+                try writeSceneRecoveryReceipts(receipts)
+                let configuration = try configurationResult.get()
                 var options = item.preparationOptions ?? SystemWallpaperPreparationOptions()
                 if item.preparationOptions == nil {
                     options.framesPerSecond = configuration.framesPerSecond
                     options.size = configuration.renderSize
                 }
                 options.sceneMode = .live
-                try await prepareAndPublish(content: .scene(configuration.descriptor), title: item.title,
-                                            id: item.id, options: options, origin: nil,
-                                            repreparation: PublishedSceneRepreparation(bundle: bundle, item: item))
+                do {
+                    try await prepareAndPublish(content: .scene(configuration.descriptor), title: item.title,
+                                                id: item.id, options: options, origin: nil,
+                                                repreparation: PublishedSceneRepreparation(bundle: bundle, item: item))
+                    let replacement = try await Task.detached { try Self.sceneContentFingerprint(at: bundle) }.value
+                    receipts[item.id, default: []].insert(replacement)
+                    try writeSceneRecoveryReceipts(receipts)
+                } catch is CancellationError {
+                    receipts[item.id]?.remove(fingerprint)
+                    try writeSceneRecoveryReceipts(receipts)
+                    return
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -419,6 +441,47 @@ final class WallpaperExportService {
                                category: .fileAccess)
             }
         }
+    }
+
+    private var sceneRecoveryReceiptsURL: URL {
+        dependencies.sharedRoot.appendingPathComponent("scene-recovery.json")
+    }
+
+    private func loadSceneRecoveryReceipts() throws -> [String: Set<String>] {
+        guard FileManager.default.fileExists(atPath: sceneRecoveryReceiptsURL.path) else { return [:] }
+        return try JSONDecoder().decode([String: Set<String>].self, from: Data(contentsOf: sceneRecoveryReceiptsURL))
+    }
+
+    private func writeSceneRecoveryReceipts(_ receipts: [String: Set<String>]) throws {
+        try JSONEncoder().encode(receipts).write(to: sceneRecoveryReceiptsURL, options: .atomic)
+    }
+
+    private nonisolated static func sceneContentFingerprint(at bundle: URL) throws -> String {
+        var hash = SHA256()
+        hash.update(data: Data(SystemWallpaperSceneConfiguration.recoveryVersion.utf8))
+        var enumerationError: Error?
+        guard let enumerator = FileManager.default.enumerator(at: bundle, includingPropertiesForKeys: [.isRegularFileKey],
+                                                              errorHandler: { _, error in enumerationError = error; return false }) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        let files = enumerator.compactMap { $0 as? URL }.sorted { $0.path < $1.path }
+        if let enumerationError {
+            throw enumerationError
+        }
+        for file in files {
+            try Task.checkCancellation()
+            guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
+            let name = String(file.path.dropFirst(bundle.path.count))
+            hash.update(data: Data(name.utf8))
+            let reader = try FileHandle(forReadingFrom: file)
+            defer { try? reader.close() }
+            var fileHash = SHA256()
+            while let chunk = try reader.read(upToCount: 1 << 20), !chunk.isEmpty {
+                fileHash.update(data: chunk)
+            }
+            hash.update(data: Data(fileHash.finalize()))
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
     #endif
 
@@ -542,31 +605,6 @@ final class WallpaperExportService {
         try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
     }
 
-    /// The summary is assembled here because a successful publish clears `lastError`: a plain per-file loop reported only the last file's outcome.
-    func publish(fileURLs: [URL]) async {
-        var failures: [String] = []
-        let generation = clearGeneration
-        for url in fileURLs {
-            guard clearGeneration == generation else { break }
-            do {
-                try await publish(fileURL: url)
-            } catch {
-                failures.append(Self.publishFailureLine(
-                    name: url.lastPathComponent,
-                    reason: error.localizedDescription
-                ))
-            }
-        }
-        lastError = failures.isEmpty ? nil : failures.joined(separator: "\n")
-    }
-
-    private static func publishFailureLine(name: String, reason: String) -> String {
-        String(
-            localized: "Couldn't add “\(name)”: \(reason)",
-            bundle: .appLanguage, comment: "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason."
-        )
-    }
-
     /// `id` must be stable for a given source. A fresh UUID each time would make `isPublished` blind to Workshop entries.
     func publish(content: WallpaperContent, title: String, id: String) async throws {
         guard case .video(let data, let entryName) = content else {
@@ -588,6 +626,8 @@ final class WallpaperExportService {
             try await performPublish(id: id, title: title, source: source, preparationOptions: preparationOptions,
                                      sourceKey: sourceKey, preservingAddedAt: preservingAddedAt)
             lastError = nil
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             lastError = error.localizedDescription
             Logger.warning(
@@ -846,6 +886,7 @@ final class WallpaperExportService {
                 var emptied = manifest
                 emptied.items = []
                 try writeManifest(emptied)
+                items = []
                 // Every file is unreferenced now, so the sweep is the delete — no age guard, because nothing can be mid-publish once the manifest is empty and the lock is held.
                 SystemWallpaperLibrary.sweepOrphans(
                     manifest: emptied,
@@ -854,7 +895,7 @@ final class WallpaperExportService {
                     stagingGrace: -1,
                     now: dependencies.now()
                 )
-                survivors = Self.remainingFileNames(in: videosDirectory)
+                survivors = try Self.remainingFileNames(in: videosDirectory)
             }
             // Emptying the index while the files are still there would report a
             // clean library and leave the bytes unreachable, so say what stayed.
@@ -879,14 +920,10 @@ final class WallpaperExportService {
         lastError = nil
     }
 
-    private static func remainingFileNames(in directory: URL) -> [String] {
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: [.isDirectoryKey]
-        )) ?? []
-        return contents.compactMap { url in
-            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-            return isDirectory ? nil : url.lastPathComponent
-        }.sorted()
+    private static func remainingFileNames(in directory: URL) throws -> [String] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .map(\.lastPathComponent).sorted()
     }
 
     private static func undeletedMessage(_ names: [String]) -> String {
@@ -915,6 +952,22 @@ final class WallpaperExportService {
         }
     }
 
+    func setHidesClockCalendarOnLockScreen(_ hides: Bool) {
+        guard hides != hidesClockCalendarOnLockScreen else { return }
+        do {
+            try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+                var manifest = try loadManifestForMutation()
+                manifest.hideClockCalendarOnLockScreen = hides
+                try writeManifest(manifest)
+            }
+            hidesClockCalendarOnLockScreen = hides
+            lastError = nil
+            postLibraryChanged()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func refresh() {
         let manifest = loadManifest()
         // Present on disk but undecodable: showing an empty library here would invite the user to re-add everything, and every mutation is refused anyway.
@@ -922,6 +975,7 @@ final class WallpaperExportService {
             lastError = ServiceError.manifestUnreadable.localizedDescription
         }
         playbackMode = manifest?.playbackMode ?? .always
+        hidesClockCalendarOnLockScreen = manifest?.hideClockCalendarOnLockScreen ?? true
         items = manifest?.items ?? []
         refreshProviderStatus()
         if let manifest {

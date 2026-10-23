@@ -218,7 +218,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             let activity = MirrorProbe.enumCaseName(named: "activityState", in: request) ?? "active"
             let uuid = Self.surfaceUUID(id: id)
 
-            let playbackMode = store.loadManifest().playbackMode
+            let manifest = store.loadManifest()
             let targets: [WallpaperSurface] = if let uuid {
                 registry.surface(for: uuid).map { [$0] } ?? []
             } else {
@@ -228,7 +228,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 surface.lastPresentationMode = mode
                 surface.lastActivityState = activity
                 // Ease rather than cut, so the wallpaper settles into a still.
-                surface.renderer.rampRate(to: Self.rate(for: surface, playbackMode: playbackMode), refreshLiveData: Self.isVisible(surface), hideClockCalendar: Self.hidesClockCalendar(surface))
+                surface.renderer.rampRate(to: Self.rate(for: surface, playbackMode: manifest.playbackMode), refreshLiveData: Self.isVisible(surface), hideClockCalendar: Self.hidesClockCalendar(surface, manifest: manifest))
             }
             wpxLog.info("update — mode=\(mode, privacy: .public) activity=\(activity, privacy: .public) targets=\(targets.count)")
             reply(nil)
@@ -545,15 +545,22 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         let generation = surface.playbackGeneration
         let uuid = surface.uuid
         let initialRate = surface.isPreview ? 1 : rate(for: surface, playbackMode: manifest?.playbackMode ?? .always)
-        surface.renderer.start(url: url, initialRate: initialRate, refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface), onFirstFrame: {
+        surface.renderer.start(url: url, initialRate: initialRate, refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface, manifest: manifest), onFirstFrame: {
             replyOnFirstFrame?(nil)
         }, onFailure: { [weak registry] code in
             Self.queue.async { [weak registry] in
                 guard let registry, let current = registry.surface(for: uuid),
                       current.playbackGeneration == generation else { return }
                 current.playbackFailure = code
+                current.renderer.stop()
                 Self.writeActiveHeartbeat(registry: registry, store: store)
+                current.renderer.enqueueStill(posterURL: posterURL(for: item, store: store), size: size)
                 replyOnFirstFrame?(NSError(domain: "com.loomscreen.wallpaper", code: 8))
+            }
+        }, onHealthChange: { [weak registry] in
+            Self.queue.async { [weak registry] in
+                guard let registry else { return }
+                Self.writeActiveHeartbeat(registry: registry, store: store)
             }
         })
     }
@@ -648,8 +655,12 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         let serving = registry.all.filter { !$0.isPreview && $0.choiceID != nil }
         let displayIDs: [UInt32]? = serving.isEmpty || serving.contains { $0.displayID == nil }
             ? nil : Array(Set(serving.compactMap(\.displayID)))
+        let tile = serving.filter { $0.choiceID == SystemWallpaperManifest.selectedChoiceID }
+        let tileDisplayIDs: [UInt32]? = tile.contains { $0.displayID == nil } ? nil : Array(Set(tile.compactMap(\.displayID)))
         store.writeHeartbeat(activeChoiceID: active.first, activeChoiceIDs: active, activeDisplayIDs: displayIDs,
-                             runtimeHealthy: true, playbackFailures: failures)
+                             selectedTileDisplayIDs: tileDisplayIDs,
+                             runtimeHealthy: true, playbackFailures: failures,
+                             leakedRenderThreadCount: WallpaperSceneAdmission.shared.leakedRenderThreadCount)
         syncHeartbeatKeepAlive(registry: registry, store: store)
     }
 
@@ -722,8 +733,9 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         return PlaybackPolicy.rate(for: PlaybackPolicy.tier(for: input))
     }
 
-    private static func hidesClockCalendar(_ surface: WallpaperSurface) -> Bool {
-        systemLocked || surface.lastPresentationMode == "locked"
+    private static func hidesClockCalendar(_ surface: WallpaperSurface, manifest: SystemWallpaperManifest?) -> Bool {
+        (manifest?.hideClockCalendarOnLockScreen ?? true)
+            && (systemLocked || surface.lastPresentationMode == "locked")
     }
 
     private static func isVisible(_ surface: WallpaperSurface) -> Bool {
@@ -757,7 +769,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     continue
                 }
                 guard !surface.isPreview else { continue }
-                surface.renderer.rampRate(to: rate(for: surface, playbackMode: manifest.playbackMode), refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface))
+                surface.renderer.rampRate(to: rate(for: surface, playbackMode: manifest.playbackMode), refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface, manifest: manifest))
             }
             if dropped > 0 { writeActiveHeartbeat(registry: registry, store: store) }
             wpxLog.info("policy re-applied — \(registry.all.count) surface(s), dropped \(dropped)")

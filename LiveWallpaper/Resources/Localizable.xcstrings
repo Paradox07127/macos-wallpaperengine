@@ -2563,6 +2563,125 @@
         }
       }
     },
+    "%lld old copies and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
+      "comment" : "Destructive confirm message for removing system wallpaper copies that Loomscreen no longer follows. Placeholders are the item count and the formatted size on disk.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld old copy and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld old copies and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se eliminan %lld copia antigua y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se eliminan %lld copias antiguas y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が読み取るフォルダから %lld 件の旧コピー（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将从 macOS 读取的文件夹中删除 %lld 个旧版副本（%@）。Loomscreen 里的原始文件不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將從 macOS 讀取的資料夾中刪除 %lld 個舊版副本（%@）。Loomscreen 裡的原始檔案不受影響。"
+          }
+        }
+      }
+    },
+    "%lld old copies are not followed automatically" : {
+      "comment" : "System Wallpaper banner: copies without a follow source. %lld is the count.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld old copy is not followed automatically"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld old copies are not followed automatically"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld copia antigua no se sigue automáticamente"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld copias antiguas no se siguen automáticamente"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件の旧コピーは自動で連動しません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个旧版副本不会被自动跟随"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個舊版副本不會被自動跟隨"
+          }
+        }
+      }
+    },
     "%lld percent" : {
       "comment" : "Audio level accessibility value, e.g. \"35 percent\".",
       "localizations" : {
@@ -3906,6 +4025,41 @@
         }
       }
     },
+    "1. Open System Settings › Wallpaper." : {
+      "comment" : "System Wallpaper setup step 1.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Open System Settings › Wallpaper."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Abre Ajustes del Sistema › Fondo de pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. 「システム設定 › 壁紙」を開きます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. 打开“系统设置 › 墙纸”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. 打開「系統設定 › 背景圖片」。"
+          }
+        }
+      }
+    },
     "1.0" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3937,6 +4091,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1.0"
+          }
+        }
+      }
+    },
+    "2. Choose “%@” for each display." : {
+      "comment" : "System Wallpaper setup step 2. Placeholder is the tile name macOS shows, such as Loomscreen — Selected Wallpaper.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. Choose “%@” for each display."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. Elige «%@» en cada pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. 各ディスプレイで「%@」を選びます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. 为每台显示器选择“%@”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2. 為每台顯示器選擇「%@」。"
           }
         }
       }
@@ -4487,40 +4676,6 @@
         }
       }
     },
-    "A different copy is not a playback failure. Inspect registrations below before switching providers." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A different copy is not a playback failure. Inspect registrations below before switching providers."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una copia distinta no indica un fallo de reproducción. Revisa los registros antes de cambiar de proveedor."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "別のコピーであることは再生エラーではありません。切り替える前に下で登録を確認してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "副本不同不代表播放故障。切换提供方前，请先在下方检查注册记录。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "副本不同不代表播放故障。切換提供者前，請先在下方檢查註冊記錄。"
-          }
-        }
-      }
-    },
     "A newer request replaced this one." : {
       "comment" : "Scene import refused because a later import for the same display took over.",
       "extractionState" : "manual",
@@ -4870,6 +5025,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "影片副本無法保持網頁時鐘、行事曆或即時資料準確。請在錄製前停用這些元素。"
+          }
+        }
+      }
+    },
+    "A Wallpaper Engine update is available on Steam. Your linked assets remain in use." : {
+      "comment" : "Engine-assets settings status when an update is available.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Wallpaper Engine update is available on Steam. Your linked assets remain in use."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una actualización de Wallpaper Engine en Steam. Los recursos compartidos vinculados siguen en uso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam に Wallpaper Engine の更新があります。リンク済みの共有アセットは引き続き使用できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 上有 Wallpaper Engine 更新。已关联的共享资源仍可继续使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 上有 Wallpaper Engine 更新。已連結的共用資源仍可繼續使用。"
           }
         }
       }
@@ -5918,41 +6108,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入系統桌布"
-          }
-        }
-      }
-    },
-    "Add Video saves a separate copy for macOS. Open Wallpaper Settings to select it. This path can play with Loomscreen closed and is separate from the live wallpapers in Overview." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Video saves a separate copy for macOS. Open Wallpaper Settings to select it. This path can play with Loomscreen closed and is separate from the live wallpapers in Overview."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir vídeo guarda una copia para macOS. Selecciónala en los ajustes de fondo. Puede reproducirse con Loomscreen cerrado y es independiente de los fondos de Vista general."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画の追加は macOS 用のコピーを保存します。壁紙設定で選択してください。Loomscreen を終了しても再生でき、全景のライブ壁紙とは独立しています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“添加视频”会为 macOS 保存独立副本，请打开 macOS 墙纸设置选用。即使关闭 Loomscreen 也可播放，与全景中的动态壁纸相互独立。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「加入影片」會為 macOS 儲存獨立副本，請開啟 macOS 背景圖片設定選用。即使關閉 Loomscreen 也可播放，與全景中的動態桌布相互獨立。"
           }
         }
       }
@@ -7429,6 +7584,76 @@
         }
       }
     },
+    "Already installed with Homebrew?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already installed with Homebrew?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Ya lo instalaste con Homebrew?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homebrew でインストール済みの場合"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已通过 Homebrew 安装？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已透過 Homebrew 安裝？"
+          }
+        }
+      }
+    },
+    "Also applies to video copies." : {
+      "comment" : "Info for the System Wallpaper resolution and frame rate settings.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also applies to video copies."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "También se aplica a las copias de vídeo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオコピーにも適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也用于视频副本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也用於影片副本。"
+          }
+        }
+      }
+    },
     "Always" : {
       "comment" : "System wallpaper playback mode: the video plays on the desktop as well as the lock screen.",
       "extractionState" : "manual",
@@ -7570,36 +7795,37 @@
         }
       }
     },
-    "Another app copy provides the system wallpaper" : {
+    "Another copy of Loomscreen provides the system wallpaper" : {
+      "comment" : "System Wallpaper status card: the running extension belongs to another installed copy of the app.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Another app copy provides the system wallpaper"
+            "value" : "Another copy of Loomscreen provides the system wallpaper"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otra copia de la app proporciona el fondo"
+            "value" : "Otra copia de Loomscreen proporciona el fondo del sistema"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "別のアプリがシステム壁紙を提供しています"
+            "value" : "別の Loomscreen がシステム壁紙を提供しています"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "系统壁纸由另一份应用提供"
+            "value" : "系统壁纸由另一份 Loomscreen 提供"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "系統桌布由另一份應用程式提供"
+            "value" : "系統桌布由另一份 Loomscreen 提供"
           }
         }
       }
@@ -8341,6 +8567,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "適用於影片和場景桌布。"
+          }
+        }
+      }
+    },
+    "Applies to videos and live scenes. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses." : {
+      "comment" : "Info for the System Wallpaper playback setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to videos and live scenes. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica a vídeos y escenas en directo. Si el Mac está caliente, en modo de bajo consumo o con batería, baja la frecuencia de fotogramas o se pausa la reproducción."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオとライブシーンに適用されます。Mac が高温のとき、低電力モードのとき、またはバッテリー駆動中は、フレームレートが下がるか再生が一時停止します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对视频和实时场景都生效。Mac 过热、处于低电量模式或使用电池时，帧率会降低或暂停播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "對影片和即時場景都有效。Mac 過熱、處於低耗電模式或使用電池時，影格率會降低或暫停播放。"
           }
         }
       }
@@ -9174,77 +9435,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "資源包"
-          }
-        }
-      }
-    },
-    "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version." : {
-      "comment" : "Managed assets remain usable but have no comparable build ID; Update downloads a known current build.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共享资源已关联，但无法确认其已安装版本。可以继续使用，也可以点按“更新”下载当前版本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共用資源已連結，但無法確認其已安裝版本。可以繼續使用，也可以按一下「更新」下載目前版本。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine の共有アセットはリンク済みですが、インストール済みのバージョンを確認できません。そのまま使用するか、「更新」で現在のバージョンをダウンロードできます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados, pero no se pudo determinar la versión instalada. Puedes seguir usándolos o elegir Actualizar para descargar la versión actual."
-          }
-        }
-      }
-    },
-    "Wallpaper Engine assets version unavailable" : {
-      "comment" : "Engine-assets update check version-unknown headline.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine assets version unavailable"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法确认 Wallpaper Engine 资源版本"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法確認 Wallpaper Engine 資源版本"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine アセットのバージョンを確認できません"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo determinar la versión de los recursos de Wallpaper Engine"
           }
         }
       }
@@ -11771,6 +11961,41 @@
         }
       }
     },
+    "Build %@, %@ ago" : {
+      "comment" : "Extension registration sheet: build number of the last connected extension and how long ago it reported. Second placeholder is a relative duration.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build %@, %@ ago"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compilación %@, hace %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビルド %@、%@前"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建 %@，%@前"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建置 %@，%@前"
+          }
+        }
+      }
+    },
     "Built-in" : {
       "localizations" : {
         "en" : {
@@ -13800,42 +14025,6 @@
         }
       }
     },
-    "Choose a wallpaper in System Settings" : {
-      "comment" : "Published system wallpaper is available but not selected; next-step status.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose a wallpaper in System Settings"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige un fondo de Loomscreen en Ajustes del Sistema › Fondo de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「システム設定 › 壁紙」で Loomscreen の壁紙を選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在“系统设置 › 墙纸”中选择 Loomscreen 的壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在「系統設定 › 背景圖片」中選擇 Loomscreen 的桌布"
-          }
-        }
-      }
-    },
     "Choose account" : {
       "comment" : "Steam account route when no account is selected yet.",
       "extractionState" : "manual",
@@ -14048,41 +14237,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elegir archivo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイルを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇檔案"
-          }
-        }
-      }
-    },
-    "Choose Files" : {
-      "comment" : "Button in the System Wallpaper add sheet that opens the file picker.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Files"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir archivos"
           }
         },
         "ja" : {
@@ -17872,6 +18026,41 @@
         }
       }
     },
+    "Copy Report" : {
+      "comment" : "Extension registration sheet: copies the registration report as plain text.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Report"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar informe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レポートをコピー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制报告"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製報告"
+          }
+        }
+      }
+    },
     "Copy reports" : {
       "comment" : "Button that copies diagnostic reports to the clipboard, not a file export.",
       "extractionState" : "manual",
@@ -18544,37 +18733,37 @@
         }
       }
     },
-    "Couldn't add “%@”: %@" : {
-      "comment" : "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason.",
+    "Couldn't access the linked Wallpaper Engine assets. Choose the folder again to restore access." : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't add “%@”: %@"
+            "value" : "Couldn't access the linked Wallpaper Engine assets. Choose the folder again to restore access."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo añadir “%@”: %@"
+            "value" : "No se pudo acceder a los recursos vinculados de Wallpaper Engine. Vuelve a elegir la carpeta para restablecer el acceso."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」を追加できませんでした: %@"
+            "value" : "リンク済みの Wallpaper Engine アセットにアクセスできませんでした。フォルダを再度選択してアクセス権を復元してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法添加“%@”:%@"
+            "value" : "无法访问已关联的 Wallpaper Engine 资源。请重新选择文件夹以恢复访问权限。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法加入「%@」:%@"
+            "value" : "無法存取已連結的 Wallpaper Engine 資源。請重新選擇資料夾以恢復存取權限。"
           }
         }
       }
@@ -18880,6 +19069,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法匯出佈局"
+          }
+        }
+      }
+    },
+    "Couldn’t generate the copy" : {
+      "comment" : "System Wallpaper display list: generating the copy for this display failed. The reason is shown below.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t generate the copy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo generar la copia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーを生成できませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法生成副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法產生副本"
           }
         }
       }
@@ -19651,42 +19875,6 @@
         }
       }
     },
-    "Couldn't unlink the Wallpaper Engine assets." : {
-      "comment" : "Engine-assets removal failed for an unclassified reason.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't unlink the Wallpaper Engine assets."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法解除 Wallpaper Engine 资源关联。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法解除 Wallpaper Engine 資源連結。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine アセットのリンクを解除できませんでした。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudieron desvincular los recursos de Wallpaper Engine."
-          }
-        }
-      }
-    },
     "Couldn't remove the key: %@" : {
       "comment" : "Steam Web API key deletion failure.",
       "extractionState" : "manual",
@@ -19825,6 +20013,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法恢復此項目的存取權限：%@"
+          }
+        }
+      }
+    },
+    "Couldn't save access to the Wallpaper Engine assets. Choose the folder again to grant access." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save access to the Wallpaper Engine assets. Choose the folder again to grant access."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo guardar el acceso a los recursos de Wallpaper Engine. Vuelve a elegir la carpeta para autorizar el acceso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットへのアクセス権を保存できませんでした。フォルダを再度選択してアクセスを許可してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存 Wallpaper Engine 资源的访问权限。请重新选择文件夹并授权。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存 Wallpaper Engine 資源的存取權限。請重新選擇資料夾並授權。"
           }
         }
       }
@@ -20027,6 +20250,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法掃描空照圖庫"
+          }
+        }
+      }
+    },
+    "Couldn't unlink the Wallpaper Engine assets." : {
+      "comment" : "Engine-assets removal failed for an unclassified reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't unlink the Wallpaper Engine assets."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron desvincular los recursos de Wallpaper Engine."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットのリンクを解除できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法解除 Wallpaper Engine 资源关联。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法解除 Wallpaper Engine 資源連結。"
           }
         }
       }
@@ -21525,42 +21784,6 @@
         }
       }
     },
-    "Stop using the linked Wallpaper Engine assets" : {
-      "comment" : "Tooltip for removing downloaded Wallpaper Engine payload and removing linkage.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop using the linked Wallpaper Engine assets"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止使用已关联的 Wallpaper Engine 共享资源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止使用已連結的 Wallpaper Engine 共用資源"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リンク済みの Wallpaper Engine アセットの使用を停止"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dejar de usar los recursos vinculados de Wallpaper Engine"
-          }
-        }
-      }
-    },
     "Delete this preset?" : {
       "comment" : "Confirmation dialog title before deleting a scene preset.",
       "localizations" : {
@@ -21750,42 +21973,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除容器 tmp 中測試執行留下的 %lld 個暫存項目 · %@。沒有其他元件會讀取它們。"
-          }
-        }
-      }
-    },
-    "Loomscreen will stop using these Wallpaper Engine assets. Files in your Steam library will be kept. Scene wallpapers may have missing textures or effects until assets are linked again." : {
-      "comment" : "Confirmation for removing the app-managed Wallpaper Engine assets, not a user-linked external installation.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen will stop using these Wallpaper Engine assets. Files in your Steam library will be kept. Scene wallpapers may have missing textures or effects until assets are linked again."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 将停止使用这些 Wallpaper Engine 共享资源，Steam 库中的文件会保留。重新关联资源前，场景壁纸可能缺少贴图或特效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 將停止使用這些 Wallpaper Engine 共用資源，Steam 收藏庫中的檔案會保留。重新連結資源前，場景桌布可能缺少材質或特效。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen はこれらの Wallpaper Engine アセットの使用を停止します。Steam ライブラリ内のファイルは保持されます。アセットを再度リンクするまで、シーン壁紙のテクスチャやエフェクトが欠ける場合があります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen dejará de usar estos recursos de Wallpaper Engine. Los archivos de tu biblioteca de Steam se conservarán. Hasta que vuelvas a vincular los recursos, pueden faltar texturas o efectos en los fondos de escena."
           }
         }
       }
@@ -23873,77 +24060,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已下載並套用到 %@"
-          }
-        }
-      }
-    },
-    "Wallpaper Engine assets are linked and up to date." : {
-      "comment" : "Engine-assets settings status when downloaded assets are current.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine assets are linked and up to date."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共享资源已关联，且为最新版本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共用資源已連結，且為最新版本。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine の共有アセットはリンク済みで、最新です。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados y actualizados."
-          }
-        }
-      }
-    },
-    "Wallpaper Engine assets are linked. %@" : {
-      "comment" : "Engine-assets settings status when the update check fails; %@ is why it failed.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine assets are linked. %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共享资源已关联。%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共用資源已連結。%@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine の共有アセットはリンク済みです。%@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados. %@"
           }
         }
       }
@@ -28977,37 +29093,37 @@
         }
       }
     },
-    "Extension status" : {
-      "extractionState" : "manual",
+    "Extension Registrations" : {
+      "comment" : "Title of the extension registration sheet.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Extension status"
+            "value" : "Extension Registrations"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Estado de la extensión"
+            "value" : "Registros de la extensión"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "機能拡張の状態"
+            "value" : "拡張機能の登録"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "扩展状态"
+            "value" : "扩展注册"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "延伸功能狀態"
+            "value" : "延伸功能註冊"
           }
         }
       }
@@ -30280,6 +30396,65 @@
         }
       }
     },
+    "Following Loomscreen on %lld displays" : {
+      "comment" : "System Wallpaper status card: how many displays show the Loomscreen tile. %lld is the count.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Following Loomscreen on %lld display"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Following Loomscreen on %lld displays"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Siguiendo a Loomscreen en %lld pantalla"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Siguiendo a Loomscreen en %lld pantallas"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台のディスプレイで Loomscreen に連動中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在 %lld 台显示器上跟随 Loomscreen"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在 %lld 台顯示器上跟隨 Loomscreen"
+          }
+        }
+      }
+    },
     "For your security, LiveWallpaper does not run executable workshop projects." : {
       "comment" : "Wallpaper Engine fallback warning body.",
       "localizations" : {
@@ -30520,6 +30695,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "忘記我選擇的 SteamCMD"
+          }
+        }
+      }
+    },
+    "Found %lld, will remove %lld" : {
+      "comment" : "Extension registration sheet: registrations found and how many of them will be removed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Found %lld, will remove %lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encontrados: %lld; se eliminarán: %lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件見つかり、%lld 件を削除します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找到 %lld 条，将移除 %lld 条"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找到 %lld 筆，將移除 %lld 筆"
           }
         }
       }
@@ -31180,6 +31390,76 @@
         }
       }
     },
+    "Generate" : {
+      "comment" : "Primary button of the Generate Copy sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "產生"
+          }
+        }
+      }
+    },
+    "Generate Copy" : {
+      "comment" : "Title of the sheet, and its toolbar button, that generates a System Wallpaper copy from a library wallpaper.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate Copy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generar copia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーを生成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "產生副本"
+          }
+        }
+      }
+    },
     "Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer." : {
       "comment" : "Anti-phishing card body in the API key entry sheet.",
       "localizations" : {
@@ -31205,6 +31485,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只在 steamcommunity.com/dev/apikey 產生金鑰。絕不要貼上第三方網站或安裝器給的金鑰。"
+          }
+        }
+      }
+    },
+    "Generating" : {
+      "comment" : "System Wallpaper display list: a copy for this display is being generated, progress not known yet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generating"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generando"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在生成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在產生"
+          }
+        }
+      }
+    },
+    "Generating %@" : {
+      "comment" : "System Wallpaper display list: a copy for this display is being generated. Placeholder is a formatted percentage.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generating %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generando %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成中 %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在生成 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在產生 %@"
           }
         }
       }
@@ -31241,6 +31591,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在產生回覆"
+          }
+        }
+      }
+    },
+    "Generation cancelled" : {
+      "comment" : "System Wallpaper display list: the user cancelled generating the copy for this display. Retry starts it again.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generation cancelled"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generación cancelada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成をキャンセルしました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消生成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消產生"
           }
         }
       }
@@ -32093,6 +32478,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隱藏金鑰"
+          }
+        }
+      }
+    },
+    "Hide the wallpaper’s clock and calendar on the lock screen" : {
+      "comment" : "System Wallpaper settings toggle.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide the wallpaper’s clock and calendar on the lock screen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar el reloj y el calendario del fondo en la pantalla de bloqueo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロック画面では壁紙の時計とカレンダーを隠す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "锁屏时隐藏壁纸里的时钟和日历"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鎖定畫面時隱藏桌布裡的時鐘和行事曆"
           }
         }
       }
@@ -33333,6 +33753,41 @@
         }
       }
     },
+    "In System Settings › Wallpaper, choose the Loomscreen tile for each display. macOS then plays what that display shows in Loomscreen, even with Loomscreen closed." : {
+      "comment" : "Onboarding guide for the System Wallpaper page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In System Settings › Wallpaper, choose the Loomscreen tile for each display. macOS then plays what that display shows in Loomscreen, even with Loomscreen closed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Ajustes del Sistema › Fondo de pantalla, elige el mosaico de Loomscreen en cada pantalla. Después macOS reproduce lo que esa pantalla muestra en Loomscreen, incluso con Loomscreen cerrado."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム設定 › 壁紙で、各ディスプレイに Loomscreen のタイルを選びます。以後、Loomscreen を終了していても、そのディスプレイで Loomscreen が表示している壁紙を macOS が再生します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“系统设置 › 墙纸”里为每台显示器选择 Loomscreen 的磁贴。之后即使关闭 Loomscreen，macOS 也会播放这台显示器在 Loomscreen 里显示的壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「系統設定 › 背景圖片」裡為每台顯示器選擇 Loomscreen 的拼貼。之後即使關閉 Loomscreen，macOS 也會播放這台顯示器在 Loomscreen 裡顯示的桌布。"
+          }
+        }
+      }
+    },
     "In use on %@" : {
       "comment" : "The displays a wallpaper is set on, drawing it or not: the Workshop inspector, and VoiceOver on a wallpaper card none of them is playing. Placeholder is a list of display names.",
       "localizations" : {
@@ -33599,71 +34054,37 @@
         }
       }
     },
-    "Inspect" : {
-      "extractionState" : "manual",
+    "Inspected app" : {
+      "comment" : "Extension registration sheet: the app copy whose registrations were inspected.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inspect"
+            "value" : "Inspected app"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Revisar"
+            "value" : "App revisada"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "確認"
+            "value" : "確認したアプリ"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "检查"
+            "value" : "检查的应用"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "檢查"
-          }
-        }
-      }
-    },
-    "Inspect Registrations" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inspect Registrations"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Revisar registros"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録を確認"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查注册记录"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "檢查註冊記錄"
+            "value" : "檢查的應用程式"
           }
         }
       }
@@ -35489,37 +35910,37 @@
         }
       }
     },
-    "Let macOS play a video" : {
-      "extractionState" : "manual",
+    "Let macOS follow Loomscreen" : {
+      "comment" : "System Wallpaper status card title when no display uses the Loomscreen tile yet.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Let macOS play a video"
+            "value" : "Let macOS follow Loomscreen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reproducir con macOS"
+            "value" : "Haz que macOS siga a Loomscreen"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS で動画を再生"
+            "value" : "macOS を Loomscreen に連動させる"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "让 macOS 播放视频"
+            "value" : "让 macOS 跟随 Loomscreen"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "讓 macOS 播放影片"
+            "value" : "讓 macOS 跟隨 Loomscreen"
           }
         }
       }
@@ -36254,41 +36675,6 @@
         }
       }
     },
-    "Wallpaper Engine shared assets are linked and ready for scene wallpapers." : {
-      "comment" : "Engine-assets download success toast subtitle.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine shared assets are linked and ready for scene wallpapers."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共享资源已关联，可供场景壁纸使用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine 共用資源已連結，可供場景桌布使用。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine の共有アセットをリンクしました。シーン壁紙で使用できます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados y listos para los fondos de escena."
-          }
-        }
-      }
-    },
     "Linked Original Files" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36494,6 +36880,41 @@
         }
       }
     },
+    "Live" : {
+      "comment" : "Segment of the Scene playback setting: the scene renders live.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En directo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時"
+          }
+        }
+      }
+    },
     "Live — keeps clocks and calendars accurate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36525,6 +36946,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "即時——保持時鐘和行事曆準確"
+          }
+        }
+      }
+    },
+    "Live keeps clocks and calendars accurate. A video copy records the current appearance and uses less energy." : {
+      "comment" : "Info for the Scene playback setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live keeps clocks and calendars accurate. A video copy records the current appearance and uses less energy."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En directo mantiene actualizados relojes y calendarios. Una copia de vídeo graba el aspecto actual y consume menos energía."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブは時計とカレンダーを正確に保ちます。ビデオコピーは現在の表示を録画し、消費電力が少なくなります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时播放保持时钟和日历准确。视频副本录制当前外观，耗电更少。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時播放保持時鐘和行事曆準確。影片副本錄製目前外觀，耗電更少。"
+          }
+        }
+      }
+    },
+    "Live scenes" : {
+      "comment" : "Section header in System Wallpaper settings.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live scenes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escenas en directo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブシーン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时场景"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時場景"
           }
         }
       }
@@ -37457,6 +37948,41 @@
         }
       }
     },
+    "Loomscreen can use existing Homebrew installations. On Apple Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually run steamcmd +quit in Terminal to let SteamCMD update itself, then choose Locate automatically." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen can use existing Homebrew installations. On Apple Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually run steamcmd +quit in Terminal to let SteamCMD update itself, then choose Locate automatically."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen puede usar instalaciones existentes de Homebrew. En Apple Silicon, la descarga inicial de SteamCMD de Homebrew requiere Rosetta: ejecuta manualmente steamcmd +quit en Terminal para que SteamCMD se actualice y después elige Localizar automáticamente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen は Homebrew でインストール済みの SteamCMD も利用できます。Apple Silicon では Homebrew の初期ダウンロード版に Rosetta が必要です。ターミナルで steamcmd +quit を手動実行して SteamCMD の自己更新を完了させてから、自動検出を選んでください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 也支持识别已有的 Homebrew 安装。在 Apple Silicon 上，Homebrew 初次下载的 SteamCMD 需要 Rosetta 转译：请在终端手动运行 steamcmd +quit，让 SteamCMD 完成自更新，再选择“自动查找”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 也支援辨識已有的 Homebrew 安裝。在 Apple Silicon 上，Homebrew 初次下載的 SteamCMD 需要 Rosetta 轉譯：請在終端機手動執行 steamcmd +quit，讓 SteamCMD 完成自我更新，再選擇「自動尋找」。"
+          }
+        }
+      }
+    },
     "Loomscreen couldn't use that file as SteamCMD." : {
       "comment" : "Workshop setup error when a manually chosen SteamCMD is refused.",
       "extractionState" : "manual",
@@ -37489,6 +38015,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 無法將該檔案用作 SteamCMD。"
+          }
+        }
+      }
+    },
+    "Loomscreen downloads SteamCMD directly from Valve, with native support for Apple Silicon. No Rosetta is needed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen downloads SteamCMD directly from Valve, with native support for Apple Silicon. No Rosetta is needed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen descarga SteamCMD directamente de Valve, con soporte nativo para Apple Silicon. No se necesita Rosetta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen は Apple Silicon にネイティブ対応した SteamCMD を Valve から直接ダウンロードします。Rosetta は不要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 直接从 Valve 下载原生支持 Apple Silicon 的 SteamCMD，无需 Rosetta 转译。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 直接從 Valve 下載原生支援 Apple Silicon 的 SteamCMD，無需 Rosetta 轉譯。"
           }
         }
       }
@@ -37653,6 +38214,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 將為這台 Mac 下載並準備 SteamCMD，保留現有安裝，無需執行終端機指令。"
+          }
+        }
+      }
+    },
+    "Loomscreen will stop using these Wallpaper Engine assets. Files in your Steam library will be kept. Scene wallpapers may have missing textures or effects until assets are linked again." : {
+      "comment" : "Confirmation for removing the app-managed Wallpaper Engine assets, not a user-linked external installation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen will stop using these Wallpaper Engine assets. Files in your Steam library will be kept. Scene wallpapers may have missing textures or effects until assets are linked again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen dejará de usar estos recursos de Wallpaper Engine. Los archivos de tu biblioteca de Steam se conservarán. Hasta que vuelvas a vincular los recursos, pueden faltar texturas o efectos en los fondos de escena."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen はこれらの Wallpaper Engine アセットの使用を停止します。Steam ライブラリ内のファイルは保持されます。アセットを再度リンクするまで、シーン壁紙のテクスチャやエフェクトが欠ける場合があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 将停止使用这些 Wallpaper Engine 共享资源，Steam 库中的文件会保留。重新关联资源前，场景壁纸可能缺少贴图或特效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 將停止使用這些 Wallpaper Engine 共用資源，Steam 收藏庫中的檔案會保留。重新連結資源前，場景桌布可能缺少材質或特效。"
           }
         }
       }
@@ -38213,36 +38810,37 @@
         }
       }
     },
-    "macOS chooses the wallpaper for each display and Space. Importing a video does not apply it to every desktop." : {
+    "macOS can keep registrations from older or moved copies of Loomscreen. Only one copy should provide the system wallpaper." : {
+      "comment" : "Subtitle of the extension registration sheet.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS chooses the wallpaper for each display and Space. Importing a video does not apply it to every desktop."
+            "value" : "macOS can keep registrations from older or moved copies of Loomscreen. Only one copy should provide the system wallpaper."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS gestiona el fondo de cada pantalla y espacio. Importar un vídeo no lo aplica a todos los escritorios."
+            "value" : "macOS puede conservar registros de copias antiguas o movidas de Loomscreen. Solo una copia debe proporcionar el fondo del sistema."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "各ディスプレイと操作スペースの壁紙は macOS が管理します。ビデオを読み込んでも、すべてのデスクトップには適用されません。"
+            "value" : "macOS は古いコピーや移動した Loomscreen の登録を残すことがあります。システム壁紙を提供するのは 1 つのコピーだけにしてください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS 分别管理各显示器和桌面空间的壁纸。导入视频不会将其应用到所有桌面。"
+            "value" : "macOS 可能保留旧版本或移动过的 Loomscreen 副本的注册。系统壁纸只应由一份副本提供。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS 分別管理各顯示器和桌面空間的桌布。匯入影片不會將其套用至所有桌面。"
+            "value" : "macOS 可能保留舊版本或移動過的 Loomscreen 副本的註冊。系統桌布只應由一份副本提供。"
           }
         }
       }
@@ -38278,6 +38876,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 找不到 App 服務"
+          }
+        }
+      }
+    },
+    "macOS couldn’t play this copy" : {
+      "comment" : "System Wallpaper display list: the wallpaper extension reported a playback failure for this display. An error code follows.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS couldn’t play this copy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS no pudo reproducir esta copia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS でこのコピーを再生できませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 无法播放这个副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 無法播放這個副本"
           }
         }
       }
@@ -38348,42 +38981,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 尚未要求定位服務權限"
-          }
-        }
-      }
-    },
-    "macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed." : {
-      "comment" : "System Wallpaper empty state; extra copy and playback independent of app, not a guarantee of continuous playback.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS guarda una copia para el escritorio y la pantalla de bloqueo, y puede reproducirla con Loomscreen cerrado."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS がデスクトップとロック画面用に動画のコピーを保存し、Loomscreen を閉じた後も再生できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 会保存视频副本，用于桌面和锁屏，并可在 Loomscreen 关闭后继续播放。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 會儲存影片副本，用於桌面與鎖定畫面，並可在 Loomscreen 關閉後繼續播放。"
           }
         }
       }
@@ -38490,6 +39087,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 會儲存影片副本，可在 Loomscreen 關閉後繼續播放。"
+          }
+        }
+      }
+    },
+    "macOS shows its own clock there." : {
+      "comment" : "Info for the lock screen clock toggle.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS shows its own clock there."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS muestra allí su propio reloj."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロック画面には macOS 自身の時計が表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "锁屏上 macOS 会显示自己的时钟。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鎖定畫面上 macOS 會顯示自己的時鐘。"
           }
         }
       }
@@ -38836,6 +39468,76 @@
         }
       }
     },
+    "Manage Extension Registrations" : {
+      "comment" : "System Wallpaper settings row that opens the extension registration sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Extension Registrations"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestionar registros de la extensión"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拡張機能の登録を管理"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理扩展注册"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理延伸功能註冊"
+          }
+        }
+      }
+    },
+    "Manage in System Wallpaper" : {
+      "comment" : "Button in System Wallpaper settings that opens the System Wallpaper page of the main window.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage in System Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestionar en Fondo del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙で管理"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在系统壁纸页管理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在系統桌布頁管理"
+          }
+        }
+      }
+    },
     "Manage Schemes" : {
       "localizations" : {
         "en" : {
@@ -39148,6 +39850,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隨天氣調整粒子密度"
+          }
+        }
+      }
+    },
+    "Match Display" : {
+      "comment" : "Resolution limit option: render at the display's own resolution.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match Display"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Igual que la pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイに合わせる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匹配显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "符合顯示器"
           }
         }
       }
@@ -41411,6 +42148,41 @@
         }
       }
     },
+    "Needs a recorded video copy" : {
+      "comment" : "System Wallpaper display list: this display shows a web wallpaper, which needs a recorded video copy.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs a recorded video copy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Necesita una copia de vídeo grabada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録画したビデオコピーが必要です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要录制视频副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要錄製影片副本"
+          }
+        }
+      }
+    },
     "Needs Approval" : {
       "comment" : "Login item needs approval.",
       "extractionState" : "manual",
@@ -42795,40 +43567,6 @@
         }
       }
     },
-    "No registered app copies found." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No registered app copies found."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se encontraron copias registradas de la app."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録済みのアプリが見つかりませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未找到已注册的应用副本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "找不到已註冊的應用程式副本。"
-          }
-        }
-      }
-    },
     "No Results" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -43784,6 +44522,41 @@
         }
       }
     },
+    "None yet" : {
+      "comment" : "Extension registration sheet: no extension has connected yet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna todavía"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無"
+          }
+        }
+      }
+    },
     "Normal" : {
       "comment" : "Thermal state label.",
       "extractionState" : "manual",
@@ -44603,6 +45376,76 @@
         }
       }
     },
+    "Old" : {
+      "comment" : "Badge on a System Wallpaper copy that Loomscreen no longer follows.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Old"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antigua"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "舊版"
+          }
+        }
+      }
+    },
+    "old copy" : {
+      "comment" : "VoiceOver suffix for a System Wallpaper copy that Loomscreen no longer follows.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "old copy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copia antigua"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧コピー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧版副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "舊版副本"
+          }
+        }
+      }
+    },
     "Older extracted scene resources may still be the only copy of an imported wallpaper. Manage them in the library." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -44840,6 +45683,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "鎖定時將已啟用顯示器的影片畫面設為 macOS 背景圖片，解鎖後仍會保留。"
+          }
+        }
+      }
+    },
+    "On screen now: %@. Those displays stop playing until you select “%@” again in System Settings › Wallpaper." : {
+      "comment" : "Second paragraph of the old-copies removal confirm. Placeholders are a list of quoted wallpaper titles and the tile name macOS shows, such as Loomscreen — Selected Wallpaper.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On screen now: %@. Those displays stop playing until you select “%@” again in System Settings › Wallpaper."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pantalla ahora: %@. Esas pantallas dejan de reproducir hasta que vuelvas a elegir «%@» en Ajustes del Sistema › Fondo de pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在表示中：%@。「システム設定 › 壁紙」で「%@」を選び直すまで、それらのディスプレイは再生を停止します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在显示：%@。这些显示器会停止播放，直到你在“系统设置 › 墙纸”里重新选择“%@”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在顯示：%@。這些顯示器會停止播放，直到你在「系統設定 › 背景圖片」裡重新選擇「%@」。"
           }
         }
       }
@@ -45610,6 +46489,41 @@
         }
       }
     },
+    "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Ajustes › Workshop › Conexión de Steam y elige Configurar SteamCMD. Loomscreen muestra el tamaño de la descarga y la ubicación antes de instalar. Si ya lo tienes, usa Localizar automáticamente o Elegir SteamCMD."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 › ワークショップ › Steam 接続を開き、SteamCMD の設定を選びます。Loomscreen はインストール前にダウンロード容量と保存先を表示します。インストール済みなら自動検出または SteamCMD の選択を使います。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开设置 › 创意工坊 › Steam 连接，选择“设置 SteamCMD”。Loomscreen 会在安装前显示下载体积和位置。已经安装？选择“自动查找”或“选择 SteamCMD”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟設定 › 工作坊 › Steam 連線，選擇「設定 SteamCMD」。Loomscreen 會在安裝前顯示下載大小和位置。已經安裝？選擇「自動尋找」或「選擇 SteamCMD」。"
+          }
+        }
+      }
+    },
     "Open settings category" : {
       "localizations" : {
         "en" : {
@@ -45921,40 +46835,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打開「背景圖片」設定"
-          }
-        }
-      }
-    },
-    "Open Wallpaper settings in System Settings" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Wallpaper settings in System Settings"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir los ajustes de Fondo de pantalla en Ajustes del Sistema"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「システム設定」の壁紙設定を開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在“系统设置”中打开“墙纸”设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在「系統設定」中打開「背景圖片」設定"
           }
         }
       }
@@ -51498,6 +52378,41 @@
         }
       }
     },
+    "Quit the other copy, or remove its registration in Settings › System Wallpaper › Manage Extension Registrations." : {
+      "comment" : "System Wallpaper status card: how to stop another app copy from providing the system wallpaper.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit the other copy, or remove its registration in Settings › System Wallpaper › Manage Extension Registrations."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cierra la otra copia o elimina su registro en Ajustes › Fondo del sistema › Gestionar registros de la extensión."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一方を終了するか、「設定 › システム壁紙 › 拡張機能の登録を管理」でその登録を削除してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出另一份应用，或在“设置 › 系统壁纸 › 管理扩展注册”里移除它的注册。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束另一份應用程式，或在「設定 › 系統桌布 › 管理延伸功能註冊」裡移除它的註冊。"
+          }
+        }
+      }
+    },
     "R peak" : {
       "comment" : "Disk widget: recent read-rate peak label.",
       "extractionState" : "manual",
@@ -51845,6 +52760,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新選擇"
+          }
+        }
+      }
+    },
+    "Re-register and Restart" : {
+      "comment" : "Primary button of the extension registration sheet when nothing will be removed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Re-register and Restart"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a registrar y reiniciar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再登録して再起動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新注册并重启"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新註冊並重新啟動"
           }
         }
       }
@@ -52469,6 +53419,41 @@
         }
       }
     },
+    "Record Video Copy" : {
+      "comment" : "System Wallpaper display list button: opens the sheet that records a video copy of a web wallpaper.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record Video Copy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabar copia de vídeo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオコピーを録画"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制视频副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製影片副本"
+          }
+        }
+      }
+    },
     "Redone: %@" : {
       "comment" : "Toast after Redo in the Edit Desk. Placeholder is the name of the step, such as Apply Wallpaper.",
       "localizations" : {
@@ -52884,74 +53869,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "解鎖時每分鐘更新已啟用顯示器的 macOS 背景圖片。解鎖後仍會保留。"
-          }
-        }
-      }
-    },
-    "Registered app copies" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registered app copies"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copias registradas de la app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録済みのアプリ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已注册的应用副本"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已註冊的應用程式副本"
-          }
-        }
-      }
-    },
-    "Registration check complete" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registration check complete"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Revisión de registros completada"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録の確認が完了しました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "注册检查完成"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "註冊檢查完成"
           }
         }
       }
@@ -53410,42 +54327,6 @@
         }
       }
     },
-    "Unlink failed" : {
-      "comment" : "Engine-assets removal failure toast headline.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unlink failed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除关联失败"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除連結失敗"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リンク解除に失敗しました"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Error al desvincular"
-          }
-        }
-      }
-    },
     "Remove" : {
       "localizations" : {
         "en" : {
@@ -53512,6 +54393,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從 Loomscreen 移除「%@」，保留原始檔案。"
+          }
+        }
+      }
+    },
+    "Remove %lld and Restart" : {
+      "comment" : "Primary button of the extension registration sheet. Placeholder is the number of registrations to remove.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %lld and Restart"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar %lld y reiniciar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件を削除して再起動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除 %lld 条并重启"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除 %lld 筆並重新啟動"
           }
         }
       }
@@ -53852,6 +54768,77 @@
         }
       }
     },
+    "Remove Old Copies" : {
+      "comment" : "Button and confirm button that delete every System Wallpaper copy without a follow source.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Old Copies"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar copias antiguas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧コピーを削除"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清理旧版副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清理舊版副本"
+          }
+        }
+      }
+    },
+    "Remove old copies?" : {
+      "comment" : "Confirm title for deleting System Wallpaper copies without a follow source.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove old copies?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar las copias antiguas?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧コピーを削除しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要清理旧版副本吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要清理舊版副本嗎？"
+          }
+        }
+      }
+    },
     "Remove saved session" : {
       "localizations" : {
         "en" : {
@@ -54091,41 +55078,6 @@
         }
       }
     },
-    "Unlink Wallpaper Engine assets?" : {
-      "comment" : "Confirmation title for removing downloaded engine assets.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unlink Wallpaper Engine assets?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除 Wallpaper Engine 资源关联？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除 Wallpaper Engine 資源連結？"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine アセットのリンクを解除しますか？"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Desvincular los recursos de Wallpaper Engine?"
-          }
-        }
-      }
-    },
     "Remove Widget" : {
       "comment" : "Widget settings action removes this board widget, consistent with Add Widget.",
       "extractionState" : "manual",
@@ -54187,6 +55139,65 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已將 %@ 從桌布庫中移除，但無法刪除其檔案。"
+          }
+        }
+      }
+    },
+    "Removed %lld registrations." : {
+      "comment" : "Extension registration sheet: result after the repair.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removed %lld registration."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removed %lld registrations."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se eliminó %lld registro."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se eliminaron %lld registros."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件の登録を削除しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已移除 %lld 条注册。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已移除 %lld 筆註冊。"
           }
         }
       }
@@ -54672,40 +55683,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以較低解析度渲染場景，可能使文字模糊或增加耗電。更改後會重新載入桌布。"
-          }
-        }
-      }
-    },
-    "Repair and Restart" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repair and Restart"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reparar y reiniciar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "修復して再起動"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "修复并重启"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "修復並重新啟動"
           }
         }
       }
@@ -56421,6 +57398,41 @@
         }
       }
     },
+    "Resolution limit" : {
+      "comment" : "System Wallpaper settings row: the highest resolution a system wallpaper copy renders at.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resolution limit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resolución máxima"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解像度の上限"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分辨率上限"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解析度上限"
+          }
+        }
+      }
+    },
     "Responds to pointer movement without capturing clicks." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
@@ -56526,36 +57538,37 @@
         }
       }
     },
-    "Restarting briefly redraws all system wallpapers for your account. Repair removes the reviewed registrations, keeps this app, and preserves app files and videos." : {
+    "Restarting it briefly redraws all system wallpapers for your account." : {
+      "comment" : "System Wallpaper status card: what restarting the wallpaper service does.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restarting briefly redraws all system wallpapers for your account. Repair removes the reviewed registrations, keeps this app, and preserves app files and videos."
+            "value" : "Restarting it briefly redraws all system wallpapers for your account."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Al reiniciar se redibujan brevemente todos los fondos de tu cuenta. La reparación elimina los registros revisados, conserva esta app y mantiene los archivos y vídeos."
+            "value" : "Al reiniciarlo se redibujan brevemente todos los fondos de tu cuenta."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再起動時、このアカウントのすべてのシステム壁紙が一時的に再描画されます。修復では確認した登録を解除し、このアプリを保持します。アプリとビデオのファイルは削除しません。"
+            "value" : "再起動すると、このアカウントのすべてのシステム壁紙が一時的に再描画されます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重启会使当前账户的所有系统壁纸短暂重绘。修复会移除已确认的注册记录并保留当前应用，应用文件和视频不会删除。"
+            "value" : "重启会使当前账户的所有系统壁纸短暂重绘。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新啟動會使目前帳號的所有系統桌布短暫重繪。修復會移除已確認的註冊記錄並保留目前應用程式，不會刪除應用程式檔案和影片。"
+            "value" : "重新啟動會使目前帳號的所有系統桌布短暫重繪。"
           }
         }
       }
@@ -59334,6 +60347,41 @@
         }
       }
     },
+    "Scene playback" : {
+      "comment" : "System Wallpaper settings row: whether a followed scene plays live or as a recorded video copy.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene playback"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducción de escenas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンの再生"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景播放方式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景播放方式"
+          }
+        }
+      }
+    },
     "Scene resources" : {
       "comment" : "Workshop setup group and settings section name for the Wallpaper Engine shared assets.",
       "extractionState" : "manual",
@@ -60759,6 +61807,41 @@
         }
       }
     },
+    "Selected Wallpaper" : {
+      "comment" : "Second half of the System Wallpaper tile name in System Settings, after the app name and a dash. Must match the extension's own catalog.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondo seleccionado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択中の壁紙"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所選桌布"
+          }
+        }
+      }
+    },
     "Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks." : {
       "comment" : "Web Interaction tooltip. Preserve click/scroll routing and the desktop-icon/Dock click consequence.",
       "extractionState" : "manual",
@@ -61035,6 +62118,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工作階段累計 Token"
+          }
+        }
+      }
+    },
+    "Set a wallpaper on a display in Loomscreen. macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed." : {
+      "comment" : "System Wallpaper empty state. Copies come from wallpapers set on displays in Loomscreen.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set a wallpaper on a display in Loomscreen. macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pon un fondo en una pantalla desde Loomscreen. macOS guarda una copia para el escritorio y la pantalla de bloqueo, y puede reproducirla con Loomscreen cerrado."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen でディスプレイに壁紙を設定してください。macOS がデスクトップとロック画面用にコピーを保存し、Loomscreen を閉じた後も再生できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Loomscreen 中为显示器设置壁纸。macOS 会保存一份副本，用于桌面和锁屏，并可在 Loomscreen 关闭后继续播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Loomscreen 中為顯示器設定桌布。macOS 會儲存一份副本，用於桌面與鎖定畫面，並可在 Loomscreen 關閉後繼續播放。"
           }
         }
       }
@@ -62077,42 +63195,6 @@
         }
       }
     },
-    "Show Wallpaper Engine assets in Finder" : {
-      "comment" : "Accessibility label for the reveal-in-Finder button.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show Wallpaper Engine assets in Finder"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在访达中显示 Wallpaper Engine 资源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Finder 中顯示 Wallpaper Engine 資源"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine アセットを Finder で表示"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar los recursos de Wallpaper Engine en el Finder"
-          }
-        }
-      }
-    },
     "Show caption" : {
       "comment" : "Weather widget settings: toggle for the condition/location caption drawn over the sky.",
       "extractionState" : "manual",
@@ -63076,6 +64158,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示佔用最高的處理程序"
+          }
+        }
+      }
+    },
+    "Show Wallpaper Engine assets in Finder" : {
+      "comment" : "Accessibility label for the reveal-in-Finder button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Wallpaper Engine assets in Finder"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar los recursos de Wallpaper Engine en el Finder"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットを Finder で表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在访达中显示 Wallpaper Engine 资源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Finder 中顯示 Wallpaper Engine 資源"
           }
         }
       }
@@ -68255,6 +69373,42 @@
         }
       }
     },
+    "Stop using the linked Wallpaper Engine assets" : {
+      "comment" : "Tooltip for removing downloaded Wallpaper Engine payload and removing linkage.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop using the linked Wallpaper Engine assets"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de usar los recursos vinculados de Wallpaper Engine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンク済みの Wallpaper Engine アセットの使用を停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止使用已关联的 Wallpaper Engine 共享资源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止使用已連結的 Wallpaper Engine 共用資源"
+          }
+        }
+      }
+    },
     "Stopped at the download limit for linked items. Still missing: %@" : {
       "comment" : "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs.",
       "localizations" : {
@@ -68349,6 +69503,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "儲存空間"
+          }
+        }
+      }
+    },
+    "Storage used" : {
+      "comment" : "System Wallpaper settings row: disk space used by system wallpaper copies; the value is shown below.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage used"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espacio usado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用中の容量"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已用空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已用空間"
           }
         }
       }
@@ -69329,41 +70518,6 @@
         }
       }
     },
-    "System Wallpaper Library" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System Wallpaper Library"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Biblioteca de fondos del sistema"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システム壁紙ライブラリ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统壁纸库"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統桌布庫"
-          }
-        }
-      }
-    },
     "System Wallpaper Metadata" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -69389,40 +70543,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統桌布中繼資料"
-          }
-        }
-      }
-    },
-    "System Wallpaper needs attention" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System Wallpaper needs attention"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El fondo del sistema requiere atención"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システム壁紙の確認が必要です"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统壁纸需要处理"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統桌布需要處理"
           }
         }
       }
@@ -71147,41 +72267,6 @@
         }
       }
     },
-    "The last extension connection came from another app copy." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The last extension connection came from another app copy."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La última conexión de la extensión provino de otra copia de la app."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最後に接続した機能拡張は別のアプリのコピーに含まれています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次连接的扩展来自另一份应用副本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次連線的延伸功能來自另一份應用程式副本。"
-          }
-        }
-      }
-    },
     "The linked Wallpaper Engine folder can no longer be opened. Link it again." : {
       "comment" : "Scene resources diagnostic when the stored bookmark no longer resolves.",
       "extractionState" : "manual",
@@ -71274,42 +72359,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法啟動本機網頁工作階段。"
-          }
-        }
-      }
-    },
-    "The lock screen and login window always play the video." : {
-      "comment" : "Info tooltip on the system wallpaper playback row, explaining that the mode only governs the desktop.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The lock screen and login window always play the video."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La pantalla de bloqueo y la ventana de inicio de sesión siempre reproducen el vídeo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ロック画面とログインウインドウでは常に再生されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "锁屏和登录窗口始终播放视频。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "鎖定畫面與登入視窗一律播放影片。"
           }
         }
       }
@@ -71806,40 +72855,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "專案設定來源無法使用。請重新選擇專案資料夾。"
-          }
-        }
-      }
-    },
-    "The registrations marked for removal will be unregistered. This app becomes the preferred provider and the system wallpaper service restarts." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The registrations marked for removal will be unregistered. This app becomes the preferred provider and the system wallpaper service restarts."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se eliminarán los registros marcados. Esta app será el proveedor preferido y se reiniciará el servicio de fondos."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除対象の登録を削除します。このアプリを優先する提供元にして、システム壁紙サービスを再起動します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将注销标记为移除的记录，优先使用当前应用的扩展，并重启系统壁纸服务。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將取消註冊標記為移除的記錄，優先使用目前應用程式的延伸功能，並重新啟動系統桌布服務。"
           }
         }
       }
@@ -72365,36 +73380,37 @@
         }
       }
     },
-    "The service restarted, but no new connection was confirmed. In System Wallpaper, click Add Video to choose a video." : {
+    "The service restarted, but no new connection was confirmed. Choose the Loomscreen tile in System Settings › Wallpaper again." : {
+      "comment" : "System Wallpaper maintenance result after a restart without a confirmed reconnection.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The service restarted, but no new connection was confirmed. In System Wallpaper, click Add Video to choose a video."
+            "value" : "The service restarted, but no new connection was confirmed. Choose the Loomscreen tile in System Settings › Wallpaper again."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El servicio se reinició, pero no se confirmó ninguna conexión nueva. En Fondo del sistema, haz clic en Añadir vídeo para elegir un vídeo."
+            "value" : "El servicio se reinició, pero no se confirmó ninguna conexión nueva. Vuelve a elegir el mosaico de Loomscreen en Ajustes del Sistema › Fondo de pantalla."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サービスは再起動しましたが、新しい接続を確認できませんでした。「システム壁紙」で「ビデオを追加」をクリックしてビデオを選んでください。"
+            "value" : "サービスは再起動しましたが、新しい接続を確認できませんでした。システム設定 › 壁紙で Loomscreen のタイルをもう一度選んでください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服务已重新启动，但尚未确认新的扩展连接。请在“系统壁纸”页面点按“添加视频”选择视频。"
+            "value" : "服务已重新启动，但尚未确认新的扩展连接。请在“系统设置 › 墙纸”里重新选择 Loomscreen 的磁贴。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服務已重新啟動，但尚未確認新的延伸功能連線。請在「系統桌布」頁面點按「加入影片」選擇影片。"
+            "value" : "服務已重新啟動，但尚未確認新的延伸功能連線。請在「系統設定 › 背景圖片」裡重新選擇 Loomscreen 的拼貼。"
           }
         }
       }
@@ -72712,6 +73728,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統桌布庫的索引已損毀，因此未做變更。"
+          }
+        }
+      }
+    },
+    "The system wallpaper service is not responding" : {
+      "comment" : "System Wallpaper status card: the extension process stopped or its heartbeat is stale.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system wallpaper service is not responding"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio de fondos del sistema no responde"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙サービスが応答していません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸服务没有响应"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布服務沒有回應"
+          }
+        }
+      }
+    },
+    "The system wallpaper service restarts and every system wallpaper redraws once. App files and videos are kept." : {
+      "comment" : "Message of the confirmation alert in the extension registration sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system wallpaper service restarts and every system wallpaper redraws once. App files and videos are kept."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio de fondos del sistema se reinicia y todos los fondos del sistema se redibujan una vez. Se conservan los archivos de la app y los vídeos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙サービスが再起動し、すべてのシステム壁紙が 1 回再描画されます。アプリのファイルとビデオは残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸服务会重启，所有系统壁纸重绘一次。应用文件和视频会保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布服務會重新啟動，所有系統桌布重繪一次。應用程式檔案和影片會保留。"
           }
         }
       }
@@ -73666,6 +74752,41 @@
         }
       }
     },
+    "They use %@ and only play when no display has a selection." : {
+      "comment" : "System Wallpaper banner detail. Placeholder is a formatted size on disk.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "They use %@ and only play when no display has a selection."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocupan %@ y solo se reproducen cuando ninguna pantalla tiene una selección."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を使用しており、どのディスプレイにも選択がないときだけ再生されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它们占用 %@，只在没有任何显示器有选择时播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它們佔用 %@，只在沒有任何顯示器有選擇時播放。"
+          }
+        }
+      }
+    },
     "Thirty Days" : {
       "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Month).",
       "localizations" : {
@@ -74497,40 +75618,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此 Steam 帳號未擁有 Wallpaper Engine，無法下載其資源。"
-          }
-        }
-      }
-    },
-    "This version of macOS is not compatible with the wallpaper extension." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This version of macOS is not compatible with the wallpaper extension."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta versión de macOS no es compatible con la extensión de fondos."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この macOS バージョンは壁紙機能拡張に対応していません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前 macOS 版本与壁纸扩展不兼容。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "目前 macOS 版本與桌布延伸功能不相容。"
           }
         }
       }
@@ -77445,6 +78532,112 @@
         }
       }
     },
+    "Unlink" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlink"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desvincular"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンク解除"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除关联"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除連結"
+          }
+        }
+      }
+    },
+    "Unlink failed" : {
+      "comment" : "Engine-assets removal failure toast headline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlink failed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al desvincular"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンク解除に失敗しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除关联失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除連結失敗"
+          }
+        }
+      }
+    },
+    "Unlink Wallpaper Engine assets?" : {
+      "comment" : "Confirmation title for removing downloaded engine assets.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlink Wallpaper Engine assets?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desvincular los recursos de Wallpaper Engine?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットのリンクを解除しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除 Wallpaper Engine 资源关联？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除 Wallpaper Engine 資源連結？"
+          }
+        }
+      }
+    },
     "Unpacking timed out." : {
       "comment" : "Managed SteamCMD install error.",
       "extractionState" : "manual",
@@ -77897,41 +79090,6 @@
         }
       }
     },
-    "A Wallpaper Engine update is available on Steam. Your linked assets remain in use." : {
-      "comment" : "Engine-assets settings status when an update is available.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A Wallpaper Engine update is available on Steam. Your linked assets remain in use."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 上有 Wallpaper Engine 更新。已关联的共享资源仍可继续使用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 上有 Wallpaper Engine 更新。已連結的共用資源仍可繼續使用。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam に Wallpaper Engine の更新があります。リンク済みの共有アセットは引き続き使用できます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hay una actualización de Wallpaper Engine en Steam. Los recursos compartidos vinculados siguen en uso."
-          }
-        }
-      }
-    },
     "Update channel" : {
       "comment" : "Settings row title: which release channel Sparkle checks.",
       "extractionState" : "manual",
@@ -78209,40 +79367,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用"
-          }
-        }
-      }
-    },
-    "Use Restart Wallpaper Service below to rebuild the system connection." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use Restart Wallpaper Service below to rebuild the system connection."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usa «Reiniciar servicio de fondos» para restablecer la conexión."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下の「壁紙サービスを再起動」でシステム接続を再確立してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用下方的“重启壁纸服务”重新建立系统连接。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用下方的「重新啟動桌布服務」重新建立系統連線。"
           }
         }
       }
@@ -78651,74 +79775,6 @@
         }
       }
     },
-    "Use This App's Extension" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use This App's Extension"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usar la extensión de esta app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このアプリの機能拡張を使用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用当前应用的扩展"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用目前應用程式的延伸功能"
-          }
-        }
-      }
-    },
-    "Use This App's Extension?" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use This App's Extension?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Usar la extensión de esta app?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このアプリの機能拡張を使用しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用当前应用的扩展？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用目前應用程式的延伸功能？"
-          }
-        }
-      }
-    },
     "Use this web address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -78826,6 +79882,41 @@
         }
       }
     },
+    "Used when web wallpapers and scenes are recorded as video copies." : {
+      "comment" : "Info for the Loop length setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used when web wallpapers and scenes are recorded as video copies."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se usa al grabar fondos web y escenas como copias de vídeo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 壁紙やシーンをビデオコピーとして録画するときに使います。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页壁纸和场景录制成视频副本时使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "網頁桌布和場景錄製成影片副本時使用。"
+          }
+        }
+      }
+    },
     "USER" : {
       "comment" : "CPU widget: composition legend label for user-mode CPU time, followed by a percentage (USER 26%). Must fit the M legend column: at most 2 CJK characters or about 4 capitals.",
       "extractionState" : "manual",
@@ -78929,6 +80020,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "視窗覆蓋顯示器一半或 Mac 使用電池時，場景影格率降至約一半。"
+          }
+        }
+      }
+    },
+    "Uses another system wallpaper" : {
+      "comment" : "System Wallpaper display list: this display has not selected the Loomscreen tile in System Settings.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses another system wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa otro fondo del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のシステム壁紙を使用中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在使用其他系统壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在使用其他系統桌布"
           }
         }
       }
@@ -79394,6 +80520,41 @@
         }
       }
     },
+    "Video copies" : {
+      "comment" : "Section header in System Wallpaper settings.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video copies"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copias de vídeo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオコピー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "影片副本"
+          }
+        }
+      }
+    },
     "Video copies freeze live information. Web recording opens a preview and may ask for screen recording access." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -79461,6 +80622,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 使用的影片副本。從「系統桌布」中移除影片可釋出空間。"
+          }
+        }
+      }
+    },
+    "Video Copy" : {
+      "comment" : "Segment of the Scene playback setting: the scene is recorded as a looping video.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video Copy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia de vídeo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオコピー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "影片副本"
           }
         }
       }
@@ -80496,6 +81692,41 @@
         }
       }
     },
+    "Waiting to generate" : {
+      "comment" : "System Wallpaper display list: the copy for this display waits for another copy to finish.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting to generate"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En espera para generar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成待ち"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待生成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待產生"
+          }
+        }
+      }
+    },
     "Wallpaper" : {
       "comment" : "Inspector tab: the wallpaper itself (its type and that type's settings).",
       "extractionState" : "manual",
@@ -80730,6 +81961,113 @@
         }
       }
     },
+    "Wallpaper Engine assets are linked and up to date." : {
+      "comment" : "Engine-assets settings status when downloaded assets are current.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine assets are linked and up to date."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados y actualizados."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットはリンク済みで、最新です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共享资源已关联，且为最新版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共用資源已連結，且為最新版本。"
+          }
+        }
+      }
+    },
+    "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version." : {
+      "comment" : "Managed assets remain usable but have no comparable build ID; Update downloads a known current build.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine assets are linked, but their installed version could not be determined. You can keep using them, or choose Update to download the current version."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados, pero no se pudo determinar la versión instalada. Puedes seguir usándolos o elegir Actualizar para descargar la versión actual."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットはリンク済みですが、インストール済みのバージョンを確認できません。そのまま使用するか、「更新」で現在のバージョンをダウンロードできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共享资源已关联，但无法确认其已安装版本。可以继续使用，也可以点按“更新”下载当前版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共用資源已連結，但無法確認其已安裝版本。可以繼續使用，也可以按一下「更新」下載目前版本。"
+          }
+        }
+      }
+    },
+    "Wallpaper Engine assets are linked. %@" : {
+      "comment" : "Engine-assets settings status when the update check fails; %@ is why it failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine assets are linked. %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados. %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットはリンク済みです。%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共享资源已关联。%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共用資源已連結。%@"
+          }
+        }
+      }
+    },
     "Wallpaper Engine assets are up to date" : {
       "comment" : "Engine-assets update check success headline.",
       "localizations" : {
@@ -80824,6 +82162,41 @@
         }
       }
     },
+    "Wallpaper Engine assets version unavailable" : {
+      "comment" : "Engine-assets update check version-unknown headline.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine assets version unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo determinar la versión de los recursos de Wallpaper Engine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットのバージョンを確認できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法确认 Wallpaper Engine 资源版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法確認 Wallpaper Engine 資源版本"
+          }
+        }
+      }
+    },
     "Wallpaper Engine projects need Loomscreen Pro, a separate free download." : {
       "comment" : "Shown in Lite when a Wallpaper Engine project folder is dropped or chosen. Both editions are free; Pro is a separate build, not a paid tier.",
       "localizations" : {
@@ -80855,6 +82228,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wallpaper Engine 專案需要 Loomscreen Pro，可另行免費下載。"
+          }
+        }
+      }
+    },
+    "Wallpaper Engine shared assets are linked and ready for scene wallpapers." : {
+      "comment" : "Engine-assets download success toast subtitle.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine shared assets are linked and ready for scene wallpapers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recursos compartidos de Wallpaper Engine están vinculados y listos para los fondos de escena."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine の共有アセットをリンクしました。シーン壁紙で使用できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共享资源已关联，可供场景壁纸使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine 共用資源已連結，可供場景桌布使用。"
           }
         }
       }
@@ -83897,251 +85305,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 密碼與 Steam 令牌驗證碼只會交給 SteamCMD。Loomscreen 既不儲存，也不會傳往別處。"
-          }
-        }
-      }
-    },
-    "Loomscreen downloads SteamCMD directly from Valve, with native support for Apple Silicon. No Rosetta is needed." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen downloads SteamCMD directly from Valve, with native support for Apple Silicon. No Rosetta is needed."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen descarga SteamCMD directamente de Valve, con soporte nativo para Apple Silicon. No se necesita Rosetta."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen は Apple Silicon にネイティブ対応した SteamCMD を Valve から直接ダウンロードします。Rosetta は不要です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 直接从 Valve 下载原生支持 Apple Silicon 的 SteamCMD，无需 Rosetta 转译。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 直接從 Valve 下載原生支援 Apple Silicon 的 SteamCMD，無需 Rosetta 轉譯。"
-          }
-        }
-      }
-    },
-    "Already installed with Homebrew?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Already installed with Homebrew?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Ya lo instalaste con Homebrew?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Homebrew でインストール済みの場合"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已通过 Homebrew 安装？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已透過 Homebrew 安裝？"
-          }
-        }
-      }
-    },
-    "Loomscreen can use existing Homebrew installations. On Apple Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually run steamcmd +quit in Terminal to let SteamCMD update itself, then choose Locate automatically." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen can use existing Homebrew installations. On Apple Silicon, Homebrew's initial SteamCMD download requires Rosetta: manually run steamcmd +quit in Terminal to let SteamCMD update itself, then choose Locate automatically."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen puede usar instalaciones existentes de Homebrew. En Apple Silicon, la descarga inicial de SteamCMD de Homebrew requiere Rosetta: ejecuta manualmente steamcmd +quit en Terminal para que SteamCMD se actualice y después elige Localizar automáticamente."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen は Homebrew でインストール済みの SteamCMD も利用できます。Apple Silicon では Homebrew の初期ダウンロード版に Rosetta が必要です。ターミナルで steamcmd +quit を手動実行して SteamCMD の自己更新を完了させてから、自動検出を選んでください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 也支持识别已有的 Homebrew 安装。在 Apple Silicon 上，Homebrew 初次下载的 SteamCMD 需要 Rosetta 转译：请在终端手动运行 steamcmd +quit，让 SteamCMD 完成自更新，再选择“自动查找”。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 也支援辨識已有的 Homebrew 安裝。在 Apple Silicon 上，Homebrew 初次下載的 SteamCMD 需要 Rosetta 轉譯：請在終端機手動執行 steamcmd +quit，讓 SteamCMD 完成自我更新，再選擇「自動尋找」。"
-          }
-        }
-      }
-    },
-    "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre Ajustes › Workshop › Conexión de Steam y elige Configurar SteamCMD. Loomscreen muestra el tamaño de la descarga y la ubicación antes de instalar. Si ya lo tienes, usa Localizar automáticamente o Elegir SteamCMD."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定 › ワークショップ › Steam 接続を開き、SteamCMD の設定を選びます。Loomscreen はインストール前にダウンロード容量と保存先を表示します。インストール済みなら自動検出または SteamCMD の選択を使います。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开设置 › 创意工坊 › Steam 连接，选择“设置 SteamCMD”。Loomscreen 会在安装前显示下载体积和位置。已经安装？选择“自动查找”或“选择 SteamCMD”。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟設定 › 工作坊 › Steam 連線，選擇「設定 SteamCMD」。Loomscreen 會在安裝前顯示下載大小和位置。已經安裝？選擇「自動尋找」或「選擇 SteamCMD」。"
-          }
-        }
-      }
-    },
-    "Unlink" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unlink"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除关联"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解除連結"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リンク解除"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desvincular"
-          }
-        }
-      }
-    },
-    "Couldn't save access to the Wallpaper Engine assets. Choose the folder again to grant access." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't save access to the Wallpaper Engine assets. Choose the folder again to grant access."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法保存 Wallpaper Engine 资源的访问权限。请重新选择文件夹并授权。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法儲存 Wallpaper Engine 資源的存取權限。請重新選擇資料夾並授權。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine アセットへのアクセス権を保存できませんでした。フォルダを再度選択してアクセスを許可してください。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo guardar el acceso a los recursos de Wallpaper Engine. Vuelve a elegir la carpeta para autorizar el acceso."
-          }
-        }
-      }
-    },
-    "Couldn't access the linked Wallpaper Engine assets. Choose the folder again to restore access." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't access the linked Wallpaper Engine assets. Choose the folder again to restore access."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法访问已关联的 Wallpaper Engine 资源。请重新选择文件夹以恢复访问权限。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法存取已連結的 Wallpaper Engine 資源。請重新選擇資料夾以恢復存取權限。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リンク済みの Wallpaper Engine アセットにアクセスできませんでした。フォルダを再度選択してアクセス権を復元してください。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo acceder a los recursos vinculados de Wallpaper Engine. Vuelve a elegir la carpeta para restablecer el acceso."
           }
         }
       }

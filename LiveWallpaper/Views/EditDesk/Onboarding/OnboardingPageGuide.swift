@@ -191,7 +191,7 @@ enum PageGuideContext: CaseIterable {
             ]
         case .systemWallpaper:
             [
-                .init(.page, "Let macOS play a video", "Add Video saves a separate copy for macOS. Open Wallpaper Settings to select it. This path can play with Loomscreen closed and is separate from the live wallpapers in Overview."),
+                .init(.page, "Let macOS follow Loomscreen", "In System Settings › Wallpaper, choose the Loomscreen tile for each display. macOS then plays what that display shows in Loomscreen, even with Loomscreen closed."),
                 .init(.page, "Manage system copies", "The item menu reveals or removes the macOS copy. Removing a system copy is different from clearing a display's live wallpaper; review the confirmation before removing it."),
             ]
         case .workshop:

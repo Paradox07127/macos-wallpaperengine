@@ -11,6 +11,7 @@ struct SystemWallpaperLibraryView: View {
     @Environment(WallpaperExportService.self) private var service
     @State private var pendingDestructive: PendingDestructive?
     @State private var searchText = ""
+    @State private var showingAddSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,12 +26,26 @@ struct SystemWallpaperLibraryView: View {
                         .frame(maxWidth: 180)
                     Button("Cancel Preparation") { service.cancelPreparation() }
                 }
-                .padding(DesignTokens.Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .libraryGridPadding()
+            }
+            if isFunctional {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                    SystemWallpaperStatusCard(service: service)
+                    SystemWallpaperDisplayList(service: service) { showingAddSheet = true }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .libraryGridPadding()
             }
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .confirmDestructive($pendingDestructive)
+        .sheet(isPresented: $showingAddSheet) {
+            AppLanguageScope(defaults: .appScoped()) {
+                SystemWallpaperAddSheet()
+            }
+        }
         .onAppear { service.refresh() }
         .task { service.startObservingSharedRoot() }
     }
@@ -44,9 +59,6 @@ struct SystemWallpaperLibraryView: View {
             EmptyView()
         } actions: {
             SystemWallpaperAddMenu()
-            GlassIconButton("arrow.up.forward.app", size: .large) { service.openWallpaperSettings() }
-                .help(Text("Open Wallpaper settings in System Settings"))
-                .accessibilityLabel(Text("Open Wallpaper Settings"))
         }
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
         .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
@@ -79,14 +91,11 @@ struct SystemWallpaperLibraryView: View {
             galleryScroll
             LibraryStatusBar(summary: statusSummary) {
                 if service.diskUsageBytes > 0 {
-                    Text("Disk usage: \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes))")
+                    Text("Disk usage: \(service.diskUsageBytes, format: .byteCount(style: .file))")
                 }
             }
         }
     }
-
-    /// Bounded so controls stay adjacent to their labels on wide displays.
-    private let maxContentWidth: CGFloat = 560
 
     private var filteredItems: [SystemWallpaperManifest.Item] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -113,6 +122,7 @@ struct SystemWallpaperLibraryView: View {
                     if hasNotice {
                         notice
                     }
+                    SystemWallpaperLegacyBanner(service: service, pendingDestructive: $pendingDestructive)
                     LibraryGalleryGrid(size: tileSize, aspect: .wide) {
                         ForEach(filteredItems) { item in
                             SystemWallpaperTile(
@@ -171,7 +181,6 @@ struct SystemWallpaperLibraryView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
-            .frame(maxWidth: maxContentWidth, alignment: .leading)
             .transition(.opacity)
             .animation(.easeOut(duration: 0.2), value: service.status)
         case .publishedNotSelected, .inUse, .empty, .systemIncompatible:
@@ -196,12 +205,7 @@ struct SystemWallpaperLibraryView: View {
             icon: "macwindow.on.rectangle",
             tint: DesignTokens.Colors.LibraryTint.systemWallpaper,
             title: "Let macOS play your wallpaper",
-            message: "macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed.",
-            actionTitle: "Choose Video",
-            actionSystemImage: "video.badge.plus",
-            action: {
-                SystemWallpaperVideoImport.present(publishingInto: service)
-            }
+            message: "Set a wallpaper on a display in Loomscreen. macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed."
         )
     }
 
@@ -229,28 +233,13 @@ struct SystemWallpaperAddMenu: View {
 
     var body: some View {
         GlassIconButton("plus", size: .large) { showingAddSheet = true }
-            .help(Text("Add Wallpaper"))
-            .accessibilityLabel(Text("Add Wallpaper"))
+            .help(Text("Generate Copy"))
+            .accessibilityLabel(Text("Generate Copy"))
             .sheet(isPresented: $showingAddSheet) {
                 AppLanguageScope(defaults: .appScoped()) {
                     SystemWallpaperAddSheet()
                 }
             }
-    }
-}
-
-@available(macOS 26.0, *)
-enum SystemWallpaperVideoImport {
-    @MainActor
-    static func present(publishingInto service: WallpaperExportService) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = ResourceUtilities.supportedVideoContentTypes
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        panel.prompt = L10n.Panel.addVideos
-        guard panel.runModal() == .OK else { return }
-        let urls = panel.urls
-        Task { await service.publish(fileURLs: urls) }
     }
 }
 
@@ -271,6 +260,12 @@ struct SystemWallpaperTile: View {
 
     var body: some View {
         preview
+            .overlay(alignment: .topLeading) {
+                if isLegacy {
+                    ThumbnailBadge("Old", systemImage: "clock.arrow.circlepath")
+                        .padding(DesignTokens.Spacing.sm)
+                }
+            }
             .overlay(alignment: .bottom) {
                 ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
                     if isInUse {
@@ -317,10 +312,15 @@ struct SystemWallpaperTile: View {
         }
     }
 
+    private var isLegacy: Bool {
+        item.sourceKey == nil
+    }
+
     private var accessibilityLabel: Text {
-        isInUse
+        let base = isInUse
             ? Text("\(item.title), selected by macOS")
             : Text("\(item.title), ready in System Settings")
+        return isLegacy ? base + Text(verbatim: ", ") + Text("old copy") : base
     }
 
     private var preview: some View {

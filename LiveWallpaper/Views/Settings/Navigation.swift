@@ -13,9 +13,10 @@ enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
     case displayDefaultsWeb
     case displayDefaultsScene
     case systemWallpaperPlayback
-    case systemWallpaperStatus
+    case systemWallpaperLiveScenes
+    case systemWallpaperVideoCopies
+    case systemWallpaperStorage
     case systemWallpaperMaintenance
-    case systemWallpaperLibrary
     case integrationsAudio
     case integrationsWeather
     case overlaysAppearance
@@ -256,7 +257,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             systemImage: "macwindow.on.rectangle",
             keywords: [
                 "Video playback", "Lock screen only", "extension", "Spaces", "Maintenance",
-                "Inspect Registrations", "Restart Wallpaper Service", "Automatically recover stalled connections",
+                "Manage Extension Registrations", "Restart Wallpaper Service", "Automatically recover stalled connections",
                 "解锁", "锁屏", "播放", "维护", "修复", "重启", "扩展", "維護", "修復", "延伸功能",
                 "保守", "修復", "再起動", "mantenimiento", "reparar", "reiniciar",
             ]
@@ -624,35 +625,51 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 ),
             ]
         case .systemWallpaper:
-            return [
+            var targets = [
                 SettingsNavigationSearchTarget(
                     label: "Playback",
                     anchor: .systemWallpaperPlayback,
                     rows: ["Video playback"],
                     keywords: []
                 ),
+            ]
+            if capabilities.sku == .pro {
+                targets += [
+                    SettingsNavigationSearchTarget(
+                        label: "Live scenes",
+                        anchor: .systemWallpaperLiveScenes,
+                        rows: [
+                            "Scene playback", "Resolution limit", "Frame Rate",
+                            "Hide the wallpaper’s clock and calendar on the lock screen",
+                        ],
+                        keywords: ["resolution", "fps", "lock screen clock"]
+                    ),
+                    SettingsNavigationSearchTarget(
+                        label: "Video copies",
+                        anchor: .systemWallpaperVideoCopies,
+                        rows: ["Loop length"],
+                        keywords: ["recording", "duration"]
+                    ),
+                ]
+            }
+            targets += [
                 SettingsNavigationSearchTarget(
-                    label: "Extension status",
-                    anchor: .systemWallpaperStatus,
-                    rows: ["Another app copy provides the system wallpaper"],
+                    label: "Storage",
+                    anchor: .systemWallpaperStorage,
+                    rows: ["Storage used", "Remove All from System Wallpaper"],
                     keywords: []
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Maintenance",
                     anchor: .systemWallpaperMaintenance,
                     rows: [
-                        "Inspect Registrations", "Restart Wallpaper Service",
-                        "Automatically recover stalled connections", "Use This App's Extension",
+                        "Manage Extension Registrations", "Restart Wallpaper Service",
+                        "Automatically recover stalled connections",
                     ],
                     keywords: []
                 ),
-                SettingsNavigationSearchTarget(
-                    label: "System Wallpaper Library",
-                    anchor: .systemWallpaperLibrary,
-                    rows: ["Remove All from System Wallpaper"],
-                    keywords: []
-                ),
             ]
+            return targets
         default:
             return []
         }

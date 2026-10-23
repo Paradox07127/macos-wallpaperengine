@@ -15,6 +15,8 @@ public enum DestructiveAction: Identifiable, Equatable {
     case resetAllSettings(sceneCapable: Bool)
     case removeSystemWallpaper(title: String, isInUse: Bool)
     case clearSystemWallpaperLibrary(itemCount: Int, formattedSize: String)
+    /// `playingTitles` = legacy copies a display shows right now; they stop when deleted. `tileName` = the provider's tile name in System Settings.
+    case clearLegacySystemWallpapers(itemCount: Int, formattedSize: String, playingTitles: [String], tileName: String)
     case disconnectAerialsLibrary
     case forgetSteamWebAPIKey
     case removeManagedSteamCMD
@@ -31,6 +33,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case let .replaceLocalCopy(t): return "replaceLocalCopy-\(t)"
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
         case .clearSystemWallpaperLibrary(let n, let b): return "clearSystemWallpaperLibrary-\(n)-\(b)"
+        case let .clearLegacySystemWallpapers(n, b, p, _): return "clearLegacySystemWallpapers-\(n)-\(b)-\(p.joined(separator: "|"))"
         case .applyConfigurationToAllDisplays(let c): return "applyConfigurationToAllDisplays-\(c)"
         case .clearCurrentWallpaper(let n): return "clearCurrentWallpaper-\(n)"
         case let .resetDisplaySettings(n, _): return "resetDisplaySettings-\(n)"
@@ -52,6 +55,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .replaceLocalCopy: return "Replace the copy in your library?"
         case .clearAllStorageCaches:      return "Clear all storage caches?"
         case .clearSystemWallpaperLibrary: return "Remove every System Wallpaper?"
+        case .clearLegacySystemWallpapers: return "Remove old copies?"
         case .applyConfigurationToAllDisplays: return "Apply this wallpaper to every other display?"
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
         case .resetDisplaySettings:      return "Reset this display's settings?"
@@ -102,6 +106,17 @@ public enum DestructiveAction: Identifiable, Equatable {
             return String(
                 localized: "\(itemCount) videos and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk."
+            )
+        case let .clearLegacySystemWallpapers(itemCount, formattedSize, playingTitles, tileName):
+            let removed = String(
+                localized: "\(itemCount) old copies and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message for removing system wallpaper copies that Loomscreen no longer follows. Placeholders are the item count and the formatted size on disk."
+            )
+            guard !playingTitles.isEmpty else { return removed }
+            let titles = ListFormatter.localizedString(byJoining: playingTitles.map { "“\($0)”" })
+            return removed + "\n\n" + String(
+                localized: "On screen now: \(titles). Those displays stop playing until you select “\(tileName)” again in System Settings › Wallpaper.",
+                bundle: .appLanguage, comment: "Second paragraph of the old-copies removal confirm. Placeholders are a list of quoted wallpaper titles and the tile name macOS shows, such as Loomscreen — Selected Wallpaper."
             )
         case .clearAllStorageCaches(let byteSize):
             return String(
@@ -171,6 +186,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .replaceLocalCopy: return "Replace"
         case .clearAllStorageCaches:      return "Clear All Caches"
         case .clearSystemWallpaperLibrary: return "Remove All"
+        case .clearLegacySystemWallpapers: return "Remove Old Copies"
         case .applyConfigurationToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"
         case .resetDisplaySettings:      return "Reset Settings"

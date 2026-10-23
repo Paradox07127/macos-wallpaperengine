@@ -29,7 +29,7 @@ and the app target's build gates.
 | Performance | both | Pause rules, app exceptions, video preload; Pro adds adaptive scene frame rate, render threads and, on supported hardware, MetalFX upscaling and HDR output |
 | Integrations | both | Audio Response (Pro): system audio capture for scene and music visual effects; Weather: off, system location or manual location |
 | Overlays | both | Widget tint, opacity and Liquid Glass (macOS 26+) for all widget panels; temperature unit |
-| System Wallpaper | both, macOS 26+ | Video playback mode, extension status, service maintenance, removing all videos from the System Wallpaper library |
+| System Wallpaper | both, macOS 26+ | Playback mode; Pro defaults for followed scenes and video copies; storage and Remove All; extension registrations and service maintenance |
 | Workshop | Pro | Steam setup, API key, engine assets, browse preferences, thumbnail badges, diagnostics, privacy and terms |
 | Storage | Pro | Downloaded projects, engine assets, System Wallpaper video copies and caches |
 | Backup & Restore | both | Configuration export/import |
@@ -296,6 +296,14 @@ Use **Update Wallpaper Copy** to republish changed sources or saved properties;
 the existing copy is retained if preparation fails. The page
 reports provider compatibility and can pause publishing on an unsupported
 macOS build. See [Architecture](architecture.md#system-wallpaper-provider).
+
+The page opens with a status card and one row per followed display: playing,
+generating, waiting, needs a recorded video copy, or failed with **Retry**.
+**Settings → System Wallpaper** holds the follow defaults. In Pro these are live
+or video copy for scenes, the resolution limit, the frame rate, the lock-screen
+clock and calendar filter (on by default), and the loop length of video copies.
+**Manage Extension Registrations** inspects the registered app copies, removes
+stale ones after confirmation, and restarts the wallpaper service.
 
 The **Keep a video frame as the desktop picture** option saves persistent PNGs.
 While the Mac stays unlocked, it refreshes enabled video displays once a minute;

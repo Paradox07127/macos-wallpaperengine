@@ -5,6 +5,7 @@ import CoreVideo
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 import Metal
 import QuartzCore
 import Testing
@@ -386,8 +387,9 @@ struct SystemWallpaperPreparationTests {
         #expect(throws: CocoaError.self) { try SystemWallpaperSceneSource.published(at: bundle) }
     }
 
-    @Test("Legacy capsule preparation keeps library identity and preserves the old bundle on failure", arguments: [false, true])
-    func legacyCapsuleRepreparation(failShader: Bool) async throws {
+    @Test("Capsule recovery preserves identity and attempts each content once", .timeLimit(.minutes(1)),
+          arguments: [false, true], ["legacy", "translator", "keyFormat", "heartbeat"])
+    func legacyCapsuleRepreparation(failShader: Bool, reason: String) async throws {
         guard #available(macOS 26.0, *) else { return }
         let fixture = try filledScene()
         defer { fixture.cleanup() }
@@ -399,6 +401,17 @@ struct SystemWallpaperPreparationTests {
             try FileManager.default.removeItem(at: bundle.appendingPathComponent("Assets/shaders/preparation.frag"))
         }
         let configurationURL = bundle.appendingPathComponent("configuration.json")
+        if reason != "legacy" {
+            var configuration = try JSONDecoder().decode(SystemWallpaperSceneConfiguration.self, from: Data(contentsOf: configurationURL))
+            configuration.parity = .init(settings: .init(), textureCompression: true, renderScale: 1, compilerIdentity: "fixture")
+            if reason == "translator" {
+                configuration.translatorVersion = 0
+            }
+            if reason == "keyFormat" {
+                configuration.keyFormatVersion = nil
+            }
+            try JSONEncoder().encode(configuration).write(to: configurationURL)
+        }
         let originalConfiguration = try Data(contentsOf: configurationURL)
         var options = SystemWallpaperPreparationOptions()
         options.size = CGSize(width: 64, height: 64)
@@ -417,9 +430,15 @@ struct SystemWallpaperPreparationTests {
         try oldPoster.write(to: posterURL)
         fixture.cleanup()
         let live = WallpaperExportService.Dependencies.live()
-        let service = WallpaperExportService(dependencies: .init(sharedRoot: directory, resolver: live.resolver,
-                                                                 now: live.now, makeThumbnailJPEG: live.makeThumbnailJPEG,
-                                                                 expectedProvider: nil))
+        if reason == "heartbeat" {
+            let heartbeat = SystemWallpaperHeartbeat(timestamp: Date(), activeChoiceID: item.id,
+                                                     playbackFailures: [item.id: "scene.load.failed"])
+            try JSONEncoder().encode(heartbeat).write(to: directory.appendingPathComponent("heartbeat.json"))
+        }
+        let dependencies = WallpaperExportService.Dependencies(sharedRoot: directory, resolver: live.resolver,
+                                                               now: live.now, makeThumbnailJPEG: live.makeThumbnailJPEG,
+                                                               expectedProvider: nil)
+        let service = WallpaperExportService(dependencies: dependencies)
         await service.reprepareLegacySceneCapsules()
         let manifest = try JSONDecoder().decode(SystemWallpaperManifest.self, from: Data(contentsOf: manifestURL))
         #expect(manifest == original, "migration changed saved identity, options, date, source key or per-display selection")
@@ -436,6 +455,22 @@ struct SystemWallpaperPreparationTests {
             #expect(prepared.parityConfiguration != nil)
             try await SystemWallpaperScenePreparation.prepare(source: prepared, size: options.size, hidingClockCalendar: false)
             #expect(try Data(contentsOf: posterURL) != oldPoster)
+        }
+        let receiptsURL = directory.appendingPathComponent("scene-recovery.json")
+        let receipts = try Data(contentsOf: receiptsURL)
+        service.clearLastError()
+        await service.reprepareLegacySceneCapsules()
+        #expect(service.lastError == nil)
+        #expect(try Data(contentsOf: receiptsURL) == receipts)
+        let relaunched = WallpaperExportService(dependencies: dependencies)
+        await relaunched.reprepareLegacySceneCapsules()
+        #expect(relaunched.lastError == nil)
+        #expect(try Data(contentsOf: receiptsURL) == receipts)
+        if failShader {
+            try Data("changed content".utf8).write(to: bundle.appendingPathComponent("Assets/change.txt"))
+            await service.reprepareLegacySceneCapsules()
+            #expect(service.lastError != nil)
+            #expect(try Data(contentsOf: receiptsURL) != receipts)
         }
     }
 

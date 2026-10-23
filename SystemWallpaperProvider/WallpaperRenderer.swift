@@ -9,7 +9,7 @@ import Metal
 #endif
 
 /// Keeps video and live scenes behind the same surface lifecycle used by WallpaperAgent.
-final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAllocatedUnfairLock, `video` on its own render queue, `activeScenes` MainActor
+final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAllocatedUnfairLock, `video` on its own render queue, scene lifecycle behind its own lock
     var layer: CALayer {
         video.layer
     }
@@ -18,28 +18,13 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
     private struct State {
         var generation: UInt64 = 0
         var rate: Double = 1
-        var task: Task<Void, Never>?
+        var scene: WallpaperSceneLifecycle?
         var presented = false
         var refreshLiveData = true
         var hideClockCalendar = false
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
-    #if !LITE_BUILD
-    @MainActor private static var activeScenes = 0
-
-    @MainActor
-    private static func acquireSceneSlot() async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(30))
-        while activeScenes >= 4 {
-            try Task.checkCancellation()
-            guard clock.now < deadline else { throw CocoaError(.featureUnsupported) }
-            try await clock.sleep(for: .milliseconds(100))
-        }
-        activeScenes += 1
-    }
-    #endif
 
     func enqueueStill(posterURL: URL?, size: CGSize) {
         video.enqueueStill(posterURL: posterURL, size: size)
@@ -52,7 +37,8 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
     func start(url: URL, initialRate: Double = 1,
                refreshLiveData: Bool = true, hideClockCalendar: Bool = false,
                onFirstFrame: (@Sendable () -> Void)? = nil,
-               onFailure: (@Sendable (String) -> Void)? = nil) {
+               onFailure: (@Sendable (String) -> Void)? = nil,
+               onHealthChange: @escaping @Sendable () -> Void = {}) {
         stop()
         if url.pathExtension != "scene" {
             video.start(url: url, initialRate: initialRate, onFirstFrame: onFirstFrame, onFailure: onFailure)
@@ -66,43 +52,52 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
             state.hideClockCalendar = hideClockCalendar
             return state.generation
         }
+        let lifecycle = WallpaperSceneLifecycle(running: initialRate > 0, onHealthChange: onHealthChange,
+                                                onFailure: { [weak self] code in
+                                                    guard let self, state.withLock({ $0.generation }) == generation else { return }
+                                                    onFailure?(code)
+                                                })
+        state.withLock { $0.scene = lifecycle }
         let task = Task { @MainActor [self] in
-            var actor: WPEDisplayRenderActor?
-            var ownsSlot = false
-            defer {
-                if ownsSlot {
-                    Self.activeScenes -= 1
-                }
-            }
             let sceneLayer = CAMetalLayer()
             do {
                 try Task.checkCancellation()
-                try await Self.acquireSceneSlot()
-                ownsSlot = true
+                let fingerprint = try await CancellableBackgroundWork.run {
+                    try WallpaperSceneCapsule.fingerprint(at: url)
+                }
+                guard lifecycle.setCapsule(fingerprint) else { return }
+                try await lifecycle.acquireSlot()
+                try Task.checkCancellation()
                 guard let device = MTLCreateSystemDefaultDevice() else { throw CocoaError(.featureUnsupported) }
                 sceneLayer.device = device
                 sceneLayer.pixelFormat = .bgra8Unorm_srgb
                 sceneLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
                 sceneLayer.frame = layer.bounds
-                let source = try SystemWallpaperSceneSource.published(at: url)
+                let (source, clockObjectIDs) = try await CancellableBackgroundWork.run {
+                    let source = try SystemWallpaperSceneSource.published(at: url)
+                    return (source, source.clockCalendarObjectIDs())
+                }
                 sceneLayer.drawableSize = source.renderSize(for: CGSize(width: layer.bounds.width * layer.contentsScale,
                                                                         height: layer.bounds.height * layer.contentsScale))
                 var pool = try SystemWallpaperFramePool(size: sceneLayer.drawableSize, device: device)
-                let clockObjectIDs = source.clockCalendarObjectIDs()
                 let running = try await SystemWallpaperSceneRuntime.makeActor(source: source, layer: sceneLayer, size: sceneLayer.drawableSize,
-                                                                              hidingClockCalendar: hideClockCalendar)
+                                                                              hidingClockCalendar: hideClockCalendar,
+                                                                              actorCreated: { actor in
+                                                                                  lifecycle.installShutdown { await actor.shutdownSystemWallpaperRenderer() }
+                                                                              })
                 var clocksHidden = hideClockCalendar
-                actor = running
                 let clock = ContinuousClock()
-                let firstFrameDeadline = clock.now.advanced(by: .seconds(30))
                 var wasPaused = false
                 var pausedAt: ContinuousClock.Instant?
                 var hibernated = false
-                while !Task.isCancelled, state.withLock({ $0.generation }) == generation {
+                while !Task.isCancelled, lifecycle.isActive, state.withLock({ $0.generation }) == generation {
                     let (rate, didPresent, refreshLiveData, hideClocks) = state.withLock { ($0.rate, $0.presented, $0.refreshLiveData, $0.hideClockCalendar) }
                     if clocksHidden != hideClocks {
+                        let descriptor = try await CancellableBackgroundWork.run {
+                            source.descriptorForSystemWallpaper(hidingClockCalendar: hideClocks)
+                        }
                         try await running.setSystemWallpaperState(
-                            descriptor: source.descriptorForSystemWallpaper(hidingClockCalendar: hideClocks),
+                            descriptor: descriptor,
                             excludedObjectIDs: hideClocks ? clockObjectIDs : []
                         )
                         clocksHidden = hideClocks
@@ -117,23 +112,21 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
                             if !hibernated, let pausedAt, pausedAt.duration(to: clock.now) >= .seconds(30) {
                                 hibernated = await running.hibernate()
                                 if hibernated {
-                                    Self.activeScenes -= 1; ownsSlot = false
+                                    lifecycle.releaseSlot()
                                 }
                             }
                             try await clock.sleep(for: .seconds(1))
                             continue
                         }
                         if hibernated {
-                            try await Self.acquireSceneSlot()
-                            ownsSlot = true
+                            try await lifecycle.acquireSlot()
                             try await running.reload()
                             await running.applyPerformanceProfile(.suspended)
                             hibernated = false
                         }
                     } else if wasPaused {
                         if hibernated {
-                            try await Self.acquireSceneSlot()
-                            ownsSlot = true
+                            try await lifecycle.acquireSlot()
                             try await running.reload()
                             hibernated = false
                         }
@@ -156,7 +149,7 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
                     // GPU writes have completed; only the cache wrapper's lifetime is retained afterwards.
                     nonisolated(unsafe) let completedBuffer = frame.buffer
                     video.enqueueRenderedFrame(CVReadOnlyPixelBuffer(unsafeBuffer: completedBuffer), first: !didPresent,
-                                               isCurrent: { [state] in state.withLock { $0.generation == generation } },
+                                               isCurrent: { [state] in lifecycle.isActive && state.withLock { $0.generation == generation } },
                                                onFirstFrame: { [state] in
                                                    let first = state.withLock { value -> Bool in
                                                        guard value.generation == generation, !value.presented else { return false }
@@ -166,42 +159,47 @@ final class WallpaperRenderer: @unchecked Sendable { // `state` behind its OSAll
                                                    if first {
                                                        onFirstFrame?()
                                                    }
-                                               })
+                                               },
+                                               onFrame: { lifecycle.framePresented() })
                     withExtendedLifetime(frame.cachedTexture) {}
-                    if !didPresent, clock.now >= firstFrameDeadline {
-                        throw CocoaError(.fileReadCorruptFile)
-                    }
                     try await clock.sleep(for: .seconds(1.0 / Double(fps)))
                 }
+            } catch is WallpaperSceneAdmission.CircuitOpen {
+                lifecycle.finish(failure: "scene.circuit.open")
+            } catch is WallpaperSceneAdmission.Unavailable {
+                lifecycle.finish(failure: "scene.admission.closed")
             } catch {
                 if !Task.isCancelled, state.withLock({ $0.generation }) == generation {
-                    onFailure?("scene.load.failed")
+                    lifecycle.finish(failure: "scene.load.failed")
                     wpxLog.error("live scene failed: \(WPXLogPrivacy.summary(error), privacy: .private)")
                 }
             }
-            if let actor {
-                await actor.teardownRenderer()
-                actor.requestStop()
-            }
+            lifecycle.finish()
         }
-        state.withLock { $0.task = task }
+        lifecycle.install(task: task)
         #else
         onFailure?("scene.unsupported")
         #endif
     }
 
     func rampRate(to rate: Double, duration: TimeInterval = 2, refreshLiveData: Bool = true, hideClockCalendar: Bool = false) {
-        state.withLock { $0.rate = rate; $0.refreshLiveData = refreshLiveData; $0.hideClockCalendar = hideClockCalendar }
+        let scene = state.withLock { value in
+            value.rate = rate
+            value.refreshLiveData = refreshLiveData
+            value.hideClockCalendar = hideClockCalendar
+            return value.scene
+        }
+        scene?.setRunning(rate > 0)
         video.rampRate(to: rate, duration: duration)
     }
 
     func stop() {
-        let task = state.withLock { state -> Task<Void, Never>? in
+        let scene = state.withLock { state -> WallpaperSceneLifecycle? in
             state.generation &+= 1
-            defer { state.task = nil }
-            return state.task
+            defer { state.scene = nil }
+            return state.scene
         }
-        task?.cancel()
+        scene?.finish()
         video.stop()
     }
 

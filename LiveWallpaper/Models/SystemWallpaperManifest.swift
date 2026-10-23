@@ -21,6 +21,7 @@ struct SystemWallpaperManifest: Codable, Equatable {
     var playbackMode: SystemWallpaperPlaybackMode
     var selectedItemID: String?
     var displaySelections: [String: String]
+    var hideClockCalendarOnLockScreen: Bool
 
     static let selectedChoiceID = "loomscreen-selected"
 
@@ -42,15 +43,17 @@ struct SystemWallpaperManifest: Codable, Equatable {
     )
 
     init(version: Int, items: [Item], playbackMode: SystemWallpaperPlaybackMode = .always,
-         selectedItemID: String? = nil, displaySelections: [String: String] = [:]) {
+         selectedItemID: String? = nil, displaySelections: [String: String] = [:],
+         hideClockCalendarOnLockScreen: Bool = true) {
         self.version = version
         self.items = items
         self.playbackMode = playbackMode
         self.selectedItemID = selectedItemID
         self.displaySelections = displaySelections
+        self.hideClockCalendarOnLockScreen = hideClockCalendarOnLockScreen
     }
 
-    private enum CodingKeys: String, CodingKey { case version, items, playbackMode, selectedItemID, displaySelections }
+    private enum CodingKeys: String, CodingKey { case version, items, playbackMode, selectedItemID, displaySelections, hideClockCalendarOnLockScreen }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -65,6 +68,7 @@ struct SystemWallpaperManifest: Codable, Equatable {
         playbackMode = try c.decodeIfPresent(SystemWallpaperPlaybackMode.self, forKey: .playbackMode) ?? .always
         selectedItemID = try c.decodeIfPresent(String.self, forKey: .selectedItemID)
         displaySelections = try c.decodeIfPresent([String: String].self, forKey: .displaySelections) ?? [:]
+        hideClockCalendarOnLockScreen = try c.decodeIfPresent(Bool.self, forKey: .hideClockCalendarOnLockScreen) ?? true
     }
 
     /// A single path component: no separators, no traversal, not empty.
@@ -179,6 +183,8 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     /// one arbitrary member for readers that predate multi-display support.
     var activeChoiceIDs: [String]?
     var activeDisplayIDs: [UInt32]?
+    /// Displays showing the selected-wallpaper tile, a subset of `activeDisplayIDs`; nil = an older provider, or a surface without a display ID.
+    var selectedTileDisplayIDs: [UInt32]?
     /// False when the appex's private-API layout check failed on this OS —
     /// the app shows the "system incompatible" state instead of guessing.
     var runtimeHealthy: Bool
@@ -190,29 +196,32 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     var provider: SystemWallpaperProviderIdentity?
     /// Choice ID to renderer failure code; absent in older providers.
     var playbackFailures: [String: String]?
+    var leakedRenderThreadCount: Int?
 
     /// Bump when the private-API layout check changes, or a fixed check cannot overwrite its predecessor's unhealthy verdict.
     static let currentRuntimeCheckVersion = 1
 
     init(timestamp: Date, activeChoiceID: String?, activeChoiceIDs: [String]? = nil, activeDisplayIDs: [UInt32]? = nil,
-         runtimeHealthy: Bool = true, osVersion: String? = nil,
+         selectedTileDisplayIDs: [UInt32]? = nil, runtimeHealthy: Bool = true, osVersion: String? = nil,
          runtimeCheckVersion: Int? = SystemWallpaperHeartbeat.currentRuntimeCheckVersion,
          provider: SystemWallpaperProviderIdentity? = nil,
-         playbackFailures: [String: String]? = nil) {
+         playbackFailures: [String: String]? = nil, leakedRenderThreadCount: Int? = nil) {
         self.timestamp = timestamp
         self.activeChoiceID = activeChoiceID
         self.activeChoiceIDs = activeChoiceIDs
         self.activeDisplayIDs = activeDisplayIDs
+        self.selectedTileDisplayIDs = selectedTileDisplayIDs
         self.runtimeHealthy = runtimeHealthy
         self.osVersion = osVersion
         self.runtimeCheckVersion = runtimeCheckVersion
         self.provider = provider
         self.playbackFailures = playbackFailures
+        self.leakedRenderThreadCount = leakedRenderThreadCount
     }
 
     private enum CodingKeys: String, CodingKey {
-        case timestamp, activeChoiceID, activeChoiceIDs, activeDisplayIDs, runtimeHealthy, osVersion, runtimeCheckVersion
-        case provider, playbackFailures
+        case timestamp, activeChoiceID, activeChoiceIDs, activeDisplayIDs, selectedTileDisplayIDs, runtimeHealthy, osVersion, runtimeCheckVersion
+        case provider, playbackFailures, leakedRenderThreadCount
     }
 
     init(from decoder: Decoder) throws {
@@ -221,11 +230,13 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         activeChoiceID = try c.decodeIfPresent(String.self, forKey: .activeChoiceID)
         activeChoiceIDs = try c.decodeIfPresent([String].self, forKey: .activeChoiceIDs)
         activeDisplayIDs = try c.decodeIfPresent([UInt32].self, forKey: .activeDisplayIDs)
+        selectedTileDisplayIDs = try c.decodeIfPresent([UInt32].self, forKey: .selectedTileDisplayIDs)
         runtimeHealthy = try c.decodeIfPresent(Bool.self, forKey: .runtimeHealthy) ?? true
         osVersion = try c.decodeIfPresent(String.self, forKey: .osVersion)
         runtimeCheckVersion = try c.decodeIfPresent(Int.self, forKey: .runtimeCheckVersion)
         provider = try c.decodeIfPresent(SystemWallpaperProviderIdentity.self, forKey: .provider)
         playbackFailures = try c.decodeIfPresent([String: String].self, forKey: .playbackFailures)
+        leakedRenderThreadCount = try c.decodeIfPresent(Int.self, forKey: .leakedRenderThreadCount)
     }
 
     /// Reject a beat whose stamp disagrees, and an unstamped beat (leftover 0.6.2). Only a missing expectation disables the check.
@@ -240,6 +251,12 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         guard !runtimeHealthy else { return false }
         guard osVersion == nil || osVersion == Self.currentOSVersion() else { return false }
         return (runtimeCheckVersion ?? 1) == Self.currentRuntimeCheckVersion
+    }
+
+    /// Displays macOS shows the selected-wallpaper tile on; 1 when the tile is shown but the provider could not name its displays.
+    var followingDisplayCount: Int {
+        guard showsChoice(SystemWallpaperManifest.selectedChoiceID) else { return 0 }
+        return selectedTileDisplayIDs.map { max(1, $0.count) } ?? 1
     }
 
     func showsChoice(_ itemID: String) -> Bool {

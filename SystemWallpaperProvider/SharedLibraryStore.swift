@@ -80,17 +80,20 @@ struct SharedLibraryStore: Sendable {
         sharedRoot().appendingPathComponent("Videos", isDirectory: true)
     }
 
-    func writeHeartbeat(activeChoiceID: String?, activeChoiceIDs: [String]? = nil, activeDisplayIDs: [UInt32]? = nil, runtimeHealthy: Bool = true,
-                        playbackFailures: [String: String]? = nil) {
+    func writeHeartbeat(activeChoiceID: String?, activeChoiceIDs: [String]? = nil, activeDisplayIDs: [UInt32]? = nil,
+                        selectedTileDisplayIDs: [UInt32]? = nil, runtimeHealthy: Bool = true,
+                        playbackFailures: [String: String]? = nil, leakedRenderThreadCount: Int? = nil) {
         let beat = SystemWallpaperHeartbeat(
             timestamp: Date(),
             activeChoiceID: activeChoiceID,
             activeChoiceIDs: activeChoiceIDs,
             activeDisplayIDs: activeDisplayIDs,
+            selectedTileDisplayIDs: selectedTileDisplayIDs,
             runtimeHealthy: runtimeHealthy,
             osVersion: SystemWallpaperHeartbeat.currentOSVersion(),
             provider: .current(),
-            playbackFailures: playbackFailures
+            playbackFailures: playbackFailures,
+            leakedRenderThreadCount: leakedRenderThreadCount
         )
         guard let data = try? SystemWallpaperCoding.encoder.encode(beat) else { return }
         let url = sharedRoot().appendingPathComponent("heartbeat.json")

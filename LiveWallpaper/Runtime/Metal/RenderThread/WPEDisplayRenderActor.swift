@@ -640,6 +640,12 @@ actor WPEDisplayRenderActor {
         return false
     }
 
+    /// Cleanup can suspend on video preparation; joining the thread must not wait for that task.
+    nonisolated func shutdownSystemWallpaperRenderer() async -> Bool {
+        Task.detached { await self.teardownRenderer() }
+        return await shutdown(timeout: .seconds(5))
+    }
+
     func teardownRenderer() async {
         emitCadence(reason: "teardown", force: true)
         let videoPreparation = cancelParityVideoAdmission()

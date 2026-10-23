@@ -91,6 +91,23 @@ private enum EngineChecks {
         let stoppedReview = try stopped.inspect()
         try check(stopped.repair(revision: stoppedReview.revision).outcome == .repaired,
                   "repair completes when the agent was already gone")
+        for stage in ["register", "inspect", "restart"] {
+            let partialRegistry = FakeRegistry(current: host.path)
+            let partialEngine = WallpaperMaintenanceEngine(hostPath: host.path, hostID: "com.loomscreen.pro", home: root.path,
+                                                           run: { executable, arguments in
+                                                               let didRemove = partialRegistry.calls().contains { $0.1.first == "-u" }
+                                                               if didRemove, (stage == "register" && arguments.first == "-f")
+                                                                   || (stage == "inspect" && arguments.first == "-dump")
+                                                                   || (stage == "restart" && executable == "/usr/bin/pkill") {
+                                                                   throw WallpaperMaintenanceEngine.Failure.command
+                                                               }
+                                                               return partialRegistry.run(executable, arguments)
+                                                           })
+            let review = try partialEngine.inspect()
+            let result = try? partialEngine.repair(revision: review.revision)
+            try check(result?.removedCount == 1 && result?.outcome == .failed && result?.errorCode != nil && result?.failedStage == stage,
+                      "partial removal survives \(stage) failure")
+        }
         let output = try WallpaperMaintenanceProcess.run("/usr/bin/printf", ["noise\\npath: /probe.app\\nidentifier: probe"])
         try check(output.code == 0 && output.output == "path: /probe.app\nidentifier: probe\n",
                   "real process output captured, registration lines only")

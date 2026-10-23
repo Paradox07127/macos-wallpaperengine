@@ -12,10 +12,10 @@ struct SystemWallpaperAddSheet: View {
     @State private var isPublishing = false
     @State private var failures: [String] = []
     @State private var isClosed = false
-    @State private var preparationOptions = SystemWallpaperPreparationOptions()
-    @State private var resolutionIndex = 1
-    private let resolutions = [CGSize(width: 1280, height: 720), CGSize(width: 1920, height: 1080),
-                               CGSize(width: 2560, height: 1440), CGSize(width: 3840, height: 2160)]
+    @State private var preparationOptions = SystemWallpaperFollowPreferences.copyOptions(
+        defaults: .appScoped(),
+        displaySize: NSScreen.main.map { $0.convertRectToBacking($0.frame).size } ?? .zero
+    )
 
     private var candidates: [SystemWallpaperCandidate] {
         SystemWallpaperCandidate.all(bookmarks: store.bookmarks, service: service)
@@ -37,16 +37,12 @@ struct SystemWallpaperAddSheet: View {
         VStack(spacing: 0) {
             SteamSheetHeader(
                 icon: "macwindow.on.rectangle",
-                title: "Add to System Wallpaper",
+                title: "Generate Copy",
                 iconTint: .accentColor,
                 subtitle: subtitle
             )
             .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
             .padding(.top, DesignTokens.Settings.formVerticalMargin)
-
-            chooseFilesRow
-                .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-                .padding(.vertical, DesignTokens.Spacing.md)
 
             if hasSelection(of: .scene) || hasSelection(of: .html) {
                 preparationSettings
@@ -76,7 +72,7 @@ struct SystemWallpaperAddSheet: View {
                 .padding(.horizontal, DesignTokens.Spacing.lg)
             }
             SheetFooterBar(
-                primaryTitle: "Add",
+                primaryTitle: "Generate",
                 primaryAction: publishSelection,
                 primaryDisabled: selection.isEmpty || isPublishing,
                 cancelTitle: isPublishing ? "Close" : "Cancel",
@@ -124,12 +120,14 @@ struct SystemWallpaperAddSheet: View {
             }
             #endif
             HStack {
-                Picker("Resolution", selection: $resolutionIndex) {
-                    ForEach(resolutions.indices, id: \.self) { index in
-                        Text("\(Int(resolutions[index].width)) × \(Int(resolutions[index].height)) px").tag(index)
+                Picker("Resolution", selection: $preparationOptions.size.height) {
+                    ForEach(SystemWallpaperFollowPreferences.copySizes, id: \.height) { size in
+                        Text("\(Int(size.width)) × \(Int(size.height)) px").tag(size.height)
                     }
                 }
-                .onChange(of: resolutionIndex) { _, index in preparationOptions.size = resolutions[index] }
+                .onChange(of: preparationOptions.size.height) { _, height in
+                    preparationOptions.size.width = (height * 16 / 9).rounded()
+                }
                 if hasSelection(of: .html) || preparationOptions.sceneMode == .videoCopy {
                     Picker("Loop length", selection: $preparationOptions.duration) {
                         Text("15 seconds").tag(15.0)
@@ -153,20 +151,6 @@ struct SystemWallpaperAddSheet: View {
         .disabled(isPublishing)
     }
 
-    private var chooseFilesRow: some View {
-        Button {
-            SystemWallpaperVideoImport.present(publishingInto: service)
-            dismiss()
-        } label: {
-            Label("Choose Files", systemImage: "folder.badge.plus")
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .disabled(isPublishing)
-    }
-
     private func toggle(_ candidate: SystemWallpaperCandidate) {
         if selection.contains(candidate.id) {
             selection.remove(candidate.id)
@@ -183,16 +167,21 @@ struct SystemWallpaperAddSheet: View {
         failures = []
         Task { @MainActor in
             var collected: [String] = []
+            var wasCancelled = false
             let generation = service.clearGeneration
             let cancellationGeneration = service.preparationCancellationGeneration
             for candidate in chosen {
                 guard service.clearGeneration == generation,
-                      service.preparationCancellationGeneration == cancellationGeneration else { break }
+                      service.preparationCancellationGeneration == cancellationGeneration else {
+                    wasCancelled = true
+                    break
+                }
                 do {
                     try await candidate.publish(using: service, options: preparationOptions)
                     selection.remove(candidate.id)
                 } catch {
                     if service.preparationCancellationGeneration != cancellationGeneration {
+                        wasCancelled = true
                         break
                     }
                     collected.append("\(candidate.title): \(error.localizedDescription)")
@@ -201,7 +190,7 @@ struct SystemWallpaperAddSheet: View {
             isPublishing = false
             failures = collected
             service.reportPublishFailures(collected)
-            if collected.isEmpty, !isClosed {
+            if collected.isEmpty, !wasCancelled, !isClosed {
                 dismiss()
             }
         }

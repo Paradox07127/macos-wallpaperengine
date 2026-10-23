@@ -17,11 +17,13 @@ public struct WPEParityShaderKey: Sendable, Hashable {
         case vertex, fragment, geometry
     }
 
+    public static let currentKeyFormatVersion = 1
+
     public let rawValue: String
 
     public init(program: WPEHLSLProgram, compilerIdentity: String,
                 options: WPEParityShaderCompileOptions, bindingABIVersion: Int,
-                keyFormatVersion: Int = 1) {
+                keyFormatVersion: Int = currentKeyFormatVersion) {
         var encoded = Data()
         func append(_ bytes: Data) {
             var length = UInt64(bytes.count).bigEndian

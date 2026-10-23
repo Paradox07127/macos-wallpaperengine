@@ -29,6 +29,7 @@ struct SystemWallpaperMaintenanceReport: Codable, Sendable, Equatable {
     var removedCount = 0
     var errorCode: String?
     var currentAppPath: String?
+    var failedStage: String?
 }
 
 /// Parses only the two host identities. Extension and unrelated application records are excluded.

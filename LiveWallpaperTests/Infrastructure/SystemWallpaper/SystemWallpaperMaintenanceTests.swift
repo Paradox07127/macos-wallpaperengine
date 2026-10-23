@@ -13,6 +13,53 @@ struct SystemWallpaperMaintenanceTests {
         #expect(report.copies.allSatisfy { SystemWallpaperRegistrationPolicy.hostIDs.contains($0.bundleID) })
     }
 
+    @Test(.timeLimit(.minutes(1))) @MainActor
+    func newMaintenanceOperationsClearResultsAndPreservePartialFailure() async throws {
+        let name = "SystemWallpaperMaintenanceTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        var controller: SystemWallpaperMaintenanceController?
+        controller = SystemWallpaperMaintenanceController(defaults: defaults, perform: { operation in
+            #expect(controller?.report == nil)
+            #expect(controller?.errorCode == nil)
+            switch operation {
+            case .inspect:
+                return .init(outcome: .inspected, revision: "review")
+            case let .repair(revision):
+                #expect(revision == "review")
+                return .init(outcome: .failed, removedCount: 2, errorCode: "maintenance.operationFailed", failedStage: "restart")
+            case .restart:
+                return .init(outcome: .failed, errorCode: "maintenance.operationFailed")
+            }
+        })
+        defer { controller = nil }
+        let current = try #require(controller)
+        await current.inspect()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var dependencies = WallpaperExportService.Dependencies.live()
+        dependencies = .init(sharedRoot: root, resolver: dependencies.resolver, now: Date.init, makeThumbnailJPEG: { _ in nil })
+        let service = WallpaperExportService(dependencies: dependencies)
+        await current.recover(service: service, repair: true)
+        #expect(current.phase == .failed)
+        #expect(current.report?.removedCount == 2)
+        #expect(current.report?.failedStage == "restart")
+        #expect(current.errorCode == "maintenance.operationFailed")
+        await current.inspect()
+        #expect(current.report?.removedCount == 0)
+        #expect(current.errorCode == nil)
+    }
+
+    @Test func maintenanceReportDecodesWithoutOptionalFailureStage() throws {
+        let data = Data(#"{"outcome":"failed","copies":[],"revision":"r","removedCount":2,"errorCode":"maintenance.operationFailed"}"#.utf8)
+        let report = try JSONDecoder().decode(SystemWallpaperMaintenanceReport.self, from: data)
+        #expect(report.removedCount == 2)
+        #expect(report.failedStage == nil)
+        var partial = report
+        partial.failedStage = "restart"
+        #expect(try JSONDecoder().decode(SystemWallpaperMaintenanceReport.self, from: JSONEncoder().encode(partial)) == partial)
+    }
+
     @Test func parsesOnlyExactHostIdentities() {
         let records = SystemWallpaperRegistrationPolicy.registrations(in: """
         --------

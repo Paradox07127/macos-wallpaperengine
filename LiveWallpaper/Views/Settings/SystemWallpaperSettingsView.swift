@@ -4,9 +4,17 @@ import SwiftUI
 @available(macOS 26.0, *)
 struct SystemWallpaperSettingsView: View {
     @Environment(WallpaperExportService.self) private var service
-    @State private var confirmsRepair = false
+    @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
+    @Environment(\.locale) private var locale
     @State private var pendingDestructive: PendingDestructive?
-    @State private var showingAddSheet = false
+    #if !LITE_BUILD
+    @AppStorage(SystemWallpaperFollowPreferences.sceneMode, store: .appScoped())
+    private var sceneMode: SystemWallpaperPreparationOptions.SceneMode = .live
+    @AppStorage(SystemWallpaperFollowPreferences.resolutionCap, store: .appScoped())
+    private var resolutionCap: SystemWallpaperFollowPreferences.ResolutionCap = .matchDisplay
+    @AppStorage(SystemWallpaperFollowPreferences.frameRate, store: .appScoped()) private var frameRate = 30
+    @AppStorage(SystemWallpaperFollowPreferences.loopLength, store: .appScoped()) private var loopLength = 15
+    #endif
 
     var body: some View {
         Form {
@@ -15,7 +23,7 @@ struct SystemWallpaperSettingsView: View {
                     icon: "play.rectangle",
                     iconColor: .indigo,
                     title: "Video playback",
-                    info: "The lock screen and login window always play the video."
+                    info: "Applies to videos and live scenes. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses."
                 ) {
                     GlassSegmentedPicker(
                         selection: Binding(get: { service.playbackMode }, set: { service.setPlaybackMode($0) }),
@@ -28,43 +36,21 @@ struct SystemWallpaperSettingsView: View {
                 SettingsSearchSectionHeader("Playback", anchor: .systemWallpaperPlayback)
             }
 
-            Section {
-                status
-                if let provider = service.heartbeat?.provider {
-                    DisclosureGroup {
-                        Text(verbatim: provider.bundlePath).textSelection(.enabled)
-                            .font(DesignTokens.Typography.codeCaption)
-                    } label: {
-                        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                            Text("Last connected extension")
-                                .font(DesignTokens.Typography.body)
-                            if let heartbeat = service.heartbeat,
-                               !heartbeat.isFromProvider(matching: SystemWallpaperProviderIdentity.bundledProvider()) {
-                                Text("The last extension connection came from another app copy.")
-                                    .font(DesignTokens.Typography.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            } header: {
-                HStack {
-                    SettingsSearchSectionHeader("Extension status", anchor: .systemWallpaperStatus)
-                    Spacer()
-                    Button { service.refresh() } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .buttonStyle(.borderless)
-                    .help(Text("Refresh"))
-                    .accessibilityLabel(Text("Refresh"))
-                }
-            } footer: {
-                Text("macOS chooses the wallpaper for each display and Space. Importing a video does not apply it to every desktop.")
-            }
-
-            SystemWallpaperMaintenanceSection(service: service, confirmsRepair: $confirmsRepair)
+            #if !LITE_BUILD
+            liveScenes
+            videoCopies
+            #endif
 
             Section {
+                SettingRow(
+                    icon: "internaldrive",
+                    iconColor: DesignTokens.Colors.LibraryTint.systemWallpaper,
+                    title: "Storage used",
+                    valueSubtitle: usedSpace
+                ) {
+                    Button("Manage in System Wallpaper") { router?.page = .systemWallpaper }
+                        .fixedSize()
+                }
                 SettingRow(
                     icon: "trash",
                     iconColor: DesignTokens.Colors.Status.danger,
@@ -74,230 +60,111 @@ struct SystemWallpaperSettingsView: View {
                     Button("Remove All", role: .destructive) {
                         pendingDestructive = PendingDestructive(.clearSystemWallpaperLibrary(
                             itemCount: service.items.count,
-                            formattedSize: WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes)
+                            formattedSize: usedSpace
                         )) { try? service.clearLibrary() }
                     }
                     .disabled(service.items.isEmpty)
                     .fixedSize()
                 }
             } header: {
-                SettingsSearchSectionHeader("System Wallpaper Library", anchor: .systemWallpaperLibrary)
+                SettingsSearchSectionHeader("Storage", anchor: .systemWallpaperStorage)
             }
+
+            SystemWallpaperMaintenanceSection(service: service)
         }
         .settingsFormChrome()
         .confirmDestructive($pendingDestructive)
-        .sheet(isPresented: $showingAddSheet) {
-            AppLanguageScope(defaults: .appScoped()) {
-                SystemWallpaperAddSheet()
-            }
-        }
         .onAppear { service.refresh() }
         .task { service.startObservingSharedRoot() }
     }
 
-    @ViewBuilder
-    private var status: some View {
-        if service.providerIssue == .differentCopy {
-            SettingRow(
-                icon: "info.circle",
-                iconColor: DesignTokens.Colors.Status.warning,
-                title: "Another app copy provides the system wallpaper",
-                subtitle: "A different copy is not a playback failure. Inspect registrations below before switching providers."
-            ) {
-                EmptyView()
-            }
-        } else if service.providerIssue == .stopped || service.providerIssue == .unresponsive {
-            InlineNoticeBanner(tint: DesignTokens.Colors.Status.warning, symbol: "exclamationmark.triangle",
-                               title: Text("System Wallpaper needs attention"),
-                               message: Text("Use Restart Wallpaper Service below to rebuild the system connection."), surface: .content)
-        } else {
-            switch service.status {
-            case let .failed(message):
-                InlineNoticeBanner(tint: DesignTokens.Colors.Status.warning, symbol: "exclamationmark.triangle.fill",
-                                   title: Text("Couldn't update System Wallpaper"), message: Text(verbatim: message), surface: .content)
-            case .systemIncompatible:
-                SystemWallpaperStatusLine("This version of macOS is not compatible with the wallpaper extension.",
-                                          systemImage: "exclamationmark.triangle", tint: DesignTokens.Colors.Status.warning)
-            case .inUse:
-                SystemWallpaperStatusLine("Selected by macOS", systemImage: "checkmark.circle.fill", tint: DesignTokens.Colors.Status.active)
-            case .empty:
-                HStack {
-                    SystemWallpaperStatusLine("No wallpapers yet", systemImage: "photo.on.rectangle.angled", tint: DesignTokens.Colors.textSecondary)
-                    Spacer(minLength: 0)
-                    Button {
-                        showingAddSheet = true
-                    } label: {
-                        Label("Add Wallpaper", systemImage: "plus")
-                    }
-                }
-            case .publishedNotSelected:
-                HStack {
-                    SystemWallpaperStatusLine("Choose a wallpaper in System Settings", systemImage: "gearshape", tint: DesignTokens.Colors.accent)
-                    Spacer(minLength: 0)
-                    Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
-                }
-            }
-        }
-    }
-}
-
-@available(macOS 26.0, *)
-private struct SystemWallpaperMaintenanceSection: View {
-    let service: WallpaperExportService
-    @Binding var confirmsRepair: Bool
-    private var maintenance: SystemWallpaperMaintenanceController {
-        service.maintenance
+    /// Formatted in the app language; `ByteCountFormatter` follows the system language instead.
+    private var usedSpace: String {
+        service.diskUsageBytes.formatted(.byteCount(style: .file).locale(locale))
     }
 
-    var body: some View {
+    #if !LITE_BUILD
+    private var liveScenes: some View {
         Section {
-            if !maintenance.helperAvailable {
-                SystemWallpaperStatusLine("Maintenance is unavailable in this build. Install a build that includes the maintenance service.",
-                                          systemImage: "exclamationmark.triangle", tint: DesignTokens.Colors.Status.warning)
-            }
-
             SettingRow(
-                icon: "magnifyingglass",
-                iconColor: DesignTokens.Colors.SettingsIcon.inspectRegistrations,
-                title: "Inspect Registrations"
+                icon: "cube.transparent",
+                iconColor: .purple,
+                title: "Scene playback",
+                info: "Live keeps clocks and calendars accurate. A video copy records the current appearance and uses less energy."
             ) {
-                HStack(spacing: DesignTokens.Spacing.sm) {
-                    if maintenance.isBusy, maintenance.phase == .inspecting {
-                        ProgressView().controlSize(.small)
-                    }
-                    Button("Inspect") { Task { await maintenance.inspect() } }
-                        .disabled(maintenance.isBusy || !maintenance.helperAvailable)
-                        .fixedSize()
-                }
+                GlassSegmentedPicker(
+                    selection: $sceneMode, values: [.live, .videoCopy], shell: .flat,
+                    title: { (mode: SystemWallpaperPreparationOptions.SceneMode) in mode == .live ? "Live" : "Video Copy" }
+                )
+                .frame(width: DesignTokens.Settings.segmentedPickerWidth)
             }
-
             SettingRow(
-                icon: "arrow.clockwise",
-                iconColor: DesignTokens.Colors.SettingsIcon.restartService,
-                title: "Restart Wallpaper Service",
-                info: "Restarting briefly redraws all system wallpapers for your account. Repair removes the reviewed registrations, keeps this app, and preserves app files and videos."
+                icon: "aspectratio",
+                iconColor: .teal,
+                title: "Resolution limit",
+                info: "Also applies to video copies."
             ) {
-                HStack(spacing: DesignTokens.Spacing.sm) {
-                    if maintenance.isBusy, maintenance.phase == .restarting {
-                        ProgressView().controlSize(.small)
-                    }
-                    Button("Restart") { Task { await maintenance.recover(service: service) } }
-                        .disabled(maintenance.isBusy || !maintenance.helperAvailable)
-                        .fixedSize()
+                Picker("Resolution limit", selection: $resolutionCap) {
+                    Text("Match Display").tag(SystemWallpaperFollowPreferences.ResolutionCap.matchDisplay)
+                    Text("1080p").tag(SystemWallpaperFollowPreferences.ResolutionCap.p1080)
+                    Text("1440p").tag(SystemWallpaperFollowPreferences.ResolutionCap.p1440)
+                    Text("4K").tag(SystemWallpaperFollowPreferences.ResolutionCap.p4K)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
-
+            SettingRow(icon: "speedometer", iconColor: .orange, title: "Frame Rate", info: "Also applies to video copies.") {
+                Picker("Frame Rate", selection: $frameRate) {
+                    Text("15 FPS").tag(15)
+                    Text("30 FPS").tag(30)
+                    Text("60 FPS").tag(60)
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
             SettingRow(
-                icon: "bolt.shield",
-                iconColor: DesignTokens.Colors.SettingsIcon.automaticRecovery,
-                title: "Automatically recover stalled connections",
-                info: "Automatic recovery runs while Loomscreen is open, waits for persistent failure, and restarts at most once every five minutes."
+                icon: "clock",
+                iconColor: .gray,
+                title: "Hide the wallpaper’s clock and calendar on the lock screen",
+                info: "macOS shows its own clock there."
             ) {
                 Toggle("", isOn: Binding(
-                    get: { maintenance.automaticRecovery }, set: { maintenance.automaticRecovery = $0 }
+                    get: { service.hidesClockCalendarOnLockScreen }, set: { service.setHidesClockCalendarOnLockScreen($0) }
                 ))
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .disabled(!maintenance.helperAvailable)
-                .accessibilityLabel(Text("Automatically recover stalled connections"))
-            }
-
-            result
-            if let report = maintenance.report {
-                if !report.copies.isEmpty {
-                    DisclosureGroup("Registered app copies") {
-                        ForEach(report.copies) { copy in
-                            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                                HStack {
-                                    if copy.isCurrent {
-                                        Text("This app")
-                                    } else if copy.willUnregister {
-                                        Text("Registration to remove")
-                                    } else {
-                                        Text("Preserved")
-                                    }
-                                    Spacer(minLength: 0)
-                                    if copy.exists {
-                                        Button("Show in Finder") { maintenance.reveal(copy.path) }.buttonStyle(.link)
-                                    }
-                                }
-                                Text(verbatim: copy.path).font(DesignTokens.Typography.codeCaption).textSelection(.enabled)
-                            }
-                            .padding(.vertical, DesignTokens.Spacing.xxs)
-                        }
-                    }
-                }
-                if report.outcome == .inspected || report.copies.contains(where: \.willUnregister) {
-                    SettingRow(
-                        icon: "wrench.and.screwdriver",
-                        iconColor: DesignTokens.Colors.SettingsIcon.repairExtension,
-                        title: "Use This App's Extension",
-                        info: "The registrations marked for removal will be unregistered. This app becomes the preferred provider and the system wallpaper service restarts."
-                    ) {
-                        Button("Repair and Restart") { confirmsRepair = true }
-                            .disabled(maintenance.isBusy || report.outcome != .inspected)
-                            .fixedSize()
-                    }
-                }
+                .accessibilityLabel(Text("Hide the wallpaper’s clock and calendar on the lock screen"))
             }
         } header: {
-            SettingsSearchSectionHeader("Maintenance", anchor: .systemWallpaperMaintenance)
-        }
-        .confirmationDialog("Use This App's Extension?", isPresented: $confirmsRepair, titleVisibility: .visible) {
-            Button("Repair and Restart") { Task { await maintenance.recover(service: service, repair: true) } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The registrations marked for removal will be unregistered. This app becomes the preferred provider and the system wallpaper service restarts.")
+            SettingsSearchSectionHeader("Live scenes", anchor: .systemWallpaperLiveScenes)
         }
     }
 
-    @ViewBuilder
-    private var result: some View {
-        switch maintenance.phase {
-        case .idle:
-            if let report = maintenance.report, report.outcome == .inspected {
-                SystemWallpaperStatusLine("Registration check complete", systemImage: "checkmark.circle", tint: DesignTokens.Colors.Status.active)
-                if report.copies.isEmpty {
-                    Text("No registered app copies found.")
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
+    private var videoCopies: some View {
+        Section {
+            SettingRow(
+                icon: "repeat",
+                iconColor: .blue,
+                title: "Loop length",
+                info: "Used when web wallpapers and scenes are recorded as video copies."
+            ) {
+                Picker("Loop length", selection: $loopLength) {
+                    Text("15 seconds").tag(15)
+                    Text("30 seconds").tag(30)
+                    Text("60 seconds").tag(60)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
-        case .inspecting:
-            progressLine("Inspecting registrations…")
-        case .restarting:
-            progressLine("Restarting wallpaper service…")
-        case .repairing:
-            progressLine("Repairing registrations…")
-        case .verifying:
-            progressLine("Waiting for the extension to reconnect…")
-        case .verified:
-            SystemWallpaperStatusLine("Extension connection verified", systemImage: "checkmark.circle.fill", tint: DesignTokens.Colors.Status.active)
-        case .awaitingSelection:
-            SystemWallpaperStatusLine("The service restarted, but no new connection was confirmed. In System Wallpaper, click Add Video to choose a video.",
-                                      systemImage: "exclamationmark.triangle", tint: DesignTokens.Colors.Status.warning)
-        case .failed:
-            HStack {
-                SystemWallpaperStatusLine("Maintenance did not complete. Inspect registrations again before retrying.",
-                                          systemImage: "exclamationmark.triangle.fill", tint: DesignTokens.Colors.Status.warning)
-                Spacer(minLength: 0)
-                if let code = maintenance.errorCode {
-                    ErrorCodeChip(code: code, tint: DesignTokens.Colors.Status.warning)
-                }
-            }
+        } header: {
+            SettingsSearchSectionHeader("Video copies", anchor: .systemWallpaperVideoCopies)
         }
     }
-
-    private func progressLine(_ title: LocalizedStringKey) -> some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            ProgressView().controlSize(.small)
-            Text(title)
-        }
-    }
+    #endif
 }
 
 /// A status message in a settings section; not a setting, so not a `SettingRow` and not indexed by search.
-private struct SystemWallpaperStatusLine: View {
+struct SystemWallpaperStatusLine: View {
     let title: LocalizedStringKey
     let systemImage: String
     let tint: Color

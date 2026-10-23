@@ -75,6 +75,24 @@ struct SystemWallpaperSceneConfiguration: Codable, Sendable {
         }
     }
 
+    // Bump the translator revision whenever generated HLSL changes without a binding ABI change.
+    static let currentTranslatorVersion = 1
+    static let currentKeyFormatVersion = WPEParityShaderKey.currentKeyFormatVersion
+
+    static var recoveryVersion: String {
+        "\(currentTranslatorVersion)-\(currentKeyFormatVersion)-\(WPEParityShaderCompileRequest.currentBindingABIVersion)"
+    }
+
+    var translatorVersion: Int? = currentTranslatorVersion
+    var keyFormatVersion: Int? = currentKeyFormatVersion
+
+    var needsRepreparation: Bool {
+        parity == nil || parity?.schemaVersion != 1
+            || parity?.bindingABIVersion != WPEParityShaderCompileRequest.currentBindingABIVersion
+            || (translatorVersion ?? 0) < Self.currentTranslatorVersion
+            || (keyFormatVersion ?? 0) < Self.currentKeyFormatVersion
+    }
+
     let descriptor: SceneDescriptor
     let dependencies: [Dependency]
     let hasEngineAssets: Bool

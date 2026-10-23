@@ -85,6 +85,12 @@ private struct Fixture {
 
 @main struct Probe {
     static func main() async throws {
+        do {
+            try await SceneLifecycleChecks.run()
+        } catch {
+            print("FAIL: scene lifecycle checks: \(error)")
+            exit(1)
+        }
         let old = Date(timeIntervalSince1970: 1000)
         let new = Date(timeIntervalSince1970: 2000)
 

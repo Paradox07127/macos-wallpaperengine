@@ -118,9 +118,13 @@ enum SystemWallpaperSceneRuntime {
 
     @MainActor
     static func makeActor(source: SystemWallpaperSceneSource, layer: CAMetalLayer, size: CGSize,
-                          hidingClockCalendar: Bool = false) async throws -> WPEDisplayRenderActor {
+                          hidingClockCalendar: Bool = false,
+                          actorCreated: (@Sendable (WPEDisplayRenderActor) -> Void)? = nil) async throws -> WPEDisplayRenderActor {
         guard let device = layer.device else { throw WPEMetalRenderError.commandBufferFailed }
-        let descriptor = source.descriptorForSystemWallpaper(hidingClockCalendar: hidingClockCalendar)
+        let (descriptor, clockObjectIDs) = try await CancellableBackgroundWork.run {
+            (source.descriptorForSystemWallpaper(hidingClockCalendar: hidingClockCalendar),
+             hidingClockCalendar ? source.clockCalendarObjectIDs() : [])
+        }
         let compiler: (any WPEParityShaderCompiling)?
         let compilerIdentity: String?
         switch source.shaderPolicy {
@@ -173,21 +177,27 @@ enum SystemWallpaperSceneRuntime {
             inputs.diskCache = WPEParityShaderDiskCache(rootURL: root, readOnly: source.shaderPolicy == .precompiledOnly,
                                                         sizeBudget: .max)
         }
-        let actor = WPEDisplayRenderActor(label: "com.loomscreen.wallpaper.scene")
+        let actor = try await CancellableBackgroundWork.run {
+            let actor = WPEDisplayRenderActor(label: "com.loomscreen.wallpaper.scene")
+            actorCreated?(actor)
+            return actor
+        }
         do {
+            try Task.checkCancellation()
             try await actor.adoptParity(inputs)
             await actor.setAudioMuted(true)
             await actor.setFrameRateCeiling(source.preferredFramesPerSecond)
             try await actor.setSystemWallpaperState(descriptor: descriptor,
-                                                    excludedObjectIDs: hidingClockCalendar ? source.clockCalendarObjectIDs() : [])
+                                                    excludedObjectIDs: clockObjectIDs)
             try await actor.load()
             guard let state = await actor.rendererStateSnapshot(), state.isLoaded, state.shaderErrorCount == 0 else {
                 throw Unavailable(reason: "The parity scene did not load every required shader")
             }
             try Task.checkCancellation()
         } catch {
-            await actor.teardownRenderer()
-            actor.requestStop()
+            if actorCreated == nil {
+                _ = await actor.shutdownSystemWallpaperRenderer()
+            }
             throw error
         }
         return actor

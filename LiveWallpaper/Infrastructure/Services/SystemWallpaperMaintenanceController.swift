@@ -21,12 +21,15 @@ final class SystemWallpaperMaintenanceController {
         SystemWallpaperMaintenanceClient.isAvailable
     }
 
+    @ObservationIgnored private let perform: @MainActor (SystemWallpaperMaintenanceClient.Operation) async -> SystemWallpaperMaintenanceReport
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let allowsAutomaticRecovery = !AppRuntimeOptions().isTesting
     @ObservationIgnored private var recoveryPolicy: SystemWallpaperRecoveryPolicy
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
 
-    init(defaults: UserDefaults = .appScoped()) {
+    init(defaults: UserDefaults = .appScoped(),
+         perform: @escaping @MainActor (SystemWallpaperMaintenanceClient.Operation) async -> SystemWallpaperMaintenanceReport = SystemWallpaperMaintenanceClient.perform) {
+        self.perform = perform
         self.defaults = defaults
         recoveryPolicy = .init(now: Date(), lastAttempt: defaults.object(forKey: "SystemWallpaper.LastAutomaticRecovery") as? Date ?? .distantPast)
         automaticRecovery = defaults.bool(forKey: "SystemWallpaper.AutomaticRecovery")
@@ -35,8 +38,9 @@ final class SystemWallpaperMaintenanceController {
     func inspect() async {
         guard !isBusy else { return }
         phase = .inspecting
+        report = nil
         errorCode = nil
-        let result = await SystemWallpaperMaintenanceClient.perform(.inspect)
+        let result = await perform(.inspect)
         report = result
         errorCode = result.errorCode
         phase = result.outcome == .inspected ? .idle : .failed
@@ -52,7 +56,8 @@ final class SystemWallpaperMaintenanceController {
         phase = repair ? .repairing : .restarting
         errorCode = nil
         let operation: SystemWallpaperMaintenanceClient.Operation = repair ? .repair(report?.revision ?? "") : .restart
-        let result = await SystemWallpaperMaintenanceClient.perform(operation)
+        report = nil
+        let result = await perform(operation)
         report = result
         guard result.outcome == .restarted || result.outcome == .repaired else {
             errorCode = result.errorCode ?? (result.outcome == .changed ? "maintenance.reviewChanged" : "maintenance.operationFailed")

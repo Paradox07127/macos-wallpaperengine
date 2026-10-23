@@ -203,7 +203,8 @@ final class VideoRenderer: @unchecked Sendable {
     /// A live scene supplies an already-rendered IOSurface instead of a compressed video sample.
     func enqueueRenderedFrame(_ pixelBuffer: CVReadOnlyPixelBuffer, first: Bool,
                               isCurrent: @escaping @Sendable () -> Bool,
-                              onFirstFrame: (@Sendable () -> Void)?) {
+                              onFirstFrame: (@Sendable () -> Void)?,
+                              onFrame: (@Sendable () -> Void)? = nil) {
         queue.async { [self] in
             guard isCurrent() else { return }
             pixelBuffer.withUnsafeBuffer { buffer in
@@ -234,7 +235,10 @@ final class VideoRenderer: @unchecked Sendable {
                     waitForFirstDisplay()
                     if isCurrent(), isLayerReadyForDisplay() {
                         onFirstFrame?()
+                        onFrame?()
                     }
+                } else if isCurrent() {
+                    onFrame?()
                 }
             }
         }

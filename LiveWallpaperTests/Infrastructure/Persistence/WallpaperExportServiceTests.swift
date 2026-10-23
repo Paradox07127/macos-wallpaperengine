@@ -39,7 +39,7 @@ struct WallpaperExportServiceTests {
         #expect(manifest.item(for: copy.id)?.id == copy.id, "old per-item choices must still resolve")
     }
 
-    @Test("Web selection waits for an explicitly prepared copy and follows its publication")
+    @Test("Web selection waits for an explicitly prepared copy and follows its publication", .timeLimit(.minutes(1)))
     func selectedWebWaitsForPreparedCopy() async throws {
         let rig = try makeRig()
         defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
@@ -51,6 +51,7 @@ struct WallpaperExportServiceTests {
         try await Task.sleep(for: .milliseconds(200))
         #expect(rig.service.lastError == nil, "an unprepared web wallpaper is skipped, not reported")
         #expect(rig.service.items.isEmpty)
+        #expect(coordinator.followState.displays[42]?.phase == .needsRecording)
         let key = try WallpaperExportService.sourceKey(for: content)
         let item = SystemWallpaperManifest.Item(id: "prepared-web", title: "Web", fileName: "web.mov", addedAt: Date(), sourceKey: key)
         try FileManager.default.createDirectory(at: rig.root, withIntermediateDirectories: true)
@@ -64,6 +65,7 @@ struct WallpaperExportServiceTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(try rig.manifestOnDisk().displaySelections["42"] == item.id)
+        #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: item.id))
     }
 
     @Test("The selected tile is followed only on displays where the system shows it")
@@ -131,6 +133,216 @@ struct WallpaperExportServiceTests {
         try SystemWallpaperCoding.encoder.encode(SystemWallpaperManifest(version: 1, items: [item])).write(to: rig.manifestURL)
         rig.service.refresh()
         #expect(rig.service.diskUsageBytes >= 4096)
+    }
+
+    @Test(arguments: [false, true])
+    func foreignProviderNeverRequestsRecovery(running: Bool) throws {
+        let expected = SystemWallpaperProviderIdentity(build: "42", bundlePath: "/app/P.appex", pid: 0)
+        let rig = try makeRig(expectedProvider: expected, isProviderRunning: { _ in running })
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        try rig.writeHeartbeat(.init(timestamp: Self.referenceNow.addingTimeInterval(-600), activeChoiceID: "copy",
+                                     provider: .init(build: "41", bundlePath: "/old/P.appex", pid: 123)))
+        rig.service.refreshProviderStatus()
+        #expect(rig.service.providerIssue == .differentCopy)
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func failedFollowWaitsForExplicitRetry(heartbeat: Bool) async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        let source = rig.sourceDirectory.appendingPathComponent("clip.mp4")
+        try FileManager.default.removeItem(at: source)
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        let configuration = ScreenConfiguration(screenID: 42, wallpaper: bookmark.content)
+        coordinator.follow(configuration, title: "Retry")
+        try await waitUntil { rig.service.lastError != nil }
+        #expect(rig.service.lastError != nil)
+        try Data("repaired source".utf8).write(to: source)
+        if heartbeat {
+            rig.service.refreshProviderStatus()
+        } else {
+            coordinator.follow(configuration, title: "Retry")
+        }
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        guard case .failed = coordinator.followState.displays[42]?.phase else {
+            Issue.record("a heartbeat or session change must not re-run a failed preparation")
+            return
+        }
+        #expect(rig.service.items.isEmpty)
+        coordinator.retry(displayID: 42)
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        #expect(rig.service.items.count == 1)
+    }
+
+    @Test func removeAllReportsDirectoryLeftovers() throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let directory = rig.videosDirectory.appendingPathComponent("blocked.scene", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: directory.path) }
+        try rig.service.clearLibrary()
+        #expect(rig.service.items.isEmpty)
+        #expect(rig.service.lastError?.contains("blocked.scene") == true)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func followStateIsObservableAndSuccessfulSelectionIsNotRetried() async throws {
+        let hook = PublishHook()
+        let rig = try makeRig(duringThumbnail: hook)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        let changed = OSAllocatedUnfairLock(initialState: false)
+        withObservationTracking { _ = coordinator.followState } onChange: { changed.withLock { $0 = true } }
+        var sawPreparing = false
+        hook.run = { sawPreparing = coordinator.followState.displays[42]?.phase == .preparing }
+        let configuration = ScreenConfiguration(screenID: 42, wallpaper: bookmark.content)
+        coordinator.follow(configuration, title: "Observed")
+        #expect(coordinator.followState.displays[42]?.phase == .queued)
+        #expect(changed.withLock { $0 })
+        try await waitUntil { rig.service.items.count == 1 }
+        #expect(sawPreparing)
+        let item = try #require(rig.service.items.first)
+        #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: item.id))
+        #expect(coordinator.followState.displays[42]?.title == "Observed")
+        #expect(coordinator.followState.displays[42]?.sourceKey == item.sourceKey)
+        let manifest = try Data(contentsOf: rig.manifestURL)
+        rig.service.refreshProviderStatus()
+        coordinator.follow(configuration, title: "Observed")
+        await Task.yield()
+        #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: item.id))
+        #expect(try Data(contentsOf: rig.manifestURL) == manifest)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func explicitRetryRequeuesFailedDisplay() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        let source = rig.sourceDirectory.appendingPathComponent("clip.mp4")
+        try FileManager.default.removeItem(at: source)
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: bookmark.content), title: "Retry")
+        try await waitUntil { rig.service.lastError != nil }
+        guard case let .failed(message) = coordinator.followState.displays[42]?.phase else {
+            Issue.record("Failed preparation must be visible per display")
+            return
+        }
+        #expect(!message.isEmpty)
+        try Data("repaired".utf8).write(to: source)
+        coordinator.retry(displayID: 42)
+        #expect(coordinator.followState.displays[42]?.phase == .queued)
+        try await waitUntil { rig.service.items.count == 1 }
+        let item = try #require(rig.service.items.first)
+        #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: item.id))
+    }
+
+    @Test func displayOnAnOldCopyDoesNotShowTheSelectedTile() throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let selected = SystemWallpaperManifest.selectedChoiceID
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
+            timestamp: Self.referenceNow, activeChoiceID: selected, activeChoiceIDs: [selected, "legacy"],
+            activeDisplayIDs: [42, 43], selectedTileDisplayIDs: [42]
+        ))
+        rig.service.refreshProviderStatus()
+        #expect(rig.service.showsSelectedTile(on: 42))
+        #expect(!rig.service.showsSelectedTile(on: 43), "display 43 plays an old copy chosen in System Settings")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func cancelledFollowWaitsForExplicitRetry() async throws {
+        let copies = OSAllocatedUnfairLock(initialState: 0)
+        let rig = try makeRig(copyOperation: { source, destination in
+            let attempt = copies.withLock { count in
+                count += 1
+                return count
+            }
+            if attempt == 1 {
+                throw CancellationError()
+            }
+            try FileManager.default.copyItem(at: source, to: destination)
+        })
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service)
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: bookmark.content), title: "Cancelled")
+        try await waitUntil { coordinator.followState.displays[42]?.phase == .cancelled }
+        #expect(rig.service.lastError == nil)
+        rig.service.refreshProviderStatus()
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+        #expect(copies.withLock { $0 } == 1, "a heartbeat must not restart a preparation the user cancelled")
+        #expect(coordinator.followState.displays[42]?.phase == .cancelled)
+        #expect(rig.service.items.isEmpty)
+        coordinator.retry(displayID: 42)
+        try await waitUntil { rig.service.items.count == 1 }
+        #expect(copies.withLock { $0 } == 2)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func followUsesPreferencesAndEachDisplaysPixels() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let name = "WallpaperExportServiceTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set("videoCopy", forKey: SystemWallpaperFollowPreferences.sceneMode)
+        defaults.set("p1440", forKey: SystemWallpaperFollowPreferences.resolutionCap)
+        defaults.set(60, forKey: SystemWallpaperFollowPreferences.frameRate)
+        defaults.set(30, forKey: SystemWallpaperFollowPreferences.loopLength)
+        let content = WallpaperContent.scene(.init(workshopID: "123", cacheRelativePath: "wpe-cache/123",
+                                                   entryFile: "scene.json", capabilityTier: .imageOnly))
+        let key = try WallpaperExportService.sourceKey(for: content)
+        var large = SystemWallpaperPreparationOptions()
+        large.sceneMode = .videoCopy
+        large.size = CGSize(width: 2560, height: 1440)
+        large.framesPerSecond = 60
+        large.duration = 30
+        var small = large
+        small.size = CGSize(width: 1280, height: 720)
+        let items: [SystemWallpaperManifest.Item] = [
+            .init(id: "large", title: "Large", fileName: "large.mov", addedAt: Date(), preparationOptions: large, sourceKey: key),
+            .init(id: "small", title: "Small", fileName: "small.mov", addedAt: Date(), preparationOptions: small, sourceKey: key),
+        ]
+        try rig.showSelectedTile(on: [42, 43])
+        try JSONEncoder().encode(SystemWallpaperManifest(version: 1, items: items)).write(to: rig.manifestURL)
+        rig.service.refresh()
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, defaults: defaults, displaySize: {
+            $0 == 42 ? CGSize(width: 3840, height: 2160) : CGSize(width: 1280, height: 720)
+        })
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: content), title: "Large")
+        coordinator.follow(ScreenConfiguration(screenID: 43, wallpaper: content), title: "Small")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections.count == 2 }
+        #expect(try rig.manifestOnDisk().displaySelections == ["42": "large", "43": "small"])
+        #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: "large"))
+        #expect(coordinator.followState.displays[43]?.phase == .ready(itemID: "small"))
+        defaults.set(30, forKey: SystemWallpaperFollowPreferences.frameRate)
+        large.framesPerSecond = 30
+        small.framesPerSecond = 30
+        var manifest = try rig.manifestOnDisk()
+        manifest.items += [
+            .init(id: "large30", title: "Large", fileName: "large30.mov", addedAt: Date(), preparationOptions: large, sourceKey: key),
+            .init(id: "small30", title: "Small", fileName: "small30.mov", addedAt: Date(), preparationOptions: small, sourceKey: key),
+        ]
+        try JSONEncoder().encode(manifest).write(to: rig.manifestURL)
+        rig.service.refresh()
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["43"] == "small30" }
+        #expect(try rig.manifestOnDisk().displaySelections == ["42": "large30", "43": "small30"])
     }
 
     private func waitUntil(_ condition: () throws -> Bool) async throws {
@@ -209,7 +421,8 @@ struct WallpaperExportServiceTests {
         func showSelectedTile(on displays: [UInt32]) throws {
             try writeHeartbeat(SystemWallpaperHeartbeat(
                 timestamp: WallpaperExportServiceTests.referenceNow, activeChoiceID: SystemWallpaperManifest.selectedChoiceID,
-                activeChoiceIDs: [SystemWallpaperManifest.selectedChoiceID], activeDisplayIDs: displays
+                activeChoiceIDs: [SystemWallpaperManifest.selectedChoiceID], activeDisplayIDs: displays,
+                selectedTileDisplayIDs: displays
             ))
             service.refreshProviderStatus()
         }
@@ -277,8 +490,8 @@ struct WallpaperExportServiceTests {
         return Rig(service: service, root: root, sourceDirectory: sources)
     }
 
-    @Test("Video source admission rejects directories and FIFOs before copying or parsing", arguments: [false, true], [false, true])
-    func nonRegularVideoRejectedBeforeCopy(fifo: Bool, packaged: Bool) async throws {
+    @Test("Video source admission rejects directories and FIFOs before copying or parsing", arguments: [false, true])
+    func nonRegularVideoRejectedBeforeCopy(fifo: Bool) async throws {
         final class Copies: Sendable {
             let paths = OSAllocatedUnfairLock(initialState: [String]())
 
@@ -309,13 +522,9 @@ struct WallpaperExportServiceTests {
             try FileManager.default.createDirectory(at: input, withIntermediateDirectories: true)
         }
         await #expect(throws: WallpaperExportService.ServiceError.unsupportedContent) {
-            if packaged {
-                try await rig.service.publish(bookmark: WallpaperBookmark(
-                    label: "Invalid package", content: .video(bookmarkData: Data(input.path.utf8), packageEntryName: "video.mp4")
-                ))
-            } else {
-                try await rig.service.publish(fileURL: input)
-            }
+            try await rig.service.publish(bookmark: WallpaperBookmark(
+                label: "Invalid package", content: .video(bookmarkData: Data(input.path.utf8), packageEntryName: "video.mp4")
+            ))
         }
         let copyPaths = copies.paths.withLock { $0 }
         #expect(copyPaths.isEmpty)
@@ -325,32 +534,8 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.lastError == WallpaperExportService.ServiceError.unsupportedContent.localizedDescription)
     }
 
-    @Test("Video admission rejects non-file URLs before copying or parsing")
-    func nonFileVideoURLRejectedBeforeCopy() async throws {
-        let calls = OSAllocatedUnfairLock(initialState: 0)
-        let rig = try makeRig(
-            copyOperation: { _, _ in
-                calls.withLock { $0 += 1 }
-                throw CocoaError(.fileReadUnsupportedScheme)
-            },
-            extractionOperation: { _, _, _ in
-                calls.withLock { $0 += 1 }
-                throw CocoaError(.fileReadUnsupportedScheme)
-            }
-        )
-        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
-        let url = try #require(URL(string: "https://example.invalid/video.mov"))
-        await #expect(throws: WallpaperExportService.ServiceError.unsupportedContent) {
-            try await rig.service.publish(fileURL: url)
-        }
-        let count = calls.withLock { $0 }
-        #expect(count == 0)
-        #expect(rig.service.items.isEmpty)
-        #expect(!FileManager.default.fileExists(atPath: rig.manifestURL.path))
-    }
-
-    @Test("A selected regular-file symlink publishes independent video bytes", arguments: [false, true])
-    func regularTargetSymlinkPublishesIndependentBytes(bookmarked: Bool) async throws {
+    @Test("A selected regular-file symlink publishes independent video bytes")
+    func regularTargetSymlinkPublishesIndependentBytes() async throws {
         let rig = try makeRig()
         defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let bytes = Data("linked-video".utf8)
@@ -358,13 +543,9 @@ struct WallpaperExportServiceTests {
         try bytes.write(to: target)
         let link = rig.sourceDirectory.appendingPathComponent("selected.mov")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
-        if bookmarked {
-            try await rig.service.publish(bookmark: WallpaperBookmark(
-                label: "Selected link", content: .video(bookmarkData: Data(link.path.utf8))
-            ))
-        } else {
-            try await rig.service.publish(fileURL: link)
-        }
+        try await rig.service.publish(bookmark: WallpaperBookmark(
+            label: "Selected link", content: .video(bookmarkData: Data(link.path.utf8))
+        ))
         let item = try #require(rig.service.items.first)
         let published = try #require(rig.service.videoURL(for: item))
         let isRegular = try published.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile
@@ -826,42 +1007,6 @@ struct WallpaperExportServiceTests {
         let leftovers = try FileManager.default
             .contentsOfDirectory(atPath: rig.videosDirectory.path)
         #expect(leftovers.isEmpty, "nor its files: \(leftovers)")
-    }
-
-    @Test("Clearing the library stops a multi-file import from refilling it")
-    func clearLibraryStopsBatchPublish() async throws {
-        let hook = PublishHook()
-        let rig = try makeRig(duringThumbnail: hook)
-        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
-        try await rig.service.publish(bookmark: rig.makeVideoBookmark())
-        let one = rig.sourceDirectory.appendingPathComponent("one.mp4")
-        let two = rig.sourceDirectory.appendingPathComponent("two.mp4")
-        for url in [one, two] {
-            try Data("bytes".utf8).write(to: url)
-        }
-
-        hook.run = { try? rig.service.clearLibrary() }
-        await rig.service.publish(fileURLs: [one, two])
-
-        #expect(rig.service.items.isEmpty, "items after the clear must not be published")
-        #expect(try rig.manifestOnDisk().items.isEmpty)
-    }
-
-    @Test("A failure in the middle of a multi-file import is not erased by a later success")
-    func batchPublishKeepsMidListFailure() async throws {
-        let rig = try makeRig()
-        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
-        let first = rig.sourceDirectory.appendingPathComponent("one.mp4")
-        let third = rig.sourceDirectory.appendingPathComponent("three.mp4")
-        for url in [first, third] { try Data("bytes".utf8).write(to: url) }
-        let missing = rig.sourceDirectory.appendingPathComponent("two.mp4")
-
-        await rig.service.publish(fileURLs: [first, missing, third])
-
-        #expect(rig.service.items.count == 2, "the readable files still publish")
-        let reported = try #require(rig.service.lastError)
-        #expect(reported.contains("two.mp4"),
-                "the middle failure must survive the later success: \(reported)")
     }
 
     @Test("A republish's displaced backup outlives a concurrent sweep")

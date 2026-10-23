@@ -64,16 +64,28 @@ struct WallpaperMaintenanceEngine: Sendable {
                 failed = true
             }
         }
-        // Removing candidates can expose an older record. Register the retained host last.
-        guard try run(Self.lsregister, ["-f", hostPath]).code == 0 else { throw Failure.command }
-        let after = try inspect()
-        guard !failed, !after.copies.contains(where: \.willUnregister) else {
-            return Report(outcome: .failed, copies: after.copies, revision: after.revision,
-                          removedCount: removed, errorCode: "maintenance.cleanupIncomplete", currentAppPath: hostPath)
+        var snapshot = before
+        var stage = "register"
+        do {
+            // Register the retained host last because removing candidates can expose an older record.
+            guard try run(Self.lsregister, ["-f", hostPath]).code == 0 else { throw Failure.command }
+            stage = "inspect"
+            snapshot = try inspect()
+            guard !failed, !snapshot.copies.contains(where: \.willUnregister) else {
+                return Report(outcome: .failed, copies: snapshot.copies, revision: snapshot.revision,
+                              removedCount: removed, errorCode: "maintenance.cleanupIncomplete", currentAppPath: hostPath,
+                              failedStage: "unregister")
+            }
+            stage = "restart"
+            try restartAgent()
+            return Report(outcome: .repaired, copies: snapshot.copies, revision: snapshot.revision,
+                          removedCount: removed, currentAppPath: hostPath)
+        } catch {
+            let timedOut = (error as? Failure) == .timeout
+            return Report(outcome: timedOut ? .timedOut : .failed, copies: snapshot.copies, revision: snapshot.revision,
+                          removedCount: removed, errorCode: timedOut ? "maintenance.timeout" : "maintenance.operationFailed",
+                          currentAppPath: hostPath, failedStage: stage)
         }
-        try restartAgent()
-        return Report(outcome: .repaired, copies: after.copies, revision: after.revision,
-                      removedCount: removed, currentAppPath: hostPath)
     }
 
     func restart() throws -> Report {
