@@ -208,33 +208,54 @@ extension WPEParityFrameDrawPlanner {
     /// The vertices packed as the vertex reflection lists its inputs; BLENDINDICES stay integers.
     private static func vertexBuffer(_ vertices: [Vertex], inputs: [WPEStageReflection.StageAttribute],
                                      device: MTLDevice) -> MTLBuffer? {
-        var words: [UInt32] = []
+        let layout = inputs.sorted { $0.index < $1.index }
+            .map { (source: VertexSource(name: $0.name.lowercased()), columns: min($0.columns, 4)) }
+        let wordCount = vertices.count * layout.reduce(0) { $0 + $1.columns }
+        // An input-less vertex stage still gets a buffer at the MSC vertex bind point.
+        let length = max(16, wordCount * MemoryLayout<UInt32>.stride)
+        guard let buffer = device.makeBuffer(length: length, options: .storageModeShared) else { return nil }
+        let words = buffer.contents().bindMemory(to: UInt32.self, capacity: length / MemoryLayout<UInt32>.stride)
+        var cursor = 0
         for vertex in vertices {
-            for input in inputs.sorted(by: { $0.index < $1.index }) {
-                let name = input.name.lowercased()
-                let floats: [Float] = if name.hasPrefix("position") {
-                    [vertex.position.x, vertex.position.y, vertex.position.z, 1]
-                } else if name == "texcoord0" {
-                    [vertex.texcoord.x, vertex.texcoord.y, 0, 0]
-                } else if name.hasPrefix("normal") {
-                    [vertex.normal.x, vertex.normal.y, vertex.normal.z, 0]
-                } else if name.hasPrefix("blendweight") {
-                    (0 ..< 4).map { vertex.blendWeights[$0] }
-                } else if name.hasPrefix("color") {
-                    [1, 1, 1, 1]
-                } else {
-                    [0, 0, 0, 0]
+            for (source, columns) in layout {
+                let value: SIMD4<UInt32> = switch source {
+                case .position: unsafeBitCast(SIMD4(vertex.position, 1), to: SIMD4<UInt32>.self)
+                case .texcoord0: unsafeBitCast(SIMD4(lowHalf: vertex.texcoord, highHalf: .zero), to: SIMD4<UInt32>.self)
+                case .normal: unsafeBitCast(SIMD4(vertex.normal, 0), to: SIMD4<UInt32>.self)
+                case .blendWeights: unsafeBitCast(vertex.blendWeights, to: SIMD4<UInt32>.self)
+                case .color: unsafeBitCast(SIMD4<Float>(repeating: 1), to: SIMD4<UInt32>.self)
+                case .blendIndices: vertex.blendIndices
+                case .zero: .zero
                 }
-                let value = name.hasPrefix("blendindices") ? (0 ..< 4).map { vertex.blendIndices[$0] }
-                    : floats.map(\.bitPattern)
-                words += value.prefix(input.columns)
+                for column in 0 ..< columns {
+                    words[cursor + column] = value[column]
+                }
+                cursor += columns
             }
         }
-        // An input-less vertex stage still gets a buffer at the MSC vertex bind point.
-        let length = max(16, words.count * MemoryLayout<UInt32>.stride)
-        guard let buffer = device.makeBuffer(length: length, options: .storageModeShared) else { return nil }
-        buffer.contents().copyMemory(from: words, byteCount: words.count * MemoryLayout<UInt32>.stride)
         return buffer
+    }
+
+    private enum VertexSource {
+        case position, texcoord0, normal, blendWeights, color, blendIndices, zero
+
+        init(name: String) {
+            self = if name.hasPrefix("blendindices") {
+                .blendIndices
+            } else if name.hasPrefix("position") {
+                .position
+            } else if name == "texcoord0" {
+                .texcoord0
+            } else if name.hasPrefix("normal") {
+                .normal
+            } else if name.hasPrefix("blendweight") {
+                .blendWeights
+            } else if name.hasPrefix("color") {
+                .color
+            } else {
+                .zero
+            }
+        }
     }
 }
 #endif
