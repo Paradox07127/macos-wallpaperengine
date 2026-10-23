@@ -79,7 +79,7 @@ struct MenuBarBehaviorTests {
             manager.recordWPEImport(makeEntry("alpha"))
             manager.recordWPEImport(makeEntry("beta"))
 
-            manager.removeWPEImport(workshopID: "alpha")
+            manager.removeWPEImport(workshopID: "alpha", matchingImportedAt: makeEntry("alpha").importedAt)
 
             let ids = manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID)
             #expect(ids == ["beta"])
@@ -95,7 +95,7 @@ struct MenuBarBehaviorTests {
             let observer = NotificationObserver(name: .wpeHistoryDidChange)
             defer { observer.detach() }
 
-            manager.removeWPEImport(workshopID: "ghost-id")
+            manager.removeWPEImport(workshopID: "ghost-id", matchingImportedAt: makeEntry("ghost-id").importedAt)
 
             #expect(observer.callCount == 0)
             let ids = manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID)
@@ -109,8 +109,8 @@ struct MenuBarBehaviorTests {
             let manager = SettingsManager.shared
             manager.recordWPEImport(makeEntry("one"))
             manager.recordWPEImport(makeEntry("two"))
-            manager.removeWPEImport(workshopID: "one")
-            manager.removeWPEImport(workshopID: "two")
+            manager.removeWPEImport(workshopID: "one", matchingImportedAt: makeEntry("one").importedAt)
+            manager.removeWPEImport(workshopID: "two", matchingImportedAt: makeEntry("two").importedAt)
 
             #expect(manager.loadGlobalSettings().recentWPEImports.isEmpty)
         }

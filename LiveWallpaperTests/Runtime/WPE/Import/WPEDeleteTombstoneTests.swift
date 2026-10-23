@@ -20,13 +20,28 @@ struct WPEDeleteTombstoneTests {
         #expect(decoded.deletedWorkshopIDs == ["123", "456"])
     }
 
-    @Test("Recording a delete tombstone is idempotent")
-    func recordIsIdempotent() throws {
-        withIsolatedGlobalSettings {
+    @Test("Deleting the same Steam folder's item twice records its tombstone once")
+    func repeatedDeleteTombstonesOnce() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEDeleteTombstoneTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("steamapps/workshop/content/431960/999", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let bookmark = try #require(ResourceUtilities.createBookmark(for: folder))
+        try withIsolatedGlobalSettings {
             let manager = SettingsManager.shared
-            manager.recordWPEDeleteTombstone(workshopID: "999")
-            manager.recordWPEDeleteTombstone(workshopID: "999")
-            #expect(manager.loadGlobalSettings().deletedWorkshopIDs.filter { $0 == "999" }.count == 1)
+            for importedAt in [1.0, 2.0] {
+                let entry = WPEHistoryEntry(
+                    origin: WPEOrigin(
+                        workshopID: "999", title: "Steam item", originalType: .video,
+                        sourceFolderBookmark: bookmark, cacheRelativePath: "wpe-cache/999", previewFileName: nil
+                    ),
+                    importedAt: Date(timeIntervalSince1970: importedAt)
+                )
+                manager.recordWPEImport(entry)
+                try #require(manager.removeWPEImport(workshopID: "999", matchingImportedAt: entry.importedAt))
+            }
+            #expect(manager.loadGlobalSettings().deletedWorkshopIDs == ["999"])
         }
     }
 
@@ -34,7 +49,7 @@ struct WPEDeleteTombstoneTests {
     func passiveReimportKeepsTombstone() throws {
         withIsolatedGlobalSettings {
             let manager = SettingsManager.shared
-            manager.recordWPEDeleteTombstone(workshopID: "999")
+            seedTombstone("999")
 
             manager.recordWPEImport(makeReaddedEntry("999"))
 
@@ -49,7 +64,7 @@ struct WPEDeleteTombstoneTests {
     func deliberateReimportClears() throws {
         withIsolatedGlobalSettings {
             let manager = SettingsManager.shared
-            manager.recordWPEDeleteTombstone(workshopID: "999")
+            seedTombstone("999")
 
             manager.recordWPEImport(makeReaddedEntry("999"), clearsDeleteTombstone: true)
 
@@ -181,13 +196,10 @@ struct WPEDeleteTombstoneTests {
         )
     }
 
-    @Test("An empty workshop id is never tombstoned")
-    func emptyIDIgnored() throws {
-        withIsolatedGlobalSettings {
-            let manager = SettingsManager.shared
-            manager.recordWPEDeleteTombstone(workshopID: "")
-            #expect(manager.loadGlobalSettings().deletedWorkshopIDs.isEmpty)
-        }
+    private func seedTombstone(_ workshopID: String) {
+        var settings = SettingsManager.shared.loadGlobalSettings()
+        settings.deletedWorkshopIDs = [workshopID]
+        SettingsManager.shared.saveGlobalSettings(settings)
     }
 
     private func withIsolatedGlobalSettings(_ body: () throws -> Void) rethrows {

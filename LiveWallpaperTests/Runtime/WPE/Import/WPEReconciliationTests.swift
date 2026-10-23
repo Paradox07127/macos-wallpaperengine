@@ -245,24 +245,6 @@ struct WPEReconciliationTests {
         #expect(!WPEOrigin.matchesBookmark(bookmark, origin: origin))
     }
 
-    // MARK: - Plan §A14: removeWPEImport semantic (history side)
-
-    @Test("Plan §A14: SettingsManager.removeWPEImport drops only the requested workshop")
-    func removeWPEImportTargetsOnlyMatchingWorkshop() throws {
-        TestScratch.withCleanGlobalSettings {
-            let manager = SettingsManager.shared
-            let now = Date()
-            manager.recordWPEImport(WPEHistoryEntry(origin: makeOrigin(workshopID: "alpha"), importedAt: now, lastUsedAt: now))
-            manager.recordWPEImport(WPEHistoryEntry(origin: makeOrigin(workshopID: "beta"), importedAt: now, lastUsedAt: now))
-            manager.recordWPEImport(WPEHistoryEntry(origin: makeOrigin(workshopID: "gamma"), importedAt: now, lastUsedAt: now))
-
-            manager.removeWPEImport(workshopID: "beta")
-
-            let remaining = manager.loadGlobalSettings().recentWPEImports.map(\.origin.workshopID)
-            #expect(remaining == ["gamma", "alpha"])
-        }
-    }
-
     // MARK: - Helpers
 
     private func makeConfiguration(activeWallpaper: WallpaperContent) -> ScreenConfiguration {

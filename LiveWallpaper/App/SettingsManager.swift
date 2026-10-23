@@ -643,13 +643,6 @@ final class SettingsManager {
             && !value.contains("\\")
     }
 
-    func recordWPEDeleteTombstone(workshopID: String) {
-        // Validate persisted tombstones here because the Pro-only path validator is unavailable to Lite.
-        var settings = loadGlobalSettings()
-        guard Self.insertDeleteTombstone(workshopID: workshopID, into: &settings) else { return }
-        saveGlobalSettings(settings)
-    }
-
     @discardableResult
     func removeWPEImport(
         workshopID: String,
@@ -670,16 +663,6 @@ final class SettingsManager {
         NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
         return true
     }
-
-    func removeWPEImport(workshopID: String) {
-        var settings = loadGlobalSettings()
-        let previous = settings.recentWPEImports
-        settings.recentWPEImports.removeAll { $0.origin.workshopID == workshopID }
-        guard settings.recentWPEImports != previous else { return }
-        saveGlobalSettings(settings)
-        NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
-    }
-
 
     @discardableResult
     private static func insertDeleteTombstone(

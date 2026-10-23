@@ -55,18 +55,6 @@ struct WPEDottedFileNameTests {
         }
     }
 
-    @Test func deleteTombstoneAcceptsDoubleDotNamesOnly() async throws {
-        let scratch = try TestScratch.defaultsSuite(prefix: "WPEDottedFileNameTests")
-        defer { scratch.discard() }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wpe-dotted-settings-\(UUID())", isDirectory: true)
-        let settings = SettingsManager(directory: ConfigurationDirectory(root: directory), defaults: scratch.defaults)
-        for id in ["My..Wallpaper", "..", ".", "a/b", "a\\b", ""] {
-            settings.recordWPEDeleteTombstone(workshopID: id)
-        }
-        #expect(settings.loadGlobalSettings().deletedWorkshopIDs == ["My..Wallpaper"])
-        await TestScratch.discard(directory, flushing: settings)
-    }
-
     @Test(.timeLimit(.minutes(1)))
     func workshopDownloadSurfacesTheImportError() async throws {
         let folder = try makeFolder(named: "420000077", manifest: #"{"file":"../escape.mp4","type":"video"}"#)
