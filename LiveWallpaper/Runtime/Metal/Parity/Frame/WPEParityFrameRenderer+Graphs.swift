@@ -199,6 +199,7 @@ extension WPEParityFrameRenderer {
         let made = try Self.makeGraphs(layout: layout, state: instance.state, device: device, encoder: drawEncoder,
                                        arena: arena, targets: &candidateTargets, resourceBindings: resourceBindings,
                                        snapshotObjects: particleSnapshotObjects, aliasing: Self.aliasesRenderTargets(plan))
+        graphCompilations += 1
         let added = candidateTargets.filter { id, texture in
             targets[id].map { ObjectIdentifier($0) != ObjectIdentifier(texture) } ?? true
         }

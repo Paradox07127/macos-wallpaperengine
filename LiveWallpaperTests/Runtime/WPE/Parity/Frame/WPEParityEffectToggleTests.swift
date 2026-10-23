@@ -65,6 +65,20 @@ final class WPEParityEffectToggleTests: XCTestCase {
         XCTAssertEqual(renderer.pipelineCreations, pipelines, "no pipeline is built after load")
     }
 
+    func testGraphCompilationsCountAnUncachedEffectSetButNotAPlainFrame() async throws {
+        let renderer = try await makeFixtureRenderer().renderer
+        try await encode(renderer)
+        let loaded = renderer.graphCompilations
+
+        XCTAssertTrue(renderer.instance.state.setEffect("19", of: "17", visible: false))
+        try await encode(renderer)
+        let toggled = renderer.graphCompilations
+        XCTAssertGreaterThan(toggled, loaded, "hiding an effect compiles a new graph set")
+
+        try await encode(renderer)
+        XCTAssertEqual(renderer.graphCompilations, toggled, "an unchanged frame compiles no graph set")
+    }
+
     /// Each effect set and every switch between them draws the same bytes whether pooled targets alias or not.
     func testEffectCombinationsDrawTheSameBytesWithRenderTargetAliasing() async throws {
         let plain = try await makeFixtureRenderer()

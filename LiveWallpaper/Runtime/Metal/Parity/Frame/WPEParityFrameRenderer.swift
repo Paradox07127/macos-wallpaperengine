@@ -351,6 +351,9 @@ final class WPEParityFrameRenderer {
         planner.pipelineCreations
     }
 
+    /// Render graph sets compiled after init; the graphs built during init are not counted.
+    var graphCompilations = 0
+
     private var draws: [Int: WPEParityFrameDrawPlan] {
         graphs.layout.draws
     }
@@ -1063,6 +1066,13 @@ final class WPEParityFrameRenderer {
 
     func encodeSelectedFrame(uniforms: WPEParityUniformFrame, renderCamera: WPEParityCamera, fadeAlpha: Float,
                              completion: (@Sendable (MTLCommandBuffer) -> Void)?) throws -> WPEParityGraphExecutor.Submission {
+        #if DEBUG
+        let pipelinesBefore = pipelineCreations, graphsBefore = graphCompilations
+        defer {
+            assert(pipelineCreations == pipelinesBefore && graphCompilations == graphsBefore,
+                   "encodeSelectedFrame must consume the selected graphs, not build pipelines or graphs")
+        }
+        #endif
         let shortcutIcons = instance.userShortcutIcons
         let graphs = graphs
         let draws = graphs.layout.draws
