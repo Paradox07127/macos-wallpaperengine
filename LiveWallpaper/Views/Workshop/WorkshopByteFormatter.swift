@@ -9,8 +9,6 @@ enum WorkshopByteFormatter {
     static let allUnits = make([.useAll])
     static let kilobytesAndUp = make([.useKB, .useMB, .useGB])
     static let megabytesAndUp = make([.useMB, .useGB])
-    /// `[]` is `NSByteCountFormatterUseDefault` — the same as `ByteCountFormatter.string(fromByteCount:countStyle:)`.
-    static let platformDefault = make([])
 
     private static func make(_ units: ByteCountFormatter.Units) -> ByteCountFormatter {
         let formatter = ByteCountFormatter()

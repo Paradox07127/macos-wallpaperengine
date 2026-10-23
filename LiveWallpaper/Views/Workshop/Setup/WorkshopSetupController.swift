@@ -378,10 +378,6 @@ final class WorkshopSetupController {
 
     // MARK: - Scene resources
 
-    var engineAssetsState: WorkshopStepState {
-        .engineAssets(library: engineAssets, installer: engineInstaller)
-    }
-
     var hasEngineAssets: Bool {
         WorkshopStepState.hasEngineAssets(library: engineAssets, installer: engineInstaller)
     }
