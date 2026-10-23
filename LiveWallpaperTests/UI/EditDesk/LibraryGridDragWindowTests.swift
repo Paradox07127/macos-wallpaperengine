@@ -189,7 +189,7 @@ private final class GridDragHost {
         return CGPoint(x: frame.midX, y: frame.minY + frame.height * 0.3)
     }
 
-    private func tileFrame(_ index: Int) throws -> CGRect {
+    func tileFrame(_ index: Int) throws -> CGRect {
         let model = try #require(stage?.model)
         return StageGeometry.gridFrame(index: index, windowWidth: size.width, size: model.gridTileSize)
     }
@@ -197,8 +197,13 @@ private final class GridDragHost {
     /// The SwiftUI layers alone: the stage's own layers are hidden for the capture.
     func render() throws -> ProbeImage {
         let stageView = stage
+        // Hiding the focused stage hands the keyboard to the next key view, the library's search field.
+        let responder = window.firstResponder
         stageView?.isHidden = true
-        defer { stageView?.isHidden = false }
+        defer {
+            stageView?.isHidden = false
+            window.makeFirstResponder(responder)
+        }
         host.layoutSubtreeIfNeeded()
         let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)
         let bitmap = try #require(rep)
@@ -258,6 +263,34 @@ private final class GridDragHost {
     func click(_ point: CGPoint) async {
         await press(point)
         await release(point)
+    }
+
+    /// The library's search field, centred in top-left coordinates.
+    func searchFieldCenter() throws -> CGPoint {
+        let found = Self.views(host).first { ($0 as? NSTextField)?.isEditable == true && $0.window != nil }
+        let field = try #require(found, "the library has no search field")
+        let frame = field.convert(field.bounds, to: nil)
+        return CGPoint(x: frame.midX, y: size.height - frame.midY)
+    }
+
+    var editingText: Bool {
+        window.firstResponder is NSText
+    }
+
+    /// Through `NSApp`, so local event monitors see the click the way a real one reaches them.
+    func clickThroughApp(_ point: CGPoint) async {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(
+                with: type, location: NSPoint(x: point.x, y: size.height - point.y), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1
+            ) else {
+                Issue.record("could not build a \(type) event")
+                return
+            }
+            NSApp.sendEvent(event)
+            try? await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     func press(_ point: CGPoint) async {
@@ -367,6 +400,23 @@ struct LibraryGridDragWindowTests {
         try await host.click(host.tileCenter(1))
         let clickOpens = await host.settle { host.detailOpen }
         #expect(clickOpens, "a click on a tile no longer opens its detail")
+    }
+
+    @Test("A click between the grid's tiles takes the keyboard back from the search field", .timeLimit(.minutes(1)))
+    func clickOutsideTheSearchFieldEndsEditing() async throws {
+        let host = GridDragHost(size: Self.size)
+        defer { host.close() }
+        try await host.settleOnLibrary()
+        let field = try host.searchFieldCenter()
+        await host.clickThroughApp(field)
+        let editing = await host.settle { host.editingText }
+        try #require(editing, "control: a click on the search field never gave it the keyboard")
+
+        let first = try host.tileFrame(0)
+        let second = try host.tileFrame(1)
+        await host.clickThroughApp(CGPoint(x: (first.maxX + second.minX) / 2, y: first.midY))
+        let released = await host.settle { !host.editingText }
+        #expect(released, "the search field kept the keyboard after a click elsewhere on the page")
     }
 
     @Test("Escape during a tile drag takes the strip away, applies nothing and keeps the library open", .timeLimit(.minutes(1)))

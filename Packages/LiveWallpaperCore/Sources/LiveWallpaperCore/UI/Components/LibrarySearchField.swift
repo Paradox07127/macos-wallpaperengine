@@ -18,6 +18,9 @@ public struct LibrarySearchField: View {
 
     @FocusState private var isFocused: Bool
     @State private var width: CGFloat = 0
+    /// The capsule in its window's content, top-left origin.
+    @State private var frameInWindow: CGRect = .zero
+    @State private var clickMonitor: Any?
 
     public init(
         text: Binding<String>,
@@ -78,15 +81,56 @@ public struct LibrarySearchField: View {
         .frame(minWidth: minWidth, idealWidth: idealWidth, maxWidth: maxWidth)
         .frame(height: DesignTokens.LibraryFilterBar.controlHeight)
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameInWindow = $0 }
+        .onChange(of: hasFocus) { _, focused in
+            if focused {
+                watchClicks()
+            } else {
+                stopWatchingClicks()
+            }
+        }
+        .onDisappear { stopWatchingClicks() }
         .background(Capsule().fill(DesignTokens.Colors.textPrimary.opacity(0.04)))
         .overlay(Capsule().strokeBorder(DesignTokens.Colors.textPrimary.opacity(0.10), lineWidth: 0.5))
         .contentShape(Capsule())
         .overlay {
-            if showsFocusRing, focus?.wrappedValue ?? isFocused {
+            if showsFocusRing, hasFocus {
                 Capsule().strokeBorder(DesignTokens.Colors.accent, lineWidth: 1.5)
             }
         }
         .opacity(isDisabled ? DesignTokens.Opacity.disabledContent : 1)
+    }
+
+    private var hasFocus: Bool {
+        focus?.wrappedValue ?? isFocused
+    }
+
+    /// AppKit leaves the field editing when a click lands on a view that never takes first responder.
+    private func watchClicks() {
+        guard clickMonitor == nil else { return }
+        let frame = $frameInWindow
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            MainActor.assumeIsolated {
+                guard let window = event.window, let content = window.contentView,
+                      let field = (window.firstResponder as? NSText)?.delegate as? NSView else { return }
+                let fieldFrame = content.convert(field.bounds, from: field)
+                let fromTop = CGPoint(x: fieldFrame.midX, y: content.isFlipped ? fieldFrame.midY : content.bounds.height - fieldFrame.midY)
+                // Another window's or another field's editing is not this field's to end.
+                guard frame.wrappedValue.contains(fromTop) else { return }
+                let click = content.convert(event.locationInWindow, from: nil)
+                let clickFromTop = CGPoint(x: click.x, y: content.isFlipped ? click.y : content.bounds.height - click.y)
+                if !frame.wrappedValue.contains(clickFromTop) {
+                    window.makeFirstResponder(nil)
+                }
+            }
+            return event
+        }
+    }
+
+    private func stopWatchingClicks() {
+        guard let clickMonitor else { return }
+        NSEvent.removeMonitor(clickMonitor)
+        self.clickMonitor = nil
     }
 
     private var shownPrompt: LocalizedStringKey {
