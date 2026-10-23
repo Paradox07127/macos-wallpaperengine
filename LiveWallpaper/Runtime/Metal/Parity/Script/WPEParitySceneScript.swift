@@ -78,6 +78,13 @@ final class WPEParitySceneScript {
     private var targets: [WPEParityCursorTarget] = []
     private var lastCursor: SIMD2<Float>?
 
+    /// Returns whether a warning line was written for this script log.
+    @discardableResult
+    static func forwardScriptLog(level: Int, message: String) -> Bool {
+        guard level >= 1 else { return false }
+        return Logger.repeatedWarning("SceneScript: \(message)", source: .sceneScript, category: .wpeRender)
+    }
+
     /// Some object or the general block carries a property script.
     static func hasScripts(_ document: WPESceneDocument) -> Bool {
         ([document.resolvedGeneralJSON] + document.resolvedObjectsJSON).contains(where: hasScript)
@@ -110,11 +117,7 @@ final class WPEParitySceneScript {
             sortLayer: host.sortLayer,
             pauseVideoTexture: host.pauseVideoTexture,
             executeMaterialFunction: host.executeMaterialFunction,
-            log: { level, message in
-                if level >= 1 {
-                    Logger.warning("SceneScript: \(message)", category: .wpeRender)
-                }
-            },
+            log: { level, message in Self.forwardScriptLog(level: level, message: message) },
             openUserShortcut: host.openUserShortcut, dateEpochMillis: host.dateEpochMillis, randomSeed: host.randomSeed
         ))
         let bits = engine.bindings.reduce(0) { $0 | $1.exportBits }

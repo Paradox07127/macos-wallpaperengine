@@ -187,15 +187,17 @@ public final class Logger {
     }
 
     public enum RepeatedWarningSource: String, Sendable {
-        case bookmarkResolution, sceneSpanPresent, soundEngineStart
+        case bookmarkResolution, sceneSpanPresent, soundEngineStart, sceneScript
     }
 
     private static let repeatedWarningBudgets = OSAllocatedUnfairLock(initialState: [RepeatedWarningSource: AuthoredErrorBudget]())
 
+    /// Returns whether `message` itself was written; the suppression notice alone counts as false.
+    @discardableResult
     public static func repeatedWarning(
         _ message: String, source: RepeatedWarningSource, category: Category,
         file: String = #file, function: String = #function, line: Int = #line
-    ) {
+    ) -> Bool {
         let admission = repeatedWarningBudgets.withLock {
             $0[source, default: AuthoredErrorBudget()].admit(key: message.hashValue, at: ProcessInfo.processInfo.systemUptime)
         }
@@ -205,10 +207,12 @@ public final class Logger {
                 warning("\(source.rawValue): suppressed \(suppressed) repeated/excess messages", category: category, file: file, function: function, line: line)
             }
             warning(message, category: category, file: file, function: function, line: line)
+            return true
         case .suppressionStarted:
             warning("\(source.rawValue): repeated/excess messages suppressed; budget is 20 distinct messages per 10 seconds", category: category, file: file, function: function, line: line)
+            return false
         case nil:
-            break
+            return false
         }
     }
 
