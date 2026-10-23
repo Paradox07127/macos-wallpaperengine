@@ -319,11 +319,6 @@ enum SystemWallpaperPaths {
         sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("heartbeat.json")
     }
 
-    /// The appex the installed app ships (`SystemWallpaperProviderIdentity`, pid 0), written by the app at launch.
-    static func providerURL(hostBundleID: String) -> URL {
-        sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("provider.json")
-    }
-
     static func videosDirectory(hostBundleID: String) -> URL {
         sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("Videos", isDirectory: true)
     }

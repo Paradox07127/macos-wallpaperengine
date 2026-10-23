@@ -10,8 +10,6 @@ struct SceneResourceResolver: Sendable {
         case texture(WPETexDecodeError)
         /// image → model/material JSON with no resolvable texture.
         case materialUnresolved(reason: String)
-        /// A WPE built-in `models/util/` layer this Mac has no copy of: a renderer gap, not damage.
-        case builtinLayerUnavailable(reason: String)
     }
 
     private let provider: any WPESceneAssetProvider
