@@ -2,7 +2,19 @@ import simd
 
 /// One `renderer` entry; WPE draws each entry once per frame in JSON order.
 public struct WPEParityParticleRenderer: Equatable, Sendable {
-    public enum Kind: Equatable, Sendable { case sprite, spriteTrail, rope, ropeTrail }
+    public enum Kind: Equatable, Sendable {
+        case sprite, spriteTrail, rope, ropeTrail
+
+        init?(name: String) {
+            switch name {
+            case "sprite": self = .sprite
+            case "spritetrail": self = .spriteTrail
+            case "rope": self = .rope
+            case "ropetrail": self = .ropeTrail
+            default: return nil
+            }
+        }
+    }
 
     public let kind: Kind
     /// spritetrail: seconds of velocity stretch; ropetrail: seconds of history.
@@ -25,34 +37,33 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
     public let fadeAlpha: Bool
     public let fadeSize: Bool
 
+    /// Nil for an unknown `name`, or an integer field outside its native 32-bit range.
     init?(name: String, json: WPESceneJSONValue) {
         typealias JSON = WPEParityParticleJSON
-        switch name {
-        case "sprite": kind = .sprite
-        case "spritetrail": kind = .spriteTrail
-        case "rope": kind = .rope
-        case "ropetrail": kind = .ropeTrail
-        default: return nil
-        }
+        guard let kind = Kind(name: name) else { return nil }
+        self.kind = kind
+        // 1401c0c90.c:21-28 (rope, 0–32, default 4); 1401c1070.c:84-95 (ropetrail, default 1).
+        guard let segments = JSON.integer(json["segments"], default: 3),
+              let subdivision = JSON.integer(json["subdivision"], default: kind == .rope ? 4 : 1),
+              let numericOrientation = JSON.integer(json["orientation"], default: 0),
+              let flags = JSON.integer(json["flags"], default: 0) else { return nil }
         length = JSON.number(json["length"]) ?? 0.05
         maxLength = JSON.number(json["maxlength"]) ?? 10
         minLength = JSON.number(json["minlength"]) ?? 0
-        segments = max(1, Int(JSON.number(json["segments"]) ?? 3))
-        // 1401c0c90.c:21-28 (rope, 0–32, default 4); 1401c1070.c:84-95 (ropetrail, default 1).
-        let subdivision = Int(JSON.number(json["subdivision"]) ?? (kind == .rope ? 4 : 1))
+        self.segments = max(1, segments)
         self.subdivision = kind == .rope ? min(max(subdivision, 0), 32) : subdivision
         orientation = switch JSON.string(json["orientation"])?.lowercased() {
         case "upright": 1
         case "fixed": 2
         case "screen": 0
-        default: Int(JSON.number(json["orientation"]) ?? 0)
+        default: numericOrientation
         }
         let axis = JSON.vector(json["axis"]) ?? .zero
         self.axis = axis == .zero ? SIMD3(0, 1, 0) : simd_normalize(axis)
         fixedUp = self.axis.x == 0 && self.axis.z == 0
             ? SIMD3(0, 0, -1)
             : simd_normalize(simd_cross(self.axis, simd_cross(SIMD3(0, 1, 0), self.axis)))
-        worldAxes = Int(JSON.number(json["flags"]) ?? 0) & 1 != 0
+        worldAxes = flags & 1 != 0
         uvScrolling = JSON.flag(json["uvscrolling"])
         uvScale = JSON.number(json["uvscale"]) ?? 1
         fadeAlpha = JSON.flag(json["fadealpha"])

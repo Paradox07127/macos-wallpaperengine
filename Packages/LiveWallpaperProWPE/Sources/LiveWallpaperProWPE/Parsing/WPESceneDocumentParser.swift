@@ -46,6 +46,7 @@ public enum WPESceneDocumentParser {
         let rawObjects: [[String: Any]] = WPEValueParser.objectArray(root["objects"]) ?? []
         let authoredObjects: [[String: Any]] = WPEValueParser.objectArray((json as? [String: Any])?["objects"])
             ?? rawObjects
+        try validateIntegerFields(general: general, objects: (json as? [String: Any])?["objects"])
         let authoredCameraObjects = parseAuthoredCameraObjects(authoredObjects)
         // Parsing composes authored transform seeds; only the bounded parity VM executes scripts.
         let camera = runtimeCameraObjectOverride(
@@ -101,6 +102,11 @@ public enum WPESceneDocumentParser {
                    inheritedAttachment: entryID.flatMap { inheritedAttachments[$0] },
                    diagnostics: &diagnostics
             ) {
+                if let size = object.size, [size.width, size.height].contains(where: {
+                    WPEAuthoredInteger.rounded($0, as: Int.self, in: WPEAuthoredInteger.pixelExtent) == nil
+                }) {
+                    throw WPESceneDocumentError.malformedField("objects[\(index)].size")
+                }
                 imageObjects.append(object)
             } else if !hasValue(entry, "image"),
                       !hasValue(entry, "model"),
@@ -555,6 +561,32 @@ public enum WPESceneDocumentParser {
             _ = resolve(id: id, stack: [])
         }
         return memo
+    }
+
+    /// Program building turns these numbers into integers, so an out-of-domain value fails the load here.
+    private static func validateIntegerFields(general: WPESceneGeneral, objects: Any?) throws {
+        let projection = general.orthogonalProjection
+        for (field, value) in [("width", projection.width), ("height", projection.height)]
+            where WPEAuthoredInteger.rounded(value, as: Int.self, in: WPEAuthoredInteger.pixelExtent) == nil {
+            throw WPESceneDocumentError.malformedField("general.orthogonalprojection.\(field)")
+        }
+        for (index, entry) in ((objects as? [Any]) ?? []).enumerated() {
+            guard let object = entry as? [String: Any] else { continue }
+            try requireExactID(object["id"], field: "objects[\(index)].id")
+            for (slot, dependency) in ((object["dependencies"] as? [Any]) ?? []).enumerated() {
+                try requireExactID(dependency, field: "objects[\(index)].dependencies[\(slot)]")
+            }
+            for (slot, effect) in ((object["effects"] as? [Any]) ?? []).enumerated() {
+                try requireExactID((effect as? [String: Any])?["id"], field: "objects[\(index)].effects[\(slot)].id")
+            }
+        }
+    }
+
+    private static func requireExactID(_ raw: Any?, field: String) throws {
+        guard let number = raw as? NSNumber, WPEValueParser.strictBool(raw) == nil else { return }
+        guard WPEAuthoredInteger.exact(number.doubleValue, as: Int.self) != nil else {
+            throw WPESceneDocumentError.malformedField(field)
+        }
     }
 
     private static func objectID(in dict: [String: Any]) -> String? {

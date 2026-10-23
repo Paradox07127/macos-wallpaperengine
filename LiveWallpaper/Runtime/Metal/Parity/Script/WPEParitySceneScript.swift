@@ -321,7 +321,7 @@ final class WPEParitySceneScript {
     private static func id(_ object: WPESceneJSONValue) -> String? {
         switch object["id"] {
         case let .string(id)? where !id.isEmpty: id
-        case let .number(number)?: String(Int(number))
+        case let .number(number)?: WPEAuthoredInteger.exact(number, as: Int.self).map(String.init)
         default: if case let .string(name)? = object["name"] {
                 name
             } else {

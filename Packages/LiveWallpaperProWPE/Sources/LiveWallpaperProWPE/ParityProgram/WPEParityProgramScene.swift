@@ -111,19 +111,20 @@ public struct WPEParityProgramScene: Sendable {
         engineFlags = flags
         self.assets = assets
 
-        let width = Int(document.general.orthogonalProjection.width.rounded())
-        let height = Int(document.general.orthogonalProjection.height.rounded())
+        // 0 only for a document the parser did not admit; the parser fails the load on these.
+        let width = Self.pixelExtent(document.general.orthogonalProjection.width) ?? 0
+        let height = Self.pixelExtent(document.general.orthogonalProjection.height) ?? 0
         let format = flags.hdr ? "rgba16float" : WPEParitySceneResource.colorFormat
         var authoredByID: [String: WPESceneJSONValue] = [:]
         // 140186c90.c:759-788: every id any object lists under "dependencies".
         var dependencyTargets: Set<String> = []
         for object in objects {
             for dependency in Self.array(object["dependencies"]) {
-                if let id = Self.string(dependency) ?? Self.number(dependency).map({ String(Int($0)) }) {
+                if let id = Self.string(dependency) ?? Self.numericID(dependency) {
                     dependencyTargets.insert(id)
                 }
             }
-            guard let id = Self.string(object["id"]) ?? Self.number(object["id"]).map({ String(Int($0)) }) else {
+            guard let id = Self.string(object["id"]) ?? Self.numericID(object["id"]) else {
                 continue
             }
             authoredByID[id] = object
@@ -182,9 +183,9 @@ public struct WPEParityProgramScene: Sendable {
             imageSizes[image.id] = albedoSize.map { SIMD2<Float>($0) }
             // catsout WPSceneParser.cpp binds a fullscreen layer's FBOs to the screen.
             let objectWidth = fullscreen ? width
-                : albedoSize?.x ?? image.size.map { Int($0.width.rounded()) } ?? width
+                : albedoSize?.x ?? image.size.flatMap { Self.pixelExtent($0.width) } ?? width
             let objectHeight = fullscreen ? height
-                : albedoSize?.y ?? image.size.map { Int($0.height.rounded()) } ?? height
+                : albedoSize?.y ?? image.size.flatMap { Self.pixelExtent($0.height) } ?? height
             let effects = Self.effects(isModel ? [] : image.effects, objectID: image.id, assets: assets,
                                        engineFlags: flags, materials: &materials, overridePasses: &overridePasses,
                                        records: &resolvedEffectRecords, functions: &resolvedMaterialFunctions, authored: authored,
@@ -259,7 +260,8 @@ public struct WPEParityProgramScene: Sendable {
                 materialFog: material.map { Self.programHasFog($0, assets: assets) } ?? false,
                 // The parser gives a point-quad shape colorBlendMode 9; WPE keeps the authored key, which a shape's
                 // draws never read.
-                colorBlendMode: image.isShapeQuad ? Self.number(authored?["colorBlendMode"]).map { Int($0) } ?? 0
+                colorBlendMode: image.isShapeQuad
+                    ? Self.number(authored?["colorBlendMode"]).flatMap { WPEAuthoredInteger.truncated($0, as: Int.self) } ?? 0
                     : image.colorBlendMode,
                 passthrough: passthrough,
                 copyBackground: image.copyBackground, fullscreen: fullscreen,
@@ -462,7 +464,7 @@ public struct WPEParityProgramScene: Sendable {
         for effect in effects {
             guard let file = assets.json(effect.fileRelativePath) else { continue }
             let configuration = Self.array(authored?["effects"]).enumerated().first { index, value in
-                (Self.string(value["id"]) ?? Self.number(value["id"]).map { String(Int($0)) } ?? "\(index)") == effect.id
+                (Self.string(value["id"]) ?? Self.numericID(value["id"]) ?? "\(index)") == effect.id
             }?.element
             let result = Self.effect(effect, objectID: objectID, file: file, assets: assets, engineFlags: engineFlags,
                                      combos: configuration?["combos"], userTextureConfiguration: configuration,
@@ -505,9 +507,16 @@ public struct WPEParityProgramScene: Sendable {
     }
 
     /// A script-created image layer without effects, described from its model file as a loaded one is.
-    /// Nil when the model file is missing or names a `.mdl`.
+    /// Nil when the model file is missing or names a `.mdl`, or the config size is outside the pixel range.
     public func createdImageObject(id: String, image: WPEParitySceneState.CreatedImage) -> WPEParitySceneObject? {
         guard !image.model.lowercased().hasSuffix(".mdl"), let model = assets.json(image.model) else { return nil }
+        var configSize: SIMD2<Int>?
+        if let authored = image.size {
+            guard let width = Self.pixelExtent(Double(authored.x)), let height = Self.pixelExtent(Double(authored.y)) else {
+                return nil
+            }
+            configSize = SIMD2(width, height)
+        }
         let materialPath = Self.string(model["material"])
         let material = materialPath.flatMap { WPEParityProgramMaterial(path: $0, assets: assets) }
         let source = materialPath.map { WPEParitySceneMaterialSource(materialPath: $0) }
@@ -522,8 +531,7 @@ public struct WPEParityProgramScene: Sendable {
                 }
         }
         let size = fullscreen ? SIMD2(scene.width, scene.height)
-            : albedoSize ?? image.size.map { SIMD2(Int($0.x.rounded()), Int($0.y.rounded())) }
-            ?? SIMD2(scene.width, scene.height)
+            : albedoSize ?? configSize ?? SIMD2(scene.width, scene.height)
         var frameReads: [String: [WPEResourceID]] = [:]
         if let materialPath, let material {
             frameReads[materialPath] = WPEParityAuthoredPass.frameReads(
@@ -739,7 +747,7 @@ public struct WPEParityProgramScene: Sendable {
             var invalidBinding = false
             for case let .object(bind) in array(pass["bind"]) {
                 guard WPEParityAuthoredFBO.conditionsMatch(bind["conditions"], combos: combos), let name = string(bind["name"]), let index = number(bind["index"]) else { continue }
-                guard let slot = truncatedInteger(index, as: Int32.self) else {
+                guard let slot = WPEAuthoredInteger.truncated(index, as: Int32.self) else {
                     invalidBinding = true
                     break
                 }
@@ -854,10 +862,13 @@ public struct WPEParityProgramScene: Sendable {
         }
     }
 
-    /// Keep native truncation toward zero, but reject values the destination cannot represent before conversion.
-    fileprivate static func truncatedInteger<Integer: FixedWidthInteger>(_ value: Double, as _: Integer.Type) -> Integer? {
-        guard value.isFinite else { return nil }
-        return Integer(exactly: value.rounded(.towardZero))
+    /// An object, dependency or effect id written as a number; nil when it is not an exact `Int`.
+    static func numericID(_ value: WPESceneJSONValue?) -> String? {
+        number(value).flatMap { WPEAuthoredInteger.exact($0, as: Int.self) }.map(String.init)
+    }
+
+    static func pixelExtent(_ value: Double) -> Int? {
+        WPEAuthoredInteger.rounded(value, as: Int.self, in: WPEAuthoredInteger.pixelExtent)
     }
 
     static func flag(_ value: WPESceneJSONValue?) -> Bool {
@@ -906,7 +917,7 @@ extension WPEParityProgramMaterial {
                     combos[key] = 0
                     continue
                 }
-                guard let combo = Scene.truncatedInteger(number, as: Int32.self) else { return nil }
+                guard let combo = WPEAuthoredInteger.truncated(number, as: Int32.self) else { return nil }
                 combos[key] = combo
             }
         }
@@ -926,8 +937,8 @@ extension WPEParityProgramMaterial {
         var reference: SIMD2<Int>?
         if let size = pass["usertexturereference"], size != .null {
             guard let width = Scene.number(size["width"]), let height = Scene.number(size["height"]),
-                  let width = Scene.truncatedInteger(width, as: Int.self),
-                  let height = Scene.truncatedInteger(height, as: Int.self), width > 0, height > 0 else { return nil }
+                  let width = WPEAuthoredInteger.truncated(width, as: Int.self),
+                  let height = WPEAuthoredInteger.truncated(height, as: Int.self), width > 0, height > 0 else { return nil }
             reference = SIMD2(width, height)
         }
         self.init(shader: shader, path: path, blending: Self.blendMode(Scene.string(pass["blending"])),

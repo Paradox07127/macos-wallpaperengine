@@ -108,7 +108,7 @@ struct WPEParityGeometryEmulation {
         }
         switch state[key] {
         case let .integer(value) where value > 0: return Int(value)
-        case let .unsignedInteger(value) where value > 0: return Int(value)
+        case let .unsignedInteger(value) where value > 0 && value <= UInt64(Int.max): return Int(value)
         default: throw WPEParityExecutionError.geometryReflectionMissing(key)
         }
     }

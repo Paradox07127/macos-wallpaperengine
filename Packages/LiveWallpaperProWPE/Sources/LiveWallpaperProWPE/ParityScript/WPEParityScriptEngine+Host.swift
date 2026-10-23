@@ -488,8 +488,8 @@ extension WPEParityScriptEngine {
     private func addHostLayer(_ index: Int, _ layer: Layer, state: WPEParitySceneState) {
         let parent = WPEParityProgramScene.string(layer.config["parent"]).flatMap { id in
             layers.firstIndex { $0.id == id }
-        } ?? (WPEParityProgramScene.number(layer.config["parent"]).flatMap { number in
-            layers.firstIndex { $0.id == String(Int(number)) }
+        } ?? (WPEParityProgramScene.numericID(layer.config["parent"]).flatMap { id in
+            layers.firstIndex { $0.id == id }
         } ?? -1)
         var effects: [[String: Any]] = []
         let effectJSON = WPEParityProgramScene.array(layer.config["effects"])

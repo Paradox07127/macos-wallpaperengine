@@ -91,7 +91,11 @@ public struct WPEParityTextureAnimation: Sendable {
         case .stop: stop()
         case .isPlaying: return isPlaying ? 1 : 0
         case .getFrame: return Double(frame(shared: shared.frame))
-        case .setFrame: setFrame(Int(value))
+        // A frame outside Int32 is ignored; `frame + 1` stepping must not overflow.
+        case .setFrame:
+            if let frame = WPEAuthoredInteger.truncated(value, as: Int32.self) {
+                setFrame(Int(frame))
+            }
         case .join: join()
         case .getRate: return Double(rate)
         case .setRate: setRate(Float(value), shared: shared)

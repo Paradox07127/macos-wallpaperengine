@@ -188,6 +188,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
     var unsupportedChildren: [WPEParityParticleChildRejection] = []
+    /// Integer fields of this system's own JSON outside their native range; their values fell back to defaults.
+    var rejectedFields: [String] = []
     /// Effective native CP allocation is the highest referenced index + 1, not the authored array length.
     var controlPointCount = 0
     private var nestedEligibilityIssues: [WPEParityParticleChildRejection] = []
@@ -202,6 +204,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
                           WPEParityParticleMaterial(texture0: $0.textures[0].flatMap(assets.textureHeader(named:)))
                       }
                   })
+        // Treated like an unreadable asset: the object is not drawn or simulated.
+        guard rejectedFields.isEmpty else { return nil }
     }
 
     /// The colour colorn is measured against, 0–1: the last colorrandom midpoint or first colorlist entry, else the
@@ -273,12 +277,15 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         typealias JSON = WPEParityParticleJSON
         materialPath = JSON.string(json["material"])
         material = materialPath.flatMap(resolveMaterial) ?? material
-        maxCount = max(0, Int(JSON.number(json["maxcount"]) ?? 0))
+        let authoredMaxCount = JSON.integer(json["maxcount"], default: 0)
+        let authoredFlags = JSON.integer(json["flags"], default: 0)
+        maxCount = max(0, authoredMaxCount ?? 0)
         startTime = JSON.number(json["starttime"]) ?? 0
         // Only the low byte is kept (E 0x1401c56e9).
-        flags = Int(JSON.number(json["flags"]) ?? 0) & 0xFF
+        flags = (authoredFlags ?? 0) & 0xFF
         randomFrame = JSON.string(json["animationmode"])?.lowercased() == "randomframe"
         sequenceMultiplier = JSON.number(json["sequencemultiplier"]) ?? 1
+        rejectedFields = [("maxcount", authoredMaxCount), ("flags", authoredFlags)].compactMap { $1 == nil ? $0 : nil }
         for (index, value) in JSON.array(json["controlpoint"]).enumerated() {
             let entry = WPEParityParticleEntry(value)
             let id = entry.integer("id", index)
@@ -310,6 +317,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             let name = JSON.string(entry["name"])?.lowercased() ?? ""
             if let renderer = WPEParityParticleRenderer(name: name, json: entry) {
                 renderers.append(renderer)
+            } else if WPEParityParticleRenderer.Kind(name: name) != nil {
+                rejectedFields.append("renderer \(name)")
             } else {
                 diagnostics.append("renderer \(name) skipped")
             }
@@ -344,7 +353,9 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             diagnostics.append("emitter \(name) skipped")
             return
         }
-        let flags = Int(JSON.number(entry["flags"]) ?? 0)
+        let flags = emitterInteger(entry, "flags")
+        let instantaneous = max(0, emitterInteger(entry, "instantaneous"))
+        let maxPerPeriod = max(0, emitterInteger(entry, "maxtoemitperperiod"))
         // 1401c6008 / 1401c6910 use cmovb: negative authored integers become point 7, not point 0.
         // Keep Entry's finite conversion protection; do not change other components' controlPoint parser.
         let controlPoint = min(UInt32(truncatingIfNeeded: WPEParityParticleEntry(entry).integer("controlpoint", 0)), 7)
@@ -361,7 +372,7 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             speedMin: JSON.number(entry["speedmin"]) ?? 0,
             speedMax: JSON.number(entry["speedmax"]) ?? 0,
             rate: JSON.number(entry["rate"]) ?? 10,
-            instantaneous: max(0, Int(JSON.number(entry["instantaneous"]) ?? 0)),
+            instantaneous: instantaneous,
             duration: JSON.number(entry["duration"]) ?? 0,
             delay: JSON.number(entry["delay"]) ?? 0,
             periodic: flags & 4 != 0,
@@ -372,9 +383,18 @@ struct WPEParityParticleConfig: Equatable, Sendable {
             periodicDelayMin: min(JSON.number(entry["minperiodicdelay"]) ?? 1,
                                   JSON.number(entry["maxperiodicdelay"]) ?? 2),
             periodicDelayMax: JSON.number(entry["maxperiodicdelay"]) ?? 2,
-            maxPerPeriod: max(0, Int(JSON.number(entry["maxtoemitperperiod"]) ?? 0)),
+            maxPerPeriod: maxPerPeriod,
             audio: WPEParityParticleAudioResponse(WPEParityParticleEntry(entry))
         ))
+    }
+
+    /// 0 when absent; an out-of-range value is recorded in `rejectedFields` and also reads as 0.
+    private mutating func emitterInteger(_ entry: WPESceneJSONValue, _ key: String) -> Int {
+        guard let value = WPEParityParticleJSON.integer(entry[key], default: 0) else {
+            rejectedFields.append("emitter.\(key)")
+            return 0
+        }
+        return value
     }
 
     private mutating func appendInitializer(_ entry: WPESceneJSONValue, is3D: Bool) {
@@ -620,8 +640,12 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     ) {
         typealias JSON = WPEParityParticleJSON
         let path = JSON.string(entry["name"]) ?? JSON.string(entry["particle"]) ?? ""
+        guard let authoredFlags = JSON.integer(entry["flags"], default: 0) else {
+            rejectedFields.append("children.flags")
+            return
+        }
         let kind = WPEParticleChildEventKind(authoredType: JSON.string(entry["type"]),
-                                             flags: JSON.number(entry["flags"]).map { Int($0) })
+                                             flags: JSON.number(entry["flags"]).map { _ in authoredFlags })
         let trigger: WPEParityParticleChildConfig.Trigger
         switch kind {
         case .staticSystem: trigger = .always
@@ -696,6 +720,10 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         }
         let child = WPEParityParticleConfig(json: json, context: next, is3D: is3D, resolveChild: resolveChild,
                                             resolveMaterial: resolveMaterial)
+        if !child.rejectedFields.isEmpty {
+            unsupportedChildren += child.rejectedFields.map { edgeIssue($0, "integer outside its native range") }
+            return
+        }
         if context.underEventAncestor || trigger == .follow, !child.nestedEligibilityIssues.isEmpty {
             // Reject this ineligible edge. Already-pruned descendants do not disqualify a healthy ancestor.
             unsupportedChildren += child.nestedEligibilityIssues.map {
@@ -753,6 +781,12 @@ enum WPEParityParticleJSON {
 
     static func number(_ value: WPESceneJSONValue?) -> Float? {
         value.flatMap(WPEParityProgramConstants.components)?.first.map { Float($0) }
+    }
+
+    /// `number` truncated toward zero; `fallback` when absent, nil when NaN, beyond Float (infinite) or 32 bits.
+    static func integer(_ value: WPESceneJSONValue?, default fallback: Int) -> Int? {
+        guard let number = number(value) else { return fallback }
+        return WPEAuthoredInteger.truncated(Double(number), as: Int.self, in: WPEAuthoredInteger.native32)
     }
 
     static func flag(_ value: WPESceneJSONValue?) -> Bool {

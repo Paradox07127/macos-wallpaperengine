@@ -277,14 +277,6 @@ public enum WPEValueParser {
         return nil
     }
 
-    /// `Int(_:)` traps on NaN and on any magnitude past `Int`. Saturating keeps a malformed Workshop literal from killing the wallpaper agent.
-    public static func saturatingInt(_ value: Double) -> Int {
-        guard !value.isNaN else { return 0 }
-        guard value > Double(Int.min) else { return .min }
-        guard value < Double(Int.max) else { return .max }
-        return Int(value)
-    }
-
     public static func bool(_ raw: Any?) -> Bool? {
         if let bool = raw as? Bool {
             return bool

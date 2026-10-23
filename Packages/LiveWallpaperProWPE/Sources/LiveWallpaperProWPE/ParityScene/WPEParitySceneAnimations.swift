@@ -181,8 +181,9 @@ public struct WPEParitySceneAnimations {
         if let id = WPEParityProgramScene.string(object["id"]), !id.isEmpty {
             return id
         }
+        // A numeric id that is not an exact Int names no object; it must not fall through to `name`.
         if case let .number(number)? = object["id"] {
-            return String(Int(number))
+            return WPEAuthoredInteger.exact(number, as: Int.self).map(String.init)
         }
         return WPEParityProgramScene.string(object["name"])
     }

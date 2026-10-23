@@ -22,9 +22,8 @@ public struct WPEParityParticleScene {
         let crt = WPEParityCRTRandom()
         let is3D = !engineFlags.orthographicProjection
         // Root "version" counts only as a uint32, otherwise 0 (140186c90.c:310-332).
-        let sceneVersion = if case let .number(value)? = document.sourceJSON["version"], value >= 0,
-                              value <= 4_294_967_295, value == value.rounded(.towardZero) {
-            Int(value)
+        let sceneVersion = if case let .number(value)? = document.sourceJSON["version"] {
+            WPEAuthoredInteger.exact(value, as: Int.self, in: 0 ... Int(UInt32.max)) ?? 0
         } else {
             0
         }

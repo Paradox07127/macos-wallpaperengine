@@ -108,7 +108,7 @@ enum WPEParityModelDataLayerAdmission {
             }
             let loaded = plan.document.resolvedObjectsJSON.first { entry in
                 switch entry["id"] {
-                case let .number(number)?: String(Int(number)) == template.id
+                case let .number(number)?: WPEAuthoredInteger.exact(number, as: Int.self).map(String.init) == template.id
                 case let .string(id)?: id == template.id
                 default: false
                 }

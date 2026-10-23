@@ -132,8 +132,7 @@ extension WPEParityScriptEngine {
             case let .string(raw): Double(raw)
             default: nil
             }
-            guard let number, number.isFinite, number >= Double(Int32.min), number <= Double(Int32.max) else { return nil }
-            return .integer(Int32(number.rounded(.towardZero)))
+            return number.flatMap { WPEAuthoredInteger.truncated($0, as: Int32.self) }.map { .integer($0) }
         }
         if descriptor.type == .vec2 {
             return WPEParityNumericConversion.nativeVector2(value).map { .vector(SIMD4(Float($0.x), Float($0.y), 0, 0)) }
