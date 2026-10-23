@@ -14,6 +14,6 @@ xcrun swiftc -parse-as-library -swift-version 6 -target "$(uname -m)-apple-macos
   "${sources[@]}" \
   LiveWallpaper/Models/SystemWallpaperManifest.swift LiveWallpaper/Models/SystemWallpaperPreparationOptions.swift \
   LiveWallpaper/Models/SystemWallpaperPlaybackPolicy.swift LiveWallpaper/Infrastructure/Platform/UserPresenceProbe.swift \
-  SystemWallpaperProviderTests/SceneLifecycleChecks.swift \
+  SystemWallpaperProviderTests/SceneLifecycleChecks.swift SystemWallpaperProviderTests/XPCContractChecks.swift \
   SystemWallpaperProviderTests/ProviderRetargetChecks.swift -o "$SCRATCH/checks"
 "$SCRATCH/checks"

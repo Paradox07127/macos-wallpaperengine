@@ -230,6 +230,32 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         return true
     }
 
+    /// The extended encoding NSXPC validates replies against; libobjc exports it only as a private symbol.
+    static func extendedTypeEncoding(of selector: Selector, in proto: Protocol) -> String? {
+        typealias Lookup = @convention(c) (Protocol, Selector, ObjCBool, ObjCBool) -> UnsafePointer<CChar>?
+        let rtldDefault = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT; Swift does not import the C macro
+        guard let symbol = dlsym(rtldDefault, "_protocol_getMethodTypeEncoding") else { return nil }
+        let lookup = unsafeBitCast(symbol, to: Lookup.self)
+        for required in [true, false] {
+            if let types = lookup(proto, selector, ObjCBool(required), true) {
+                return String(cString: types)
+            }
+        }
+        return nil
+    }
+
+    /// `encoding` is the system's extended encoding for `isChoiceDownloadedWith:reply:`; nil = unavailable.
+    static func choiceDownloadedReply(forSystemEncoding encoding: String?) -> ChoiceDownloadedReply {
+        guard let encoding, let block = encoding.range(of: "@?<v@?") else { return .number }
+        return encoding[block.upperBound...].first == "B" ? .bool : .number
+    }
+
+    private static func systemChoiceDownloadedEncoding() -> String? {
+        guard frameworkHandle != nil,
+              let proto = objc_getProtocol("WallpaperExtensionKit.WallpaperExtensionXPCProtocol") else { return nil }
+        return extendedTypeEncoding(of: NSSelectorFromString("isChoiceDownloadedWith:reply:"), in: proto)
+    }
+
     /// Class metatypes are ObjC objects but not Swift `Hashable`, so the
     /// allowlist is assembled as an NSSet and bridged for `setClasses`.
     private static func allowedClasses() -> Set<AnyHashable> {
@@ -251,12 +277,14 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         }
         activateObserversIfNeeded()
 
-        let exported = NSXPCInterface(with: WallpaperExtensionXPCProtocol.self)
+        let downloadedReply = Self.choiceDownloadedReply(forSystemEncoding: Self.systemChoiceDownloadedEncoding())
+        let exported = NSXPCInterface(with: downloadedReply.exportedProtocol)
         let allowed = Self.allowedClasses()
         Self.applyAllowlist(allowed, to: exported)
         connection.exportedInterface = exported
 
-        let handler = WallpaperXPCHandler(store: store, registry: registry, settings: settings)
+        let handler = WallpaperXPCHandler(store: store, registry: registry, settings: settings,
+                                          choiceDownloadedReply: downloadedReply)
         connection.exportedObject = handler
         handlersLock.withLock { handlers[ObjectIdentifier(connection)] = handler }
 
@@ -305,7 +333,11 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         interface.setClasses(all, for: selector, argumentIndex: 0, ofReply: false)
         let access = #selector(WallpaperExtensionProxyXPCProtocol.requestReadOnlyAccess(to:reply:))
         interface.setClasses(all, for: access, argumentIndex: 0, ofReply: false)
-        interface.setClasses(all, for: access, argumentIndex: 0, ofReply: true)
+        let granted = NSMutableSet(set: all as NSSet)
+        if let wrapper = NSClassFromString("NSSecurityScopedURLWrapper") {
+            granted.add(wrapper)
+        }
+        interface.setClasses((granted as? Set<AnyHashable>) ?? all, for: access, argumentIndex: 0, ofReply: true)
     }
 
     private static func applyAllowlist(_ classes: Set<AnyHashable>, to interface: NSXPCInterface) {
@@ -321,7 +353,7 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             (#selector(WallpaperExtensionXPCProtocol.removeChoiceRequest(request:reply:)), [0]),
             (#selector(WallpaperExtensionXPCProtocol.selectedChoicesDidChange(for:reply:)), [0]),
             (#selector(WallpaperExtensionXPCProtocol.invokeContextMenuAction(menuItemID:groupItemID:reply:)), [0, 1]),
-            (#selector(WallpaperExtensionXPCProtocol.isChoiceDownloaded(with:reply:)), [0]),
+            (#selector(WallpaperExtensionNumberDownloadXPCProtocol.isChoiceDownloaded(with:reply:)), [0]),
             // Stubs, but stubs the system can still call: an un-allowlisted
             // `id` argument is dropped before it reaches them, so the Agent
             // waits out its call with no reply and no error.

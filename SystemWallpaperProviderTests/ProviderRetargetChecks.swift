@@ -75,6 +75,29 @@ private struct Fixture {
         check(newIdentity != nil && newIdentity != oldIdentity, "fixture did not replace the filesystem object")
     }
 
+    /// Writes a heartbeat from the current registry on the lifecycle queue and decodes it back.
+    func heartbeat() async -> SystemWallpaperHeartbeat? {
+        let registry = registry
+        let store = store
+        await withCheckedContinuation { continuation in
+            WallpaperXPCHandler.queue.async {
+                WallpaperXPCHandler.writeActiveHeartbeat(registry: registry, store: store)
+                continuation.resume()
+            }
+        }
+        guard let data = try? Data(contentsOf: store.sharedRoot().appendingPathComponent("heartbeat.json")) else { return nil }
+        return try? SystemWallpaperCoding.decoder.decode(SystemWallpaperHeartbeat.self, from: data)
+    }
+
+    func rate(of surface: WallpaperSurface) async -> Double {
+        nonisolated(unsafe) let surface = surface
+        return await withCheckedContinuation { continuation in
+            WallpaperXPCHandler.queue.async {
+                continuation.resume(returning: WallpaperXPCHandler.rate(for: surface, playbackMode: .always))
+            }
+        }
+    }
+
     func resolvedItemID(of surface: WallpaperSurface) async -> String? {
         nonisolated(unsafe) let surface = surface
         return await withCheckedContinuation { continuation in
@@ -91,6 +114,11 @@ private struct Fixture {
             print("FAIL: scene lifecycle checks: \(error)")
             exit(1)
         }
+        let contractFailures = XPCContractChecks.run()
+        for failure in contractFailures {
+            print("FAIL: XPC contract: \(failure)")
+        }
+        check(contractFailures.isEmpty, "XPC contract differs from the system protocols")
         let old = Date(timeIntervalSince1970: 1000)
         let new = Date(timeIntervalSince1970: 2000)
 
@@ -148,6 +176,47 @@ private struct Fixture {
             bridge.libraryDidChange()
             await drainLifecycle()
             await check(fixture.playbackGeneration(of: surface) == before + 1, "unchanged replacement repeatedly restarted")
+            surface.renderer.stopSync()
+        }
+
+        // Admission timing out is transient: the next policy pass restarts a visible, moving surface, and the app never sees it as a failure.
+        do {
+            let fixture = try Fixture()
+            let a = try fixture.item("a", file: "a.mov", addedAt: old)
+            try fixture.store.writeManifest(.init(version: 1, items: [a], selectedItemID: "a"))
+            guard let surface = await fixture.servingSurface(a, isPreview: false) else { return check(false, "no surface") }
+            let before = await fixture.playbackGeneration(of: surface, failure: "scene.busy")
+            let rate = await fixture.rate(of: surface)
+            check(rate > 0, "precondition: this machine's power state pauses playback (rate \(rate))")
+            WallpaperXPCHandler.reapplyPolicy(registry: fixture.registry, store: fixture.store)
+            await drainLifecycle()
+            await check(fixture.playbackGeneration(of: surface) == before + 1, "a visible surface stuck on scene.busy was not restarted")
+            surface.renderer.stopSync()
+        }
+        do {
+            let fixture = try Fixture()
+            let a = try fixture.item("a", file: "a.mov", addedAt: old)
+            try fixture.store.writeManifest(.init(version: 1, items: [a], selectedItemID: "a"))
+            guard let surface = await fixture.servingSurface(a, isPreview: false) else { return check(false, "no surface") }
+            _ = await fixture.playbackGeneration(of: surface, failure: "scene.busy")
+            let beat = await fixture.heartbeat()
+            check(beat?.playbackFailures?.values.contains("scene.busy") == false, "heartbeat reports a retryable scene.busy as a failure")
+            surface.renderer.stopSync()
+        }
+
+        // The heartbeat names what the renderer still plays, not the selection it could not switch to.
+        do {
+            let fixture = try Fixture()
+            let a = try fixture.item("a", file: "a.mov", addedAt: old)
+            let b = SystemWallpaperManifest.Item(id: "b", title: "b", fileName: "b.mov", addedAt: new)
+            try fixture.store.writeManifest(.init(version: 1, items: [a, b], selectedItemID: "b"))
+            guard let surface = await fixture.servingSurface(a, isPreview: false) else { return check(false, "no surface") }
+            _ = await fixture.playbackGeneration(of: surface, failure: "scene.load.failed")
+            let beat = await fixture.heartbeat()
+            let active = beat?.activeChoiceIDs ?? []
+            check(active.contains("a") && !active.contains("b"), "heartbeat active \(active) while the renderer still plays a")
+            check(beat?.playbackFailures == ["a": "scene.load.failed"],
+                  "failure filed as \(beat?.playbackFailures ?? [:]) instead of under the playing item a")
             surface.renderer.stopSync()
         }
 

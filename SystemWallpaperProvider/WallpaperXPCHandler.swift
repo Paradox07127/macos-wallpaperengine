@@ -9,10 +9,12 @@ import os.log
 /// `@unchecked Sendable`: every stored property except `agentProxyProvider`
 /// is a `let`, assigned once in `accept(connection:)` before the connection
 /// resumes, so no incoming call can observe it mid-write.
-final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unchecked Sendable {
+final class WallpaperXPCHandler: NSObject, WallpaperExtensionNumberDownloadXPCProtocol, @unchecked Sendable {
     private let store: SharedLibraryStore
     private let registry: SurfaceRegistry
     private let settings: SettingsProvider
+    /// Must name the protocol the connection exported; the reply block is reinterpreted by it.
+    private let choiceDownloadedReply: ChoiceDownloadedReply
     /// Derives the agent proxy per call rather than storing one:
     /// `connection.remoteObjectProxy` returns an autoreleased object nothing
     /// else owns, so a stored `weak` reference reads back nil (measured
@@ -48,10 +50,12 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// evil compared with a wallpaper panel that never finishes switching.
     private static let firstFrameReplyTimeout: TimeInterval = 1.0
 
-    init(store: SharedLibraryStore, registry: SurfaceRegistry, settings: SettingsProvider) {
+    init(store: SharedLibraryStore, registry: SurfaceRegistry, settings: SettingsProvider,
+         choiceDownloadedReply: ChoiceDownloadedReply) {
         self.store = store
         self.registry = registry
         self.settings = settings
+        self.choiceDownloadedReply = choiceDownloadedReply
         super.init()
     }
 
@@ -126,15 +130,17 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     return
                 }
                 surface.choiceID = choiceID
-                writeActiveHeartbeat()
                 // The choice is gone from the library: stop, but keep the
                 // hosted context. The last frame is a better answer than the
                 // black one a fresh empty context would give.
                 if !canServeChoice(choiceID, displayID: displayID) {
                     surface.renderer.stop()
+                    surface.resolvedItemID = nil
+                    writeActiveHeartbeat()
                     reply(context, nil)
                     return
                 }
+                writeActiveHeartbeat()
                 // Switching between two of our own wallpapers: the Agent
                 // keeps compositing the OLD context until we reply, so the
                 // held reply until the new video's first frame replaces the
@@ -227,8 +233,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             for surface in targets where !surface.isPreview {
                 surface.lastPresentationMode = mode
                 surface.lastActivityState = activity
+                let rate = Self.rate(for: surface, playbackMode: manifest.playbackMode)
+                if let choiceID = Self.admissionRetryChoice(surface, rate: rate) {
+                    Self.startPlayback(surface: surface, choiceID: choiceID, size: surface.bridge.rootLayer.bounds.size,
+                                       manifest: manifest, registry: registry, store: store, replyOnFirstFrame: nil)
+                    continue
+                }
                 // Ease rather than cut, so the wallpaper settles into a still.
-                surface.renderer.rampRate(to: Self.rate(for: surface, playbackMode: manifest.playbackMode), refreshLiveData: Self.isVisible(surface), hideClockCalendar: Self.hidesClockCalendar(surface, manifest: manifest))
+                surface.renderer.rampRate(to: rate, refreshLiveData: Self.isVisible(surface), hideClockCalendar: Self.hidesClockCalendar(surface, manifest: manifest))
             }
             wpxLog.info("update — mode=\(mode, privacy: .public) activity=\(activity, privacy: .public) targets=\(targets.count)")
             reply(nil)
@@ -435,7 +447,16 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
 
     // MARK: - Stubs (contract §11)
 
-    func isChoiceDownloaded(with choiceID: Any?, reply: @escaping @Sendable (Bool, Error?) -> Void) { reply(true, nil) }
+    @objc(isChoiceDownloadedWith:reply:)
+    func isChoiceDownloaded(with _: Any?, reply: @escaping @convention(block) @Sendable (NSNumber?, Error?) -> Void) {
+        switch choiceDownloadedReply {
+        case .number:
+            reply(NSNumber(value: true), nil)
+        case .bool:
+            unsafeBitCast(reply, to: (@convention(block) @Sendable (Bool, Error?) -> Void).self)(true, nil)
+        }
+    }
+
     func download(choiceID: Any?, reply: @escaping @Sendable (Error?) -> Void) -> Any? { reply(nil); return nil }
     func pauseDownload(for choiceID: Any?, reply: @escaping @Sendable (Error?) -> Void) { reply(nil) }
     func cancelDownload(for choiceID: Any?, reply: @escaping @Sendable (Error?) -> Void) { reply(nil) }
@@ -639,16 +660,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             active.append(id)
         }
         let manifest = store.loadManifest()
-        for surface in registry.all where !surface.isPreview {
-            if let id = manifest.item(for: surface.choiceID, displayID: surface.displayID)?.id,
-               seen.insert(id).inserted {
-                active.append(id)
-            }
-        }
         var failures: [String: String] = [:]
-        for surface in registry.all where !surface.isPreview {
-            if let id = manifest.item(for: surface.choiceID, displayID: surface.displayID)?.id ?? surface.choiceID,
-               let failure = surface.playbackFailure {
+        for surface in registry.all where !surface.isPreview && surface.choiceID != nil {
+            // The renderer keeps the last item it started when a newer selection cannot play.
+            let itemID = surface.resolvedItemID ?? manifest.item(for: surface.choiceID, displayID: surface.displayID)?.id
+            if let itemID, seen.insert(itemID).inserted {
+                active.append(itemID)
+            }
+            if let id = itemID ?? surface.choiceID, let failure = surface.playbackFailure, failure != retryableFailure {
                 failures[id] = failure
             }
         }
@@ -738,6 +757,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             && (systemLocked || surface.lastPresentationMode == "locked")
     }
 
+    /// Admission timing out is the one failure that clears once another scene frees its slot; every other code is terminal.
+    private static let retryableFailure = "scene.busy"
+
+    /// The choice to restart on a policy pass, or nil when the surface should only re-ramp.
+    private static func admissionRetryChoice(_ surface: WallpaperSurface, rate: Double) -> String? {
+        guard surface.playbackFailure == retryableFailure, !surface.isPreview, rate > 0, isVisible(surface) else { return nil }
+        return surface.choiceID
+    }
+
     private static func isVisible(_ surface: WallpaperSurface) -> Bool {
         !systemAsleep && !surface.lastActivityState.contains("suspended") && surface.lastPresentationMode != "idle"
             && ProcessInfo.processInfo.thermalState != .critical
@@ -769,7 +797,13 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     continue
                 }
                 guard !surface.isPreview else { continue }
-                surface.renderer.rampRate(to: rate(for: surface, playbackMode: manifest.playbackMode), refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface, manifest: manifest))
+                let rate = rate(for: surface, playbackMode: manifest.playbackMode)
+                if let choiceID = admissionRetryChoice(surface, rate: rate) {
+                    startPlayback(surface: surface, choiceID: choiceID, size: surface.bridge.rootLayer.bounds.size,
+                                  manifest: manifest, registry: registry, store: store, replyOnFirstFrame: nil)
+                    continue
+                }
+                surface.renderer.rampRate(to: rate, refreshLiveData: isVisible(surface), hideClockCalendar: hidesClockCalendar(surface, manifest: manifest))
             }
             if dropped > 0 { writeActiveHeartbeat(registry: registry, store: store) }
             wpxLog.info("policy re-applied — \(registry.all.count) surface(s), dropped \(dropped)")

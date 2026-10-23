@@ -25,8 +25,6 @@ import Foundation
     @objc(invokeContextMenuActionWithMenuItemID:groupItemID:reply:)
     func invokeContextMenuAction(menuItemID: Any?, groupItemID: Any?, reply: @escaping @Sendable (Error?) -> Void)
     // Downloads
-    @objc(isChoiceDownloadedWith:reply:)
-    func isChoiceDownloaded(with choiceID: Any?, reply: @escaping @Sendable (Bool, Error?) -> Void)
     @objc(downloadWithChoiceID:reply:)
     func download(choiceID: Any?, reply: @escaping @Sendable (Error?) -> Void) -> Any?
     @objc(pauseDownloadFor:reply:)
@@ -54,13 +52,37 @@ import Foundation
     func handleNotification(named: Any?, reply: @escaping @Sendable (Error?) -> Void)
 }
 
+/// The reply block type of the system's `isChoiceDownloadedWith:reply:`; NSXPC drops a reply whose block signature differs.
+enum ChoiceDownloadedReply: Sendable {
+    case number
+    case bool
+
+    var exportedProtocol: Protocol {
+        switch self {
+        case .number: WallpaperExtensionNumberDownloadXPCProtocol.self
+        case .bool: WallpaperExtensionBoolDownloadXPCProtocol.self
+        }
+    }
+}
+
+@objc protocol WallpaperExtensionNumberDownloadXPCProtocol: WallpaperExtensionXPCProtocol {
+    /// A raw block so the handler can reinterpret it as the Bool-shaped block when that interface is exported.
+    @objc(isChoiceDownloadedWith:reply:)
+    func isChoiceDownloaded(with choiceID: Any?, reply: @escaping @convention(block) @Sendable (NSNumber?, Error?) -> Void)
+}
+
+@objc protocol WallpaperExtensionBoolDownloadXPCProtocol: WallpaperExtensionXPCProtocol {
+    @objc(isChoiceDownloadedWith:reply:)
+    func isChoiceDownloaded(with choiceID: Any?, reply: @escaping @Sendable (Bool, Error?) -> Void)
+}
+
 @objc protocol WallpaperExtensionProxyXPCProtocol: NSObjectProtocol {
     @objc(pingWithId:)
     func ping(id: Any?)
     @objc(updateSettingsViewModels:reply:)
     func updateSettingsViewModels(_ models: Any?, reply: @escaping @Sendable (Error?) -> Void)
     @objc(requestReadOnlyAccessTo:reply:)
-    func requestReadOnlyAccess(to url: Any?, reply: @escaping @Sendable (Any?) -> Void)
+    func requestReadOnlyAccess(to url: Any?, reply: @escaping @Sendable (Any?, Error?) -> Void)
     @objc(invalidateSnapshotsWithReply:)
     func invalidateSnapshots(reply: @escaping @Sendable (Error?) -> Void)
 }
