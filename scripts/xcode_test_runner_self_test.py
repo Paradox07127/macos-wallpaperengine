@@ -359,7 +359,7 @@ print(" Executed 0 tests, with 0 failures (0 unexpected) in 0.001 seconds")
             scratch = Path(temporary)
             source = (ROOT / "Makefile").read_text()
             overrides = "\n".join(
-                f'{target}:\n\t@mkdir "{scratch / "lock"}"; sleep 0.05; rmdir "{scratch / "lock"}"\n'
+                f'{target}:\n\t@mkdir "{scratch / "lock"}" || exit 1; sleep 0.05; rmdir "{scratch / "lock"}"\n'
                 for target in ["fast", "contracts", "lint", "test-packages", "test-app", "test-wpe-metal"]
             )
             for guarded in [True, False]:
