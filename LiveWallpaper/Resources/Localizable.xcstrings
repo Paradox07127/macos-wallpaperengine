@@ -2565,7 +2565,7 @@
     },
     "%lld old copies and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
       "comment" : "Destructive confirm message for removing system wallpaper copies that Loomscreen no longer follows. Placeholders are the item count and the formatted size on disk.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -45689,7 +45689,7 @@
     },
     "On screen now: %@. Those displays stop playing until you select “%@” again in System Settings › Wallpaper." : {
       "comment" : "Second paragraph of the old-copies removal confirm. Placeholders are a list of quoted wallpaper titles and the tile name macOS shows, such as Loomscreen — Selected Wallpaper.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -54805,7 +54805,7 @@
     },
     "Remove old copies?" : {
       "comment" : "Confirm title for deleting System Wallpaper copies without a follow source.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -75688,6 +75688,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mac 無法播放此影片格式，將顯示作者的圖片。"
+          }
+        }
+      }
+    },
+    "This version can’t record web wallpapers" : {
+      "comment" : "System Wallpaper display list, Lite: this display shows a web wallpaper, and Lite cannot record it as a video copy.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version can’t record web wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta versión no puede grabar fondos web"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このバージョンではWeb壁紙を録画できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本版本无法录制网页壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本無法錄製網頁桌布"
           }
         }
       }

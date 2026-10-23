@@ -81,7 +81,11 @@ private struct DisplayRow: View {
         case .cancelled:
             label("Generation cancelled", symbol: "xmark.circle", tint: .secondary)
         case .needsRecording:
+            #if LITE_BUILD
+            label("This version can’t record web wallpapers", symbol: "minus.circle", tint: .secondary)
+            #else
             label("Needs a recorded video copy", symbol: "record.circle", tint: DesignTokens.Colors.Status.caution)
+            #endif
         case .preparationFailed:
             label("Couldn’t generate the copy", symbol: "exclamationmark.triangle.fill", tint: DesignTokens.Colors.Status.warning)
         case .playbackFailed:
@@ -110,10 +114,12 @@ private struct DisplayRow: View {
     @ViewBuilder
     private var action: some View {
         switch status.state {
+        #if !LITE_BUILD
         case .needsRecording:
             Button("Record Video Copy", action: onRecord)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+        #endif
         case .preparationFailed, .cancelled:
             Button("Retry") { service.followCoordinator?.retry(displayID: status.displayID) }
                 .buttonStyle(.bordered)
