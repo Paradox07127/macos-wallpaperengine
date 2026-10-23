@@ -38,13 +38,19 @@ PACKAGES := LiveWallpaperCore LiveWallpaperProWPE
 
 .DEFAULT_GOAL := help
 .PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted test-wpe-metal test-app-full test-app-interaction \
-        unregister-build-appex test-packages-corpus
+        unregister-build-appex test-packages-corpus verify-gates unregister-verify-products
 
 help:
 	@sed -n '/^#   make/s/^#   //p' $(MAKEFILE_LIST)
 
+# Runs the cleanup even when a gate fails, so a red run leaves no appex registered either.
+verify:
+	@rc=0; $(MAKE) --no-print-directory -f "$(firstword $(MAKEFILE_LIST))" verify-gates || rc=$$?; \
+	$(MAKE) --no-print-directory -f "$(firstword $(MAKEFILE_LIST))" unregister-verify-products; \
+	exit $$rc
+
 # Ordered cheapest-first so a structural break fails in seconds, not minutes.
-verify: fast contracts lint test-packages test-app test-wpe-metal
+verify-gates: fast contracts lint test-packages test-app test-wpe-metal
 	@echo "== make verify: selected integration gates passed (not the full app suite or release gate) =="
 
 fast:
@@ -159,8 +165,8 @@ hooks:
 # wallpaper-extension providers, so nothing else in the database is touched.
 # lsregister surfaces an older record whenever a newer one goes, hence the loop.
 #
-# Deliberately NOT part of `verify` — a gate must not mutate the machine's
-# LaunchServices state.
+# `verify` instead runs unregister-verify-products, which only touches its own
+# build dirs; this target also drops the main DerivedData and worktree copies.
 LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 unregister-build-appex:
@@ -181,3 +187,20 @@ unregister-build-appex:
 	@/usr/bin/pluginkit -mAvvv -p com.apple.wallpaper 2>/dev/null \
 	  | awk '/loomscreen/ { id=$$1; getline; sub(/^[ \t]*Path = /, ""); print "  "id"  <- "$$0 }' \
 	  || true
+
+# Nested bundles (Sparkle's Updater.app, the appex) keep their own records, so
+# every bundle under Build/Products is unregistered, not just the top-level app.
+unregister-verify-products:
+	@echo "== Unregister bundles built by verify =="
+	@for dd in "$(DERIVED_DATA)" "$(DERIVED_DATA)Lite" "$(DERIVED_DATA)Metal"; do \
+	  { \
+	    if [[ -f "$$dd/Build/Intermediates.noindex/XCBuildData/registered-launchservices.txt" ]]; then \
+	      cat "$$dd/Build/Intermediates.noindex/XCBuildData/registered-launchservices.txt"; \
+	    fi; \
+	    if [[ -d "$$dd/Build/Products" ]]; then \
+	      /usr/bin/find "$$dd/Build/Products" \( -name '*.app' -o -name '*.appex' \) -type d; \
+	    fi; \
+	  } | sort -u | while IFS= read -r bundle; do \
+	    [[ -n "$$bundle" ]] && "$(LSREGISTER)" -u "$$bundle" >/dev/null 2>&1 || true; \
+	  done; \
+	done
