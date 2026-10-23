@@ -211,8 +211,9 @@ struct WPEMappedPackageWriteFenceTests {
         ],
         // Cache entry files go into a fresh hidden directory under Caches/wpe-parity-shaders, then renamed into place.
         "LiveWallpaper/Runtime/Metal/Parity/Shaders/WPEParityShaderDiskCache.swift": [".write(to": 2],
+        "SteamConnector/SteamCMDDiagnosisPlan.swift": [".write(to": 1],
         // O_WRONLY: probe appmanifest, O_EXCL|O_NOFOLLOW under an O_NOFOLLOW-walked private profile dir.
-        "SteamConnector/SteamConnectorProtocol.swift": [".write(to": 1, "O_RDWR": 1, "O_WRONLY": 1],
+        "SteamConnector/SteamCMDProfile.swift": ["O_RDWR": 1, "O_WRONLY": 1],
         // O_RDWR: private worker leases and validated lock files, never mapped content.
         // O_WRONLY: fresh O_EXCL manifest staging and new files in the unpublished copy tree.
         "SteamConnector/SteamLibraryWriter.swift": ["O_RDWR": 2, "O_WRONLY": 2],

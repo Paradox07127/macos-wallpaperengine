@@ -291,8 +291,17 @@
 		F5C8FFBD301D730C00D85832 /* Exceptions for "SteamConnector" folder in "LiveWallpaper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				SteamCMDActiveProcessRegistry.swift,
+				SteamCMDBinaryResolver.swift,
+				SteamCMDDiagnosisPlan.swift,
+				SteamCMDLogin.swift,
+				SteamCMDManagedInstaller.swift,
+				SteamCMDOutputFramer.swift,
+				SteamCMDProfile.swift,
 				SteamConnectorProtocol.swift,
+				SteamLibraryPaths.swift,
 				SteamLibraryWriter.swift,
+				SteamWorkshopManifest.swift,
 			);
 			target = 0C322BEE2D6950480033C48B /* LiveWallpaper */;
 		};
