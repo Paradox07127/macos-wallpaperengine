@@ -14,6 +14,11 @@ struct WeatherStatusBadge: View {
         }
     }
 
+    /// The place the shown weather was fetched for; the newest resolved place only once there is no reading.
+    static func shownPlace(_ weatherService: WeatherReactiveService) -> String? {
+        weatherService.currentReading.map(\.locationLabel) ?? weatherService.activeLocationLabel
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: weatherIcon)
@@ -31,7 +36,7 @@ struct WeatherStatusBadge: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if let label = weatherService.activeLocationLabel, weatherService.lastError == nil {
+                if let label = Self.shownPlace(weatherService), weatherService.lastError == nil {
                     Text(verbatim: label)
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)

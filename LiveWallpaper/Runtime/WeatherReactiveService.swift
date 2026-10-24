@@ -331,11 +331,12 @@ final class WeatherReactiveService {
             lastSuccessfulUpdate = fetchedAt
             lastFetchCompletedAt = fetchedAt
 
-            Logger.info("Weather updated: \(description.rawValue), code=\(weatherCode), intensity=\(currentIntensity.rawValue), particle=\(currentParticleEffect.rawValue), wind=\(currentWind.map { "\(Int($0.speedKPH))km/h@\(Int($0.fromDegrees))°" } ?? "n/a"), source=\(resolution.resolvedSource?.rawValue ?? "none")", category: .screenManager)
+            Logger.info("Weather updated: \(description.rawValue), code=\(weatherCode), intensity=\(currentIntensity.rawValue), particle=\(currentParticleEffect.rawValue), wind=\(currentWind.map { "\(String(format: "%.0f", $0.speedKPH))km/h@\(String(format: "%.0f", $0.fromDegrees))°" } ?? "n/a"), source=\(resolution.resolvedSource?.rawValue ?? "none")", category: .screenManager)
         } catch is CancellationError {
             return
         } catch {
-            guard !isShutdown else { return }
+            // URLSession reports a superseded request as URLError(.cancelled), not CancellationError.
+            guard !Task.isCancelled, !isShutdown else { return }
             lastError = error.localizedDescription
             locationStatus = .error
             lastFetchCompletedAt = Date()

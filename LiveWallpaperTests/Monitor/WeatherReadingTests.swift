@@ -117,12 +117,65 @@ struct WeatherReadingTests {
             let midway = WeatherWidgetView.shownReading(service)
             #expect(midway?.locationLabel == "Alpha", "Bravo's name would sit on Alpha's sky until the fetch lands")
             #expect(midway?.condition == .clear)
+            #expect(WeatherStatusBadge.shownPlace(service) == "Alpha", "The badge would caption Alpha's sky with Bravo's name")
 
             gateContinuation.yield()
             #expect(await settle { service.locationStatus == .available })
             let shown = WeatherWidgetView.shownReading(service)
             #expect(shown?.locationLabel == "Bravo")
             #expect(shown?.condition == .rain)
+        }
+    }
+
+    @Test("A superseded fetch that fails as cancelled leaves the newer success standing", .timeLimit(.minutes(1)))
+    func supersededCancelledFetchRecordsNoError() async throws {
+        try await withManualLocation {
+            let (started, startedContinuation) = AsyncStream<Void>.makeStream()
+            let (gate, gateContinuation) = AsyncStream<Void>.makeStream()
+            let provider = SwitchableLocationProvider(Self.place("Alpha", latitude: 10))
+            let service = WeatherReactiveService(locationProvider: provider) { url in
+                guard Self.isFor(url, latitude: 20) else { return Self.clearJSON }
+                startedContinuation.yield()
+                // An unstructured task ignores the fetch's cancellation, so Bravo stays parked until the gate opens, as URLSession does.
+                await Task {
+                    for await _ in gate {
+                        break
+                    }
+                }.value
+                throw URLError(.cancelled)
+            }
+            defer { service.shutdown() }
+            try await fetchAlpha(service, provider)
+
+            provider.resolution = Self.place("Bravo", latitude: 20)
+            service.refresh()
+            var startedIterator = started.makeAsyncIterator()
+            _ = await startedIterator.next()
+
+            provider.resolution = Self.place("Charlie", latitude: 30)
+            service.refresh()
+            #expect(await settle { provider.resolveCount == 3 && service.locationStatus == .available })
+
+            gateContinuation.yield()
+            // Gives Bravo's task time to resume and return; it never flips the status once fixed, so this waits out the poll.
+            _ = await settle { service.locationStatus != .available }
+            #expect(service.locationStatus == .available, "Bravo's cancellation would be recorded as a fetch error")
+            #expect(service.lastError == nil)
+            #expect(WeatherWidgetView.shownReading(service)?.locationLabel == "Charlie")
+        }
+    }
+
+    @Test("A wind reading too large for an integer still lands", .timeLimit(.minutes(1)))
+    func hugeWindReadingLands() async throws {
+        try await withManualLocation {
+            let json = Data(#"{"current":{"weather_code":0,"wind_speed_10m":1e100,"wind_direction_10m":90}}"#.utf8)
+            let provider = SwitchableLocationProvider(Self.place("Alpha", latitude: 10))
+            let service = WeatherReactiveService(locationProvider: provider) { _ in json }
+            defer { service.shutdown() }
+            service.refresh()
+            #expect(await settle { provider.resolveCount == 1 && service.locationStatus != .fetching })
+            #expect(service.locationStatus == .available)
+            #expect(service.currentWind?.speedKPH == 1e100)
         }
     }
 }
