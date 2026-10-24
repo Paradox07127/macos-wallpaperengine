@@ -46,7 +46,7 @@ public enum WPESceneDocumentParser {
         let rawObjects: [[String: Any]] = WPEValueParser.objectArray(root["objects"]) ?? []
         let authoredObjects: [[String: Any]] = WPEValueParser.objectArray((json as? [String: Any])?["objects"])
             ?? rawObjects
-        try validateIntegerFields(general: general, objects: (json as? [String: Any])?["objects"])
+        try validateIntegerFields(general: general, objects: root["objects"])
         let authoredCameraObjects = parseAuthoredCameraObjects(authoredObjects)
         // Parsing composes authored transform seeds; only the bounded parity VM executes scripts.
         let camera = runtimeCameraObjectOverride(
@@ -573,6 +573,7 @@ public enum WPESceneDocumentParser {
         for (index, entry) in ((objects as? [Any]) ?? []).enumerated() {
             guard let object = entry as? [String: Any] else { continue }
             try requireExactID(object["id"], field: "objects[\(index)].id")
+            try requireExactID(object["parent"], field: "objects[\(index)].parent")
             for (slot, dependency) in ((object["dependencies"] as? [Any]) ?? []).enumerated() {
                 try requireExactID(dependency, field: "objects[\(index)].dependencies[\(slot)]")
             }
@@ -584,7 +585,7 @@ public enum WPESceneDocumentParser {
 
     private static func requireExactID(_ raw: Any?, field: String) throws {
         guard let number = raw as? NSNumber, WPEValueParser.strictBool(raw) == nil else { return }
-        guard WPEAuthoredInteger.exact(number.doubleValue, as: Int.self) != nil else {
+        guard let id = WPEAuthoredInteger.exact(number.doubleValue, as: Int.self), id == number.intValue else {
             throw WPESceneDocumentError.malformedField(field)
         }
     }

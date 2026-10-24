@@ -32,7 +32,7 @@ enum WPEParityScriptPrelude {
       return undefined;
     }
     function write(s, type, angle, v, soundVolume) {
-      if (s < 0) return;
+      if (!Number.isInteger(s) || s < 0) return;
       const o = s * 4;
       if (type === 5) {
         if (v === null || v === undefined) return;

@@ -95,6 +95,23 @@ struct WPEUntrustedNumericBoundsTests {
         try expectLoadError(sceneData(objects: #"[{"id":1},{"id":1.5}]"#), field: "objects[1].id")
     }
 
+    @Test("A property-bound object id is checked after the envelope resolves")
+    func envelopeObjectIDFailsLoad() throws {
+        try expectLoadError(sceneData(objects: #"[{"id":1},{"id":{"user":"k","value":1.5}}]"#), field: "objects[1].id")
+        try expectLoadError(sceneData(objects: #"[{"id":0},{"id":{"user":"k","value":18446744073709551616}}]"#),
+                            field: "objects[1].id")
+    }
+
+    @Test("An object id that Double cannot hold exactly fails the load")
+    func doubleRoundedObjectIDFailsLoad() throws {
+        try expectLoadError(sceneData(objects: #"[{"id":9007199254740993}]"#), field: "objects[0].id")
+    }
+
+    @Test("A fractional parent fails the load instead of attaching to a truncated id")
+    func fractionalParentFailsLoad() throws {
+        try expectLoadError(sceneData(objects: #"[{"id":1},{"id":2,"parent":1.5}]"#), field: "objects[1].parent")
+    }
+
     @Test("A numeric dependency outside Int fails the load instead of trapping")
     func hugeDependencyFailsLoad() throws {
         try expectLoadError(sceneData(objects: #"[{"id":1,"dependencies":[1e100]}]"#),

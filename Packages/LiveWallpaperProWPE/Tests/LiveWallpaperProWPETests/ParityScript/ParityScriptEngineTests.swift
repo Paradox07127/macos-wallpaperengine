@@ -988,6 +988,31 @@ final class ParityScriptEngineTests: XCTestCase {
         XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
     }
 
+    func testFractionalWrapperBaseCannotWriteIntoAnotherLane() throws {
+        var scene = try Self.scene([
+            Self.layer(1, "A", ["origin": "0 0 0", "alpha": Self.scripted(1, """
+            let frame = 0;
+            export function update(value) {
+                frame += 1;
+                if (frame === 1) {
+                    const b = thisLayer.__base;
+                    thisLayer.__base = b + 0.25;
+                    thisLayer.origin = new Vec3(123, 0, 0);
+                    thisLayer.__base = b;
+                    return value;
+                }
+                return thisLayer.origin.y === 0 ? 0.25 : 0.5;
+            }
+            """)]),
+        ], assets: Self.fixedAssets())
+        try scene.engine.start(state: &scene.state)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        scene.engine.tick(dt: 1 / 60, state: &scene.state)
+        XCTAssertEqual(scene.state.object("1")?.alpha, 0.25, "the script read back a lane the native state never took")
+        XCTAssertEqual(scene.state.object("1")?.origin, SIMD3(0, 0, 0))
+        XCTAssertEqual(scene.engine.exceptionCount, 0, scene.engine.exceptions.joined(separator: "\n"))
+    }
+
     func testMirrorSkipsObjectsWhoseStateDidNotChange() throws {
         let passthrough = Self.scripted(1, "export function update(value) { return value; }")
         var scene = try Self.scene([
