@@ -40,41 +40,6 @@
         }
       }
     },
-    "%lld seconds" : {
-      "comment" : "VoiceOver name of a history window choice in widget settings. Placeholder is a number of seconds.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld seconds"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld segundos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 秒"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 秒"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 秒"
-          }
-        }
-      }
-    },
     "'%@' is already in your library from another folder. The Steam download takes its place; that folder stays on disk." : {
       "comment" : "Confirm message before a Workshop download replaces a library copy imported from a local folder. Placeholder is the wallpaper title.",
       "extractionState" : "manual",
@@ -1672,7 +1637,7 @@
       }
     },
     "%@: %@" : {
-      "comment" : "Joins a label and its value, e.g. the settings search hint 'Video: FPS'. The first placeholder is the label, the second is its value.",
+      "comment" : "Line of the Wallpaper Library's import failures. The first placeholder is the item's name, the second why it wasn't added.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2937,6 +2902,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 個方案"
+          }
+        }
+      }
+    },
+    "%lld seconds" : {
+      "comment" : "VoiceOver name of a history window choice in widget settings. Placeholder is a number of seconds.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld seconds"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld segundos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 秒"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 秒"
           }
         }
       }
@@ -19072,76 +19072,6 @@
         }
       }
     },
-    "Couldn't keep access to the file." : {
-      "comment" : "Why one video of the Wallpaper Library's import wasn't added: the app couldn't save permission to reopen it.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't keep access to the file."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo conservar el acceso al archivo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイルへのアクセスを保持できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法保留对该文件的访问权限。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法保留對該檔案的存取權限。"
-          }
-        }
-      }
-    },
-    "Couldn't open the folder to look inside." : {
-      "comment" : "Why one folder of the Wallpaper Library's import wasn't added: reading its contents failed, for example without permission.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't open the folder to look inside."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo abrir la carpeta para ver su contenido."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "フォルダを開いて中身を確認できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法打开文件夹查看其内容。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法打開資料夾查看其內容。"
-          }
-        }
-      }
-    },
     "Couldn’t export layout" : {
       "comment" : "Monitor layout export error title; error details remain visible.",
       "extractionState" : "manual",
@@ -19458,6 +19388,41 @@
         }
       }
     },
+    "Couldn't keep access to the file." : {
+      "comment" : "Why one video of the Wallpaper Library's import wasn't added: the app couldn't save permission to reopen it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't keep access to the file."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo conservar el acceso al archivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルへのアクセスを保持できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保留对该文件的访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法保留對該檔案的存取權限。"
+          }
+        }
+      }
+    },
     "Couldn't load" : {
       "comment" : "Wallpaper automation: why a skipped wallpaper was skipped after failing twice.",
       "localizations" : {
@@ -19660,6 +19625,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法開啟。請檢查網站、捷徑名稱或檔案。"
+          }
+        }
+      }
+    },
+    "Couldn't open the folder to look inside." : {
+      "comment" : "Why one folder of the Wallpaper Library's import wasn't added: reading its contents failed, for example without permission.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't open the folder to look inside."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo abrir la carpeta para ver su contenido."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォルダを開いて中身を確認できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开文件夹查看其内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法打開資料夾查看其內容。"
           }
         }
       }
@@ -75869,6 +75869,41 @@
         }
       }
     },
+    "This version can’t record web wallpapers" : {
+      "comment" : "System Wallpaper display list, Lite: this display shows a web wallpaper, and Lite cannot record it as a video copy.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version can’t record web wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta versión no puede grabar fondos web"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このバージョンではWeb壁紙を録画できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本版本无法录制网页壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本無法錄製網頁桌布"
+          }
+        }
+      }
+    },
     "This video can't be opened. The author's image is shown instead." : {
       "comment" : "Shown under a scene image row when the chosen video file is damaged or unreadable.",
       "localizations" : {
@@ -75935,41 +75970,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mac 無法播放此影片格式，將顯示作者的圖片。"
-          }
-        }
-      }
-    },
-    "This version can’t record web wallpapers" : {
-      "comment" : "System Wallpaper display list, Lite: this display shows a web wallpaper, and Lite cannot record it as a video copy.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This version can’t record web wallpapers"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta versión no puede grabar fondos web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このバージョンではWeb壁紙を録画できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本版本无法录制网页壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此版本無法錄製網頁桌布"
           }
         }
       }
