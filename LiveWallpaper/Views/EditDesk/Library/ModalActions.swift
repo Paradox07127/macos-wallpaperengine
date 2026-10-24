@@ -255,11 +255,11 @@ final class ModalActions {
         displays.lazy.filter { current.contains($0) }.compactMap { covers[$0] }.first
     }
 
-    /// The modal's "…" rows for `item`, as its context menus show them.
+    /// The modal's "…" rows for `item` in sections, as its context menus show them.
     func menuItems(
         for item: LibraryItem, requestRename: @escaping @MainActor () -> Void,
         requestDelete: @escaping @MainActor () -> Void
-    ) -> [StageMenuItem] {
+    ) -> [[StageMenuItem]] {
         actions(for: item).menuItems(
             targets: targets(for: item), canApply: item.isSupported, isUpdating: isUpdating(item),
             requestRename: requestRename, requestDelete: requestDelete

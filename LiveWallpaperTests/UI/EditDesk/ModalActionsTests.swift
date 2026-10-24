@@ -177,7 +177,7 @@ struct ModalActionsTests {
         rows[1].perform()
         #expect(requested == ["rename"])
         // Control: the context menus keep Apply to and All Displays; only the title row drops them.
-        #expect(modal.menuItems(for: current, requestRename: {}, requestDelete: {}).count == rows.count + 2)
+        #expect(modal.menuItems(for: current, requestRename: {}, requestDelete: {}).flatMap(\.self).count == rows.count + 2)
 
         let asset = AerialAsset(
             id: "sky", url: URL(fileURLWithPath: "/sky.mov"), displayName: "Sky",
@@ -234,7 +234,7 @@ struct ModalActionsTests {
             exportService: service, apply: { _, _ in }, applyToAll: { _, _ in }
         )
         let titles = { (bookmark: WallpaperBookmark) in
-            modal.menuItems(for: item(bookmark), requestRename: {}, requestDelete: {}).map(\.title)
+            modal.menuItems(for: item(bookmark), requestRename: {}, requestDelete: {}).flatMap(\.self).map(\.title)
         }
         let add = String(localized: "Add to System Wallpaper", bundle: .appLanguage)
         let remove = String(localized: "Remove from System Wallpaper", bundle: .appLanguage)
@@ -244,7 +244,8 @@ struct ModalActionsTests {
         #expect(!titles(published).contains(add))
         let page = titles(WallpaperBookmark(label: "Page", content: .html(source: .inline("p"), config: .default)))
         #expect(!page.contains(add) && !page.contains(remove), "a web page is offered to System Wallpaper")
-        let withoutService = fixture.modal().menuItems(for: item(video()), requestRename: {}, requestDelete: {}).map(\.title)
+        let withoutService = fixture.modal().menuItems(for: item(video()), requestRename: {}, requestDelete: {})
+            .flatMap(\.self).map(\.title)
         #expect(!withoutService.contains(add), "a library without the export service offers System Wallpaper")
     }
 
@@ -376,14 +377,14 @@ struct ModalActionsTests {
         var requested: [String] = []
         let rows = modal.menuItems(
             for: current, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
-        )
+        ).flatMap(\.self)
 
         #expect(rows.map(\.title) == [
             String(localized: "Apply to", bundle: .appLanguage),
             String(localized: "All Displays", bundle: .appLanguage),
-            String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Rename", bundle: .appLanguage),
+            String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Remove from Wallpaper Library", bundle: .appLanguage),
         ])
         try #require(rows.count == 6)
@@ -393,29 +394,48 @@ struct ModalActionsTests {
         try #require(rows[0].submenu.count == 3)
         rows[0].submenu[1].action()
         #expect(fixture.applied.map(\.1) == [2])
-        rows[4].action()
+        rows[3].action()
         #expect(requested == ["rename"])
 
         current.isSupported = false
         fixture.items = [current]
-        let blocked = modal.menuItems(for: current, requestRename: {}, requestDelete: {})
+        let blocked = modal.menuItems(for: current, requestRename: {}, requestDelete: {}).flatMap(\.self)
         #expect(blocked.prefix(2).map(\.isEnabled) == [false, false], "an item this Mac can't run still offers to apply it")
         #if !LITE_BUILD
         let installed = modal.menuItems(
             for: workshop("123"), requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
-        )
+        ).flatMap(\.self)
         #expect(installed.map(\.title) == [
             String(localized: "Apply to", bundle: .appLanguage),
             String(localized: "All Displays", bundle: .appLanguage),
+            String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Open in Steam", bundle: .appLanguage),
-            String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Download Again", bundle: .appLanguage),
             String(localized: "Delete", bundle: .appLanguage),
         ])
         installed.last?.action()
         #expect(requested == ["rename", "delete"])
         #endif
+    }
+
+    @Test("The context menu splits into apply, organize, reveal, download and remove sections, in that order")
+    func menuSectionsFollowTheTask() {
+        let actions = WallpaperModalActions(
+            applyTo: { _ in }, applyToAllDisplays: {}, showInFinder: {}, openInSteam: {}, removeFromSaved: {},
+            checkForUpdate: {}, deleteInstalled: {}, rename: { _ in }, toggleBookmark: {}, toggleSystemWallpaper: {}
+        )
+        let sections = actions.menuItems(
+            targets: [], canApply: true, isUpdating: false, requestRename: {}, requestDelete: {}
+        )
+        let title = { (key: String.LocalizationValue) in String(localized: key, bundle: .appLanguage) }
+        #expect(sections.map { $0.map(\.title) } == [
+            [title("Apply to"), title("All Displays")],
+            [title("Add Bookmark"), title("Rename"), title("Add to System Wallpaper")],
+            [title("Show in Finder"), title("Open in Steam")],
+            [title("Download Again")],
+            [title("Remove from Wallpaper Library"), title("Delete")],
+        ])
     }
 
     @Test func applyAllReadsCurrentDisplays() {

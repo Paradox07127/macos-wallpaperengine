@@ -344,8 +344,21 @@ private extension View {
     }
 }
 
-/// Draws `StageMenuItem` rows as SwiftUI menu content: the library grid's and shelf's context menus.
+/// Draws `StageMenuItem` sections as SwiftUI menu content, a divider between sections: the library grid's context menu.
 struct WallpaperMenuRows: View {
+    let sections: [[StageMenuItem]]
+
+    var body: some View {
+        ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+            if index > 0 {
+                Divider()
+            }
+            WallpaperMenuSection(items: section)
+        }
+    }
+}
+
+private struct WallpaperMenuSection: View {
     let items: [StageMenuItem]
 
     var body: some View {
@@ -355,7 +368,7 @@ struct WallpaperMenuRows: View {
                     .disabled(!item.isEnabled)
             } else {
                 Menu(item.title) {
-                    WallpaperMenuRows(items: item.submenu)
+                    WallpaperMenuSection(items: item.submenu)
                 }
                 .disabled(!item.isEnabled)
             }

@@ -482,7 +482,7 @@ struct HomePage: View {
             stage.shelfStyle = shelfStyle
             stage.dropHintText = String(localized: "Drop to replace", bundle: .appLanguage)
             stage.displayMenu = { displayMenuSections(for: $0) }
-            stage.cardMenu = { id in library?.items.first { $0.id == id }.map { [libraryMenu(for: $0)] } ?? [] }
+            stage.cardMenu = { id in library?.items.first { $0.id == id }.map { libraryMenu(for: $0) } ?? [] }
             syncDisplays()
             if router.page == .library {
                 stage.setProgress(2, animated: false)
@@ -694,8 +694,8 @@ struct HomePage: View {
         library?.items.first { $0.id == id }
     }
 
-    /// A grid tile's or shelf card's context menu: the rows of that item's "…" menu in the modal.
-    private func libraryMenu(for item: LibraryItem) -> [StageMenuItem] {
+    /// A grid tile's or shelf card's context menu: the sections of that item's "…" menu in the modal.
+    private func libraryMenu(for item: LibraryItem) -> [[StageMenuItem]] {
         modalActions?.menuItems(
             for: item, requestRename: { requestRename(item) }, requestDelete: { requestDelete(item) }
         ) ?? []
@@ -1052,7 +1052,7 @@ struct HomePage: View {
                                     .buttonStyle(.plain)
                                     .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
                                     .contextMenu {
-                                        WallpaperMenuRows(items: libraryMenu(for: item))
+                                        WallpaperMenuRows(sections: libraryMenu(for: item))
                                     }
                                     .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title.translatedWallpaperName, kind: item.kind)))
                                     .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))

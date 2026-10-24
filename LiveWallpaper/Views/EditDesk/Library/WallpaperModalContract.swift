@@ -291,13 +291,13 @@ extension WallpaperModalActions {
 }
 
 extension WallpaperModalActions {
-    /// The context menus' rows, in order: the grid and the shelf both draw these.
+    /// The context menus' sections, in order, empty ones left out: the grid and the shelf both draw these.
     /// `requestRename` and `requestDelete` open the presenter's own rename alert and delete confirmation.
     func menuItems(
         targets: [ModalDisplayTarget], canApply: Bool, isUpdating: Bool,
         requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
-    ) -> [StageMenuItem] {
-        var items = [
+    ) -> [[StageMenuItem]] {
+        let apply = [
             StageMenuItem(
                 title: String(localized: "Apply to", bundle: .appLanguage), isEnabled: canApply,
                 submenu: targets.map { target in
@@ -309,18 +309,9 @@ extension WallpaperModalActions {
                 action: applyToAllDisplays
             ),
         ]
-        if let showInFinder {
-            items.append(StageMenuItem(
-                title: String(localized: "Show in Finder", bundle: .appLanguage), isEnabled: true, action: showInFinder
-            ))
-        }
-        if let openInSteam {
-            items.append(StageMenuItem(
-                title: String(localized: "Open in Steam", bundle: .appLanguage), isEnabled: true, action: openInSteam
-            ))
-        }
+        var organize: [StageMenuItem] = []
         if let toggleBookmark {
-            items.append(StageMenuItem(
+            organize.append(StageMenuItem(
                 title: isBookmarked
                     ? String(localized: "Remove Bookmark", bundle: .appLanguage)
                     : String(localized: "Add Bookmark", bundle: .appLanguage),
@@ -328,7 +319,7 @@ extension WallpaperModalActions {
             ))
         }
         if rename != nil {
-            items.append(StageMenuItem(
+            organize.append(StageMenuItem(
                 title: String(
                     localized: "Rename", bundle: .appLanguage,
                     comment: "Context menu item that opens a rename alert, for a display on the Edit Desk stage or for a wallpaper."
@@ -337,25 +328,31 @@ extension WallpaperModalActions {
             ))
         }
         if let toggleSystemWallpaper {
-            items.append(StageMenuItem(
+            organize.append(StageMenuItem(
                 title: isInSystemWallpaper
                     ? String(localized: "Remove from System Wallpaper", bundle: .appLanguage)
                     : String(localized: "Add to System Wallpaper", bundle: .appLanguage),
                 isEnabled: true, action: toggleSystemWallpaper
             ))
         }
-        if let removeFromSaved {
-            items.append(StageMenuItem(
-                title: String(localized: "Remove from Wallpaper Library", bundle: .appLanguage), isEnabled: true,
-                isDestructive: true, action: removeFromSaved
+        var reveal: [StageMenuItem] = []
+        if let showInFinder {
+            reveal.append(StageMenuItem(
+                title: String(localized: "Show in Finder", bundle: .appLanguage), isEnabled: true, action: showInFinder
             ))
         }
+        if let openInSteam {
+            reveal.append(StageMenuItem(
+                title: String(localized: "Open in Steam", bundle: .appLanguage), isEnabled: true, action: openInSteam
+            ))
+        }
+        var download: [StageMenuItem] = []
         if isUpdating, let cancelUpdate {
-            items.append(StageMenuItem(
+            download.append(StageMenuItem(
                 title: String(localized: "Cancel update", bundle: .appLanguage), isEnabled: true, action: cancelUpdate
             ))
         } else if let checkForUpdate {
-            items.append(StageMenuItem(
+            download.append(StageMenuItem(
                 title: String(
                     localized: "Download Again", bundle: .appLanguage,
                     comment: "Context menu item on an installed Workshop wallpaper: downloads it from Steam again, replacing the copy in the library."
@@ -363,13 +360,20 @@ extension WallpaperModalActions {
                 isEnabled: true, action: checkForUpdate
             ))
         }
+        var remove: [StageMenuItem] = []
+        if let removeFromSaved {
+            remove.append(StageMenuItem(
+                title: String(localized: "Remove from Wallpaper Library", bundle: .appLanguage), isEnabled: true,
+                isDestructive: true, action: removeFromSaved
+            ))
+        }
         if deleteInstalled != nil {
-            items.append(StageMenuItem(
+            remove.append(StageMenuItem(
                 title: String(localized: "Delete", bundle: .appLanguage), isEnabled: true, isDestructive: true,
                 action: requestDelete
             ))
         }
-        return items
+        return [apply, organize, reveal, download, remove].filter { !$0.isEmpty }
     }
 }
 
