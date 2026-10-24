@@ -49,6 +49,21 @@ struct SceneCustomizationMemoryTests {
         #expect(config.savedSceneCustomizations.count == 2)
     }
 
+    @Test("A configuration created after a clear brings back each scene's remembered look")
+    func clearedDisplayRestoresRememberedLook() {
+        let look = scene("A", preset: "calm")
+        var config = ScreenConfiguration(screenID: 1, wallpaper: .scene(scene("A")))
+            .adoptingClearedSceneCustomizations([look, scene("B", preset: "bright")])
+        config.setSceneWallpaper(scene("A"), origin: nil)
+        #expect(config.activeWallpaper == .scene(look))
+        config.setSceneWallpaper(scene("B"), origin: nil)
+        #expect(config.activeWallpaper == .scene(scene("B", preset: "bright")))
+        var web = ScreenConfiguration(screenID: 1, wallpaper: .html(source: .inline("hello"), config: .default))
+            .adoptingClearedSceneCustomizations([look])
+        web.setSceneWallpaper(scene("A"), origin: nil)
+        #expect(web.activeWallpaper == .scene(look))
+    }
+
     @Test("Old configuration JSON migrates its single saved scene without requiring a new field")
     func legacyConfigurationMigrates() throws {
         var config = ScreenConfiguration(screenID: 1, wallpaper: .html(source: .inline("hello"), config: .default))

@@ -42,6 +42,7 @@ extension ScreenManager {
             screenID: screen.id,
             wallpaper: .scene(descriptor)
         ).applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
+            .adoptingClearedSceneCustomizations(SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint))
         if configuration.activeWallpaper == .scene(descriptor),
            configuration.wpeOrigin == origin,
            screen.runtimeSession?.wallpaperType == .scene,

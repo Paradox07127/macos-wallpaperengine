@@ -356,20 +356,34 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         rememberCurrentSceneCustomization()
         preserveCurrentVideoBookmarkIfNeeded()
         preserveCurrentHTMLIfNeeded()
-        // Both layers travel together: restoring the increment without the preset it was
-        // authored against would apply the edits to bare scene defaults.
-        var resolved = descriptor
-        if descriptor.propertyOverrides.isEmpty,
-           descriptor.presetID == nil,
-           let saved = savedSceneCustomizations.last(where: { $0.isSameScene(as: descriptor) }),
-           !saved.propertyOverrides.isEmpty || saved.presetID != nil {
-            resolved = descriptor
-                .withPresetLayer(id: saved.presetID, snapshot: saved.presetSnapshot)
-                .withPropertyOverrides(saved.propertyOverrides)
-        }
+        let resolved = rememberedLook(of: descriptor)
         activeWallpaper = .scene(resolved)
         wpeOrigin = origin
         savedSceneDescriptor = resolved
+    }
+
+    /// For a configuration just created on a display whose wallpaper was cleared. Its scene slots
+    /// are resolved first: remembering the bare descriptor `init` put there would replace the look.
+    public func adoptingClearedSceneCustomizations(_ remembered: [SceneDescriptor]) -> ScreenConfiguration {
+        var adopted = self
+        adopted.savedSceneCustomizations = remembered
+        if case let .scene(descriptor) = activeWallpaper {
+            adopted.activeWallpaper = .scene(adopted.rememberedLook(of: descriptor))
+        }
+        adopted.savedSceneDescriptor = savedSceneDescriptor.map { adopted.rememberedLook(of: $0) }
+        return adopted
+    }
+
+    private func rememberedLook(of descriptor: SceneDescriptor) -> SceneDescriptor {
+        // Both layers travel together: restoring the increment without the preset it was
+        // authored against would apply the edits to bare scene defaults.
+        guard descriptor.propertyOverrides.isEmpty,
+              descriptor.presetID == nil,
+              let saved = savedSceneCustomizations.last(where: { $0.isSameScene(as: descriptor) }),
+              !saved.propertyOverrides.isEmpty || saved.presetID != nil else { return descriptor }
+        return descriptor
+            .withPresetLayer(id: saved.presetID, snapshot: saved.presetSnapshot)
+            .withPropertyOverrides(saved.propertyOverrides)
     }
 
     public mutating func rememberCurrentSceneCustomization() {

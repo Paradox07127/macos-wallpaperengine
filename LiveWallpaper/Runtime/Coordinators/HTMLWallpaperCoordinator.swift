@@ -186,6 +186,7 @@ final class HTMLWallpaperCoordinator {
             screenID: screen.id,
             wallpaper: .html(source: effectiveSource, config: persistedConfig)
         ).applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
+            .adoptingClearedSceneCustomizations(SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint))
         if !forceReload,
            case .html(let existingSource, let existingConfig) = configuration.activeWallpaper,
            existingSource == effectiveSource,

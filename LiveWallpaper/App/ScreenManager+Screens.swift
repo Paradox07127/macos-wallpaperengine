@@ -98,6 +98,13 @@ extension ScreenManager {
     func clearWallpaperForScreen(_ screen: Screen) {
         Logger.notice("Clearing wallpaper for screen \(screen.id)", category: .screenManager)
         releaseRuntimeSession(screen)
+        if var configuration = configurationStore.get(for: screen.id) {
+            configuration.rememberCurrentSceneCustomization()
+            var settings = SettingsManager.shared.loadGlobalSettings()
+            settings.clearedSceneCustomizations[screen.displayFingerprint] =
+                configuration.savedSceneCustomizations.isEmpty ? nil : configuration.savedSceneCustomizations
+            SettingsManager.shared.saveGlobalSettings(settings)
+        }
         configurationController.remove(for: screen.id)
         notifyWallpaperSessionChanged()
         NotificationCenter.default.post(name: .wallpaperSelectionCleared, object: self,

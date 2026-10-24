@@ -1017,6 +1017,40 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
+    @Test("Clearing a display keeps each scene's look for the display's next configuration")
+    func clearingKeepsRememberedSceneLooks() throws {
+        let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        let previousSettings = SettingsManager.shared.loadGlobalSettings()
+        let previousConfiguration = manager.configurationStore.get(for: screen.id)
+        defer {
+            SettingsManager.shared.saveGlobalSettings(previousSettings)
+            if let previousConfiguration {
+                manager.configurationStore.save(previousConfiguration)
+            }
+            manager.tearDownForTermination()
+        }
+        let preset = ScenePreset.local(name: "Calm", baseWorkshopID: "cleared-look", values: ["fog": .bool(true)])
+        var settings = previousSettings
+        settings.scenePresets[preset.id] = preset
+        SettingsManager.shared.saveGlobalSettings(settings)
+        let bare = SceneDescriptor(
+            workshopID: "cleared-look", cacheRelativePath: "wpe-cache/cleared-look", entryFile: "scene.pkg", capabilityTier: .imageOnly
+        )
+        let look = bare.withPresetLayer(id: preset.id, snapshot: preset.values)
+        manager.configurationStore.save(ScreenConfiguration(screenID: screen.id, wallpaper: .scene(look)))
+
+        manager.clearWallpaperForScreen(screen)
+
+        #expect(manager.configurationStore.get(for: screen.id) == nil)
+        #expect(SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint) == [look])
+    }
+
     // MARK: - Wallpaper type lifecycle regressions
 
     @Test("Switching to video without a saved video leaves the active HTML session intact")

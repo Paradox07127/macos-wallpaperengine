@@ -37,6 +37,9 @@ extension PlaybackCoordinator {
             configuration.activeWallpaper = .video(bookmarkData: bookmarkData, packageEntryName: packageEntryName)
             configuration.savedVideoPackageEntryName = packageEntryName
             configuration.resetPlayback(to: SettingsManager.shared.loadDisplayDefaults())
+            configuration = configuration.adoptingClearedSceneCustomizations(
+                SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint)
+            )
         }
         originReconciler.reconcile(
             &configuration,

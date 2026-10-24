@@ -317,6 +317,7 @@ final class WPEImportCoordinator {
             screenID: screen.id,
             wallpaper: content
         ).applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
+            .adoptingClearedSceneCustomizations(SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint))
         config.rememberCurrentSceneCustomization()
         if case let .scene(descriptor) = content {
             config.setSceneWallpaper(descriptor, origin: origin)

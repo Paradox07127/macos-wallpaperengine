@@ -422,6 +422,13 @@ final class SettingsManager {
         loadGlobalSettings().displayDefaults
     }
 
+    func clearedSceneCustomizations(for displayFingerprint: String) -> [SceneDescriptor] {
+        let settings = loadGlobalSettings()
+        return (settings.clearedSceneCustomizations[displayFingerprint] ?? []).map {
+            $0.refreshingPresetSnapshot(in: settings.scenePresets)
+        }
+    }
+
     func saveDisplayDefaults(_ displayDefaults: DisplayDefaults) {
         var settings = loadGlobalSettings()
         settings.displayDefaults = displayDefaults

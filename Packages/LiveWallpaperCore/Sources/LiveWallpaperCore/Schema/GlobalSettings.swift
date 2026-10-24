@@ -50,6 +50,10 @@ public struct GlobalSettings: Codable, Sendable {
     /// when it is unknown. Not on `ScreenConfiguration`: saving that advances the revision in-flight sessions commit against.
     public var pausedDisplayKeys: [String] = []
 
+    /// A cleared display's `ScreenConfiguration.savedSceneCustomizations`, keyed by
+    /// `NSScreen.displayFingerprint`; clearing deletes the configuration that held them.
+    public var clearedSceneCustomizations: [String: [SceneDescriptor]] = [:]
+
     /// Opt-in TCC system-audio capture for audio-reactive Pro wallpapers.
     public var audioResponseEnabled: Bool = false
 
@@ -173,6 +177,7 @@ public struct GlobalSettings: Codable, Sendable {
         weatherOverlays = c.decodeLossyStringDictionary(forKey: .weatherOverlays) ?? [:]
         screenNames = (try? c.decodeIfPresent([String: String].self, forKey: .screenNames)) ?? [:]
         pausedDisplayKeys = (try? c.decodeIfPresent([String].self, forKey: .pausedDisplayKeys)) ?? []
+        clearedSceneCustomizations = c.decodeLossyStringDictionary(forKey: .clearedSceneCustomizations) ?? [:]
         audioResponseEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .audioResponseEnabled)) ?? false
         adaptiveFrameRateEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .adaptiveFrameRateEnabled)) ?? false
         // Installs that predate the key get the new default (visible), not the old hard-coded behaviour.
