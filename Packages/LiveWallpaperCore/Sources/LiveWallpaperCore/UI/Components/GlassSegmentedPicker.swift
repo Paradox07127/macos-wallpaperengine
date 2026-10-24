@@ -22,6 +22,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     private let segmentName: ((Value) -> Text)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.segmentedSelectionNamespace) private var sharedSelectionNamespace
     @Namespace private var selectionNamespace
 
@@ -112,7 +113,8 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         switch shell {
         case .editDesk: return DesignTokens.EditDesk.Colors.fillSelectedNavItem
         case .detail: return DesignTokens.EditDesk.Colors.fillSelectedChip
-        case .flat, .glass: return Color.accentColor.opacity(0.35)
+        // `accentColor` stays blue in an inactive window; a native segmented control greys its selection there.
+        case .flat, .glass: return appearsActive ? Color.accentColor.opacity(0.35) : Color.gray.opacity(0.35)
         }
     }
 }

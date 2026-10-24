@@ -45,11 +45,8 @@ struct ModalDisplayButtons: View {
                 .font(DesignTokens.EditDesk.Typography.chip)
                 .foregroundStyle(DesignTokens.Colors.textSecondary)
                 .layoutPriority(1)
-            if let primary = split.primary {
-                applyButton(primary).adaptiveGlassButton(.prominent, size: .large)
-            }
-            ForEach(split.secondary) { target in
-                applyButton(target).adaptiveGlassButton(.regular, size: .large)
+            ForEach(split.buttons) { target in
+                applyButton(target).adaptiveGlassButton(target.isPrimary ? .prominent : .regular, size: .large)
             }
             if !split.overflow.isEmpty {
                 overflowMenu(split.overflow)

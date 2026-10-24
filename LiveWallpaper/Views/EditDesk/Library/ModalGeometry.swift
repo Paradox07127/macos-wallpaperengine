@@ -69,8 +69,8 @@ enum ModalGeometry {
     static let secondaryButtonLimit = 2
 
     struct ApplyButtons {
-        var primary: ModalDisplayTarget?
-        var secondary: [ModalDisplayTarget]
+        /// In ⌘ order; the leading display among them draws prominent.
+        var buttons: [ModalDisplayTarget]
         var overflow: [ModalDisplayTarget]
     }
 
@@ -96,12 +96,11 @@ enum ModalGeometry {
 
     static func applyButtons(targets: [ModalDisplayTarget]) -> ApplyButtons {
         let primary = targets.first(where: \.isPrimary)
-        let rest = targets.filter { $0.id != primary?.id }
         let plainCount = primary == nil ? secondaryButtonLimit + 1 : secondaryButtonLimit
+        let shown = Set(targets.filter { $0.id != primary?.id }.prefix(plainCount).map(\.id) + (primary.map { [$0.id] } ?? []))
         return ApplyButtons(
-            primary: primary,
-            secondary: Array(rest.prefix(plainCount)),
-            overflow: Array(rest.dropFirst(plainCount))
+            buttons: targets.filter { shown.contains($0.id) },
+            overflow: targets.filter { !shown.contains($0.id) }
         )
     }
 }

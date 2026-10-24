@@ -83,7 +83,7 @@ struct WorkshopModalTests {
     /// The buttons as the row draws them, left to right, and what goes under Other Displays.
     private func layout(_ row: WorkshopModalButtonRow) -> (buttons: [CGDirectDisplayID], menu: [CGDirectDisplayID]) {
         let split = ModalGeometry.applyButtons(targets: row.targets)
-        return ((split.primary.map { [$0] } ?? []).map(\.id) + split.secondary.map(\.id), split.overflow.map(\.id))
+        return (split.buttons.map(\.id), split.overflow.map(\.id))
     }
 
     @Test("An item not in the library offers download buttons and Save only; a queued display spins in place")

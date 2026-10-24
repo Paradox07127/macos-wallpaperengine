@@ -134,7 +134,7 @@ struct ScenePresetBar: View {
         if changedCount > 0 {
             return "\(changedCount) changed"
         }
-        return activePreset == nil ? "Scene defaults" : "Matches preset"
+        return activePreset == nil ? "Scene defaults" : "No changes"
     }
 
     @ViewBuilder

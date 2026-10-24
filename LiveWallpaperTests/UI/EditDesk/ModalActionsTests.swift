@@ -89,8 +89,8 @@ struct ModalActionsTests {
         item.onDisplays = [2]
         let reapplied = modal.targets(for: item)
         let split = ModalGeometry.applyButtons(targets: reapplied)
-        #expect(split.primary == nil)
-        #expect(split.secondary.map(\.id) == [1, 2, 3] as [CGDirectDisplayID])
+        #expect(split.buttons.filter(\.isPrimary).isEmpty)
+        #expect(split.buttons.map(\.id) == [1, 2, 3] as [CGDirectDisplayID])
         #expect(reapplied.filter(\.isApplied).map(\.id) == [2] as [CGDirectDisplayID])
         item.onDisplays = [1, 2, 3]
         #expect(modal.targets(for: item).filter(\.isPrimary).isEmpty)
@@ -104,7 +104,9 @@ struct ModalActionsTests {
         let preselected = modal.targets(for: item, preferred: 3)
         #expect(preselected.filter(\.isPrimary).map(\.id) == [3])
         #expect(preselected.map(\.shortcutIndex) == [1, 2, 3])
-        #expect(ModalGeometry.applyButtons(targets: preselected).primary?.id == 3)
+        let buttons = ModalGeometry.applyButtons(targets: preselected).buttons
+        #expect(buttons.map(\.id) == [1, 2, 3] as [CGDirectDisplayID])
+        #expect(buttons.first(where: \.isPrimary)?.id == 3)
         #expect(
             modal.targets(for: item, preferred: 99).filter(\.isPrimary).isEmpty,
             "a preselected display that is gone handed its prominence to another display"

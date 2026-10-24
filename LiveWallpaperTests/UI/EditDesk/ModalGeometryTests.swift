@@ -95,27 +95,30 @@ struct ModalGeometryTests {
         #expect(ModalKeyMap.target(forShortcut: 1, in: []) == nil)
     }
 
-    @Test("Apply buttons preserve display order and overflow only after the button budget")
+    @Test("Apply buttons keep ⌘ order with or without a leading display and overflow only after the button budget")
     func applyButtonsWithoutALeadKeepTheirPlaces() {
         func target(_ id: CGDirectDisplayID, leads: Bool = false) -> ModalDisplayTarget {
             ModalDisplayTarget(id: id, name: "\(id)", shortcutIndex: Int(id), aspectRatio: 16.0 / 9, isPrimary: leads)
         }
         let plain = ModalGeometry.applyButtons(targets: (1 ... 5).map { target($0) })
-        #expect(plain.primary == nil)
-        #expect(plain.secondary.map(\.id) == [1, 2, 3], Comment(rawValue: "\(plain.secondary.map(\.id))"))
+        #expect(plain.buttons.filter(\.isPrimary).isEmpty)
+        #expect(plain.buttons.map(\.id) == [1, 2, 3], Comment(rawValue: "\(plain.buttons.map(\.id))"))
         #expect(plain.overflow.map(\.id) == [4, 5])
-        // Control: one leading display keeps the library modal's one prominent and two plain buttons.
+        // A leading display draws prominent in its own ⌘ place, not ahead of the others.
         let led = ModalGeometry.applyButtons(targets: [target(1), target(2, leads: true), target(3), target(4)])
-        #expect(led.primary?.id == 2)
-        #expect(led.secondary.map(\.id) == [1, 3])
+        #expect(led.buttons.map(\.id) == [1, 2, 3], Comment(rawValue: "\(led.buttons.map(\.id))"))
+        #expect(led.buttons.filter(\.isPrimary).map(\.id) == [2])
         #expect(led.overflow.map(\.id) == [4])
 
         let many = ModalGeometry.applyButtons(targets: [target(1), target(2, leads: true), target(3), target(4), target(5)])
-        #expect(many.primary?.id == 2 && many.secondary.map(\.id) == [1, 3] && many.overflow.map(\.id) == [4, 5])
+        #expect(many.buttons.map(\.id) == [1, 2, 3] && many.overflow.map(\.id) == [4, 5])
+        // A leading display past the third still gets a button, still in ⌘ order.
+        let late = ModalGeometry.applyButtons(targets: [target(1), target(2), target(3), target(4, leads: true), target(5)])
+        #expect(late.buttons.map(\.id) == [1, 2, 4] && late.overflow.map(\.id) == [3, 5], Comment(rawValue: "\(late.buttons.map(\.id))"))
         let pair = ModalGeometry.applyButtons(targets: [target(1, leads: true), target(2)])
-        #expect(pair.primary?.id == 1 && pair.secondary.map(\.id) == [2] && pair.overflow.isEmpty)
+        #expect(pair.buttons.map(\.id) == [1, 2] && pair.overflow.isEmpty)
         let none = ModalGeometry.applyButtons(targets: [])
-        #expect(none.primary == nil && none.secondary.isEmpty && none.overflow.isEmpty)
+        #expect(none.buttons.isEmpty && none.overflow.isEmpty)
     }
 
 }

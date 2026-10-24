@@ -83,9 +83,19 @@ struct DisplayDetailHost: View {
     }
 
     var body: some View {
-        content
-            .allowsHitTesting(!modalPresented)
-            .accessibilityHidden(modalPresented)
+        observingLayout(observingRouter(content.allowsHitTesting(!modalPresented).accessibilityHidden(modalPresented)))
+            .onDisappear {
+                overlaySession?.detach()
+                closeShownFailure()
+                // The hooks capture this view, whose state owns the coordinator: left set, neither is ever freed.
+                coordinator?.onShow = { _ in }
+                coordinator?.onRelease = {}
+                coordinator?.abandon()
+            }
+    }
+
+    private func observingRouter(_ view: some View) -> some View {
+        view
             .onChange(of: router.detailDisplayID, initial: true) { _, id in
                 request(id)
             }
@@ -102,6 +112,10 @@ struct DisplayDetailHost: View {
                     onPresentationReady(id)
                 }
             }
+    }
+
+    private func observingLayout(_ view: some View) -> some View {
+        view
             .onChange(of: stage.stageSize) { coordinator?.windowDidResize() }
             .onChange(of: inspectorWidth) { coordinator?.windowDidResize() }
             .onChange(of: inspectorVisible) { coordinator?.windowDidResize() }
@@ -111,14 +125,6 @@ struct DisplayDetailHost: View {
                     overlaySession = nil
                     overlayCopy = nil
                 }
-            }
-            .onDisappear {
-                overlaySession?.detach()
-                closeShownFailure()
-                // The hooks capture this view, whose state owns the coordinator: left set, neither is ever freed.
-                coordinator?.onShow = { _ in }
-                coordinator?.onRelease = {}
-                coordinator?.abandon()
             }
     }
 
