@@ -646,8 +646,7 @@ public enum DesignTokens {
             public static let nowPlayingGlyph = Color(nsColor: NSColor(red: 74 / 255, green: 222 / 255, blue: 128 / 255, alpha: 1))
             /// Content layer of a display with no wallpaper (SCREENS.md S9 `bg .03`).
             public static let fillEmptyScreen = ink("FillEmptyScreen", 0.03)
-            /// Placeholder glyph filling an empty display: a background mark, so it stays under the
-            /// two entry buttons in contrast as well as in z-order.
+            /// Placeholder glyph filling an empty display, kept faint as a background mark.
             public static let emptyScreenPlaceholder = ink("EmptyScreenPlaceholder", 0.10)
         }
 

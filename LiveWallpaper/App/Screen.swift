@@ -1,4 +1,5 @@
 import AppKit
+import IOKit
 import LiveWallpaperCore
 import Observation
 
@@ -17,8 +18,8 @@ final class Screen: Identifiable, Hashable {
     }
     /// Global AppKit layout coordinates in points; never use for resolution labels.
     let frame: CGRect
-    /// Pixel dimensions of the selected display mode. Nil when CoreGraphics
-    /// cannot supply a mode; do not present logical points as a pixel fallback.
+    /// The panel's native pixels, or the current mode's when no mode is flagged native. Nil when
+    /// CoreGraphics cannot supply a mode; do not present logical points as a pixel fallback.
     let pixelSize: CGSize?
     let nsScreen: NSScreen
     let displayFingerprint: String
@@ -447,10 +448,23 @@ final class Screen: Identifiable, Hashable {
 
     convenience init(nsScreen: NSScreen) {
         self.init(nsScreen: nsScreen, displayPixelSize: { displayID in
-            guard let mode = CGDisplayCopyDisplayMode(displayID),
-                  mode.pixelWidth > 0, mode.pixelHeight > 0 else { return nil }
-            return CGSize(width: mode.pixelWidth, height: mode.pixelHeight)
+            let options = [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary
+            let modes = (CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode]) ?? []
+            return Screen.panelPixelSize(
+                modes: modes.map {
+                    (CGSize(width: $0.pixelWidth, height: $0.pixelHeight), $0.ioFlags & UInt32(kDisplayModeNativeFlag) != 0)
+                },
+                current: CGDisplayCopyDisplayMode(displayID).map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
+            )
         })
+    }
+
+    /// A scaled "looks like" mode renders more pixels than the panel has, so the mode macOS flags
+    /// native wins; `current` stands in when no mode carries the flag.
+    static func panelPixelSize(modes: [(pixels: CGSize, isNative: Bool)], current: CGSize?) -> CGSize? {
+        let size = modes.first { $0.isNative }?.pixels ?? current
+        guard let size, size.width > 0, size.height > 0 else { return nil }
+        return size
     }
 
     init(nsScreen: NSScreen, displayPixelSize: (CGDirectDisplayID) -> CGSize?) {

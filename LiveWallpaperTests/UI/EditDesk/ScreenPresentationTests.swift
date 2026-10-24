@@ -102,7 +102,7 @@ struct ScreenPresentationTests {
     }
 
     @MainActor
-    @Test("Retina display labels use mode pixels while stage layout keeps points")
+    @Test("Retina display labels use panel pixels while stage layout keeps points")
     func retinaResolutionDoesNotChangeStageGeometry() throws {
         let nsScreen = PresentationTestScreen()
         // Preserve the unapplied function reference used by DisplayRegistry and fixtures.
@@ -136,14 +136,14 @@ struct ScreenPresentationTests {
     }
 
     @MainActor
-    @Test("A refreshed Screen captures mode pixels independently of point frame and backing scale")
-    func refreshedModeUsesReportedPixels() {
-        // A scaled mode need not be inferred from logical frame times backing scale.
-        let screen = Screen(nsScreen: PresentationTestScreen(), displayPixelSize: { _ in
-            CGSize(width: 5120, height: 2880)
-        })
-        #expect(ScreenPresentation.presentation(for: screen, refreshRate: 60).status == "5120×2880\(mainDisplaySuffix(for: screen))")
-        #expect(screen.frame.size == CGSize(width: 1920, height: 1080))
+    @Test("A scaled mode labels the panel's native pixels, not the pixels it renders")
+    func scaledModeLabelsNativePixels() {
+        // A 4K panel set to "looks like 2560×1440" renders 5120×2880.
+        let rendered = CGSize(width: 5120, height: 2880)
+        let native = CGSize(width: 3840, height: 2160)
+        #expect(Screen.panelPixelSize(modes: [(rendered, false), (native, true)], current: rendered) == native)
+        #expect(Screen.panelPixelSize(modes: [(rendered, false)], current: rendered) == rendered)
+        #expect(Screen.panelPixelSize(modes: [], current: nil) == nil)
     }
 
     @MainActor
