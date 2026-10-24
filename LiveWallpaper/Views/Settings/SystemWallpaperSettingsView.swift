@@ -39,7 +39,7 @@ struct SystemWallpaperSettingsView: View {
                     icon: "play.rectangle",
                     iconColor: .indigo,
                     title: "Video playback",
-                    info: "Applies to videos and live scenes. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses."
+                    info: playbackInfo
                 ) {
                     GlassSegmentedPicker(
                         selection: Binding(get: { service.playbackMode }, set: { service.setPlaybackMode($0) }),
@@ -71,7 +71,7 @@ struct SystemWallpaperSettingsView: View {
                     icon: "trash",
                     iconColor: DesignTokens.Colors.Status.danger,
                     title: "Remove All from System Wallpaper",
-                    info: "System Wallpaper plays live scenes and video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
+                    info: removeAllInfo
                 ) {
                     Button("Remove All", role: .destructive) {
                         pendingDestructive = PendingDestructive(.clearSystemWallpaperLibrary(
@@ -103,6 +103,22 @@ struct SystemWallpaperSettingsView: View {
     /// Formatted in the app language; `ByteCountFormatter` follows the system language instead.
     private var usedSpace: String {
         service.diskUsageBytes.formatted(.byteCount(style: .file).locale(locale))
+    }
+
+    private var playbackInfo: String.LocalizationValue {
+        #if LITE_BUILD
+        "Applies to videos. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses."
+        #else
+        "Applies to videos and live scenes. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses."
+        #endif
+    }
+
+    private var removeAllInfo: String.LocalizationValue {
+        #if LITE_BUILD
+        "System Wallpaper plays video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
+        #else
+        "System Wallpaper plays live scenes and video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
+        #endif
     }
 
     #if !LITE_BUILD

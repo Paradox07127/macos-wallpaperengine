@@ -68,7 +68,7 @@ private struct DisplayRow: View {
     private var stateLabel: some View {
         switch status.state {
         case .playing:
-            label("Playing", symbol: "checkmark.circle.fill", tint: DesignTokens.Colors.Status.active)
+            label("Selected by macOS", symbol: "checkmark.circle.fill", tint: DesignTokens.Colors.Status.active)
         case let .preparing(progress):
             if let progress {
                 label("Generating \(progress.formatted(.percent.precision(.fractionLength(0))))",

@@ -8641,6 +8641,42 @@
         }
       }
     },
+    "Applies to videos. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses." : {
+      "comment" : "Info for the System Wallpaper playback setting.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to videos. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica a vídeos. Si el Mac está caliente, en modo de bajo consumo o con batería, baja la frecuencia de fotogramas o se pausa la reproducción."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオに適用されます。Mac が高温のとき、低電力モードのとき、またはバッテリー駆動中は、フレームレートが下がるか再生が一時停止します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对视频生效。Mac 过热、处于低电量模式或使用电池时，帧率会降低或暂停播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "對影片有效。Mac 過熱、處於低耗電模式或使用電池時，影格率會降低或暫停播放。"
+          }
+        }
+      }
+    },
     "Apply" : {
       "localizations" : {
         "en" : {
@@ -70718,6 +70754,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統桌布獨立於 Loomscreen 播放即時場景和影片副本。應用程式內桌布的特效、疊加層和播放控制不適用於此處。"
+          }
+        }
+      }
+    },
+    "System Wallpaper plays video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Wallpaper plays video copies independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El fondo del sistema reproduce copias de vídeo independientemente de Loomscreen. Los efectos, las superposiciones y los controles de reproducción de la app no se aplican aquí."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙は Loomscreen とは独立してビデオコピーを再生します。アプリ内の壁紙エフェクト、オーバーレイ、再生操作は適用されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸独立于 Loomscreen 播放视频副本。应用内壁纸的特效、叠加层和播放控制不适用于此处。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布獨立於 Loomscreen 播放影片副本。應用程式內桌布的特效、疊加層和播放控制不適用於此處。"
           }
         }
       }
