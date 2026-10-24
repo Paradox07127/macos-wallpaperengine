@@ -191,6 +191,19 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.lastError?.contains("blocked.scene") == true)
     }
 
+    @Test("A library clear that fails after emptying the manifest still announces the change")
+    func failedClearAfterCommitStillAnnounces() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        try await rig.service.publish(bookmark: rig.makeVideoBookmark())
+        #expect(rig.service.diskUsageBytes > 0)
+        try FileManager.default.removeItem(at: rig.videosDirectory)
+        try Data("x".utf8).write(to: rig.videosDirectory)
+        #expect(throws: (any Error).self) { try rig.service.clearLibrary() }
+        #expect(try rig.manifestOnDisk().items.isEmpty)
+        #expect(rig.service.diskUsageBytes == 0, "the committed clear was not refreshed or announced")
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func followStateIsObservableAndSuccessfulSelectionIsNotRetried() async throws {
         let hook = PublishHook()
@@ -400,11 +413,71 @@ struct WallpaperExportServiceTests {
         let manifest = try rig.manifestOnDisk()
         #expect(manifest.displaySelections.isEmpty, "a cleared display's preparation still published a selection")
         #expect(manifest.isCleared(displayID: 42) && manifest.isCleared(displayID: 43))
+        #expect(manifest.items.isEmpty, "a cleared display's video copy was still committed")
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: rig.videosDirectory.path)) ?? []
+        #expect(!leftovers.contains { $0.hasPrefix(WallpaperExportService.selectionCopyIDPrefix) })
 
         coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: preparing.content), title: "Preparing")
         try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
         #expect(try rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42)?.title == "Preparing",
                 "the same content could not be selected again after its preparation was cleared")
+    }
+
+    @Test("Clearing one display keeps the copy an unmapped display resolves", .timeLimit(.minutes(1)))
+    func clearKeepsUnmappedDisplayCopy() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        try rig.showSelectedTile(on: [42, 43])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, notificationCenter: NotificationCenter())
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: bookmark.content), title: "Shared")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        let before = try #require(rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 43))
+        coordinator.clear(displayID: 42)
+        let after = try rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 43)
+        #expect(after?.id == before.id, "clearing display 42 changed what display 43 shows")
+        #expect(FileManager.default.fileExists(atPath: rig.videosDirectory.appendingPathComponent(before.fileName).path))
+    }
+
+    @Test("A clear that cannot be written leaves the display's selection in place", .timeLimit(.minutes(1)))
+    func failedClearKeepsSelection() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, notificationCenter: NotificationCenter())
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: bookmark.content), title: "Kept")
+        try await waitUntil { rig.service.items.count == 1 }
+        let item = try #require(rig.service.items.first)
+        try await waitUntil { coordinator.followState.displays[42]?.phase == .ready(itemID: item.id) }
+        try Data("not a manifest".utf8).write(to: rig.manifestURL)
+        coordinator.clear(displayID: 42)
+        #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: item.id),
+                "the display reads as cleared while the manifest still selects its copy")
+        #expect(rig.service.lastError != nil)
+    }
+
+    @Test("Following picks the newest published copy of the same source", .timeLimit(.minutes(1)))
+    func followPicksNewestCopyOfSource() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        let key = try WallpaperExportService.sourceKey(for: bookmark.content)
+        let items: [SystemWallpaperManifest.Item] = [
+            .init(id: "old", title: "Old", fileName: "old.mov", addedAt: Date(), sourceKey: key),
+            .init(id: "new", title: "New", fileName: "new.mov", addedAt: Date(), sourceKey: key),
+        ]
+        try FileManager.default.createDirectory(at: rig.root, withIntermediateDirectories: true)
+        try SystemWallpaperCoding.encoder.encode(SystemWallpaperManifest(version: 1, items: items)).write(to: rig.manifestURL)
+        rig.service.refresh()
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, notificationCenter: NotificationCenter())
+        defer { coordinator.stop() }
+        coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: bookmark.content), title: "Clip")
+        try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
+        #expect(try rig.manifestOnDisk().displaySelections["42"] == "new")
     }
 
     @Test("Stopping the follow coordinator is not a clear and writes no tombstone", .timeLimit(.minutes(1)))

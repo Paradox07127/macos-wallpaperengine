@@ -106,6 +106,7 @@ final class SystemWallpaperSelectionCoordinator {
             if selections[display]?.token != selection.token, preparingDisplay == display,
                followState.displays[display]?.phase == .preparing {
                 service.cancelPreparation()
+                worker?.cancel()
             }
             selections[display] = selection
             if let state = followState.displays[display], attempted[display] == selection.token {
@@ -130,19 +131,23 @@ final class SystemWallpaperSelectionCoordinator {
 
     /// The bumped generation keeps a late result of the old token from passing `isCurrent`, and lets the same content be followed again.
     func clear(displayID: UInt32) {
-        displayClearGenerations[displayID, default: 0] += 1
+        let generation = displayClearGenerations[displayID, default: 0] + 1
+        do {
+            try service.clearSelection(for: displayID, generation: generation)
+        } catch {
+            service.reportPublishFailures([error.localizedDescription])
+            return
+        }
+        displayClearGenerations[displayID] = generation
         if preparingDisplay == displayID, followState.displays[displayID]?.phase == .preparing {
             service.cancelPreparation()
+            // A video copy publishes directly on the worker, outside the preparation task.
+            worker?.cancel()
         }
         selections[displayID] = nil
         pending[displayID] = nil
         attempted[displayID] = nil
         followState.displays[displayID] = nil
-        do {
-            try service.clearSelection(for: displayID, generation: displayClearGenerations[displayID, default: 0])
-        } catch {
-            service.reportPublishFailures([error.localizedDescription])
-        }
     }
 
     func stop() {
@@ -188,7 +193,8 @@ final class SystemWallpaperSelectionCoordinator {
                     try Task.checkCancellation()
                     guard isCurrent(selection, display: display), service.showsSelectedTile(on: display) else { continue }
                     let itemID: String
-                    if let prepared = service.items.first(where: {
+                    // Publishes append, so the last match is the newest copy.
+                    if let prepared = service.items.last(where: {
                         guard $0.sourceKey == selection.key else { return false }
                         if case .scene = selection.configuration.activeWallpaper {
                             return $0.preparationOptions == selection.options

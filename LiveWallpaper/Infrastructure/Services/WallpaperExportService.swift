@@ -174,7 +174,8 @@ final class WallpaperExportService {
     /// Caller holds the manifest lock.
     private func removeUnselectedCopies(from manifest: SystemWallpaperManifest) throws -> SystemWallpaperManifest {
         var manifest = manifest
-        let selected = Set(manifest.displaySelections.values)
+        // Displays without their own selection resolve through `selectedItemID`.
+        let selected = Set(manifest.displaySelections.values).union([manifest.selectedItemID].compactMap(\.self))
         for item in manifest.items where item.id.hasPrefix(Self.selectionCopyIDPrefix) && !selected.contains(item.id) {
             manifest = try SystemWallpaperLibrary.remove(
                 id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) }
@@ -901,12 +902,14 @@ final class WallpaperExportService {
         clearGeneration += 1
         activePublishes.removeAll()
         nonisolated(unsafe) var survivors: [String] = []
+        var committed = false
         do {
             try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
                 let manifest = try loadManifestForMutation()
                 var emptied = manifest
                 emptied.items = []
                 try writeManifest(emptied)
+                committed = true
                 items = []
                 // Every file is unreferenced now, so the sweep is the delete — no age guard, because nothing can be mid-publish once the manifest is empty and the lock is held.
                 SystemWallpaperLibrary.sweepOrphans(
@@ -923,6 +926,10 @@ final class WallpaperExportService {
             lastError = survivors.isEmpty ? nil : Self.undeletedMessage(survivors)
         } catch {
             lastError = error.localizedDescription
+            if committed {
+                refreshDiskUsage()
+                postLibraryChanged()
+            }
             throw error
         }
         items = []
