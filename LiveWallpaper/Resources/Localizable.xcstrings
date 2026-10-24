@@ -21686,41 +21686,6 @@
         }
       }
     },
-    "Delete preset" : {
-      "comment" : "Scene preset menu item: delete the applied preset, whether saved by the user or downloaded from the Workshop.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete preset"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar preajuste"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プリセットを削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除预设"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刪除預設"
-          }
-        }
-      }
-    },
     "Delete test artifacts" : {
       "comment" : "Storage tab, debug-only button that deletes leftover test temp directories.",
       "extractionState" : "manual",
@@ -59373,41 +59338,6 @@
         }
       }
     },
-    "Save as new preset" : {
-      "comment" : "A11y label for the + button beside the preset picker.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save as new preset"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar como preajuste nuevo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新規プリセットとして保存"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "另存为新预设"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "另存為新預設"
-          }
-        }
-      }
-    },
     "Save as New Preset" : {
       "comment" : "Preset menu item: save the current values as a new preset.",
       "localizations" : {
@@ -59572,41 +59502,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將目前設定、顯示器預設值、書籤和各顯示器設定儲存到備份檔案"
-          }
-        }
-      }
-    },
-    "Save the scene's current values as a new preset" : {
-      "comment" : "Tooltip for the + button beside the preset picker.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save the scene's current values as a new preset"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar los valores actuales de la escena como un preajuste nuevo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンの現在の値を新規プリセットとして保存します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把场景当前的数值另存为一个新预设"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把場景目前的數值另存為一個新預設"
           }
         }
       }
@@ -85758,6 +85653,170 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請在設定中設定 Steam Web API 金鑰，以在此列出預設。"
+          }
+        }
+      }
+    },
+    "%lld changed" : {
+      "comment" : "Subtitle of the scene preset row: how many settings differ from the applied preset or the scene defaults.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changed"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changed"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ajuste modificado"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ajustes modificados"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 項目を変更"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已修改 %lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已修改 %lld 項"
+          }
+        }
+      }
+    },
+    "Matches preset" : {
+      "comment" : "Subtitle of the scene preset row when no setting differs from the applied preset.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matches preset"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coincide con el preajuste"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プリセットと同じ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与预设一致"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "與預設集一致"
+          }
+        }
+      }
+    },
+    "Scene defaults" : {
+      "comment" : "Subtitle of the scene preset row when no preset is applied and no setting differs from the scene defaults.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene defaults"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valores por defecto de la escena"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンの初期値"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用场景默认值"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用場景預設值"
+          }
+        }
+      }
+    },
+    "Delete Preset" : {
+      "comment" : "Scene preset menu item: delete the applied preset, whether saved by the user or downloaded from the Workshop.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Preset"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar preajuste"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プリセットを削除"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除预设"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除預設"
           }
         }
       }

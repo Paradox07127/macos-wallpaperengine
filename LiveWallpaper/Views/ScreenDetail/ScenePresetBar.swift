@@ -2,7 +2,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// One fixed-height row: the pill menu selects and manages presets, the icon button saves a new one. Nothing here may change height with state.
+/// One settings row: the menu selects and manages presets, the always-present subtitle reports changes so the height never varies.
 struct ScenePresetBar: View {
     /// Already filtered to the descriptor's base wallpaper by the caller.
     let presets: [ScenePreset]
@@ -26,15 +26,9 @@ struct ScenePresetBar: View {
     }
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+        SettingRow(icon: "square.stack.3d.up", title: "Preset", subtitle: status) {
             presetMenu
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            changedDot
-
-            saveButton
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         // Menu items never appear on screen as views, so they can't queue their own names.
         .onChange(of: workshopPresets.map(\.name), initial: true) { _, names in
             WPEPropertyLabelTranslator.wallpaperNames.enqueue(labels: names)
@@ -69,9 +63,8 @@ struct ScenePresetBar: View {
         }
     }
 
-    @ViewBuilder
     private var presetMenu: some View {
-        let menu = Menu {
+        Menu {
             Picker(selection: selection) {
                 Text("No preset").tag(String?.none)
 
@@ -104,22 +97,22 @@ struct ScenePresetBar: View {
             .pickerStyle(.inline)
 
             Section {
+                if let activePreset, activePreset.source == .local, changedCount > 0 {
+                    // `onSave` reuses the id of a same-named local preset, so this call overwrites rather than adds.
+                    Button("Update “\(activePreset.name)”") {
+                        onSave(activePreset.name)
+                    }
+                }
+
                 Button("Save as New Preset") {
                     beginEditing(.saveAsNew)
                 }
 
                 if let activePreset {
-                    // Only for a local preset with changes: `onSave` reuses the id of a same-named
-                    // local preset, so this call overwrites rather than adds.
-                    if activePreset.source == .local, changedCount > 0 {
-                        Button("Update “\(activePreset.name)”") {
-                            onSave(activePreset.name)
-                        }
-                    }
                     Button("Rename") {
                         beginEditing(.rename(activePreset))
                     }
-                    Button("Delete preset", role: .destructive) {
+                    Button("Delete Preset", role: .destructive) {
                         pendingDeletion = activePreset
                     }
                 }
@@ -129,79 +122,37 @@ struct ScenePresetBar: View {
         }
         .lineLimit(1)
         .truncationMode(.tail)
+        // Without matching the title's priority the row hands the menu only its minimum width.
+        .layoutPriority(1)
         .accessibilityLabel(Text("Preset"))
-        .accessibilityValue(changedHelp)
-        .appLanguagePopover(isPresented: naming(matching: .isRename), arrowEdge: .bottom) {
+        .appLanguagePopover(isPresented: isNaming, arrowEdge: .bottom) {
             namingPopover
         }
-
-        // One view path: a branch per state would re-identify the menu and drop an open naming popover.
-        menu.help(changedHelp)
     }
 
-    private var changedHelp: Text {
-        guard changedCount > 0 else {
-            return Text(verbatim: "")
+    private var status: LocalizedStringKey {
+        if changedCount > 0 {
+            return "\(changedCount) changed"
         }
-        if activePreset == nil {
-            return Text("\(changedCount) changed from the scene's defaults")
-        }
-        return Text("\(changedCount) changed since this preset")
+        return activePreset == nil ? "Scene defaults" : "Matches preset"
     }
 
-    /// A macOS `Menu` flattens its label to one image and one text: anything else
-    /// (a background, a dot, a second glyph) is dropped silently. The native
-    /// pull-down button supplies the border and the chevron; the dot lives outside.
+    @ViewBuilder
     private var menuLabel: some View {
-        Label {
-            if let activePreset {
-                // A local preset's name is the user's own text and is never translated.
-                Text(verbatim: activePreset.source == .local ? activePreset.name : activePreset.name.translatedWallpaperName)
-            } else {
-                Text("No preset")
-            }
-        } icon: {
-            Image(systemName: "square.stack.3d.up")
+        if let activePreset {
+            // A local preset's name is the user's own text and is never translated.
+            Text(verbatim: activePreset.source == .local ? activePreset.name : activePreset.name.translatedWallpaperName)
+        } else {
+            Text("No preset")
         }
-    }
-
-    /// Width is reserved when unchanged so the row never shifts.
-    private var changedDot: some View {
-        Circle()
-            .fill(DesignTokens.Colors.Status.warning)
-            .frame(width: 6, height: 6)
-            .opacity(changedCount > 0 ? 1 : 0)
-            .accessibilityHidden(true)
-    }
-
-    /// Always additive: this saves the current values as a NEW preset and never
-    /// overwrites; overwriting the applied one lives in the menu.
-    private var saveButton: some View {
-        GlassIconButton("square.and.arrow.down", size: .small) {
-            beginEditing(.saveAsNew)
-        }
-        .help(Text("Save the scene's current values as a new preset"))
-        .accessibilityLabel(Text("Save as new preset"))
-        .appLanguagePopover(isPresented: naming(matching: .isSaveAsNew), arrowEdge: .bottom) {
-            namingPopover
-        }
-    }
-
-    private enum NamingAnchor {
-        case isSaveAsNew
-        case isRename
     }
 
     /// Bound to `editing` so the popover and the naming state cannot disagree —
     /// dismissing by clicking away has to clear the draft too.
-    private func naming(matching anchor: NamingAnchor) -> Binding<Bool> {
+    private var isNaming: Binding<Bool> {
         Binding(
             get: {
-                switch (editing, anchor) {
-                case (.saveAsNew, .isSaveAsNew): true
-                case (.rename, .isRename): true
-                default: false
-                }
+                editing != nil
             },
             set: { isPresented in
                 if !isPresented {

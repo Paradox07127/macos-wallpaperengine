@@ -151,7 +151,7 @@ on to include presets in the general browse grid. The base wallpaper's detail
 page still provides its preset list.
 
 The row separates *Saved by you* from *From the Workshop*, and its menu offers
-**Save as New Preset**, **Rename**, and **Delete preset**. When the applied
+**Save as New Preset**, **Rename**, and **Delete Preset**. When the applied
 preset is one you saved and you have changed values since, the menu also offers
 **Update “*name*”** to save those changes into it. A
 preset is a layer over the scene's defaults, and your own tweaks are a layer on
