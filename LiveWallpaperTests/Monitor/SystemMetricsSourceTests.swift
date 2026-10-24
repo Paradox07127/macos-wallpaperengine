@@ -341,6 +341,38 @@ struct SystemMetricsSourceTests {
         #expect(rows.first?.rxBytesPerSec == 0)
         #expect(rows.first?.txBytesPerSec == 0)
     }
+
+    @Test("Link byte counters keep all 64 bits from the interface list")
+    func linkCountersParseAs64Bit() throws {
+        var link = sockaddr_dl()
+        link.sdl_len = UInt8(MemoryLayout<sockaddr_dl>.size)
+        link.sdl_family = UInt8(AF_LINK)
+        link.sdl_nlen = 3
+        var linkBytes = withUnsafeBytes(of: link) { Array($0) }
+        let nameOffset = try #require(MemoryLayout<sockaddr_dl>.offset(of: \.sdl_data))
+        let nameEnd = nameOffset + 3
+        linkBytes.replaceSubrange(nameOffset ..< nameEnd, with: Array("en9".utf8))
+
+        var header = if_msghdr2()
+        header.ifm_msglen = UInt16(MemoryLayout<if_msghdr2>.size + linkBytes.count)
+        header.ifm_type = UInt8(RTM_IFINFO2)
+        header.ifm_addrs = RTA_IFP
+        header.ifm_flags = IFF_UP
+        header.ifm_data.ifi_ibytes = 0x1_0000_0010
+        header.ifm_data.ifi_obytes = 0x2_0000_0020
+        let buffer = withUnsafeBytes(of: header) { Array($0) } + linkBytes
+
+        let parsed = SystemMetricsSamplers.parseLinkCounters(buffer)
+        #expect(parsed.map(\.name) == ["en9"])
+        #expect(parsed.first?.ibytes == 0x1_0000_0010, "a 32-bit read would truncate to 0x10")
+        #expect(parsed.first?.obytes == 0x2_0000_0020, "a 32-bit read would truncate to 0x20")
+    }
+
+    @Test("The 64-bit interface list is readable from the sandboxed host")
+    func linkCountersReadLive() throws {
+        let links = try #require(SystemMetricsSamplers.sampleLinkCounters(), "the interface-list sysctl failed")
+        #expect(!links.isEmpty)
+    }
 }
 
 @Suite("CPU tick counters")

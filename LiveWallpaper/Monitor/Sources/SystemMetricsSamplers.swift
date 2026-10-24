@@ -299,7 +299,7 @@ enum SystemMetricsSamplers {
         MTLCreateSystemDefaultDevice()?.name
     }
 
-    // MARK: - Network (getifaddrs, AF_LINK + AF_INET/AF_INET6)
+    // MARK: - Network (NET_RT_IFLIST2 counters + getifaddrs AF_INET/AF_INET6 addresses)
 
     struct InterfaceCounters: Sendable, Equatable {
         var name: String
@@ -326,21 +326,19 @@ enum SystemMetricsSamplers {
         var interfaces: [InterfaceCounters]
     }
 
-    /// Nil when getifaddrs fails, so the caller can drop its baseline instead of differencing against nothing.
+    /// Nil when the link-counter sysctl or getifaddrs fails, so the caller can drop its baseline instead of differencing against nothing.
     static func sampleNetworkCounters() -> NetworkCountersSample? {
+        guard let links = sampleLinkCounters() else { return nil }
         var head: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&head) == 0 else { return nil }
-        guard let first = head else { return NetworkCountersSample(interfaces: []) }
+        guard let first = head else { return NetworkCountersSample(interfaces: links) }
         defer { freeifaddrs(head) }
 
         var byName: [String: InterfaceCounters] = [:]
         var order: [String] = []
-
-        func entry(for name: String) -> Int {
-            if let existing = order.firstIndex(of: name) { return existing }
-            order.append(name)
-            byName[name] = InterfaceCounters(name: name, hasLinkCounters: false)
-            return order.count - 1
+        for counters in links where byName[counters.name] == nil {
+            order.append(counters.name)
+            byName[counters.name] = counters
         }
 
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
@@ -348,35 +346,74 @@ enum SystemMetricsSamplers {
             let ifa = ptr.pointee
             defer { cursor = ifa.ifa_next }
 
-            let flags = Int32(ifa.ifa_flags)
-            guard flags & IFF_LOOPBACK == 0 else { continue }
-            guard let namePtr = ifa.ifa_name else { continue }
-            let name = String(cString: namePtr)
-            guard let addr = ifa.ifa_addr else { continue }
+            guard Int32(ifa.ifa_flags) & IFF_LOOPBACK == 0,
+                  let namePtr = ifa.ifa_name, let addr = ifa.ifa_addr else { continue }
             let family = addr.pointee.sa_family
-
-            if family == UInt8(AF_LINK) {
-                guard flags & IFF_UP != 0, let dataPtr = ifa.ifa_data else { continue }
-                let data = dataPtr.assumingMemoryBound(to: if_data.self).pointee
-                _ = entry(for: name)
-                byName[name]?.hasLinkCounters = true
-                byName[name]?.ibytes = UInt64(data.ifi_ibytes)
-                byName[name]?.obytes = UInt64(data.ifi_obytes)
-                byName[name]?.ipackets = UInt64(data.ifi_ipackets)
-                byName[name]?.opackets = UInt64(data.ifi_opackets)
-                byName[name]?.ierrors = UInt64(data.ifi_ierrors)
-                byName[name]?.oerrors = UInt64(data.ifi_oerrors)
-                byName[name]?.iqdrops = UInt64(data.ifi_iqdrops)
-            } else if family == UInt8(AF_INET) || family == UInt8(AF_INET6) {
-                if let text = interfaceAddressText(addr, family: family) {
-                    _ = entry(for: name)
-                    byName[name]?.addresses.append(text)
-                }
+            guard family == UInt8(AF_INET) || family == UInt8(AF_INET6),
+                  let text = interfaceAddressText(addr, family: family) else { continue }
+            let name = String(cString: namePtr)
+            if byName[name] == nil {
+                order.append(name)
+                byName[name] = InterfaceCounters(name: name, hasLinkCounters: false)
             }
+            byName[name]?.addresses.append(text)
         }
 
         let interfaces = order.compactMap { byName[$0] }
         return NetworkCountersSample(interfaces: interfaces)
+    }
+
+    /// Nil when the sysctl fails. getifaddrs' AF_LINK `if_data` byte counters are 32-bit and wrap every 4 GiB.
+    static func sampleLinkCounters() -> [InterfaceCounters]? {
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
+        var length = 0
+        guard sysctl(&mib, UInt32(mib.count), nil, &length, nil, 0) == 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: length)
+        guard sysctl(&mib, UInt32(mib.count), &buffer, &length, nil, 0) == 0 else { return nil }
+        return parseLinkCounters(Array(buffer.prefix(length)))
+    }
+
+    /// Per-interface 64-bit counters from a `NET_RT_IFLIST2` buffer; loopback and down interfaces are skipped.
+    static func parseLinkCounters(_ buffer: [UInt8]) -> [InterfaceCounters] {
+        let headerSize = MemoryLayout<if_msghdr2>.size
+        let nameLengthOffset = MemoryLayout<sockaddr_dl>.offset(of: \.sdl_nlen)!
+        let nameOffset = MemoryLayout<sockaddr_dl>.offset(of: \.sdl_data)!
+        var result: [InterfaceCounters] = []
+        buffer.withUnsafeBytes { raw in
+            var offset = 0
+            while offset + MemoryLayout<UInt16>.size <= raw.count {
+                let messageLength = Int(raw.loadUnaligned(fromByteOffset: offset, as: UInt16.self))
+                guard messageLength > 0, offset + messageLength <= raw.count else { break }
+                defer { offset += messageLength }
+                guard messageLength >= headerSize + nameOffset else { continue }
+
+                let header = raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr2.self)
+                guard Int32(header.ifm_type) == RTM_IFINFO2,
+                      header.ifm_flags & IFF_LOOPBACK == 0,
+                      header.ifm_flags & IFF_UP != 0 else { continue }
+
+                // The interface's sockaddr_dl follows the header directly; its name is the first sdl_nlen bytes of sdl_data.
+                let link = offset + headerSize
+                let nameLength = Int(raw[link + nameLengthOffset])
+                let nameStart = link + nameOffset
+                let nameEnd = nameStart + nameLength
+                guard nameLength > 0, nameEnd <= offset + messageLength,
+                      let name = String(bytes: raw[nameStart ..< nameEnd], encoding: .utf8) else { continue }
+
+                let data = header.ifm_data
+                result.append(InterfaceCounters(
+                    name: name,
+                    ibytes: data.ifi_ibytes,
+                    obytes: data.ifi_obytes,
+                    ipackets: data.ifi_ipackets,
+                    opackets: data.ifi_opackets,
+                    ierrors: data.ifi_ierrors,
+                    oerrors: data.ifi_oerrors,
+                    iqdrops: data.ifi_iqdrops
+                ))
+            }
+        }
+        return result
     }
 
     private static func interfaceAddressText(_ addr: UnsafeMutablePointer<sockaddr>, family: UInt8) -> String? {
