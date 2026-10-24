@@ -10,4 +10,9 @@ struct ShortcutKeyLabelTests {
         #expect(ShortcutKeyLabel.keySymbol(for: 76) == nil, "keypad Enter draws the Return symbol")
         #expect(ShortcutKeyLabel.keyText(for: 76) == "\u{2324}")
     }
+
+    @Test("A key code beyond the hardware range has no layout character")
+    func outOfRangeKeyCodeHasNoLayoutCharacter() {
+        #expect(KeyboardLayoutCharacter.character(for: 0x10000) == nil)
+    }
 }

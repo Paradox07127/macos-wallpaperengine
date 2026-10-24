@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import LiveWallpaperCore
 import SwiftUI
 
@@ -6,6 +7,7 @@ struct ShortcutsView: View {
     @State private var bindings: [GlobalShortcutAction.RawAction: GlobalShortcutBinding?] = [:]
     @State private var rejectionMessage: String?
     @State private var globalShortcutsEnabled: Bool
+    @State private var layoutRevision = 0
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
     private let registrationStatus = GlobalShortcutRegistrationStatus.shared
 
@@ -25,6 +27,7 @@ struct ShortcutsView: View {
                     ShortcutRow(
                         action: action,
                         binding: bindingFor(action),
+                        layoutRevision: layoutRevision,
                         isEnabled: globalShortcutsEnabled,
                         registrationFailed: globalShortcutsEnabled && registrationFailed(action),
                         onCapture: { newBinding in updateBinding(newBinding, for: action) },
@@ -45,6 +48,11 @@ struct ShortcutsView: View {
         }
         .settingsFormChrome(minWidth: 500, minHeight: 400)
         .settingsSearchAnchorScroller(page: .shortcuts, pendingSearchAnchor: $pendingSearchAnchor)
+        .onReceive(DistributedNotificationCenter.default().publisher(
+            for: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String)
+        )) { _ in
+            layoutRevision += 1
+        }
         .onReceive(NotificationCenter.default.publisher(for: .globalShortcutsDidChange)) { _ in
             let latest = SettingsManager.shared.loadGlobalSettings()
             var didResync = false
@@ -196,6 +204,8 @@ struct ShortcutBindingTable: Equatable {
 private struct ShortcutRow: View {
     let action: GlobalShortcutAction
     let binding: GlobalShortcutBinding?
+    /// Unread by the body: a new value makes SwiftUI recompute the key name for the current keyboard layout.
+    let layoutRevision: Int
     let isEnabled: Bool
     let registrationFailed: Bool
     let onCapture: (GlobalShortcutBinding) -> Void
@@ -222,6 +232,7 @@ private struct ShortcutRow: View {
             HStack(spacing: DesignTokens.Spacing.sm) {
                 ShortcutCaptureField(
                     binding: binding,
+                    layoutRevision: layoutRevision,
                     isCapturing: $isCapturing,
                     onCapture: onCapture
                 )
@@ -293,6 +304,7 @@ private extension GlobalShortcutAction {
 
 private struct ShortcutCaptureField: View {
     let binding: GlobalShortcutBinding?
+    let layoutRevision: Int
     @Binding var isCapturing: Bool
     let onCapture: (GlobalShortcutBinding) -> Void
 
@@ -304,7 +316,7 @@ private struct ShortcutCaptureField: View {
                         .foregroundStyle(.secondary)
                         .italic()
                 } else if let binding {
-                    ShortcutKeyLabel(binding: binding)
+                    ShortcutKeyLabel(binding: binding, layoutRevision: layoutRevision)
                 } else {
                     Text("None")
                         .foregroundStyle(.tertiary)
@@ -347,6 +359,7 @@ private struct ShortcutCaptureField: View {
 
 struct ShortcutKeyLabel: View {
     let binding: GlobalShortcutBinding
+    let layoutRevision: Int
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.xxs) {
@@ -409,7 +422,7 @@ struct ShortcutKeyLabel: View {
         ForEach([UInt32(45), 49, 36], id: \.self) { key in
             ShortcutCaptureField(
                 binding: GlobalShortcutBinding(keyCode: key, modifiers: [.option, .command]),
-                isCapturing: .constant(false), onCapture: { _ in }
+                layoutRevision: 0, isCapturing: .constant(false), onCapture: { _ in }
             )
         }
     }

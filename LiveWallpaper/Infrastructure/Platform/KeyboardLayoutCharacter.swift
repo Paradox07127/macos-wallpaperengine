@@ -6,13 +6,14 @@ import Foundation
 enum KeyboardLayoutCharacter {
     /// nil when the input source has no Unicode layout or the key produces no visible character.
     static func character(for keyCode: UInt32) -> String? {
-        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+        guard let code = UInt16(exactly: keyCode),
+              let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
               let rawLayout = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
             return nil
         }
         let layoutData = Unmanaged<CFData>.fromOpaque(rawLayout).takeUnretainedValue() as Data
         var deadKeyState: UInt32 = 0
-        var characters = [UniChar](repeating: 0, count: 4)
+        var characters = [UniChar](repeating: 0, count: 255)
         var length = 0
         let status = layoutData.withUnsafeBytes { bytes -> OSStatus in
             guard let layout = bytes.bindMemory(to: UCKeyboardLayout.self).baseAddress else {
@@ -20,11 +21,11 @@ enum KeyboardLayoutCharacter {
             }
             return UCKeyTranslate(
                 layout,
-                UInt16(truncatingIfNeeded: keyCode),
+                code,
                 UInt16(kUCKeyActionDisplay),
                 0,
                 UInt32(LMGetKbdType()),
-                OptionBits(kUCKeyTranslateNoDeadKeysBit),
+                OptionBits(kUCKeyTranslateNoDeadKeysMask),
                 &deadKeyState,
                 characters.count,
                 &length,

@@ -183,7 +183,8 @@ public struct GlobalShortcutBinding: Codable, Equatable, Hashable, Sendable {
         case 111: return "F12"
         default:
             if let character = layoutCharacter(keyCode), !character.isEmpty {
-                return character.uppercased()
+                let upper = character.uppercased()
+                return upper.count == character.count ? upper : character
             }
             if let scalar = printableCharacter(for: keyCode) {
                 return String(scalar).uppercased()

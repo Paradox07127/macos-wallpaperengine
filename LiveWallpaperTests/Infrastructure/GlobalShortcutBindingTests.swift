@@ -61,6 +61,11 @@ struct GlobalShortcutBindingTests {
         #expect(ShortcutKeyLabel.keyText(for: 49, layoutCharacter: { _ in "x" }) == "Space")
     }
 
+    @Test("A layout character with no single-character uppercase keeps its own spelling")
+    func sharpSKeepsItsSpelling() {
+        #expect(GlobalShortcutBinding.keyName(for: 27, layoutCharacter: { _ in "ß" }) == "ß")
+    }
+
     @Test("Restoring a default that another action now uses is refused and names that action")
     func resetRefusesDefaultTakenByAnotherAction() throws {
         let playbackDefault = try #require(GlobalShortcutAction.defaultBinding(for: .togglePlayback))
