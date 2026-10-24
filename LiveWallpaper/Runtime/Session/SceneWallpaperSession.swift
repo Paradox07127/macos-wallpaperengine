@@ -718,7 +718,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             await pauseDwell.drain()
             await pressureDwell.drain()
             await wake?.value
-            await actor.teardownRenderer()
+            // Enqueued from a detached task: with the render thread stopped the job runs inline on the enqueuing thread, which must not be main.
+            await Task.detached { await actor.teardownRenderer() }.value
             surface.detach()
         }
         let deadline = retirementDeadline

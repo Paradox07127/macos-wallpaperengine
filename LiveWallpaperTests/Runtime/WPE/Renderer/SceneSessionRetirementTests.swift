@@ -43,6 +43,44 @@ struct SceneSessionRetirementTests {
         #expect(joined.withLock { $0 } == false, "a wedged render thread reported a clean join")
     }
 
+    @Test("A teardown that runs inline after the render thread stopped never blocks the main thread",
+          .timeLimit(.minutes(1)))
+    func inlineTeardownAfterShutdownStaysOffTheMainThread() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .renderThread)
+        let window = NSWindow(contentRect: surface.mtkView.frame, styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let session = SceneWallpaperSession(window: window, renderActor: actor, surface: surface)
+        _ = await actor.shutdown()
+        // With the thread stopped this job runs inline on a cooperative thread and holds the post-shutdown lock.
+        let release = DispatchSemaphore(value: 0)
+        let holding = OSAllocatedUnfairLock(initialState: false)
+        Task.detached {
+            await actor.run { _ in
+                holding.withLock { $0 = true }
+                release.wait()
+            }
+        }
+        defer { release.signal() }
+        try await Self.poll("the post-shutdown job took the lock") { holding.withLock { $0 } }
+
+        session.cleanup()
+        Task.detached {
+            try? await Task.sleep(for: .seconds(1))
+            release.signal()
+        }
+        // Spans the whole hold so the drain reaching teardown at any point inside it is observed.
+        var longestStall = Duration.zero
+        for _ in 0 ..< 30 {
+            let start = ContinuousClock.now
+            try await Task.sleep(for: .milliseconds(50))
+            longestStall = max(longestStall, ContinuousClock.now - start)
+        }
+        #expect(longestStall < .milliseconds(500), "the main thread waited on an inline teardown for \(longestStall)")
+        _ = await session.retirement?.value
+    }
+
     private static func poll(_ label: String, until condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))
         while ContinuousClock.now < deadline {

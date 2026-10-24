@@ -240,7 +240,9 @@ final class WPEParitySceneDriver {
             guard self.renderer === renderer, loadGeneration == generation, planRevision == revision,
                   renderer.pendingVideoAdmission?.id == request.id else { return false }
             renderer.cancelVideoAdmission()
-            runtimeFailure = "WPE video admission failed: \(error.localizedDescription)"
+            let message = "WPE video admission failed: \(error.localizedDescription)"
+            runtimeFailure = message
+            loadDiagnostics = .other(layer: "scene", message: message)
             soundRuntime?.stop()
             logFrameFailure(error)
             throw error

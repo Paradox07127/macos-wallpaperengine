@@ -752,6 +752,30 @@ final class WPEParityMediaTextureProductTests: XCTestCase {
         }
     }
 
+    func testFailedVideoAdmissionReplacesTheLoadDiagnosticWithItsOwnMessage() async throws {
+        struct AdmissionFailure: Error {}
+        let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()), hiddenVideoEffect: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let dispatcher = WPESceneMediaEventDispatcher(source: MediaInputSource())
+        let driver = try WPEParitySceneDriver(device: fixture.device)
+        defer { dispatcher.stop(); driver.cleanup() }
+        let layer = makeLayer(device: fixture.device)
+        try await load(driver, fixture: fixture, dispatcher: dispatcher, size: Self.size)
+        let renderer = try XCTUnwrap(driver.renderer)
+        XCTAssertTrue(renderer.instance.state.setEffect("10", of: "1", visible: true))
+        XCTAssertNil(driver.renderAndPresentFrame(layer: layer, timestamp: CACurrentMediaTime(), pointer: SIMD2(0.5, 0.5)))
+        XCTAssertNotNil(driver.pendingVideoAdmissionID)
+        driver.videoAdmissionCheckpoint = { _ in throw AdmissionFailure() }
+        do {
+            _ = try await driver.preparePendingVideos()
+            XCTFail("A failing admission checkpoint must surface as a thrown error")
+        } catch is AdmissionFailure {}
+        driver.videoAdmissionCheckpoint = nil
+        let failure = try XCTUnwrap(driver.runtimeFailure)
+        XCTAssertEqual(driver.loadDiagnostics, .other(layer: "scene", message: failure),
+                       "The surfaced diagnostic still describes an earlier load instead of the admission failure")
+    }
+
     func testActorAutomaticallyAdmitsAnEffectVideoAndKeepsProducingFrames() async throws {
         let fixture = try await makeFixture(scripted: false, video: videoTEX(Self.writeVideo()), hiddenVideoEffect: true)
         let layer = makeLayer(device: fixture.device)
