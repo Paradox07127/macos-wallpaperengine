@@ -413,11 +413,15 @@ final class WallpaperAutomationOrchestrator {
         for screen in screensProvider() {
             guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
                   config.wallpaperMode == .schedule, config.scheduleSettledUntil != nil else { continue }
-            let heldByHand = SchedulePolicy.pausedUntil(for: config, now: currentTime, calendar: previousCalendar) != nil
+            // A switch still in flight already stamped settled-until while the old content is shown, so it looks like a manual hold.
+            let heldByHand = automaticSelections[screen.id] == nil
+                && SchedulePolicy.pausedUntil(for: config, now: currentTime, calendar: previousCalendar) != nil
             // Saving nil would not clear it: the save path keeps a later settled-until for unchanged content.
             config.scheduleSettledUntil = SchedulePolicy.nextBoundary(after: currentTime, slots: config.scheduleSlots ?? [], calendar: calendar)
             saveConfiguration(config)
             guard !heldByHand else { continue }
+            // The old zone's target must not land even when the new plan picks the content already on screen.
+            cancelAutomaticSelection(for: screen.id)
             schedulesAwaitingRecheck.insert(screen.id)
             if isMonitoring {
                 checkAndApplySchedule(for: screen)

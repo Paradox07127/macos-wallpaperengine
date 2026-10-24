@@ -144,7 +144,8 @@ struct ScheduleTimeZoneChangeTests {
         let store: WallpaperConfigurationStore
         var orchestrator: WallpaperAutomationOrchestrator!
 
-        init(screen: Screen, clock: Date) {
+        /// nil = every availability check passes at once.
+        init(screen: Screen, clock: Date, gate: AvailabilityGate? = nil) {
             calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: "UTC")!
             var config = ScreenConfiguration(screenID: screen.id, wallpaper: ScheduleTimeZoneChangeTests.fallback.content)
@@ -171,9 +172,32 @@ struct ScheduleTimeZoneChangeTests {
                     store.save(proposed)
                     return .ready
                 },
-                libraryEntryAvailable: { _ in true }
+                libraryEntryAvailable: { entry in
+                    guard let gate else { return true }
+                    return await gate.check(entry)
+                }
             )
         }
+    }
+
+    @Test("A zone change while an automatic switch is still checking its source re-plans instead of reading it as a manual hold", .timeLimit(.minutes(1)))
+    func zoneChangeDuringInFlightSwitchReplans() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let gate = AvailabilityGate()
+        let rig = Rig(screen: screen, clock: Self.utc(9), gate: gate)
+        rig.orchestrator.startMonitoring()
+        defer { rig.orchestrator.stopMonitoring() }
+        await gate.waitForPending(1)
+
+        rig.calendar.timeZone = try #require(TimeZone(secondsFromGMT: 3 * 3600))
+        rig.orchestrator.handleTimeZoneChange()
+        await settle()
+        while gate.resumeOldest(true) != nil {
+            await settle()
+        }
+
+        #expect(rig.landed.last == Self.afternoon.content, "the old zone's slot landed after the zone change")
+        #expect(rig.store.get(for: screen.id)?.scheduleSettledUntil == Self.utc(15), "the in-flight switch was held as if picked by hand")
     }
 
     @Test("A zone change re-plans the slot at once, or on return when it happens while the user is away", .timeLimit(.minutes(1)), arguments: [false, true])
