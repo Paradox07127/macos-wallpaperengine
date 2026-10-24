@@ -77,6 +77,19 @@ final class DetailTransitionCoordinator {
         stage.updateFlightDestination(display: shownDisplayID, to: heroFrame())
     }
 
+    /// The display whose hero has taken over; a covered switch keeps `heroVisible` true throughout,
+    /// so this, not `heroVisible`, is the readiness signal.
+    var presentedDisplayID: CGDirectDisplayID? {
+        phase == .shown ? shownDisplayID : nil
+    }
+
+    /// The running transition holds the coordinator and may wait on a layout that never comes.
+    func abandon() {
+        transition?.cancel()
+        layoutWaiter?.continuation.resume(returning: nil)
+        layoutWaiter = nil
+    }
+
     func request(_ target: CGDirectDisplayID?, covered: Bool = false) {
         // Shown or flying in: the running hand-off completes on its own. Returning: the cancelled
         // task never hands the hero over, so the return must finish and the tile fly again.
@@ -91,7 +104,8 @@ final class DetailTransitionCoordinator {
         }
         generation += 1
         let generation = generation
-        if phase == .idle {
+        // Returning: the hero is already hidden and the tile revealed; the stage lands the cancelled return itself.
+        if phase == .idle || phase == .returning {
             coveredPresentation = covered
         }
         let coveredPresentation = coveredPresentation

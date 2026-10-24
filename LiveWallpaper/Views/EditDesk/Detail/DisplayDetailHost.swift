@@ -94,8 +94,8 @@ struct DisplayDetailHost: View {
                     openLibrary(libraryHandoff)
                 }
             }
-            .onChange(of: coordinator?.heroVisible ?? false) { _, visible in
-                if visible, let id = coordinator?.shownDisplayID {
+            .onChange(of: coordinator?.presentedDisplayID) { _, id in
+                if let id {
                     onPresentationReady(id)
                 }
             }
@@ -115,6 +115,7 @@ struct DisplayDetailHost: View {
                 // The hooks capture this view, whose state owns the coordinator: left set, neither is ever freed.
                 coordinator?.onShow = { _ in }
                 coordinator?.onRelease = {}
+                coordinator?.abandon()
             }
     }
 

@@ -228,6 +228,59 @@ struct DetailTransitionTests {
         #expect(trail == [true] && stage.covering, Comment(rawValue: "the switch uncovered the stage under the detail: \(trail)"))
     }
 
+    @Test("A covered request while the tile is still returning presents covered, without flying the new tile")
+    func coveredRequestWhileReturning() async throws {
+        let stage = FakeStage()
+        let coordinator = DetailTransitionCoordinator(stage: stage) { .zero }
+        coordinator.request(1)
+        try await settle { stage.log == ["fly 1"] }
+        stage.land()
+        try await settle { coordinator.phase == .shown }
+        coordinator.request(nil)
+        try await settle { stage.log.last == "return 1" }
+
+        coordinator.request(2, covered: true)
+        try await settle { coordinator.phase == .shown }
+        #expect(stage.covering, "the covered detail left the stage uncovered")
+        #expect(!stage.log.contains("fly 2"), Comment(rawValue: "the tile flew under the modal: \(stage.log)"))
+        #expect(stage.log.filter { $0 == "return 1" }.count == 1, Comment(rawValue: "the tile returned twice: \(stage.log)"))
+        stage.land()
+    }
+
+    @Test("Switching covered details reports the new display ready although the hero never hides")
+    func coveredSwitchReportsReadiness() async throws {
+        let stage = FakeStage()
+        let coordinator = DetailTransitionCoordinator(stage: stage) { .zero }
+        coordinator.request(1, covered: true)
+        try await settle { coordinator.phase == .shown }
+        var presented = [coordinator.presentedDisplayID]
+        var heroVisible = [coordinator.heroVisible]
+
+        coordinator.request(2, covered: true)
+        presented.append(coordinator.presentedDisplayID)
+        heroVisible.append(coordinator.heroVisible)
+        try await settle { coordinator.phase == .shown }
+        presented.append(coordinator.presentedDisplayID)
+        heroVisible.append(coordinator.heroVisible)
+
+        #expect(presented == [1, nil, 2], Comment(rawValue: "presented \(presented)"))
+        #expect(heroVisible == [true, true, true], Comment(rawValue: "heroVisible \(heroVisible)"))
+    }
+
+    @Test("Abandoning a detail still waiting for layout frees the coordinator")
+    func abandonWhileWaitingForLayout() async throws {
+        weak var released: DetailTransitionCoordinator?
+        do {
+            let coordinator = DetailTransitionCoordinator(stage: FakeStage(), usesMeasuredFrame: true) { .zero }
+            released = coordinator
+            coordinator.request(1)
+            try await settle { coordinator.shownDisplayID == 1 }
+            coordinator.abandon()
+        }
+        try await settle { released == nil }
+        #expect(released == nil, "the waiting transition kept the coordinator alive")
+    }
+
     private func settle(_ condition: () -> Bool) async throws {
         for _ in 0 ..< 200 {
             if condition() {
