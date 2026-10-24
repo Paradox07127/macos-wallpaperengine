@@ -10,6 +10,7 @@ struct PasteSheet: View {
     @State private var queue = WorkshopDownloadQueue.shared
     @State private var toastVisible = false
     @State private var pendingDestructive: PendingDestructive?
+    @State private var confirmsClearQueue = false
     @FocusState private var textFieldIsFocused: Bool
 
     var body: some View {
@@ -93,14 +94,8 @@ struct PasteSheet: View {
 
                 Menu {
                     Button("Open all in Steam") { model.openAllInSteam() }
-                    Button("Clear queue", role: .destructive) {
-                        for row in model.rows {
-                            if let id = row.publishedFileID {
-                                queue.cancel(id)
-                            }
-                        }
-                        model.removeAll()
-                    }
+                    Divider()
+                    Button("Clear queue", role: .destructive) { confirmsClearQueue = true }
                 } label: {
                     Image(systemName: "ellipsis")
                 }
@@ -111,7 +106,29 @@ struct PasteSheet: View {
             }
             .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
             .padding(.bottom, DesignTokens.Spacing.xs)
+            .confirmationDialog(
+                Text("Clear the queue?", comment: "Title of the confirmation before the Add from Steam Workshop sheet empties its queue."),
+                isPresented: $confirmsClearQueue,
+                titleVisibility: .visible
+            ) {
+                Button("Clear queue") { clearQueue() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Downloads in progress are canceled.",
+                    comment: "Message of the confirmation before the Add from Steam Workshop sheet empties its queue."
+                )
+            }
         }
+    }
+
+    private func clearQueue() {
+        for row in model.rows {
+            if let id = row.publishedFileID {
+                queue.cancel(id)
+            }
+        }
+        model.removeAll()
     }
 
     // MARK: - Paste area

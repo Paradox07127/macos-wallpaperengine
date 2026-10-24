@@ -623,7 +623,7 @@ struct HomePage: View {
                     applyConfigurationToAllDisplays(from: screen)
                 }
             },
-            StageMenuItem(title: String(localized: "Clear Wallpaper", bundle: .appLanguage), isEnabled: configured) {
+            StageMenuItem(title: String(localized: "Clear Wallpaper", bundle: .appLanguage), isEnabled: configured, isDestructive: true) {
                 requestClearWallpaper(on: screen)
             },
         ]

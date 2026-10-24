@@ -9150,40 +9150,6 @@
         }
       }
     },
-    "Apply to This Display" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply to This Display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aplicar a esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このディスプレイに適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到这台显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用到這台顯示器"
-          }
-        }
-      }
-    },
     "Apply Wallpaper" : {
       "comment" : "Name of an undoable step in the Edit Desk: a wallpaper was applied to a display.",
       "localizations" : {
@@ -15518,6 +15484,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "晴朗"
+          }
+        }
+      }
+    },
+    "Clear the queue?" : {
+      "comment" : "Title of the confirmation before the Add from Steam Workshop sheet empties its queue.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear the queue?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Vaciar la cola de descargas?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードキューをクリアしますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要清空下载队列吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要清除下載佇列嗎？"
           }
         }
       }
@@ -24841,6 +24842,41 @@
         }
       }
     },
+    "Downloads in progress are canceled." : {
+      "comment" : "Message of the confirmation before the Add from Steam Workshop sheet empties its queue.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloads in progress are canceled."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se cancelarán las descargas en curso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進行中のダウンロードはキャンセルされます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在进行的下载将被取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進行中的下載將被取消。"
+          }
+        }
+      }
+    },
     "Downloads missing subscribed wallpapers without deleting files or changing Steam subscriptions." : {
       "comment" : "Subscription check info; additive download only.",
       "extractionState" : "manual",
@@ -32189,6 +32225,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全域快速鍵"
+          }
+        }
+      }
+    },
+    "Go to" : {
+      "comment" : "Wallpaper modal Other Displays menu section listing displays already showing the wallpaper; a click opens that display's page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ir a"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移動先"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往"
           }
         }
       }

@@ -103,6 +103,7 @@ struct OnboardingCapsule: View {
                     comment: "Get Started capsule menu item that opens the page of the next welcome tour step. Placeholder is that page's name."
                 )
             }
+            Divider()
         }
         Button {
             progress.dismissRemaining()

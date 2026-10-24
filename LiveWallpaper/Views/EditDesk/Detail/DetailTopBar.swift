@@ -176,10 +176,7 @@ struct DetailTopBar: View {
 
     @ViewBuilder
     private var schemeMenu: some View {
-        Button("Save as Scheme") {
-            actions.saveAsScheme()
-        }
-        Section("Apply to This Display") {
+        if !schemeStore.schemes.isEmpty {
             ForEach(schemeStore.schemes) { scheme in
                 Button {
                     actions.applyScheme(scheme)
@@ -187,6 +184,10 @@ struct DetailTopBar: View {
                     Text(verbatim: scheme.name).lineLimit(1)
                 }
             }
+            Divider()
+        }
+        Button("Save as Scheme") {
+            actions.saveAsScheme()
         }
         Button("Manage Schemes") {
             actions.manageSchemes()

@@ -433,11 +433,13 @@ private struct SchemeTile: View {
                 onStartRename()
             }
             if let revealURL = location.revealURL {
+                Divider()
                 Button("Show in Finder") {
                     dismiss()
                     NSWorkspace.shared.activateFileViewerSelecting([revealURL])
                 }
             }
+            Divider()
             replaceActions(dismiss: dismiss)
             Button("Delete", role: .destructive) {
                 dismiss()
@@ -451,7 +453,7 @@ private struct SchemeTile: View {
     private func replaceActions(dismiss: @escaping () -> Void) -> some View {
         if !screens.isEmpty {
             ForEach(screens, id: \.id) { screen in
-                Button {
+                Button(role: .destructive) {
                     dismiss()
                     onReplace(screen)
                 } label: {
@@ -467,10 +469,12 @@ private struct SchemeTile: View {
     private var contextMenu: some View {
         Button("Rename", action: onStartRename)
         if let revealURL = location.revealURL {
+            Divider()
             Button("Show in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([revealURL])
             }
         }
+        Divider()
         replaceActions(dismiss: {})
         Button("Delete", role: .destructive, action: onDelete)
     }

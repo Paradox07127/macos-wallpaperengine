@@ -120,19 +120,36 @@ struct ModalDisplayButtons: View {
 
     /// A fourth display and on: a pull-down beside the buttons rather than a longer row.
     private func overflowMenu(_ rest: [ModalDisplayTarget]) -> some View {
-        Menu {
-            ForEach(rest) { target in
-                Button { perform(target) } label: {
-                    press(target) == .show ? showLabel(target) : Text(verbatim: target.name)
+        let applies = rest.filter { press($0) == .apply }
+        let shows = rest.filter { press($0) == .show }
+        return Menu {
+            if !applies.isEmpty {
+                Section {
+                    overflowItems(applies)
+                } header: {
+                    Text("Apply to", comment: "Wallpaper modal Other Displays menu section listing displays the wallpaper is applied to on click.")
                 }
-                .disabled(!isPressable(target))
+            }
+            if !shows.isEmpty {
+                Section {
+                    overflowItems(shows)
+                } header: {
+                    Text("Go to", comment: "Wallpaper modal Other Displays menu section listing displays already showing the wallpaper; a click opens that display's page.")
+                }
             }
         } label: {
             Text("Other Displays", comment: "Wallpaper modal pull-down listing the displays past the first three buttons.")
         }
         .menuStyle(.button)
         .fixedSize()
-        .disabled(!canApply && !rest.contains { press($0) == .show })
+        .disabled(!canApply && shows.isEmpty)
+    }
+
+    private func overflowItems(_ targets: [ModalDisplayTarget]) -> some View {
+        ForEach(targets) { target in
+            Button { perform(target) } label: { Text(verbatim: target.name) }
+                .disabled(!isPressable(target))
+        }
     }
 
     private func showLabel(_ target: ModalDisplayTarget) -> Text {
