@@ -459,9 +459,11 @@ enum StageGeometry {
     static let nameRowSideMargin: CGFloat = 8
 
     /// `statusWidth` is the status text's own width: it gives up room before the name does, and the
-    /// name truncates in the middle once even that is not enough.
+    /// name truncates in the middle once even that is not enough. The line heights are each text's
+    /// one-line height: the dot and the status centre on the name's line.
     static func nameRowLayout(
-        shellWidth: CGFloat, top: CGFloat, nameWidth: CGFloat, statusWidth: CGFloat
+        shellWidth: CGFloat, top: CGFloat, nameWidth: CGFloat, statusWidth: CGFloat,
+        nameLineHeight: CGFloat, statusLineHeight: CGFloat
     ) -> NameRowLayout {
         let available = max(0, shellWidth - 2 * nameRowSideMargin)
         let lead = nameRowDotSize + nameRowItemGap
@@ -469,14 +471,17 @@ enum StageGeometry {
         let trailing = status > 0 ? nameRowItemGap + status : 0
         let name = min(nameWidth, max(0, available - lead - trailing))
         let left = (shellWidth - (lead + name + trailing)) / 2
+        let midY = top + nameLineHeight / 2
         return NameRowLayout(
             dot: CGRect(
-                x: left, y: top + (nameRowHeight - nameRowDotSize) / 2,
+                x: left, y: midY - nameRowDotSize / 2,
                 width: nameRowDotSize, height: nameRowDotSize
             ),
+            // The rename field takes the name's full row height.
             name: CGRect(x: left + lead, y: top, width: name, height: nameRowHeight),
             status: CGRect(
-                x: left + lead + name + nameRowItemGap, y: top, width: status, height: nameRowHeight
+                x: left + lead + name + nameRowItemGap, y: midY - statusLineHeight / 2,
+                width: status, height: statusLineHeight
             )
         )
     }

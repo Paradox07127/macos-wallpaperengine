@@ -236,7 +236,9 @@ final class DisplayShellLayer {
         let nameRow = StageGeometry.nameRowLayout(
             shellWidth: layer.bounds.width, top: nameY,
             nameWidth: StageLayerStyle.width(display?.name ?? "", size: Self.nameFontSize, weight: .semibold),
-            statusWidth: StageLayerStyle.width(display?.statusText ?? "", size: 13, mono: true)
+            statusWidth: StageLayerStyle.width(display?.statusText ?? "", size: 13, mono: true),
+            nameLineHeight: StageLayerStyle.lineHeight(size: Self.nameFontSize, weight: .semibold),
+            statusLineHeight: StageLayerStyle.lineHeight(size: 13, mono: true)
         )
         dot.path = CGPath(ellipseIn: nameRow.dot, transform: nil)
         name.frame = nameRow.name

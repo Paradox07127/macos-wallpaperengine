@@ -356,6 +356,12 @@ enum StageLayerStyle {
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
+    /// The height a `CATextLayer` gives one line, which it draws from the top of its frame.
+    static func lineHeight(size: CGFloat, weight: NSFont.Weight = .regular, mono: Bool = false) -> CGFloat {
+        let font = (mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight) : NSFont.systemFont(ofSize: size, weight: weight)) as CTFont
+        return CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
+    }
+
     static func symbol(_ name: String, tint: CGColor, pointSize: CGFloat = 11) -> CGImage? {
         guard let tint = NSColor(cgColor: tint), let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))?

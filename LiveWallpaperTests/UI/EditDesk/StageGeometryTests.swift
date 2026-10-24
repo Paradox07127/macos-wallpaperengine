@@ -365,17 +365,20 @@ struct StageGeometryTests {
     ])
     func nameRowCentresItsGroup(window: CGSize) {
         let width = shellWidth(window: window)
-        let row = StageGeometry.nameRowLayout(shellWidth: width, top: 40, nameWidth: 96, statusWidth: 42)
+        let row = StageGeometry.nameRowLayout(
+            shellWidth: width, top: 40, nameWidth: 96, statusWidth: 42, nameLineHeight: 18, statusLineHeight: 15
+        )
         #expect(row.dot.width == StageGeometry.nameRowDotSize)
         #expect(row.name.width == 96)
         #expect(row.status.width == 42)
         #expect(row.name.minX - row.dot.maxX == StageGeometry.nameRowItemGap)
         #expect(row.status.minX - row.name.maxX == StageGeometry.nameRowItemGap)
         #expect(near((row.dot.minX + row.status.maxX) / 2, width / 2, 0.001))
-        // One row: name and status share a baseline box, the dot is centred in it.
-        #expect(row.name.minY == 40 && row.status.minY == 40)
-        #expect(row.name.height == StageGeometry.nameRowHeight && row.status.height == StageGeometry.nameRowHeight)
-        #expect(near(row.dot.midY, row.name.midY, 0.001))
+        // One row: the dot and the smaller status line centre on the name's line.
+        #expect(row.name.minY == 40 && row.name.height == StageGeometry.nameRowHeight)
+        #expect(row.status.height == 15)
+        #expect(near(row.status.midY, 40 + 18 / 2, 0.001))
+        #expect(near(row.dot.midY, 40 + 18 / 2, 0.001))
     }
 
     /// Displays sit side by side with `displayColumnGap` between them, so a name row that kept
@@ -383,7 +386,9 @@ struct StageGeometryTests {
     @Test("A name wider than the shell is clamped instead of reaching into the next display")
     func nameRowClampsALongName() {
         let width: CGFloat = 320
-        let row = StageGeometry.nameRowLayout(shellWidth: width, top: 0, nameWidth: 900, statusWidth: 42)
+        let row = StageGeometry.nameRowLayout(
+            shellWidth: width, top: 0, nameWidth: 900, statusWidth: 42, nameLineHeight: 18, statusLineHeight: 15
+        )
         #expect(row.dot.minX >= StageGeometry.nameRowSideMargin)
         #expect(row.status.maxX <= width - StageGeometry.nameRowSideMargin)
         // The status keeps its own width; the name is what gives.
