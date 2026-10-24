@@ -8,7 +8,7 @@ public enum GlassSegmentedShell: Sendable, Equatable {
     /// Edit Desk nav pill / library segment control (SCREENS S1): native glass shell,
     /// selected fill `.16`, item height 26 with horizontal padding 14, outer padding 3, gap 2.
     case editDesk
-    /// Icon-only display detail tabs, aligned with the 36pt toolbar groups.
+    /// Icon-only display detail tabs, as tall as the `GlassToolbarMetrics.height` groups beside them.
     case detail
 }
 
@@ -45,7 +45,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
                 segment(value)
             }
         }
-        .padding(shell == .detail ? DesignTokens.Spacing.xxs : (shell == .editDesk ? 3 : 2))
+        .padding(shell == .detail ? Self.detailInset : (shell == .editDesk ? 3 : 2))
 
         switch shell {
         case .glass:
@@ -53,8 +53,19 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         case .flat:
             row.background(Capsule().fill(Color.gray.opacity(0.18)))
         case .editDesk, .detail:
-            row.adaptiveGlassSurface(.capsule, interactive: true)
+            // One container so the selected glass samples the shell's glass instead of rendering over it blind.
+            AdaptiveGlassContainer {
+                row.adaptiveGlassSurface(.capsule, interactive: true)
+            }
         }
+    }
+
+    private static var detailInset: CGFloat {
+        DesignTokens.Spacing.xxs
+    }
+
+    private static var detailSegmentHeight: CGFloat {
+        GlassToolbarMetrics.height - 2 * detailInset
     }
 
     private func segment(_ value: Value) -> some View {
@@ -66,7 +77,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         } label: {
             label(value, isSelected)
                 .frame(maxWidth: shell == .editDesk || shell == .detail ? nil : .infinity)
-                .frame(width: shell == .detail ? 40 : nil, height: shell == .detail ? 28 : (shell == .editDesk ? 26 : nil))
+                .frame(width: shell == .detail ? 40 : nil, height: shell == .detail ? Self.detailSegmentHeight : (shell == .editDesk ? 26 : nil))
                 .padding(.horizontal, shell == .editDesk ? 14 : 0)
                 .padding(.vertical, shell == .editDesk || shell == .detail ? 0 : 3)
                 .background(selectionBacking(isSelected: isSelected))
@@ -77,14 +88,13 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         .modifier(SegmentName(name: segmentName?(value)))
     }
 
-    /// Edit Desk hands one capsule across the segments so the indicator slides rather than
-    /// cross-fading, which also keeps a single layer of glass over the stage behind it.
+    /// One capsule handed across the segments slides rather than cross-fading. Position stays with
+    /// `matchedGeometryEffect`: each page builds its own nav pill, and `glassEffectID` cannot morph across containers.
     @ViewBuilder
     private func selectionBacking(isSelected: Bool) -> some View {
         if shell == .editDesk || shell == .detail {
             if isSelected {
-                Capsule()
-                    .fill(segmentFill(isSelected: true))
+                AdaptiveGlassSelectionCapsule(fill: segmentFill(isSelected: true))
                     .matchedGeometryEffect(id: "selectedSegment", in: backingNamespace)
             }
         } else {

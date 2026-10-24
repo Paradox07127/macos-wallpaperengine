@@ -37,6 +37,26 @@ public struct AdaptiveGlassContainer<Content: View>: View {
     }
 }
 
+/// A segmented control's selected thumb: interactive glass tinted with `fill` on macOS 26,
+/// a plain `fill` capsule on 14/15 or with Reduce Transparency. Place it in the shell's container.
+public struct AdaptiveGlassSelectionCapsule: View {
+    private let fill: Color
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    public init(fill: Color) {
+        self.fill = fill
+    }
+
+    public var body: some View {
+        if #available(macOS 26.0, *), !reduceTransparency {
+            Color.clear.glassEffect(.regular.tint(fill).interactive(), in: .capsule)
+        } else {
+            Capsule().fill(fill)
+        }
+    }
+}
+
 public extension View {
     /// `stroked: false` suppresses the fallback path's own outline, for callers that
     /// already draw an edge on the same shape (else two hairlines on macOS 14/15).

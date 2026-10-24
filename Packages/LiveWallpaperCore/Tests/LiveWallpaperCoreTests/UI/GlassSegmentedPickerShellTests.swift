@@ -31,6 +31,23 @@ struct GlassSegmentedPickerShellTests {
     }
 
     @MainActor
+    @Test("The detail shell is as tall as the toolbar groups beside it")
+    func detailShellMatchesToolbarHeight() {
+        let picker = GlassSegmentedPicker(
+            selection: .constant("square.grid.2x2"),
+            values: ["square.grid.2x2", "list.bullet"],
+            shell: .detail,
+            label: { symbol, _ in Image(systemName: symbol) }
+        )
+        .fixedSize()
+        let measured = NSHostingView(rootView: picker).fittingSize
+        #expect(
+            abs(measured.height - GlassToolbarMetrics.height) < 0.5,
+            Comment(rawValue: "detail picker measures \(measured.height)pt, toolbar groups \(GlassToolbarMetrics.height)pt")
+        )
+    }
+
+    @MainActor
     @Test("Each icon segment reads as the name its caller passed")
     func iconSegmentsReadAsTheirNames() {
         let names = ["square.grid.2x2": "Wallpaper", "list.bullet": "Overlays"]
