@@ -57,8 +57,10 @@ struct WallpaperAutomationSheet: View {
     let library: SavedLibraryModel
     let size: CGSize
     private let initialConfiguration: ScreenConfiguration?
+    /// Bumped by the host each time its scrim or Escape asks to close.
+    let dismissRequests: Int
+    let close: () -> Void
     @Environment(ScreenManager.self) private var manager
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var queue: [WallpaperQueueEntry] = []
     @State private var slots: [ScheduleSlot] = []
@@ -84,12 +86,20 @@ struct WallpaperAutomationSheet: View {
     @State private var preview: (entryID: WallpaperQueueEntry.ID, switchSerial: Int?)?
     @State private var thumbnails = ShelfThumbnailCache()
     @State private var guide = PageGuideSession()
+    /// The draft as `load()` left it; nil until then.
+    @State private var loadedDraft: Draft?
+    @State private var confirmingDiscard = false
 
-    init(screen: Screen, library: SavedLibraryModel, size: CGSize, initialConfiguration: ScreenConfiguration? = nil) {
+    init(
+        screen: Screen, library: SavedLibraryModel, size: CGSize, initialConfiguration: ScreenConfiguration? = nil,
+        dismissRequests: Int, close: @escaping () -> Void
+    ) {
         self.screen = screen
         self.library = library
         self.size = size
         self.initialConfiguration = initialConfiguration
+        self.dismissRequests = dismissRequests
+        self.close = close
         _mode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
         _savedMode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
         _queue = State(initialValue: initialConfiguration?.effectiveWallpaperQueue ?? [])
@@ -99,6 +109,24 @@ struct WallpaperAutomationSheet: View {
 
     private enum PickTarget: Equatable {
         case queue, slot(UUID), fallback
+    }
+
+    /// The edits Save would commit.
+    private struct Draft: Equatable {
+        let mode: WallpaperMode
+        let queue: [WallpaperQueueEntry]
+        let slots: [ScheduleSlot]
+        let fallback: WallpaperQueueEntry?
+        let rotation: Int
+        let libraryRotation: Int
+        let shuffle: Bool
+    }
+
+    private var draft: Draft {
+        Draft(
+            mode: mode, queue: queue, slots: slots, fallback: fallback,
+            rotation: rotation, libraryRotation: libraryRotation, shuffle: shuffle
+        )
     }
 
     private var problem: SchedulePolicy.SlotProblem? {
@@ -284,14 +312,10 @@ struct WallpaperAutomationSheet: View {
 
             SheetFooterBar(
                 primaryTitle: saveTitle,
-                primaryAction: { save(); dismiss() },
+                primaryAction: { save(); close() },
                 primaryDisabled: mode == .schedule && (problem != nil || slotWithoutWallpaper != nil),
                 cancelTitle: "Cancel",
-                cancelAction: {
-                    preview = nil
-                    Self.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
-                    dismiss()
-                },
+                cancelAction: requestClose,
                 leading: {
                     if let error {
                         Text(verbatim: error)
@@ -329,6 +353,29 @@ struct WallpaperAutomationSheet: View {
             }
         }
         .appLanguagePopover(isPresented: $picking, arrowEdge: .bottom) { wallpaperPicker }
+        .onChange(of: dismissRequests) { requestClose() }
+        .alert("Discard changes to wallpaper automation?", isPresented: $confirmingDiscard) {
+            Button("Discard Changes", action: discardAndClose)
+            Button("Keep Editing", role: .cancel) {}
+        }
+    }
+
+    private func requestClose() {
+        // The host's scrim and Escape stay live while the guide is open; they belong to the guide then.
+        if guide.context != nil {
+            guide.close()
+        } else if draft == loadedDraft {
+            discardAndClose()
+        } else {
+            confirmingDiscard = true
+        }
+    }
+
+    /// Takes any "Preview on This Display" trial back off the desktop before closing.
+    private func discardAndClose() {
+        preview = nil
+        Self.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
+        close()
     }
 
     private var libraryShufflePage: some View {
@@ -897,6 +944,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func load() {
+        defer { loadedDraft = draft }
         guard let config = manager.getConfiguration(for: screen) ?? initialConfiguration else { return }
         mode = config.wallpaperMode
         savedMode = config.wallpaperMode

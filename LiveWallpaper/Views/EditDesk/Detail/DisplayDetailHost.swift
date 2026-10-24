@@ -55,6 +55,7 @@ struct DisplayDetailHost: View {
     @State private var schemeNameDraft = ""
     @State private var showSchemeCapture = false
     @State private var showAutomation = false
+    @State private var automationDismissRequests = 0
     @State private var overlayCopy: OverlayCopyRequest?
     @State private var pendingDestructive: PendingDestructive?
     /// Set by Manage Schemes and Choose from Library: their page opens once the tile is home, not under
@@ -123,7 +124,7 @@ struct DisplayDetailHost: View {
         ZStack {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
                 presentations(refreshes(detail(for: screen, id: id), for: screen), for: screen)
-                if !modalPresented, pageGuide?.context == nil {
+                if !modalPresented, !showAutomation, pageGuide?.context == nil {
                     Button(action: requestBack) { EmptyView() }
                         .keyboardShortcut(.cancelAction)
                         .opacity(0)
@@ -197,14 +198,18 @@ struct DisplayDetailHost: View {
                         .environment(screenManager)
                 }
             }
-            .sheet(isPresented: $showAutomation) {
+            .infoOverlay(isPresented: $showAutomation, onDismissRequest: { automationDismissRequests += 1 }, content: { dismiss in
                 if let library {
                     AppLanguageScope(defaults: .appScoped()) {
-                        WallpaperAutomationSheet(screen: screen, library: library, size: ModalGeometry.panelFrame(in: stage.stageSize).size, initialConfiguration: screenManager.getConfiguration(for: screen))
-                            .environment(screenManager)
+                        WallpaperAutomationSheet(
+                            screen: screen, library: library, size: ModalGeometry.panelFrame(in: stage.stageSize).size,
+                            initialConfiguration: screenManager.getConfiguration(for: screen),
+                            dismissRequests: automationDismissRequests, close: dismiss
+                        )
+                        .environment(screenManager)
                     }
                 }
-            }
+            })
             .confirmDestructive($pendingDestructive)
             .confirmationDialog(
                 "Copy overlays to other displays?",

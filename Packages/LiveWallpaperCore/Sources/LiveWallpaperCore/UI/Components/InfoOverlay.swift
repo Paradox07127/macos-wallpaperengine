@@ -11,9 +11,11 @@ public extension View {
         item: Binding<Item?>,
         @ViewBuilder content: @escaping (Item, @escaping () -> Void) -> some View
     ) -> some View {
-        modifier(InfoOverlayModifier(
+        let dismiss = { item.wrappedValue = nil }
+        return modifier(InfoOverlayModifier(
             isShown: item.wrappedValue != nil,
-            dismiss: { item.wrappedValue = nil },
+            dismiss: dismiss,
+            requestDismiss: dismiss,
             overlayContent: { dismiss in
                 if let value = item.wrappedValue {
                     content(value, dismiss)
@@ -22,14 +24,18 @@ public extension View {
         ))
     }
 
-    /// Boolean-gated counterpart of `infoOverlay(item:content:)`.
+    /// Boolean-gated counterpart of `infoOverlay(item:content:)`. `onDismissRequest`: nil = the scrim and
+    /// Escape close the overlay; otherwise they only call it and the content calls its dismissal itself.
     func infoOverlay(
         isPresented: Binding<Bool>,
+        onDismissRequest: (() -> Void)? = nil,
         @ViewBuilder content: @escaping (@escaping () -> Void) -> some View
     ) -> some View {
-        modifier(InfoOverlayModifier(
+        let dismiss = { isPresented.wrappedValue = false }
+        return modifier(InfoOverlayModifier(
             isShown: isPresented.wrappedValue,
-            dismiss: { isPresented.wrappedValue = false },
+            dismiss: dismiss,
+            requestDismiss: onDismissRequest ?? dismiss,
             overlayContent: content
         ))
     }
@@ -38,6 +44,7 @@ public extension View {
 private struct InfoOverlayModifier<OverlayContent: View>: ViewModifier {
     let isShown: Bool
     let dismiss: () -> Void
+    let requestDismiss: () -> Void
     @ViewBuilder let overlayContent: (@escaping () -> Void) -> OverlayContent
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -46,7 +53,7 @@ private struct InfoOverlayModifier<OverlayContent: View>: ViewModifier {
         content
             .overlay {
                 if isShown {
-                    InfoOverlayHost(dismiss: dismiss, content: overlayContent)
+                    InfoOverlayHost(dismiss: dismiss, requestDismiss: requestDismiss, content: overlayContent)
                         // Opacity only: the scrim spans the window, so scaling the host
                         // would pull its edges inward and reveal the content behind it.
                         .transition(.opacity)
@@ -64,6 +71,8 @@ private struct InfoOverlayModifier<OverlayContent: View>: ViewModifier {
 
 private struct InfoOverlayHost<Content: View>: View {
     let dismiss: () -> Void
+    /// What the scrim and Escape call.
+    let requestDismiss: () -> Void
     @ViewBuilder let content: (@escaping () -> Void) -> Content
 
     @Environment(\.colorScheme) private var colorScheme
@@ -86,7 +95,7 @@ private struct InfoOverlayHost<Content: View>: View {
             // close/minimise/zoom buttons. A real sheet leaves the titlebar alone too.
             Color.black.opacity(scrimOpacity)
                 .contentShape(Rectangle())
-                .onTapGesture(perform: dismiss)
+                .onTapGesture(perform: requestDismiss)
 
             content(dismiss)
                 // An overlay is proposed the whole window, where a sheet would have sized
@@ -104,7 +113,7 @@ private struct InfoOverlayHost<Content: View>: View {
                 // Zero-sized rather than `.hidden()`: a hidden view stops taking key
                 // equivalents, and Escape is the half of the contract the scrim can't cover.
                 .background {
-                    Button(action: dismiss) { EmptyView() }
+                    Button(action: requestDismiss) { EmptyView() }
                         .keyboardShortcut(.cancelAction)
                         .opacity(0)
                         .frame(width: 0, height: 0)
