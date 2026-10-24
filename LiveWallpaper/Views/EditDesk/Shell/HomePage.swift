@@ -672,7 +672,8 @@ struct HomePage: View {
         #if LITE_BUILD
         ModalActions(
             library: library, screenManager: screenManager, thumbnails: thumbnails, undo: undo,
-            exportService: exportService, apply: applyFromModal, applyToAll: applyAllFromModal
+            exportService: exportService, confirm: { pendingDestructive = $0 },
+            apply: applyFromModal, applyToAll: applyAllFromModal
         )
         #else
         if let doctor {
@@ -685,7 +686,7 @@ struct HomePage: View {
         return ModalActions(
             inputs: .live(library: library, screenManager: screenManager), bookmarks: .shared,
             thumbnails: thumbnails, undo: undo, exportService: exportService,
-            apply: applyFromModal, applyToAll: applyAllFromModal
+            confirm: { pendingDestructive = $0 }, apply: applyFromModal, applyToAll: applyAllFromModal
         )
         #endif
     }

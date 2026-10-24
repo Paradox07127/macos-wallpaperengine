@@ -59,10 +59,13 @@ final class ModalActions {
     private let libraryBookmarks: LibraryBookmarkStore
     /// nil offers no System Wallpaper rows.
     private let exportService: WallpaperExportService?
+    /// Shows the presenter's confirmation; the action runs only from its confirm button.
+    private let confirm: @MainActor (PendingDestructive) -> Void
 
     init(
         inputs: Inputs, bookmarks: BookmarkStore, thumbnails: ShelfThumbnailCache, undo: EditDeskUndoStack? = nil,
         libraryBookmarks: LibraryBookmarkStore = .shared, exportService: WallpaperExportService? = nil,
+        confirm: @escaping @MainActor (PendingDestructive) -> Void = { $0.perform() },
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
         applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
@@ -72,6 +75,7 @@ final class ModalActions {
         self.undo = undo
         self.libraryBookmarks = libraryBookmarks
         self.exportService = exportService
+        self.confirm = confirm
         self.apply = apply
         self.applyToAll = applyToAll
     }
@@ -80,12 +84,13 @@ final class ModalActions {
     convenience init(
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
         undo: EditDeskUndoStack?, exportService: WallpaperExportService?,
+        confirm: @escaping @MainActor (PendingDestructive) -> Void,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
         applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
         self.init(
             inputs: .live(library: library, screenManager: screenManager), bookmarks: .shared, thumbnails: thumbnails,
-            undo: undo, exportService: exportService, apply: apply, applyToAll: applyToAll
+            undo: undo, exportService: exportService, confirm: confirm, apply: apply, applyToAll: applyToAll
         )
     }
     #else
@@ -143,7 +148,7 @@ final class ModalActions {
         }
         self.init(
             inputs: inputs, bookmarks: store, thumbnails: thumbnails, undo: undo, libraryBookmarks: libraryBookmarks,
-            exportService: exportService, apply: apply, applyToAll: applyToAll
+            exportService: exportService, confirm: confirm, apply: apply, applyToAll: applyToAll
         )
     }
     #endif
@@ -349,9 +354,12 @@ final class ModalActions {
            case let .bookmark(bookmark) = item.source, case .video = bookmark.content {
             let published = exportService.isPublished(bookmarkID: bookmark.id)
             actions.isInSystemWallpaper = published
-            actions.toggleSystemWallpaper = {
+            actions.toggleSystemWallpaper = { [self] in
                 if published {
-                    try? exportService.remove(itemID: bookmark.id.uuidString)
+                    let itemID = bookmark.id.uuidString
+                    confirm(PendingDestructive(
+                        .removeSystemWallpaper(title: item.title, isInUse: exportService.isItemInUse(itemID))
+                    ) { try? exportService.remove(itemID: itemID) })
                 } else {
                     Task { try? await exportService.publish(bookmark: bookmark) }
                 }

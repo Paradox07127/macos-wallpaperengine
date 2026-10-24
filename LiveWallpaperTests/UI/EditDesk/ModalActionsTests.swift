@@ -249,6 +249,44 @@ struct ModalActionsTests {
         #expect(!withoutService.contains(add), "a library without the export service offers System Wallpaper")
     }
 
+    @Test("Taking a video out of System Wallpaper waits for the confirmation")
+    func removingFromSystemWallpaperConfirmsFirst() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModalActionsTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let published = video()
+        let manifest = SystemWallpaperManifest(version: SystemWallpaperManifest.currentVersion, items: [
+            .init(id: published.id.uuidString, title: "Video", fileName: "video.mov", thumbnailFileName: nil, addedAt: .distantPast),
+        ])
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try SystemWallpaperCoding.encoder.encode(manifest).write(to: root.appendingPathComponent("manifest.json"))
+        let service = WallpaperExportService(dependencies: .init(
+            sharedRoot: root, resolver: .live, now: Date.init, makeThumbnailJPEG: { _ in nil }
+        ))
+        var pending: [PendingDestructive] = []
+        let fixture = Fixture()
+        let modal = ModalActions(
+            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(),
+            exportService: service, confirm: { pending.append($0) }, apply: { _, _ in }, applyToAll: { _, _ in }
+        )
+        let remove = String(localized: "Remove from System Wallpaper", bundle: .appLanguage)
+        let row = try #require(
+            modal.menuItems(for: item(published), requestRename: {}, requestDelete: {}).flatMap(\.self)
+                .first { $0.title == remove }
+        )
+
+        row.action()
+        #expect(service.isPublished(bookmarkID: published.id), "the row removed the video before any confirmation")
+        let confirmation = try #require(pending.first, "the row asked for no confirmation")
+        guard case let .removeSystemWallpaper(title, _) = confirmation.action else {
+            Issue.record("the confirmation is not the System Wallpaper removal")
+            return
+        }
+        #expect(title == published.label)
+        confirmation.perform()
+        #expect(!service.isPublished(bookmarkID: published.id), "confirming left the video in System Wallpaper")
+    }
+
     @Test("An aerial and a web page say where they live; an aerial has no import date or source row")
     func fileFactsNameTheSource() async throws {
         let modal = Fixture().modal()
