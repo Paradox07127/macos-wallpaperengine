@@ -5,9 +5,9 @@ import SwiftUI
 struct AgentFolderAccessSection: View {
     @AppStorage("Monitor.AuthorizationExpanded", store: .appScoped()) private var isAuthorizationExpanded = true
 
+    @Environment(\.openAgentActivity) private var openAgentActivity
     @State private var claudeAuthorized = false
     @State private var codexAuthorized = false
-    @State private var showsAgentActivity = false
 
     var body: some View {
         GroupBox {
@@ -23,16 +23,11 @@ struct AgentFolderAccessSection: View {
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
         .onAppear(perform: refreshAuthorizationState)
-        .sheet(isPresented: $showsAgentActivity) {
-            AppLanguageScope(defaults: .appScoped()) {
-                AgentActivityPanel()
-            }
-        }
     }
 
     @ViewBuilder
     private var authorizationRows: some View {
-        Button("Open Agent Activity") { showsAgentActivity = true }
+        Button("Open Agent Activity") { openAgentActivity() }
             .buttonStyle(.bordered)
         authorizationRow(
             title: "Claude Folder",
@@ -122,5 +117,32 @@ struct AgentFolderAccessSection: View {
 
     private func hostWindow() -> NSWindow? {
         NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first
+    }
+}
+
+extension EnvironmentValues {
+    /// Installed by `agentActivityOverlay()`; does nothing outside such a host.
+    @Entry var openAgentActivity: @MainActor () -> Void = {}
+}
+
+extension View {
+    /// Hosts the Agent Activity panel over this view. Apply it to the whole page: the panel is wider
+    /// than the inspector column holding the button, and an overlay only covers the view it modifies.
+    func agentActivityOverlay() -> some View {
+        modifier(AgentActivityOverlay())
+    }
+}
+
+private struct AgentActivityOverlay: ViewModifier {
+    @State private var isShown = false
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.openAgentActivity) { isShown = true }
+            .infoOverlay(isPresented: $isShown) { close in
+                AppLanguageScope(defaults: .appScoped()) {
+                    AgentActivityPanel(onDismiss: close)
+                }
+            }
     }
 }

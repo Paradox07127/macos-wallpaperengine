@@ -5,8 +5,8 @@ import SwiftUI
 /// Inspects on open; repair only acts on the reviewed report, so the sheet never removes anything the user has not seen.
 @available(macOS 26.0, *)
 struct SystemWallpaperRegistrationSheet: View {
-    @Environment(\.dismiss) private var dismiss
     let service: WallpaperExportService
+    let onDismiss: () -> Void
     @State private var confirmsRepair = false
 
     private var maintenance: SystemWallpaperMaintenanceController {
@@ -99,7 +99,7 @@ struct SystemWallpaperRegistrationSheet: View {
                 primaryAction: { confirmsRepair = true },
                 primaryDisabled: maintenance.isBusy || report?.outcome != .inspected,
                 cancelTitle: "Done",
-                cancelAction: { dismiss() },
+                cancelAction: onDismiss,
                 leading: {
                     Button("Copy Report", action: copyReport)
                         .disabled(report == nil)

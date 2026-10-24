@@ -439,8 +439,8 @@ struct LocalizationCoverageTests {
             }
         }
 
-        // Steam setup now uses the dismissible infoOverlay; 20 native presentations remain.
-        #expect(presentations >= 20, "Only \(presentations) popovers and sheets matched — the scan stopped working")
+        // One below the 19 native sheets left, so one more can move to infoOverlay without touching this floor.
+        #expect(presentations >= 18, "Only \(presentations) popovers and sheets matched — the scan stopped working")
         #expect(offenders.isEmpty, "\(offenders.count) without AppLanguageScope: \(offenders.joined(separator: "; "))")
     }
 

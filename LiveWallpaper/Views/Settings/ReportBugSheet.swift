@@ -5,8 +5,6 @@ struct ReportBugSheet: View {
     let report: BugReport
     var onDismiss: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
-
     @State private var sanitizedLogURL: URL?
     @State private var browserFailed = false
     @State private var copied = false
@@ -95,16 +93,12 @@ struct ReportBugSheet: View {
             primaryAction: {
                 if BugReporter.openIssueInBrowser(report.issueURL) {
                     onDismiss()
-                    dismiss()
                 } else {
                     browserFailed = true
                 }
             },
             cancelTitle: "Cancel",
-            cancelAction: {
-                onDismiss()
-                dismiss()
-            }
+            cancelAction: onDismiss
         ) {
             #if !LITE_BUILD
             Button {

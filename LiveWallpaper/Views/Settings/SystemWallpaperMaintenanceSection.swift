@@ -4,7 +4,8 @@ import SwiftUI
 @available(macOS 26.0, *)
 struct SystemWallpaperMaintenanceSection: View {
     let service: WallpaperExportService
-    @State private var showingRegistrations = false
+    /// Owned by the settings page, which hosts the registrations overlay over the whole form.
+    @Binding var showingRegistrations: Bool
     private var maintenance: SystemWallpaperMaintenanceController {
         service.maintenance
     }
@@ -62,11 +63,6 @@ struct SystemWallpaperMaintenanceSection: View {
             }
         } header: {
             SettingsSearchSectionHeader("Maintenance", anchor: .systemWallpaperMaintenance)
-        }
-        .sheet(isPresented: $showingRegistrations) {
-            AppLanguageScope(defaults: .appScoped()) {
-                SystemWallpaperRegistrationSheet(service: service)
-            }
         }
     }
 }

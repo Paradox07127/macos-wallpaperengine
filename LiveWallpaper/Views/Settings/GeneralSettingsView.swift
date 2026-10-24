@@ -212,16 +212,14 @@ struct GeneralSettingsView: View {
                     diagnosticsExportErrorMessage = error.localizedDescription
                 }
             }
-            .sheet(item: $pendingBugReport) { report in
+            .infoOverlay(item: $pendingBugReport) { report, close in
                 AppLanguageScope(defaults: .appScoped()) {
-                    ReportBugSheet(report: report) {
-                        pendingBugReport = nil
-                    }
+                    ReportBugSheet(report: report, onDismiss: close)
                 }
             }
-            .sheet(isPresented: $showAppExceptions) {
+            .infoOverlay(isPresented: $showAppExceptions) { close in
                 AppLanguageScope(defaults: .appScoped()) {
-                    AppExceptionsSheet(rules: $applicationRules, onChange: updateGlobalSettings)
+                    AppExceptionsSheet(rules: $applicationRules, onChange: updateGlobalSettings, onDismiss: close)
                 }
             }
     }

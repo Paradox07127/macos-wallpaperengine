@@ -6,21 +6,13 @@ import UniformTypeIdentifiers
 struct AppExceptionsSheet: View {
     @Binding var rules: [ApplicationPerformanceRule]
     let onChange: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             header
             content
             footer
-        }
-        .background {
-            Button("Close") { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
         }
         .frame(minWidth: 480, idealWidth: 540, maxWidth: 720, minHeight: 340, idealHeight: 440, maxHeight: 640)
     }
@@ -80,7 +72,7 @@ struct AppExceptionsSheet: View {
     private var footer: some View {
         SheetFooterBar(
             primaryTitle: "Done",
-            primaryAction: { dismiss() }
+            primaryAction: onDismiss
         ) {
             GlassIconButton("plus", size: .regular) {
                 addApp()

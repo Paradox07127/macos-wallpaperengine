@@ -4,7 +4,7 @@ import SwiftUI
 
 struct AgentActivityPanel: View {
     private let observesLiveSources: Bool
-    @Environment(\.dismiss) private var dismiss
+    private let onDismiss: () -> Void
     @State private var snapshot = MonitorSnapshot()
     @State private var search = ""
     @State private var provider = "all"
@@ -14,11 +14,12 @@ struct AgentActivityPanel: View {
     @State private var paused = false
     @State private var displayTime: Double
 
-    init(snapshot: MonitorSnapshot = MonitorSnapshot(), observesLiveSources: Bool = true) {
+    init(snapshot: MonitorSnapshot = MonitorSnapshot(), observesLiveSources: Bool = true, onDismiss: @escaping () -> Void = {}) {
         _snapshot = State(initialValue: snapshot)
         _selectedID = State(initialValue: snapshot.agents?.first?.id)
         _displayTime = State(initialValue: snapshot.timestamp)
         self.observesLiveSources = observesLiveSources
+        self.onDismiss = onDismiss
     }
 
     private var sessions: [MonitorAgentSessionState] {
@@ -40,18 +41,11 @@ struct AgentActivityPanel: View {
                 sessionList.frame(minWidth: 260, idealWidth: 290, maxWidth: 360)
                 detail.frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
             }
-            SheetFooterBar(primaryTitle: "Done", primaryAction: { dismiss() }, leading: {
+            SheetFooterBar(primaryTitle: "Done", primaryAction: onDismiss, leading: {
                 Toggle("Pause display", isOn: $paused)
                     .toggleStyle(.checkbox)
                 Spacer()
             })
-        }
-        .background {
-            Button("Close") { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
         }
         .frame(width: 860, height: 620)
         .background(DesignTokens.Colors.pageBackground)

@@ -4,9 +4,9 @@ import SwiftUI
 
 /// All entry points share the app-lifetime coordinator and serial queue.
 struct WorkshopDownloadsSheet: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(SteamCMDDoctorService.self) private var doctor
     let onConnectSteam: () -> Void
+    let onDismiss: () -> Void
     @State private var downloads = WorkshopDownloadCoordinator.shared
     @State private var queue = WorkshopDownloadQueue.shared
 
@@ -15,7 +15,7 @@ struct WorkshopDownloadsSheet: View {
             SteamSheetHeader(icon: "arrow.down.circle", title: "Downloads")
                 .padding(DesignTokens.Spacing.xl)
             SteamDownloadBlockerBanner {
-                dismiss()
+                onDismiss()
                 onConnectSteam()
             }
             .padding([.horizontal, .bottom], DesignTokens.Spacing.xl)
@@ -35,9 +35,10 @@ struct WorkshopDownloadsSheet: View {
                     }
                     .padding(.horizontal, DesignTokens.Spacing.xl)
                 }
-                .frame(maxHeight: 420)
+                // A fixed height, not a cap: the overlay card is laid out at its ideal size, which a scroll view does not have.
+                .frame(height: 420)
             }
-            SheetFooterBar(primaryTitle: "Done", primaryAction: { dismiss() })
+            SheetFooterBar(primaryTitle: "Done", primaryAction: onDismiss)
         }
         .frame(width: SteamSheetWidth.dense)
         .background(DesignTokens.Colors.pageBackground)

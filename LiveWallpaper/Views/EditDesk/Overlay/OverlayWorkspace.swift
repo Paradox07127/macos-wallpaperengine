@@ -88,6 +88,7 @@ struct OverlayWorkspace: View {
         .pageGuideTarget(.overlayCanvas)
         .coordinateSpace(name: Self.dragSpace)
         .overlay(alignment: .topLeading) { ghost }
+        .agentActivityOverlay()
         .animation(Self.panelAnimation(reduceMotion: reduceMotion), value: layersVisible)
         .animation(Self.panelAnimation(reduceMotion: reduceMotion), value: addExpanded)
         .onChange(of: session.selection) { _, selection in

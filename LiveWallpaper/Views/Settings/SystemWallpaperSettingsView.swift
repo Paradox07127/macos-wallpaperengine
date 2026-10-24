@@ -7,6 +7,7 @@ struct SystemWallpaperSettingsView: View {
     @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
     @Environment(\.locale) private var locale
     @State private var pendingDestructive: PendingDestructive?
+    @State private var showingRegistrations = false
     #if !LITE_BUILD
     @AppStorage(SystemWallpaperFollowPreferences.sceneMode, store: .appScoped())
     private var sceneMode: SystemWallpaperPreparationOptions.SceneMode = .live
@@ -92,9 +93,14 @@ struct SystemWallpaperSettingsView: View {
                 SettingsSearchSectionHeader("Storage", anchor: .systemWallpaperStorage)
             }
 
-            SystemWallpaperMaintenanceSection(service: service)
+            SystemWallpaperMaintenanceSection(service: service, showingRegistrations: $showingRegistrations)
         }
         .settingsFormChrome()
+        .infoOverlay(isPresented: $showingRegistrations) { close in
+            AppLanguageScope(defaults: .appScoped()) {
+                SystemWallpaperRegistrationSheet(service: service, onDismiss: close)
+            }
+        }
         .confirmDestructive($pendingDestructive)
         .onAppear { service.refresh() }
         .task { service.startObservingSharedRoot() }

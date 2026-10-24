@@ -83,9 +83,9 @@ struct WorkshopPage: View {
                 presentedItemID = nil
             }
         }
-        // Before the sheets modifier, so the wizard overlay itself stays enabled.
-        .disabled(isShowingWizard)
-        .accessibilityHidden(isShowingWizard)
+        // Before the sheets modifier, so the overlays themselves stay enabled.
+        .disabled(isShowingWizard || isShowingDownloads)
+        .accessibilityHidden(isShowingWizard || isShowingDownloads)
         .modifier(WorkshopPageSheets(page: self))
     }
 
@@ -115,7 +115,7 @@ struct WorkshopPage: View {
         let countText = Text(verbatim: activeCount.formatted())
         let failedText = Text("Download failed")
         return GlassIconButton("arrow.down", prominence: tint == nil ? .regular : .prominent, tint: tint) {
-            isShowingDownloads = true
+            presentDownloads()
         }
         // Activity owns the tint, so a failure needs its own mark to stay visible while other items download.
         .overlay(alignment: .topTrailing) {
@@ -168,9 +168,9 @@ struct WorkshopPage: View {
                         SteamWizard(onDismiss: close)
                     }
                 }
-                .sheet(isPresented: page.$isShowingDownloads) {
+                .infoOverlay(isPresented: page.$isShowingDownloads) { close in
                     AppLanguageScope(defaults: .appScoped()) {
-                        WorkshopDownloadsSheet(onConnectSteam: page.presentWizard)
+                        WorkshopDownloadsSheet(onConnectSteam: page.presentWizard, onDismiss: close)
                     }
                 }
                 .sheet(isPresented: page.$isShowingPasteSheet) {
@@ -235,8 +235,15 @@ struct WorkshopPage: View {
 
     // MARK: Actions
 
+    /// The wizard and the downloads overlay share one layer, so opening either closes the other.
     private func presentWizard() {
+        isShowingDownloads = false
         isShowingWizard = true
+    }
+
+    private func presentDownloads() {
+        isShowingWizard = false
+        isShowingDownloads = true
     }
 
     private func presentPasteFlow() {
