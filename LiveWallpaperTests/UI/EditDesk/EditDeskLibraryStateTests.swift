@@ -42,7 +42,8 @@ struct EditDeskLibraryStateTests {
             // A field editor left active takes real keystrokes typed elsewhere during the awaits below.
             try #require(window.makeFirstResponder(nil), "control: the search field never ended editing")
             // Select Name through the real native sort menu.
-            let picked = await Self.pickSort(row: 1, in: window, rowMidY: field.convert(field.bounds, to: nil).midY)
+            let nameRow = try #require(SavedLibraryModel.Sort.allCases.firstIndex(of: .name))
+            let picked = await Self.pickSort(row: nameRow, in: window, rowMidY: field.convert(field.bounds, to: nil).midY)
             try #require(picked, "the native sort menu never delivered the Name selection")
             let filtered = await Self.settle(window) { shelf() == ["S4b Alpha", "S4b Beta"] }
             try #require(filtered, Comment(rawValue: "control: Recent, S4b, by name never showed — the shelf is \(shelf())"))

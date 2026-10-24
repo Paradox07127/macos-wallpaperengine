@@ -82,7 +82,7 @@ struct TopBarBudgetTests {
 
     private static let sortOrders = SavedLibraryModel.Sort.allCases
     /// No filter, then every filter whose name the sort button carries after the sort's.
-    private static let filters: [SavedLibraryModel.Filter?] = [nil, .unsupported, .storage(.managed), .storage(.linked)]
+    private static let filters: [SavedLibraryModel.Filter?] = [nil] + SavedLibraryModel.Filter.menuOrder
 
     /// The real filter row laid out in one language: the glass controls have no size to add up.
     @MainActor
@@ -96,6 +96,7 @@ struct TopBarBudgetTests {
             stage: EditDeskStageModel(),
             sort: .constant(sort),
             filter: .constant(filter),
+            filterCount: { _ in 0 },
             onImport: {}
         )
         return NSHostingView(rootView: row.environment(\.locale, Locale(identifier: language))).fittingSize
@@ -109,10 +110,12 @@ struct TopBarBudgetTests {
             Self.filterRow(language: "es", sort: .recentlyUsed).width > Self.filterRow(language: "en", sort: .recentlyUsed).width,
             "control: the row did not lay out in Spanish, so every language below measured English"
         )
+        #if !LITE_BUILD
         #expect(
-            Self.filterRow(language: "en", sort: .name, filter: .unsupported).width > Self.filterRow(language: "en", sort: .name).width,
+            Self.filterRow(language: "en", sort: .name, filter: .cantRun).width > Self.filterRow(language: "en", sort: .name).width,
             "control: the sort button did not carry the filter's name, so no row below measured one"
         )
+        #endif
         for language in Self.languages {
             let widths = Self.sortOrders.flatMap { sort in Self.filters.map { Self.filterRow(language: language, sort: sort, filter: $0).width } }
             let needed = try #require(widths.max())
@@ -144,6 +147,7 @@ struct TopBarBudgetTests {
                     stage: stage,
                     sort: .constant(.recentlyUsed),
                     filter: .constant(nil),
+                    filterCount: { _ in 0 },
                     onImport: {}
                 )
                 AerialsSourceControls()

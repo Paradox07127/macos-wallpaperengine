@@ -386,6 +386,13 @@ struct SavedLibraryModelTests {
         #expect(model.visibleItems.map(\.title) == ["alpha", "Beta", "zebra"])
     }
 
+    @Test("Name puts numbers in natural order, as Finder does")
+    func nameSortPutsNumbersInNaturalOrder() {
+        let model = SavedLibraryModel(inputs: inputs([bookmark("X 10"), bookmark("X 2"), bookmark("x 1")]))
+        model.sort = .name
+        #expect(model.visibleItems.map(\.title) == ["x 1", "X 2", "X 10"])
+    }
+
     @Test func typeSortUsesKindThenName() {
         var web = bookmark("A web", used: 1)
         web.content = .html(source: .url(URL(fileURLWithPath: "/web")), config: .init())
@@ -429,6 +436,15 @@ struct SavedLibraryModelTests {
         let model = SavedLibraryModel(inputs: inputs([bookmark(title), bookmark("Alpha")]))
         model.query = "seaside"
         #expect(model.visibleItems.map(\.title) == [title], "the row is not found by its translated name")
+    }
+
+    @Test("Name sorts by the name the card shows, its translation when there is one")
+    func nameSortUsesTheDisplayedName() {
+        let title = "黄昏的灯塔"
+        WPEPropertyLabelTranslator.wallpaperNames.store([(title, "Amber lighthouse")])
+        let model = SavedLibraryModel(inputs: inputs([bookmark("Mike"), bookmark(title)]))
+        model.sort = .name
+        #expect(model.visibleItems.map(\.title) == [title, "Mike"], "the order follows the untranslated name")
     }
     #endif
 
@@ -824,10 +840,14 @@ struct SavedLibraryModelTests {
         }
     }
 
-    private func origin(_ id: String, type: WPEType = .scene, location: WPEResourceLocation? = nil) -> WPEOrigin {
+    private func origin(
+        _ id: String, type: WPEType = .scene, location: WPEResourceLocation? = nil,
+        missing: [String] = [], windowsPlugin: Bool = false
+    ) -> WPEOrigin {
         WPEOrigin(
             workshopID: id, title: "Installed \(id)", originalType: type,
-            sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil, resourceLocation: location
+            sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil, resourceLocation: location,
+            missingDependencyIDs: missing, requiresWindowsPlugin: windowsPlugin
         )
     }
 
@@ -1179,8 +1199,8 @@ struct SavedLibraryModelTests {
         }
     }
 
-    @Test("Needs Update puts the projects with an update first, then sorts by name")
-    func needsUpdateSortPutsUpdatedProjectsFirst() {
+    @Test("Needs Update keeps only the projects with an update")
+    func needsUpdateFilterKeepsUpdatedProjects() {
         var source = inputs([bookmark("Saved", used: 5)])
         source.history = {
             [
@@ -1190,8 +1210,39 @@ struct SavedLibraryModelTests {
         }
         let model = SavedLibraryModel(inputs: source)
         model.updatedWorkshopIDs = ["456"]
-        model.sort = .needsUpdate
-        #expect(model.visibleItems.map(\.title) == ["Installed 456", "Installed 123", "Saved"])
+        model.filter = .needsUpdate
+        #expect(model.visibleItems.map(\.id) == ["workshop:456"])
+    }
+
+    @Test("Each filter counts the rows it would list under the current chip and search")
+    func filterCountsFollowTheChipAndSearch() {
+        var source = inputs([bookmark("Saved")])
+        source.history = {
+            [
+                WPEHistoryEntry(origin: origin("123", location: .cache), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("456", location: .sourceFolder), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("plugin", location: .cache, windowsPlugin: true), importedAt: .distantPast),
+            ]
+        }
+        let model = SavedLibraryModel(inputs: source)
+        model.updatedWorkshopIDs = ["123", "456"]
+        #expect(SavedLibraryModel.Filter.menuOrder.map { model.count(of: $0) } == [2, 1, 2, 1])
+        model.query = "456"
+        #expect(SavedLibraryModel.Filter.menuOrder.map { model.count(of: $0) } == [1, 0, 0, 1])
+        model.query = ""
+        model.chip = .steam
+        #expect(SavedLibraryModel.Filter.menuOrder.map { model.count(of: $0) } == [2, 0, 1, 1], "a filter counted rows the chip hides")
+        model.filter = .needsUpdate
+        #expect(model.count(of: .needsUpdate) == model.visibleItems.count)
+    }
+
+    @Test("Date Added lists the newest first, ties by name, and aerials last")
+    func dateAddedSortListsNewestFirst() {
+        var source = inputs([bookmark("Old", created: 1), bookmark("B new", created: 3), bookmark("A new", created: 3)], aerials: [aerial()])
+        source.history = { [WPEHistoryEntry(origin: origin("123"), importedAt: Date(timeIntervalSince1970: 2))] }
+        let model = SavedLibraryModel(inputs: source)
+        model.sort = .dateAdded
+        #expect(model.visibleItems.map(\.title) == ["A new", "B new", "Installed 123", "Old", "sky"])
     }
 
     @Test("The linked-folder filter keeps only installed projects outside the app's copy")
@@ -1201,21 +1252,50 @@ struct SavedLibraryModelTests {
             [
                 WPEHistoryEntry(origin: origin("123", location: .cache), importedAt: .distantPast),
                 WPEHistoryEntry(origin: origin("456", location: .sourceFolder), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("789", location: .unsupported), importedAt: .distantPast),
             ]
         }
         let model = SavedLibraryModel(inputs: source)
         model.filter = .storage(.linked)
-        #expect(model.visibleItems.map(\.id) == ["workshop:456"])
+        #expect(model.visibleItems.map(\.id) == ["workshop:456"], "a project with no folder to run from counts as linked")
     }
 
-    @Test("The Unsupported filter keeps only the project types this Mac cannot run")
-    func unsupportedFilterKeepsUnsupportedProjects() {
-        let types: [WPEType] = [.video, .web, .scene, .application, .unknown]
+    @Test("Can't Run keeps the projects this Mac cannot run: their type, a Windows plugin, missing dependencies or no runnable files")
+    func cantRunFilterKeepsProjectsThatCannotRun() {
         var source = inputs([bookmark("Saved")])
-        source.history = { types.map { WPEHistoryEntry(origin: origin($0.rawValue, type: $0), importedAt: .distantPast) } }
+        source.history = {
+            [
+                WPEHistoryEntry(origin: origin("ok", location: .cache), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("web", type: .web, location: .sourceFolder), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("application", type: .application, location: .cache), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("unknown", type: .unknown, location: .cache), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("plugin", location: .cache, windowsPlugin: true), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("dependency", location: .cache, missing: ["9"]), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("files", location: .unsupported), importedAt: .distantPast),
+            ]
+        }
         let model = SavedLibraryModel(inputs: source)
-        model.filter = .unsupported
-        #expect(Set(model.visibleItems.map(\.id)) == ["workshop:application", "workshop:unknown"])
+        model.filter = .cantRun
+        #expect(Set(model.visibleItems.map(\.id)) == [
+            "workshop:application", "workshop:unknown", "workshop:plugin", "workshop:dependency", "workshop:files",
+        ])
+        #expect(model.items.first { $0.id == "workshop:plugin" }?.statusBadge == nil, "a plugin project took the badge for a type this Mac cannot run")
+    }
+
+    @Test("Size counts an installed scene or web project's saved folder size alongside probed video files")
+    func sizeSortCountsInstalledProjectFolders() {
+        var source = inputs([bookmark("Clip")])
+        source.metadata = { _ in .video(.init(resolution: nil, isHDR: false, duration: nil, fileSize: 100, probedAt: .distantPast)) }
+        source.history = {
+            [
+                WPEHistoryEntry(origin: origin("unknown", location: .cache), importedAt: .distantPast),
+                WPEHistoryEntry(origin: origin("small", type: .web, location: .sourceFolder), importedAt: .distantPast, sizeBytes: 50),
+                WPEHistoryEntry(origin: origin("big", location: .cache), importedAt: .distantPast, sizeBytes: 500),
+            ]
+        }
+        let model = SavedLibraryModel(inputs: source)
+        model.sort = .size
+        #expect(model.visibleItems.map(\.title) == ["Installed big", "Clip", "Installed small", "Installed unknown"])
     }
 
     @Test("A Workshop video row names the video it plays; a scene row names none")

@@ -26,6 +26,8 @@ struct LibraryChipsRow: View {
     let stage: EditDeskStageModel
     @Binding var sort: SavedLibraryModel.Sort
     @Binding var filter: SavedLibraryModel.Filter?
+    /// The rows each filter would list under the current chip and search.
+    let filterCount: (SavedLibraryModel.Filter) -> Int
     let onImport: () -> Void
     /// True shows Add to Library on the shelf too: with an empty library the shelf has nothing else to click.
     var keepsImportOnShelf = false
@@ -51,8 +53,12 @@ struct LibraryChipsRow: View {
     }
 
     private var sortLabel: Text {
-        guard let filter else { return Text(Self.sortTitle(sort)) }
-        return Text("\(Text(Self.sortTitle(sort))) · \(Self.filterTitle(filter))")
+        #if !LITE_BUILD
+        if let filter {
+            return Text("\(Text(Self.sortTitle(sort))) · \(Self.filterTitle(filter))")
+        }
+        #endif
+        return Text(Self.sortTitle(sort))
     }
 
     @ViewBuilder
@@ -66,11 +72,14 @@ struct LibraryChipsRow: View {
         .pickerStyle(.inline)
         #if !LITE_BUILD
         Section("Filters") {
-            ForEach([SavedLibraryModel.Filter.unsupported] + InstalledStorageKind.allCases.map { .storage($0) }, id: \.self) { option in
+            ForEach(SavedLibraryModel.Filter.menuOrder, id: \.self) { option in
+                let count = filterCount(option)
                 Toggle(isOn: Binding(
                     get: { filter == option },
                     set: { filter = $0 ? option : nil }
-                )) { Self.filterTitle(option) }
+                )) { Text("\(Self.filterTitle(option)) (\(count))") }
+                    // The chosen filter stays clickable at zero, so it can still be turned off.
+                    .disabled(count == 0 && filter != option)
             }
         }
         #endif
@@ -85,23 +94,22 @@ struct LibraryChipsRow: View {
     static func sortTitle(_ sort: SavedLibraryModel.Sort) -> LocalizedStringKey {
         switch sort {
         case .recentlyUsed: "Recently Used"
+        case .dateAdded: "Date Added"
         case .name: "Name"
         case .type: "Type"
         case .size: "Size"
-        #if !LITE_BUILD
-        case .needsUpdate: "Needs Update"
-        #endif
         }
     }
 
+    #if !LITE_BUILD
     private static func filterTitle(_ filter: SavedLibraryModel.Filter) -> Text {
         switch filter {
-        case .unsupported: Text("Unsupported")
-        #if !LITE_BUILD
+        case .needsUpdate: Text("Needs Update")
+        case .cantRun: Text("Can't Run")
         case let .storage(kind): Text(verbatim: kind.title)
-        #endif
         }
     }
+    #endif
 }
 
 /// A row control that fades in only as the row crosses from the shelf to the library. It stays laid out

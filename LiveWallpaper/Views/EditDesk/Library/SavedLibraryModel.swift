@@ -8,17 +8,23 @@ import Observation
 final class SavedLibraryModel {
     enum Chip: CaseIterable { case all, bookmarks, recent, steam, local, aerials }
     enum Sort: CaseIterable {
-        case recentlyUsed, name, type, size
-        #if !LITE_BUILD
-        case needsUpdate
-        #endif
+        case recentlyUsed, dateAdded, name, type, size
     }
 
     enum Filter: Hashable {
-        case unsupported
         #if !LITE_BUILD
+        case needsUpdate, cantRun
         case storage(InstalledStorageKind)
         #endif
+
+        /// The Filters menu's order; empty in a build without filters.
+        static var menuOrder: [Filter] {
+            #if !LITE_BUILD
+            [.needsUpdate, .cantRun] + InstalledStorageKind.allCases.map { .storage($0) }
+            #else
+            []
+            #endif
+        }
     }
 
     struct AerialsState {
@@ -303,8 +309,8 @@ final class SavedLibraryModel {
         }
     }
 
-    var visibleItems: [LibraryItem] {
-        let filtered: [LibraryItem] = switch chip {
+    private var chipItems: [LibraryItem] {
+        switch chip {
         case .all: items
         case .bookmarks: items.filter { bookmarkedIDs.contains($0.id) }
         case .recent:
@@ -314,44 +320,66 @@ final class SavedLibraryModel {
         case .local: items.filter { !$0.isSteam && $0.kind != .aerial }
         case .aerials: items.filter { $0.kind == .aerial }
         }
-        return filtered.filter { matchesFilter($0) && (query.isEmpty || matchesQuery($0)) }.sorted { lhs, rhs in
+    }
+
+    var visibleItems: [LibraryItem] {
+        chipItems.filter { matches($0, filter) && (query.isEmpty || matchesQuery($0)) }.sorted { lhs, rhs in
             switch sort {
             case .recentlyUsed: return recentlyUsed(lhs, rhs)
-            case .name: return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            case .dateAdded:
+                if lhs.createdAt != rhs.createdAt {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return Self.nameFirst(lhs, rhs)
+            case .name: return Self.nameFirst(lhs, rhs)
             case .size: return Self.largerFileFirst(lhs, rhs)
             case .type:
                 let kinds: [LibraryItem.Kind] = [.video, .web, .scene, .aerial]
                 if lhs.kind != rhs.kind {
                     return kinds.firstIndex(of: lhs.kind)! < kinds.firstIndex(of: rhs.kind)!
                 }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-            #if !LITE_BUILD
-            case .needsUpdate:
-                if needsUpdate(lhs) != needsUpdate(rhs) {
-                    return needsUpdate(lhs)
-                }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-            #endif
+                return Self.nameFirst(lhs, rhs)
             }
         }
     }
 
-    private func matchesFilter(_ item: LibraryItem) -> Bool {
+    /// The rows `filter` would list under the current chip and search.
+    func count(of filter: Filter) -> Int {
+        chipItems.count { matches($0, filter) && (query.isEmpty || matchesQuery($0)) }
+    }
+
+    private func matches(_ item: LibraryItem, _ filter: Filter?) -> Bool {
+        #if !LITE_BUILD
         switch filter {
         case nil: return true
-        case .unsupported: return !item.isSupported
-        #if !LITE_BUILD
+        case .needsUpdate: return needsUpdate(item)
+        case .cantRun: return Self.cannotRun(item)
         case let .storage(kind):
-            guard case let .workshop(entry) = item.source else { return false }
+            guard case let .workshop(entry) = item.source, entry.origin.resourceLocation != .unsupported else { return false }
             return kind.matches(entry)
-        #endif
         }
+        #else
+        return true
+        #endif
+    }
+
+    /// Finder order of the name the card shows.
+    private static func nameFirst(_ lhs: LibraryItem, _ rhs: LibraryItem) -> Bool {
+        lhs.title.translatedWallpaperName.localizedStandardCompare(rhs.title.translatedWallpaperName) == .orderedAscending
     }
 
     #if !LITE_BUILD
     private func needsUpdate(_ item: LibraryItem) -> Bool {
         guard case let .workshop(entry) = item.source else { return false }
         return updatedWorkshopIDs.contains(entry.id)
+    }
+
+    /// Wider than `isSupported`, whose card badge names the type this Mac cannot run.
+    private static func cannotRun(_ item: LibraryItem) -> Bool {
+        guard case let .workshop(entry) = item.source else { return !item.isSupported }
+        let origin = entry.origin
+        return !item.isSupported || origin.requiresWindowsPlugin || !origin.missingDependencyIDs.isEmpty
+            || origin.resourceLocation == .unsupported
     }
     #endif
 
@@ -650,10 +678,17 @@ final class SavedLibraryModel {
         }
     }
 
-    /// A file size is not a Workshop project's total footprint; directories and shared assets stay unknown.
+    /// A video's probed file size; an installed scene or web project counts its source folder's saved size.
     private static func knownFileSize(_ item: LibraryItem) -> Int64? {
-        guard case let .video(video)? = item.metadata, let size = video.fileSize, size >= 0 else { return nil }
-        return size
+        if case let .video(video)? = item.metadata, let size = video.fileSize, size >= 0 {
+            return size
+        }
+        #if !LITE_BUILD
+        if case let .workshop(entry) = item.source, item.kind != .video, let size = entry.sizeBytes, size >= 0 {
+            return size
+        }
+        #endif
+        return nil
     }
 
     private static func largerFileFirst(_ lhs: LibraryItem, _ rhs: LibraryItem) -> Bool {
@@ -661,7 +696,7 @@ final class SavedLibraryModel {
         case let (left?, right?) where left != right: left > right
         case (_?, nil): true
         case (nil, _?): false
-        default: lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        default: nameFirst(lhs, rhs)
         }
     }
 

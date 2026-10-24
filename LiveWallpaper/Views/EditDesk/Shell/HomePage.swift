@@ -872,6 +872,7 @@ struct HomePage: View {
                     stage: stage,
                     sort: Binding(get: { library?.sort ?? .recentlyUsed }, set: { library?.sort = $0 }),
                     filter: Binding(get: { library?.filter }, set: { library?.filter = $0 }),
+                    filterCount: { library?.count(of: $0) ?? 0 },
                     onImport: promptLibraryImport,
                     keepsImportOnShelf: library?.items.isEmpty == true
                 )
