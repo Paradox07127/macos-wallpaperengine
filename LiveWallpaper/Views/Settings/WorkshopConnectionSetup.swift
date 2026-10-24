@@ -209,23 +209,31 @@ struct WorkshopConnectionSetup: View {
                         accounts: controller.discoveredAccounts,
                         current: service.username,
                         onSelect: controller.selectAccount,
-                        onSignIn: { showingSignIn = true },
-                        onRescan: { Task { await controller.loadAccounts() } },
-                        onRemoveSession: { showingRemoveSessionConfirm = true }
+                        onSignIn: { showingSignIn = true }
                     )
                 } label: {
                     Text(service.username == nil ? "Choose account" : "Switch account")
                 }
                 .menuStyle(.button)
                 .fixedSize()
-            }
 
-            if controller.discoveredAccounts.isEmpty {
-                Button("Sign in to a new account") { showingSignIn = true }
-                    .buttonStyle(.borderedProminent)
-                    .fixedSize()
+                Button {
+                    Task { await controller.loadAccounts() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(Text("Rescan"))
+                .accessibilityLabel(Text("Rescan"))
+
+                if service.username != nil {
+                    Button("Remove saved session", role: .destructive) { showingRemoveSessionConfirm = true }
+                        .buttonStyle(.bordered)
+                        .fixedSize()
+                }
             } else {
                 Button("Sign in to a new account") { showingSignIn = true }
+                    .buttonStyle(.borderedProminent)
                     .fixedSize()
             }
         }

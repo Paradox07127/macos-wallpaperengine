@@ -68298,6 +68298,41 @@
         }
       }
     },
+    "Steam Settings" : {
+      "comment" : "Workshop Steam menu item that opens the Steam connection group in Settings.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes de Steam"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 設定"
+          }
+        }
+      }
+    },
     "Steam sign-in" : {
       "comment" : "Privacy sheet section title about Steam credentials.",
       "extractionState" : "manual",

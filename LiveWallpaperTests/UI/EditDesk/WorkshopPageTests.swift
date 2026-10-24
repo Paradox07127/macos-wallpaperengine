@@ -102,41 +102,24 @@ struct WorkshopPageSourceTests {
         return source[head.upperBound ..< tail.lowerBound]
     }
 
-    @Test("The Steam menu offers SteamCMD setup only until SteamCMD is ready")
-    func steamMenuOffersSetupOnlyUntilReady() throws {
+    @Test("The Steam menu leaves SteamCMD setup and the API key to Steam settings")
+    func steamMenuSendsSetupToSteamSettings() throws {
         let menu = try RepositoryRoot.source(Self.steamMenu)
-        let gate = try #require(menu.range(of: "if !steamCMDReady {"))
-        let end = try #require(menu.range(of: "\n            }", range: gate.upperBound ..< menu.endIndex))
-        let gated = menu[gate.upperBound ..< end.lowerBound]
-        #expect(gated.contains(#"Button("Set up SteamCMD", action: onInstallSteamCMD)"#))
-        #expect(gated.contains(#"Button("Locate automatically", action: onLocateSteamCMD)"#))
-        #expect(
-            menu.components(separatedBy: "Set up SteamCMD").count == 2,
-            "an ungated copy would reinstall a SteamCMD that already works"
-        )
+        for row in ["Set up SteamCMD", "Locate automatically", "Steam Web API key (optional)"] {
+            #expect(!menu.contains(row), Comment(rawValue: "the Steam menu still offers \(row)"))
+        }
+        #expect(menu.contains(#"Button("Steam Settings", action: onOpenSteamSettings)"#))
         let page = try RepositoryRoot.source(Self.page)
-        #expect(page.contains("steamCMDReady: doctor.isBinaryPresumedReady"))
-        #expect(page.contains(
-            "onLocateSteamCMD: { setupController.autoDetectBinary(onNeedsSetup: { isShowingInstallConsent = true }) }"
-        ))
+        #expect(page.contains("onOpenSteamSettings: { openWorkshopSettings(anchor: .workshopConnection) }"))
     }
 
-    @Test("While SteamCMD installs, uninstalls or is being located, both setup rows wait")
-    func steamMenuHoldsSetupWhileSteamCMDIsBusy() throws {
-        let menu = try RepositoryRoot.source(Self.steamMenu)
-        let gate = try #require(menu.range(of: "if !steamCMDReady {"))
-        let end = try #require(menu.range(of: "\n            }", range: gate.upperBound ..< menu.endIndex))
-        let lines = menu[gate.upperBound ..< end.lowerBound].split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        for row in [#"Button("Set up SteamCMD", action: onInstallSteamCMD)"#, #"Button("Locate automatically", action: onLocateSteamCMD)"#] {
-            let index = try #require(lines.firstIndex(of: row))
-            #expect(
-                lines.indices.contains(index + 1) && lines[index + 1] == ".disabled(steamCMDBusy)",
-                "a locate that finishes mid-install reports SteamCMD missing although the install then succeeds"
-            )
-        }
-        let page = try RepositoryRoot.source(Self.page)
-        #expect(page.contains("steamCMDBusy: setupController.isSteamCMDBusy"))
+    @Test("While SteamCMD installs, uninstalls or is being located, the Settings setup routes wait")
+    func steamSettingsHoldSetupWhileSteamCMDIsBusy() throws {
+        let settings = try RepositoryRoot.source("LiveWallpaper/Views/Settings/WorkshopConnectionSetup.swift")
+        #expect(
+            settings.contains("isBusy: controller.isSteamCMDBusy"),
+            "a locate that finishes mid-install reports SteamCMD missing although the install then succeeds"
+        )
     }
 
 }

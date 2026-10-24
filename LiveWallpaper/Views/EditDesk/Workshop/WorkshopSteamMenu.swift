@@ -2,25 +2,18 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// SCREENS S8's "◉ Steam ▾": every Workshop account and setup entry point as menu rows. It only
-/// raises the page's sheets — the page owns their state.
+/// The Workshop page's "◉ Steam ▾": content tasks, the account picker, and a jump to Steam settings.
+/// It only raises the page's sheets — the page owns their state.
 struct WorkshopSteamMenu: View {
     let accounts: [SteamAccountSummary]
     /// The account downloads currently run as; nil when none is bound.
     let currentAccount: String?
     let onSelectAccount: (SteamAccountSummary) -> Void
     let onSignIn: () -> Void
-    let onRescan: () -> Void
-    let onRemoveSession: () -> Void
     let onSyncSubscriptions: () -> Void
     let onDownloadByLink: () -> Void
-    let onEnterAPIKey: () -> Void
-    let onInstallSteamCMD: () -> Void
-    let onLocateSteamCMD: () -> Void
     let onImportLocalFolder: () -> Void
-    let steamCMDReady: Bool
-    /// Installing, removing or locating SteamCMD: a locate that finishes mid-install reports it missing.
-    let steamCMDBusy: Bool
+    let onOpenSteamSettings: () -> Void
     /// S8 has no banner strip, so the old private-session notice rides here as a section; its
     /// Hide This Notice row is the old banner's Dismiss.
     var showsPrivateSessionNotice = false
@@ -35,32 +28,28 @@ struct WorkshopSteamMenu: View {
                     Text("Steam downloads now sign in separately")
                 }
             }
-            // An empty list can only offer sign-in; "another account" would name nothing.
-            if accounts.isEmpty {
-                Button("Sign In", action: onSignIn)
-            } else {
-                steamAccountMenuItems(
-                    accounts: accounts,
-                    current: currentAccount,
-                    onSelect: onSelectAccount,
-                    onSignIn: onSignIn,
-                    onRescan: onRescan,
-                    onRemoveSession: onRemoveSession
-                )
-            }
             Section {
                 Button("Sync subscribed wallpapers", action: onSyncSubscriptions)
                 Button("Add from Workshop URL or ID", action: onDownloadByLink)
                 Button("Import a Local Folder", action: onImportLocalFolder)
-                Button("Steam Web API key (optional)", action: onEnterAPIKey)
             }
-            if !steamCMDReady {
-                Section {
-                    Button("Set up SteamCMD", action: onInstallSteamCMD)
-                        .disabled(steamCMDBusy)
-                    Button("Locate automatically", action: onLocateSteamCMD)
-                        .disabled(steamCMDBusy)
+            Section {
+                Menu("Steam Account") {
+                    // An empty list can only offer sign-in; "another account" would name nothing.
+                    if accounts.isEmpty {
+                        Button("Sign In", action: onSignIn)
+                    } else {
+                        steamAccountMenuItems(
+                            accounts: accounts,
+                            current: currentAccount,
+                            onSelect: onSelectAccount,
+                            onSignIn: onSignIn
+                        )
+                    }
                 }
+            }
+            Section {
+                Button("Steam Settings", action: onOpenSteamSettings)
             }
         } label: {
             capsuleLabel

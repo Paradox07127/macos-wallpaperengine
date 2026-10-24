@@ -24,11 +24,9 @@ struct WorkshopPage: View {
     @State private var isShowingPasteSheet = false
     @State private var isShowingDownloads = false
     @State private var isShowingKeyEntry = false
-    @State private var isShowingInstallConsent = false
     @State private var isShowingSetupAlert = false
     @State private var isShowingSignIn = false
     @State private var isShowingSubscriptionSync = false
-    @State private var isShowingRemoveSessionConfirm = false
     @State private var presentedItemID: UInt64?
     /// The window's own content size, which the modal's geometry is measured against.
     @State private var stageSize: CGSize = .zero
@@ -139,16 +137,10 @@ struct WorkshopPage: View {
             currentAccount: doctor.username,
             onSelectAccount: { setupController.selectAccount($0) },
             onSignIn: { isShowingSignIn = true },
-            onRescan: { Task { await setupController.loadAccounts() } },
-            onRemoveSession: { isShowingRemoveSessionConfirm = true },
             onSyncSubscriptions: { isShowingSubscriptionSync = true },
             onDownloadByLink: { presentPasteFlow() },
-            onEnterAPIKey: { isShowingKeyEntry = true },
-            onInstallSteamCMD: { isShowingInstallConsent = true },
-            onLocateSteamCMD: { setupController.autoDetectBinary(onNeedsSetup: { isShowingInstallConsent = true }) },
             onImportLocalFolder: { SteamWizard.importLocalFolder() },
-            steamCMDReady: doctor.isBinaryPresumedReady,
-            steamCMDBusy: setupController.isSteamCMDBusy,
+            onOpenSteamSettings: { openWorkshopSettings(anchor: .workshopConnection) },
             showsPrivateSessionNotice: doctor.username != nil && !privateSessionNoticeShown,
             onDismissPrivateSessionNotice: { privateSessionNoticeShown = true }
         )
@@ -196,25 +188,6 @@ struct WorkshopPage: View {
                             page.setupController.adoptSignedInAccount(accountName)
                         }
                     }
-                }
-                .sheet(isPresented: page.$isShowingInstallConsent) {
-                    AppLanguageScope(defaults: .appScoped()) {
-                        SteamCMDSetupSheet(onConfirmManagedInstall: { page.setupController.runManagedInstall() }, isRecovery: page.doctor.lastAutoDetectDiagnosis?.needsInAppSetup == true)
-                    }
-                }
-                .confirmationDialog(
-                    Text("Remove the saved Steam session?"),
-                    isPresented: page.$isShowingRemoveSessionConfirm,
-                    titleVisibility: .visible
-                ) {
-                    // No destructive role on the confirm button: the user already pressed a control
-                    // labelled Remove (rules/ui-design.md).
-                    Button("Remove") {
-                        Task { await page.doctor.removeSignedInSession() }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Removes this account's Loomscreen download session. Reconnect before downloading again. Steam app sign-in is unaffected.")
                 }
                 // Presented off local state, not off `setupError != nil`: a Binding whose setter
                 // clears the error runs on *every* dismissal, including the one SwiftUI performs
