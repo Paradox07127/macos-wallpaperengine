@@ -15551,6 +15551,42 @@
         }
       }
     },
+    "Clear this shortcut?" : {
+      "comment" : "Title of the confirmation shown before clearing what a wallpaper's user shortcut opens.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear this shortcut?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Borrar este atajo?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このショートカットをクリアしますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除此快捷键？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除此快速鍵？"
+          }
+        }
+      }
+    },
     "Clear Wallpaper" : {
       "comment" : "A title for a destructive action that clears the current wallpaper.",
       "extractionState" : "manual",

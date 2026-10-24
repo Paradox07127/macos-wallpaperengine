@@ -16,6 +16,7 @@ struct UserShortcutBindingRow: View {
     @State private var testFailed = false
     @State private var saveFailed = false
     @State private var isDropTargeted = false
+    @State private var confirmingClear = false
 
     private var isEditing: Binding<Bool> {
         Binding(get: { editing != nil }, set: { shown in
@@ -36,53 +37,21 @@ struct UserShortcutBindingRow: View {
             verbatimTitle: title,
             verbatimSubtitle: statusMessage
         ) {
-            Menu {
-                Button("Website", systemImage: "safari") { select { editing = .website } }
-                Button("Apple Shortcut", systemImage: "square.2.layers.3d") { select { editing = .shortcut } }
-                Button("File or App", systemImage: "doc") { select { choose(directory: false) } }
-                Button("Folder", systemImage: "folder") { select { choose(directory: true) } }
-                if current?.isApplication == true {
-                    Button("Edit Arguments", systemImage: "text.cursor") { select { editing = .arguments } }
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Button {
+                    select(test)
+                } label: {
+                    Image(systemName: "play.circle")
                 }
-                Divider()
-                Button("Test", systemImage: "play") {
-                    select {
-                        if let current {
-                            let failed = $testFailed
-                            let (key, revision) = (key, current.revision)
-                            _ = UserShortcutExecutor.execute(current, onFailure: {
-                                // A late failure for a binding replaced since must not flag the new one.
-                                if UserShortcutBindingStore.shared.binding(for: key)?.revision == revision {
-                                    failed.wrappedValue = true
-                                }
-                            })
-                        }
-                    }
-                }
+                .buttonStyle(.borderless)
+                .help(Text("Test"))
+                .accessibilityLabel(Text("Test"))
                 .disabled(current == nil)
-                Button("Clear", systemImage: "xmark.circle", role: .destructive) {
-                    select { saveFailed = !UserShortcutBindingStore.shared.clear(key) }
-                }
-                .disabled(current == nil)
-            } label: {
-                if current != nil, !isResolvable {
-                    Text("Choose Again")
-                        .help(Text("The file or folder can't be found. Choose it again."))
-                } else if let current {
-                    Text(verbatim: current.displayName)
-                } else {
-                    Text("Not Set")
-                }
+                bindingMenu
             }
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(minWidth: 96, alignment: .trailing)
-            .layoutPriority(1)
-            .accessibilityLabel(title)
-            .appLanguagePopover(isPresented: isEditing, arrowEdge: .bottom) {
-                if let editing {
-                    UserShortcutEditorPopover(kind: editing, key: key, current: current)
-                }
+            .confirmationDialog("Clear this shortcut?", isPresented: $confirmingClear, titleVisibility: .visible) {
+                Button("Clear") { saveFailed = !UserShortcutBindingStore.shared.clear(key) }
+                Button("Cancel", role: .cancel) {}
             }
         }
         .background {
@@ -107,6 +76,55 @@ struct UserShortcutBindingRow: View {
             refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: UserShortcutBindingStore.didChange)) { _ in refresh() }
+    }
+
+    private var bindingMenu: some View {
+        Menu {
+            Button("Website", systemImage: "safari") { select { editing = .website } }
+            Button("Apple Shortcut", systemImage: "square.2.layers.3d") { select { editing = .shortcut } }
+            Button("File or App", systemImage: "doc") { select { choose(directory: false) } }
+            Button("Folder", systemImage: "folder") { select { choose(directory: true) } }
+            if current?.isApplication == true {
+                Divider()
+                Button("Edit Arguments", systemImage: "text.cursor") { select { editing = .arguments } }
+            }
+            Divider()
+            Button("Clear", systemImage: "xmark.circle", role: .destructive) {
+                select { confirmingClear = true }
+            }
+            .disabled(current == nil)
+        } label: {
+            if current != nil, !isResolvable {
+                Text("Choose Again")
+                    .help(Text("The file or folder can't be found. Choose it again."))
+            } else if let current {
+                Text(verbatim: current.displayName)
+            } else {
+                Text("Not Set")
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(minWidth: 96, alignment: .trailing)
+        .layoutPriority(1)
+        .accessibilityLabel(title)
+        .appLanguagePopover(isPresented: isEditing, arrowEdge: .bottom) {
+            if let editing {
+                UserShortcutEditorPopover(kind: editing, key: key, current: current)
+            }
+        }
+    }
+
+    private func test() {
+        guard let current else { return }
+        let failed = $testFailed
+        let (key, revision) = (key, current.revision)
+        _ = UserShortcutExecutor.execute(current, onFailure: {
+            // A late failure for a binding replaced since must not flag the new one.
+            if UserShortcutBindingStore.shared.binding(for: key)?.revision == revision {
+                failed.wrappedValue = true
+            }
+        })
     }
 
     enum DropTarget: Equatable {
@@ -153,7 +171,7 @@ struct UserShortcutBindingRow: View {
         ) : nil
     }
 
-    /// The menu has no open callback, so any item picked from it dismisses a previous Test or save failure.
+    /// The menu has no open callback, so any action picked from the row dismisses a previous Test or save failure.
     private func select(_ action: () -> Void) {
         testFailed = false
         saveFailed = false
