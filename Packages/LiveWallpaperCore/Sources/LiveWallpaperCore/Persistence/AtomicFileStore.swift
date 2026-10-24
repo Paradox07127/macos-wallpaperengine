@@ -31,7 +31,7 @@ public struct AtomicFileStore<Value: Codable> {
         }
     }
 
-    /// Read-path cap (~64 MB ≫ real config size) to refuse malicious/truncated blobs.
+    /// Read and write cap (~64 MB ≫ real config size) to refuse malicious/truncated blobs.
     public static var maxReasonableFileSize: Int { 64 * 1024 * 1024 }
 
     public let fileURL: URL
@@ -140,14 +140,23 @@ public struct AtomicFileStore<Value: Codable> {
     /// Attempts every file even after a failure, then throws the first removal error.
     public func delete() throws {
         var firstFailure: Error?
+        var removedAny = false
         for url in [fileURL, backupURL, tempURL, lockURL] where fileExists(url) {
             do {
                 try fileManager.removeItem(at: url)
+                removedAny = true
             } catch {
                 Logger.warning(
                     "AtomicFileStore could not remove \(url.lastPathComponent): \(error.localizedDescription)",
                     category: category
                 )
+                firstFailure = firstFailure ?? error
+            }
+        }
+        if removedAny {
+            do {
+                try fsyncParentDirectory(of: fileURL)
+            } catch {
                 firstFailure = firstFailure ?? error
             }
         }
@@ -198,6 +207,8 @@ public struct AtomicFileStore<Value: Codable> {
     }
 
     private func writeAtomically(_ data: Data) throws {
+        // decode(from:) refuses anything larger, so such a write would be lost on next launch.
+        guard data.count <= Self.maxReasonableFileSize else { throw POSIXError(.EFBIG) }
         let lockFD = try acquireLock()
         defer { releaseLock(lockFD) }
 

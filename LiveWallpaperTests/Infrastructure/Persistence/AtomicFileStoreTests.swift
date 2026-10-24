@@ -232,6 +232,35 @@ struct AtomicFileStoreTests {
         #expect(store.read() == TestValue(label: "fallback", count: 2))
     }
 
+    @Test("A delete whose directory entry removal cannot be made durable is reported as failed")
+    func deleteFailsWhenDirectorySyncFails() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("payload.json")
+        try AtomicFileStore<TestValue>(fileURL: fileURL).write(TestValue(label: "v1", count: 1))
+
+        let store = AtomicFileStore<TestValue>(
+            fileURL: fileURL,
+            durabilitySync: FileDurabilitySync(fullFsync: { _ in EIO }, fsync: { _ in EIO })
+        )
+        #expect(throws: AtomicFileStore<TestValue>.StoreError.self) {
+            try store.delete()
+        }
+    }
+
+    @Test("A write larger than the read-path size cap is refused instead of reported as saved")
+    func oversizedWriteIsRefused() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("payload.json")
+        let store = AtomicFileStore<TestValue>(fileURL: fileURL)
+
+        #expect(throws: AtomicFileStore<TestValue>.StoreError.self) {
+            try store.writeRaw(Data(count: AtomicFileStore<TestValue>.maxReasonableFileSize + 1))
+        }
+        #expect(FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) == false)
+    }
+
     /// Fails only the temp → primary move and lets rotation through — the only order
     /// that reaches the rollback branch.
     private final class FailingMoveFileManager: FileManager, @unchecked Sendable {
