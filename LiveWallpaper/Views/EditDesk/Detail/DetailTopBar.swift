@@ -2,21 +2,6 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// SCREENS.md S6 keeps three display tags in the top bar; the rest collapse into a `+n`.
-enum DetailTagRow {
-    static let visibleLimit = 3
-
-    /// A current display past the first three takes the last visible slot, so the page always names it.
-    static func split(_ tags: [DetailDisplayTag]) -> (visible: [DetailDisplayTag], overflow: Int) {
-        guard tags.count > visibleLimit else { return (tags, 0) }
-        var visible = Array(tags.prefix(visibleLimit))
-        if let current = tags.dropFirst(visibleLimit).first(where: \.isCurrent) {
-            visible[visibleLimit - 1] = current
-        }
-        return (visible, tags.count - visibleLimit)
-    }
-}
-
 /// Identical slots on both pages; labels remain in tooltips and accessibility.
 struct DetailTopBar: View {
     let tags: [DetailDisplayTag]
@@ -24,10 +9,12 @@ struct DetailTopBar: View {
     let actions: DetailActions
     @Binding var inspectorVisible: Bool
     var hasWallpaper = true
-    var schedulePausedUntil: Date?
+    /// The shown display, which Save as Scheme captures; nil leaves the popover empty.
+    var screen: Screen?
     /// True while the column shows a load attempt's page, which carries this display's only Clear; the
     /// actions reading the applied wallpaper (queue, scheme, apply to all) stay dimmed under it too.
     var attemptShown = false
+    @Environment(ScreenManager.self) private var screenManager: ScreenManager?
     @State private var bookmarkPresented = false
     @State private var schemeStore = SchemeStore.shared
 
@@ -37,15 +24,11 @@ struct DetailTopBar: View {
             GlassToolbarGroup {
                 icon("chevron.left", actions.backLabel, action: actions.back)
             }
-            Spacer(minLength: 8).background(WindowDragRegion())
-            tagRow
+            displayPicker
             Spacer(minLength: 8).background(WindowDragRegion())
             AdaptiveGlassContainer(spacing: GlassToolbarMetrics.containerSpacing) {
                 HStack(spacing: GlassToolbarMetrics.groupSpacing) {
                     sectionPicker.pageGuideTarget(.detailLayers)
-                    if section == .wallpaper, let until = schedulePausedUntil, let resume = actions.resumeSchedule {
-                        schedulePause(until: until, resume: resume)
-                    }
                     GlassToolbarGroup { displayActions }.pageGuideTarget(.detailActions)
                     GlassToolbarGroup { sharedActions }.pageGuideTarget(.detailShared)
                     GlassToolbarGroup {
@@ -61,20 +44,19 @@ struct DetailTopBar: View {
         .accessibilityElement(children: .contain)
         .onChange(of: tags.first(where: \.isCurrent)?.id) {
             bookmarkPresented = false
+            actions.schemeCapturePresented.wrappedValue = false
         }
     }
 
-    /// First capsule: what this display shows — change, reload, clear; snapping in the overlay section.
+    /// First capsule: what this display shows — change, clear; snapping in the overlay section.
     @ViewBuilder
     private var displayActions: some View {
         if section == .wallpaper {
-            NativeMenuButton { changeMenu } label: {
+            NativeMenuButton(toolbarItem: true) { changeMenu } label: {
                 menuIcon("rectangle.2.swap")
             }
             .help(Text("Change Wallpaper"))
             .accessibilityLabel(Text("Change Wallpaper"))
-            icon("arrow.triangle.2.circlepath", "Reload display", help: Text("Reload display content")) { actions.reload() }
-                .disabled(!hasWallpaper || attemptShown)
             GlassToolbarItem("trash", role: .destructive, action: actions.clearWallpaper)
                 .help(Text("Clear Wallpaper"))
                 .accessibilityLabel(Text("Clear Wallpaper"))
@@ -109,12 +91,18 @@ struct DetailTopBar: View {
             if schemeStore.schemes.isEmpty {
                 icon("square.stack", "Scheme", action: actions.saveAsScheme)
             } else {
-                NativeMenuButton { schemeMenu } label: { menuIcon("square.stack") }
+                NativeMenuButton(toolbarItem: true) { schemeMenu } label: { menuIcon("square.stack") }
                     .help(Text("Scheme"))
                     .accessibilityLabel(Text("Scheme"))
             }
         }
         .disabled(!hasWallpaper || attemptShown)
+        .appLanguagePopover(isPresented: actions.schemeCapturePresented, arrowEdge: .bottom) {
+            if let screen, let screenManager {
+                SchemeCapturePopover(screen: screen, nameDraft: actions.schemeNameDraft)
+                    .environment(screenManager)
+            }
+        }
         icon(
             "square.on.square", section == .overlay ? "Copy to Other Displays" : "Apply to All Displays",
             help: tags.count < 2 ? Text("Only one display is connected.") : nil
@@ -124,49 +112,54 @@ struct DetailTopBar: View {
         .disabled(tags.count < 2 || (section == .wallpaper && (!hasWallpaper || attemptShown)))
     }
 
-    private var tagRow: some View {
-        let split = DetailTagRow.split(tags)
-        return HStack(spacing: 8) {
-            ForEach(split.visible) { tag in
-                Button { actions.selectDisplay(tag.id) } label: {
-                    HStack(spacing: 7) {
-                        Group {
-                            if let image = tag.thumbnail {
-                                Image(decorative: image, scale: 1).resizable().scaledToFill()
-                            } else {
-                                Image(systemName: "display").frame(maxWidth: .infinity, maxHeight: .infinity)
-                            }
-                        }
-                        .frame(width: 30, height: 20)
-                        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.badge))
-                        Text(verbatim: tag.name)
-                            .font(DesignTokens.EditDesk.Typography.body)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: 145)
+    /// Shown with a single display too, so the page always names the display it edits.
+    private var displayPicker: some View {
+        let current = tags.first(where: \.isCurrent)
+        return GlassToolbarGroup {
+            NativeMenuButton(toolbarItem: true) {
+                Picker("Displays", selection: displaySelection) {
+                    ForEach(tags) { tag in
+                        Text(verbatim: tag.name).tag(Optional(tag.id))
                     }
-                    .padding(.horizontal, 9)
-                    .frame(height: 32)
-                    .background(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm).fill(tag.isCurrent
-                            ? DesignTokens.EditDesk.Colors.fillSelectedChip : DesignTokens.EditDesk.Colors.fillNavPill))
-                    .overlay(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm).strokeBorder(tag.isCurrent ? Color.accentColor : .clear, lineWidth: 1.5))
                 }
-                .buttonStyle(.plain)
-                .help(tag.name)
-                .accessibilityLabel(Text(verbatim: tag.name))
-                .accessibilityAddTraits(tag.isCurrent ? .isSelected : [])
-            }
-            if split.overflow > 0 {
-                Menu {
-                    ForEach(tags.filter { tag in !split.visible.contains { $0.id == tag.id } }) { tag in
-                        Button(tag.name) { actions.selectDisplay(tag.id) }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    Group {
+                        if let image = current?.thumbnail {
+                            Image(decorative: image, scale: 1).resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "display").frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
-                } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).frame(width: 28)
-                    .help(Text("Displays"))
-                    .accessibilityLabel(Text("Displays"))
+                    .frame(width: 30, height: 20)
+                    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.badge))
+                    Text(verbatim: current?.name ?? "")
+                        .font(DesignTokens.EditDesk.Typography.body)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 180)
+                    Image(systemName: "chevron.down")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .frame(height: GlassToolbarMetrics.height)
             }
+            .help(Text("Displays"))
+            .accessibilityLabel(Text("Displays"))
+            .accessibilityValue(Text(verbatim: current?.name ?? ""))
         }
+        .fixedSize()
+    }
+
+    private var displaySelection: Binding<CGDirectDisplayID?> {
+        Binding(get: { tags.first(where: \.isCurrent)?.id }, set: { id in
+            if let id {
+                actions.selectDisplay(id)
+            }
+        })
     }
 
     private var sectionPicker: some View {
@@ -179,27 +172,6 @@ struct DetailTopBar: View {
         }
         .accessibilityElement(children: .contain)
         .fixedSize()
-    }
-
-    private func schedulePause(until: Date, resume: @escaping () -> Void) -> some View {
-        HStack(spacing: 6) {
-            StatusChip(
-                text: Text(
-                    "Schedule paused until \(until, format: .dateTime.hour().minute())",
-                    comment: "Detail notice: this display's daily schedule is paused until the given time."
-                ),
-                tint: DesignTokens.Colors.Status.info,
-                systemImage: "pause.circle"
-            )
-            Button(action: resume) {
-                Text("Resume", comment: "Detail top bar button that resumes this display's paused daily schedule.")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help(Text("Apply this time slot's wallpaper now", comment: "Tooltip on the button that resumes a paused daily schedule."))
-            .accessibilityLabel(Text("Resume Schedule", comment: "Resumes this display's paused daily schedule."))
-        }
-        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder

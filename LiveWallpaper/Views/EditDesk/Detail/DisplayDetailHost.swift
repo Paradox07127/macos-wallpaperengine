@@ -56,6 +56,8 @@ struct DisplayDetailHost: View {
     @State private var showSchemeCapture = false
     @State private var showAutomation = false
     @State private var automationDismissRequests = 0
+    /// Any `infoOverlay` under the page, the workspace's included: Escape is its to take then.
+    @State private var infoOverlayPresented = false
     @State private var overlayCopy: OverlayCopyRequest?
     @State private var pendingDestructive: PendingDestructive?
     /// Set by Manage Schemes and Choose from Library: their page opens once the tile is home, not under
@@ -124,7 +126,7 @@ struct DisplayDetailHost: View {
         ZStack {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
                 presentations(refreshes(detail(for: screen, id: id), for: screen), for: screen)
-                if !modalPresented, !showAutomation, pageGuide?.context == nil {
+                if !modalPresented, !infoOverlayPresented, pageGuide?.context == nil {
                     Button(action: requestBack) { EmptyView() }
                         .keyboardShortcut(.cancelAction)
                         .opacity(0)
@@ -141,6 +143,7 @@ struct DisplayDetailHost: View {
                 coordinator?.heroDidLayout(display: display, frame: frame)
             }
         }
+        .onPreferenceChange(InfoOverlayPresentedKey.self) { infoOverlayPresented = $0 }
     }
 
     private func detail(for screen: Screen, id: CGDirectDisplayID) -> some View {
@@ -171,8 +174,8 @@ struct DisplayDetailHost: View {
             isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
             preview: preview,
             wallpaperStatus: { wallpaperStatus(for: screen, preview: preview) },
-            emptyScreen: screen, webTransform: webTransform(for: screen),
-            schedulePausedUntil: draft.schedulePausedUntil, switchEdge: switchEdge,
+            screen: screen, webTransform: webTransform(for: screen),
+            switchEdge: switchEdge,
             inspectorVisible: sectionInspectorVisible,
             inspectorWidth: shownInspectorWidth, liveInspectorWidth: $liveInspectorWidth
         )
@@ -192,12 +195,6 @@ struct DisplayDetailHost: View {
 
     private func presentations(_ content: some View, for screen: Screen) -> some View {
         content
-            .sheet(isPresented: $showSchemeCapture) {
-                AppLanguageScope(defaults: .appScoped()) {
-                    SchemeCapturePopover(screen: screen, nameDraft: $schemeNameDraft)
-                        .environment(screenManager)
-                }
-            }
             .infoOverlay(isPresented: $showAutomation, onDismissRequest: { automationDismissRequests += 1 }, content: { dismiss in
                 if let library {
                     AppLanguageScope(defaults: .appScoped()) {
@@ -368,18 +365,13 @@ struct DisplayDetailHost: View {
 
     // MARK: HUD
 
-    /// The actions zone draws a leading divider unless it is exactly `EmptyView`, so the whole bar branches.
-    @ViewBuilder
     private func hud(for screen: Screen) -> some View {
-        if draft.selectedWallpaperType == .html, let source = draft.htmlSource {
-            hudBar(for: screen) {
+        hudBar(for: screen) {
+            if draft.selectedWallpaperType == .html, let source = draft.htmlSource {
                 WebRenderingButton(screen: screen, source: source, config: draft.htmlConfig)
-            }
-        } else {
-            #if !LITE_BUILD
-            if let scene = DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen)),
-               DetailSceneStatus.workshopSearchQuery(for: scene.origin) != nil || scene.renderFailure != nil {
-                hudBar(for: screen) {
+            } else {
+                #if !LITE_BUILD
+                if let scene = DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen)) {
                     if let query = DetailSceneStatus.workshopSearchQuery(for: scene.origin) {
                         WorkshopSearchButton(workshopID: scene.origin.workshopID, query: query)
                     }
@@ -387,12 +379,15 @@ struct DisplayDetailHost: View {
                         SceneDiagnosticsButton { showsSceneLog = true }
                     }
                 }
-            } else {
-                hudBar(for: screen) { EmptyView() }
+                #endif
             }
-            #else
-            hudBar(for: screen) { EmptyView() }
-            #endif
+            Button { screenManager.reloadWallpaperForScreen(screen) } label: {
+                PreviewControlLabel(systemImage: "arrow.triangle.2.circlepath", title: "Reload")
+            }
+            .buttonStyle(.borderless)
+            .help(Text("Reload display content"))
+            .accessibilityLabel(Text("Reload display"))
+            .disabled(screenManager.getConfiguration(for: screen) == nil || previewState(for: screen).showsAttempt)
         }
     }
 
@@ -514,6 +509,27 @@ struct DisplayDetailHost: View {
                 onRetry: { screenManager.retryRuntimeSession(for: screen) },
                 onRePick: { chooseFile(screen) }
             )
+        }
+        // An attempt's page is laid out alone in the column, so a notice beside it would draw over it.
+        if section == .wallpaper, !preview.showsAttempt, let until = draft.schedulePausedUntil {
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.Status.info, symbol: "pause.circle",
+                title: Text(
+                    "Schedule paused until \(until, format: .dateTime.hour().minute())",
+                    comment: "Detail notice: this display's daily schedule is paused until the given time."
+                ),
+                surface: .content
+            ) {
+                Button { screenManager.resumeSchedule(for: screen) } label: {
+                    Text("Resume", comment: "Detail top bar button that resumes this display's paused daily schedule.")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(Text("Apply this time slot's wallpaper now", comment: "Tooltip on the button that resumes a paused daily schedule."))
+                .accessibilityLabel(Text("Resume Schedule", comment: "Resumes this display's paused daily schedule."))
+            }
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .padding(.top, DesignTokens.Spacing.sm)
         }
         #if !LITE_BUILD
         if !preview.showsAttempt,
@@ -789,7 +805,8 @@ struct DisplayDetailHost: View {
             copyOverlays: { requestOverlayCopy(.all) },
             snapEnabled: Binding(get: { overlaySession?.snapEnabled ?? true }, set: { overlaySession?.snapEnabled = $0 }),
             openAutomation: featureCatalog.isEnabled(.playlists) ? { showAutomation = true } : nil,
-            resumeSchedule: { screenManager.resumeSchedule(for: screen) },
+            schemeCapturePresented: $showSchemeCapture,
+            schemeNameDraft: $schemeNameDraft,
             applyScheme: { requestApplyScheme($0, to: screen) },
             manageSchemes: {
                 libraryHandoff = .schemes
@@ -805,7 +822,6 @@ struct DisplayDetailHost: View {
             switchBackToVideo: switchBack.contains(.video) ? { switchToSaved(.video, on: screen) } : nil,
             switchBackToWebPage: switchBack.contains(.html) ? { switchToSaved(.html, on: screen) } : nil,
             applyWebSource: { apply(.html($0), screen.id) },
-            reload: { screenManager.reloadWallpaperForScreen(screen) },
             swipe: { swipe($0) }, backLabel: backLabel
         )
     }

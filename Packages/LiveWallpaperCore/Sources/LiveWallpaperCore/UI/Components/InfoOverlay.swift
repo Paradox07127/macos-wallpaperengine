@@ -41,6 +41,15 @@ public extension View {
     }
 }
 
+/// True while an `infoOverlay` in the subtree is shown, so a page can hand Escape to the overlay instead of its own `.cancelAction`.
+public struct InfoOverlayPresentedKey: PreferenceKey {
+    public static let defaultValue = false
+
+    public static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
 private struct InfoOverlayModifier<OverlayContent: View>: ViewModifier {
     let isShown: Bool
     let dismiss: () -> Void
@@ -57,6 +66,7 @@ private struct InfoOverlayModifier<OverlayContent: View>: ViewModifier {
                         // Opacity only: the scrim spans the window, so scaling the host
                         // would pull its edges inward and reveal the content behind it.
                         .transition(.opacity)
+                        .preference(key: InfoOverlayPresentedKey.self, value: true)
                 }
             }
             // `isShown` is already the new value here, so true picks the entrance curve.

@@ -32,7 +32,9 @@ struct DetailActions {
     var copyOverlays: () -> Void
     var snapEnabled: Binding<Bool>
     var openAutomation: (() -> Void)?
-    var resumeSchedule: (() -> Void)?
+    /// The Save as Scheme popover `saveAsScheme` opens, and its name draft, both kept by the host across displays.
+    var schemeCapturePresented: Binding<Bool> = .constant(false)
+    var schemeNameDraft: Binding<String> = .constant("")
     var applyScheme: (ScreenScheme) -> Void = { _ in }
     var manageSchemes: () -> Void = {}
     var bookmark: DetailBookmarkTarget?
@@ -44,7 +46,6 @@ struct DetailActions {
     var switchBackToVideo: (() -> Void)?
     var switchBackToWebPage: (() -> Void)?
     var applyWebSource: (HTMLSource) -> Void = { _ in }
-    var reload: () -> Void = {}
     var swipe: (DetailSwipeStep) -> Void = { _ in }
     var backLabel: LocalizedStringKey = "Overview"
 }
@@ -67,9 +68,9 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     var preview: DetailPreviewState = .hero
     /// The attempt's page while `preview` shows one, otherwise the notices above the setup or hero.
     @ViewBuilder let wallpaperStatus: () -> Status
-    var emptyScreen: Screen?
+    /// The shown display; nil leaves the empty setup and Save as Scheme without a target.
+    var screen: Screen?
     var webTransform: DetailWebTransform?
-    var schedulePausedUntil: Date?
     /// The side the shown display's preview slides in from when another display is switched to.
     var switchEdge: HorizontalEdge = .trailing
     @Binding var inspectorVisible: Bool
@@ -83,7 +84,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
         VStack(spacing: 0) {
             DetailTopBar(tags: tags, section: $section, actions: actions,
                          inspectorVisible: $inspectorVisible,
-                         hasWallpaper: !isEmpty, schedulePausedUntil: schedulePausedUntil,
+                         hasWallpaper: !isEmpty, screen: screen,
                          attemptShown: section == .wallpaper && preview.showsAttempt)
                 .opacity(chromeVisible ? 1 : 0)
                 .offset(y: chromeVisible || reduceMotion ? 0 : -8)
@@ -145,8 +146,8 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                         VStack(spacing: 0) {
                             wallpaperStatus()
                             if isEmpty {
-                                if let emptyScreen {
-                                    EmptyDisplaySetup(screen: emptyScreen, chooseFile: actions.importFile,
+                                if let screen {
+                                    EmptyDisplaySetup(screen: screen, chooseFile: actions.importFile,
                                                       applyWebSource: actions.applyWebSource,
                                                       chooseFromLibrary: actions.chooseFromLibrary)
                                         .background(previewMeasurement)

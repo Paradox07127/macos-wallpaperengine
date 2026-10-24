@@ -32,13 +32,9 @@ extension DetailGeometry {
     }
 }
 
-/// User interaction, attempt presentation, display tags and facts for the detail page.
+/// User interaction, attempt presentation and facts for the detail page.
 @Suite("Display detail shell")
 struct DisplayDetailTests {
-
-    private func tag(_ index: Int, current: Bool = false) -> DetailDisplayTag {
-        DetailDisplayTag(id: CGDirectDisplayID(index), name: "Display \(index)", thumbnail: nil, isCurrent: current)
-    }
 
     // MARK: Stage area
 
@@ -209,31 +205,6 @@ struct DisplayDetailTests {
         #expect(DetailPreviewState.runtimeError.showsRuntimeError)
         // Control: an attempt's page fills the column, so no banner sits over it.
         #expect(!DetailPreviewState.prepareFailed.showsRuntimeError)
-    }
-
-    // MARK: Top-bar tags
-
-    @Test("Three display tags stay unfolded")
-    func threeTagsDoNotFold() {
-        let split = DetailTagRow.split([tag(1, current: true), tag(2), tag(3)])
-        #expect(split.visible.count == 3)
-        #expect(split.overflow == 0)
-    }
-
-    @Test("Five display tags fold to the first three plus +2")
-    func fiveTagsFold() {
-        let split = DetailTagRow.split((1 ... 5).map { tag($0) })
-        #expect(split.visible.map(\.id) == [1, 2, 3])
-        #expect(split.overflow == 2)
-        // Four is the first count that folds at all.
-        #expect(DetailTagRow.split((1 ... 4).map { tag($0) }).overflow == 1)
-    }
-
-    @Test("The current display's tag takes the last visible slot instead of folding")
-    func currentTagStaysVisible() {
-        let split = DetailTagRow.split((1 ... 5).map { tag($0, current: $0 == 5) })
-        #expect(split.visible.map(\.id) == [1, 2, 5])
-        #expect(split.overflow == 2)
     }
 
     // MARK: Hero facts

@@ -96,11 +96,7 @@ private struct GlassToolbarItemStyle: ButtonStyle {
                 .foregroundStyle(glyph)
                 .padding(.horizontal, DesignTokens.Spacing.xs)
                 .frame(minWidth: size.height, minHeight: size.height)
-                .background(
-                    Capsule()
-                        .fill(DesignTokens.Colors.textPrimary.opacity(fillOpacity))
-                        .padding(DesignTokens.Spacing.xxs)
-                )
+                .background(GlassToolbarItemPlate(hovered: hovered, pressed: configuration.isPressed))
                 .contentShape(Capsule())
                 .contentShape(.focusEffect, Capsule())
                 .onHover { hovered = $0 }
@@ -113,12 +109,30 @@ private struct GlassToolbarItemStyle: ButtonStyle {
             }
             return destructive ? AnyShapeStyle(DesignTokens.Colors.Status.danger) : AnyShapeStyle(.primary)
         }
+    }
+}
 
-        private var fillOpacity: Double {
-            if configuration.isPressed {
-                return DesignTokens.Opacity.activeFill
-            }
-            return hovered && isEnabled ? DesignTokens.Opacity.hoverFill : 0
+/// The hover and press plate behind a key in a `GlassToolbarGroup`; a menu trigger in the group draws the same one.
+public struct GlassToolbarItemPlate: View {
+    private let hovered: Bool
+    private let pressed: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init(hovered: Bool, pressed: Bool) {
+        self.hovered = hovered
+        self.pressed = pressed
+    }
+
+    public var body: some View {
+        Capsule()
+            .fill(DesignTokens.Colors.textPrimary.opacity(fillOpacity))
+            .padding(DesignTokens.Spacing.xxs)
+    }
+
+    private var fillOpacity: Double {
+        if pressed {
+            return DesignTokens.Opacity.activeFill
         }
+        return hovered && isEnabled ? DesignTokens.Opacity.hoverFill : 0
     }
 }
