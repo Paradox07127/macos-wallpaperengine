@@ -7,40 +7,33 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.9.0</title>
-      <pubDate>Fri, 23 Oct 2026 15:30:41 +0000</pubDate>
-      <sparkle:version>0.9.0</sparkle:version>
-      <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
+      <title>Version 0.9.1</title>
+      <pubDate>Sat, 24 Oct 2026 03:18:36 +0000</pubDate>
+      <sparkle:version>0.9.1</sparkle:version>
+      <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>What's New</strong></p>
-<ul>
-<li>Pro: Wallpaper Engine scenes use the new renderer everywhere, including scene recording and live macOS wallpapers.</li>
-<li>Pro: more scenes play correctly: scripted layers, model data, puppet animation, text and particles.</li>
-<li>The System Wallpaper page shows the state of each display, and marks old copies so you can remove them in one step.</li>
-<li>Hover a display on the home page to clear its wallpaper with one button.</li>
-</ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Pro: scene shaders compile in a separate helper, and repeated loads share shader and planning work.</li>
-<li>Pro: clearer scene-load and GPU errors; a failed switch keeps the current wallpaper.</li>
-<li>Pro: easier SteamCMD setup on first launch, with better diagnostics.</li>
-<li>Page switches, detail views, filters and toasts fade or slide smoothly, and follow Reduce Motion.</li>
-<li>Workshop previews start from the cached poster instead of a spinner.</li>
-<li>The System Wallpaper page no longer imports videos straight from Finder; add them from the library.</li>
+<li>Pro: scenes with dynamic text and scripts use less CPU.</li>
+<li>The video texture cache stays under its 2 GiB cap during long sessions.</li>
+<li>Each display shows its panel's native resolution.</li>
+<li>The Shortcuts page shows shortcuts that macOS refused, and names keys by your keyboard layout.</li>
+<li>The library import toast lists each item that failed and why.</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>0.8.9 and earlier no longer open, because their signing certificate was revoked. Download this version and replace the old app by hand.</li>
-<li>Pro: the old renderer and its crash-prone particle loading are gone.</li>
-<li>Pro: bad shader or texture cache data, oversized text and oversized render targets are rejected before they can crash.</li>
-<li>Pro: video textures that a script turns on later now play.</li>
-<li>The macOS wallpaper tile honours Low Power Mode, and retries scenes that timed out while loading.</li>
-<li>A video that resumes soon after a pause keeps its decoder and continues at once.</li>
+<li>Pro: out-of-range sizes, ids, particle counts and script numbers make a scene fail to load instead of crashing the app.</li>
+<li>Pro: a scene that fails while playing keeps showing its error, and a slow teardown no longer delays the next scene.</li>
+<li>macOS 26 and later: scenes waiting to load in System Settings › Wallpaper are no longer stopped as stalled.</li>
+<li>A display cleared on the System Wallpaper page stays empty after a restart.</li>
+<li>Playlists and schedules recheck their next pick after queue edits and time zone changes.</li>
+<li>Settings reset and saves that fail to reach the disk now show as failed.</li>
+<li>Monitor CPU and network readings no longer jump when a counter wraps.</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.0">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.1">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.0/Loomscreen-Pro-0.9.0.dmg" type="application/octet-stream" sparkle:edSignature="WfWtesGhj5MZPafwLwNOPgmVagdlpPmkCw/L63aCxvUalfyYFxCjIhc0PDO6rg2ywdbKMJkZSJoE6d29BjqtAA==" length="31294936" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.1/Loomscreen-Pro-0.9.1.dmg" type="application/octet-stream" sparkle:edSignature="EGd7aZxyBVrGlqOYwb6vY4kV83g/CzbA+5V/vxX8conA6yGcKfTMCs+FIAKQqZZn4hKdVV4Rp0ynxGTCjOB2AQ==" length="31305636" />
     </item>
   </channel>
 </rss>
