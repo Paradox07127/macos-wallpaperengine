@@ -117,6 +117,18 @@ extension ScreenManager {
             }
             .store(in: &cleanupTasks)
 
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)
+            .sink { [weak self] _ in
+                self?.handleSessionResignedActive()
+            }
+            .store(in: &cleanupTasks)
+
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)
+            .sink { [weak self] _ in
+                self?.handleSessionBecameActive()
+            }
+            .store(in: &cleanupTasks)
+
         // Global play/pause flips every session's intent without a policy refresh; the session-state commit's isAnyPlaying edge is the signal that reaches this file.
         playbackStateSubject
             .sink { [weak self] _ in
@@ -154,6 +166,16 @@ extension ScreenManager {
     private func handleScreenUnlocked() {
         Logger.info("Screen unlocked — restoring wallpaper sessions", category: .lifecycle)
         setUserAbsence(.screenLocked, present: false)
+    }
+
+    private func handleSessionResignedActive() {
+        Logger.info("Switched to another user — suspending wallpaper sessions", category: .lifecycle)
+        setUserAbsence(.sessionInactive, present: true)
+    }
+
+    private func handleSessionBecameActive() {
+        Logger.info("Session active again — restoring wallpaper sessions", category: .lifecycle)
+        setUserAbsence(.sessionInactive, present: false)
     }
 
     /// Lock screen and display sleep both mean "user is not watching".

@@ -69,8 +69,19 @@ extension ScreenManager {
                   ),
                   case let .scene(reconciled) = configuration.activeWallpaper,
                   reconciled != previous else { continue }
+            // Queued updates run in order from the oldest queued baseline: a queued one can be superseded before it patches the session, and re-sending an applied value is harmless.
+            let prior = scenePresetUpdateTasks[screen.id]
+            let baseline = prior?.baseline ?? previous
+            let update = Task { @MainActor [weak self] in
+                await prior?.task.value
+                await self?.updateSceneDescriptor(reconciled, previous: baseline, for: screen)
+            }
+            scenePresetUpdateTasks[screen.id] = (update, baseline)
             Task { @MainActor [weak self] in
-                await self?.updateSceneDescriptor(reconciled, previous: previous, for: screen)
+                await update.value
+                if self?.scenePresetUpdateTasks[screen.id]?.task == update {
+                    self?.scenePresetUpdateTasks[screen.id] = nil
+                }
             }
         }
     }

@@ -217,6 +217,23 @@ struct UserAbsenceRevalidationTests {
         )
     }
 
+    @Test("Switching to another user marks the user absent until this session is active again")
+    func fastUserSwitchingIsAnAbsence() {
+        let probe = FakeUserPresenceProbe()
+        let manager = makeManager(probe: probe)
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        defer { workspaceCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: NSWorkspace.shared) }
+
+        workspaceCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: NSWorkspace.shared)
+        #expect(manager.isUserAbsent, "the switched-away session kept running wallpapers and automation")
+
+        manager.revalidateUserAbsence()
+        #expect(manager.isUserAbsent, "revalidation cleared an absence its probes cannot observe")
+
+        workspaceCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: NSWorkspace.shared)
+        #expect(!manager.isUserAbsent, "returning to the session left wallpapers suspended")
+    }
+
     /// Source-pinned: the partially-asleep multi-display state that separates the two
     /// APIs cannot be constructed in-process.
     @Test("The sleep probe enumerates online displays, never the active list")

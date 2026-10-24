@@ -2,6 +2,7 @@
 import AppKit
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 import Testing
 
 @MainActor
@@ -84,6 +85,201 @@ struct ScenePresetLiveUpdateTests {
             #expect(handed.presetID == nil)
             #expect(handed.presetSnapshot.isEmpty)
         }
+    }
+
+    /// Runs `body` with a patchable scene session showing a preset layered over keys `a` and `b`.
+    private static func withPatchableScene(
+        _ body: (ScreenManager, Screen, PresetPatchRecordingSceneSession, String) async throws -> Void
+    ) async throws {
+        SettingsManager.shared.cleanAllSettings(applyLoginSetting: false)
+        defer { SettingsManager.shared.cleanAllSettings(applyLoginSetting: false) }
+        let presetID = "preset-live-\(UUID().uuidString)"
+        let original = preset(id: presetID, values: ["a": .number(0), "b": .number(0)])
+        await SettingsManager.shared.registerScenePreset(original)
+        let showing = SceneDescriptor(
+            workshopID: baseWorkshopID, cacheRelativePath: "wpe-cache/\(baseWorkshopID)",
+            entryFile: "scene.json", capabilityTier: .imageOnly
+        ).withPresetLayer(id: presetID, snapshot: original.values)
+
+        let screen = Screen(nsScreen: PresetLiveUpdateTestNSScreen())
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .pro), originReconciler: PreservingOriginReconciler()
+        ))
+        defer {
+            manager.tearDownForTermination()
+            manager.configurationStore.remove(for: screen.id)
+        }
+        let session = PresetPatchRecordingSceneSession(rendered: original.values)
+        screen.installRuntimeSession(session)
+        var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(showing))
+        configuration.displayFingerprint = screen.displayFingerprint
+        manager.saveConfiguration(configuration)
+        try await body(manager, screen, session, presetID)
+    }
+
+    private static func storedScene(_ manager: ScreenManager, _ screen: Screen) -> SceneDescriptor? {
+        guard case let .scene(descriptor)? = manager.getConfiguration(for: screen)?.activeWallpaper else { return nil }
+        return descriptor
+    }
+
+    @Test("Two preset edits in a row both reach a scene whose first patch is still being prepared")
+    func backToBackEditsBothReachScene() async throws {
+        try await Self.withPatchableScene { manager, screen, session, presetID in
+            session.holdsFirstPrepare = true
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: ["a": .number(1), "b": .number(0)]))
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: ["a": .number(1), "b": .number(1)]))
+            await Self.settle { session.heldPrepare != nil }
+            await Self.settle { !session.committed.isEmpty }
+            session.releaseHeldPrepare()
+            let expected: [String: WallpaperEngineProjectPropertyValue] = ["a": .number(1), "b": .number(1)]
+            await Self.settle { session.rendered == expected }
+
+            #expect(Self.storedScene(manager, screen)?.presetSnapshot == expected)
+            #expect(session.rendered == expected, "the renderer kept a value the saved configuration no longer has")
+        }
+    }
+
+    @Test("A preset edit made while the previous edit's patch is still being prepared reaches the scene")
+    func editDuringPreparedPatchReachesScene() async throws {
+        try await Self.withPatchableScene { manager, screen, session, presetID in
+            session.holdsFirstPrepare = true
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: ["a": .number(1), "b": .number(0)]))
+            await Self.settle { session.heldPrepare != nil }
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: ["a": .number(1), "b": .number(1)]))
+            await Self.settle { !session.committed.isEmpty }
+            session.releaseHeldPrepare()
+            let expected: [String: WallpaperEngineProjectPropertyValue] = ["a": .number(1), "b": .number(1)]
+            await Self.settle { session.rendered == expected }
+
+            #expect(Self.storedScene(manager, screen)?.presetSnapshot == expected)
+            #expect(session.rendered == expected, "the renderer kept a value the saved configuration no longer has")
+        }
+    }
+}
+
+/// Applies each committed patch's changed keys to `rendered`, the way a live renderer would.
+@MainActor
+private final class PresetPatchRecordingSceneSession: SceneWallpaperRuntime {
+    private(set) var rendered: [String: WallpaperEngineProjectPropertyValue]
+    private(set) var committed: [WPEScenePropertyPatch] = []
+    var holdsFirstPrepare = false
+    private(set) var heldPrepare: CheckedContinuation<Void, Never>?
+    private let mutationAuthority = ScenePropertyMutationAuthority()
+    private let posterGate = ScenePropertyPosterCommitGate()
+
+    init(rendered: [String: WallpaperEngineProjectPropertyValue]) {
+        self.rendered = rendered
+    }
+
+    func releaseHeldPrepare() {
+        heldPrepare?.resume()
+        heldPrepare = nil
+    }
+
+    let wallpaperType = WallpaperType.scene
+    let videoPlayer: WallpaperVideoPlayer? = nil
+    let wallpaperWindow: NSWindow? = nil
+    let isPlaying = true
+    var playbackMachine = WallpaperPlaybackStateMachine()
+    let loadFailureCause: WallpaperFailureCause? = nil
+    let loadError: SceneRenderingError? = nil
+    let loadProgress: String? = nil
+    let hasPresentedFrame: Bool? = true
+    let rendererDiagnostics: SceneRendererDiagnostics? = nil
+    let rendererRuntimeActivity: WPESceneRuntimeActivity? = nil
+    let mayPerformRuntimeWork = true
+    let isHibernated = false
+    var onRuntimeErrorChange: (@MainActor () -> Void)?
+    var onRuntimeActivityChange: (@MainActor () -> Void)?
+    let frameRateController: (any WallpaperFrameRateConfigurable)? = nil
+    let audioController: (any WallpaperAudioConfigurable)? = nil
+
+    var summary: WallpaperSessionSummary {
+        WallpaperSessionSummary(wallpaperType: .scene, activity: .active, supportsPlaybackControl: true, subtitle: nil)
+    }
+
+    var userIntendsToPlay: Bool {
+        playbackMachine.userIntendsToPlay
+    }
+
+    func show() {}
+
+    func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
+
+    func updateFrame(to _: CGRect) {}
+
+    func cleanup() {}
+
+    func prepareForDisplay(timeout _: Duration) async -> WallpaperPreparationResult {
+        .ready
+    }
+
+    func play() {}
+
+    func pause() {}
+
+    func setCriticalMemoryPressureActive(_: Bool) {}
+
+    func pollRendererState() async {}
+
+    func captureLivePosterFromNextFrame() async -> NSImage? {
+        nil
+    }
+
+    func setHibernationEligible(_: Bool) {}
+
+    func setMouseInteractionEnabled(_: Bool) {}
+
+    func setClickCaptureEnabled(_: Bool) {}
+
+    func setSceneFitMode(_: VideoFitMode) {}
+
+    func scenePropertyBindings() async -> [String: [WPEScenePropertyBinding]] {
+        Dictionary(uniqueKeysWithValues: ["a", "b"].map { key in
+            (key, [WPEScenePropertyBinding(propertyKey: key, target: .generalField(name: key), kind: .general, action: .incremental)])
+        })
+    }
+
+    @discardableResult func advanceScenePropertyMutationIntent() -> ScenePropertyMutationToken {
+        mutationAuthority.advance()
+    }
+
+    func currentScenePropertyMutationToken() -> ScenePropertyMutationToken {
+        mutationAuthority.currentToken()
+    }
+
+    func isCurrentScenePropertyMutationIntent(_ token: ScenePropertyMutationToken) -> Bool {
+        mutationAuthority.isCurrent(token)
+    }
+
+    func prepareScenePropertyPatch(
+        _ patch: WPEScenePropertyPatch,
+        expectedIntent _: ScenePropertyMutationToken
+    ) async -> PreparedScenePropertyPatch? {
+        if holdsFirstPrepare {
+            holdsFirstPrepare = false
+            await withCheckedContinuation { heldPrepare = $0 }
+        }
+        return PreparedScenePropertyPatch(patch: patch, rendererGeneration: 0)
+    }
+
+    func stageScenePropertyPosterCommit(overrides: [String: WallpaperEngineProjectPropertyValue]) -> ScenePropertyPosterCommit {
+        posterGate.stage(overrides: overrides)
+    }
+
+    func commitScenePropertyPatch(
+        _ prepared: PreparedScenePropertyPatch,
+        posterCommit _: ScenePropertyPosterCommit,
+        updatedDescriptor _: SceneDescriptor
+    ) async -> Bool {
+        committed.append(prepared.patch)
+        for key in prepared.patch.changedKeys {
+            rendered[key] = prepared.patch.newValues[key]
+        }
+        return true
     }
 }
 

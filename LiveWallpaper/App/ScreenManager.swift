@@ -60,10 +60,13 @@ final class ScreenManager {
     /// Non-nil: that screen's transient error belongs to this candidate, which never committed.
     @ObservationIgnored var failedProposals: [CGDirectDisplayID: ScreenConfiguration] = [:]
     @ObservationIgnored var renderingActivityToken: (any NSObjectProtocol)?
+    /// The latest preset-library update queued for each display and the descriptor its patch diffs from; each one waits for the one before it.
+    @ObservationIgnored var scenePresetUpdateTasks: [CGDirectDisplayID: (task: Task<Void, Never>, baseline: SceneDescriptor)] = [:]
     enum UserAbsenceReason: Hashable {
         case screenLocked
         case displaySleep
         case systemSleep
+        case sessionInactive
     }
     /// Reasons the user is not watching the desktop.
     @ObservationIgnored var userAbsenceReasons: Set<UserAbsenceReason> = []
