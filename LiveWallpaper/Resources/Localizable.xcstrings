@@ -1963,66 +1963,6 @@
         }
       }
     },
-    "%lld comments" : {
-      "comment" : "Workshop detail link to the item's comment thread. Placeholder is the comment count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld comment"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld comments"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld comentario"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld comentarios"
-                }
-              }
-            }
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 件のコメント"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 条评论"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 則留言"
-          }
-        }
-      }
-    },
     "%lld cores" : {
       "comment" : "GPU core count in system overview.",
       "extractionState" : "manual",
@@ -13047,42 +12987,6 @@
         }
       }
     },
-    "Change Notes" : {
-      "comment" : "Workshop detail link to the item's change notes on Steam.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Change Notes"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notas de cambios"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新履歴"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新说明"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新說明"
-          }
-        }
-      }
-    },
     "Change Preset" : {
       "comment" : "Name of an undoable step in the Edit Desk: a scene's preset was changed, or set to none.",
       "localizations" : {
@@ -16215,42 +16119,6 @@
         }
       }
     },
-    "Collections" : {
-      "comment" : "Workshop detail link to the Steam collections containing the item.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Collections"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Colecciones"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コレクション"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "合集"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "合集"
-          }
-        }
-      }
-    },
     "Color" : {
       "comment" : "Now Playing DIY row holding the custom accent color well.",
       "extractionState" : "manual",
@@ -16457,42 +16325,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "色彩分離"
-          }
-        }
-      }
-    },
-    "Comments" : {
-      "comment" : "Workshop detail link to the item's comment thread when the count is unknown.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comments"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comentarios"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コメント"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "评论"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "留言"
           }
         }
       }
@@ -38015,41 +37847,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "較長的取樣間隔可降低耗電量。"
-          }
-        }
-      }
-    },
-    "Look for more on Steam" : {
-      "comment" : "Link out to the wallpaper's Steam Community page, since the preset query only finds presets Steam indexed.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Look for more on Steam"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar más en Steam"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam でさらに探す"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Steam 上找更多"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Steam 上找更多"
           }
         }
       }
@@ -64476,41 +64273,6 @@
         }
       }
     },
-    "Showing the top %lld of %lld presets." : {
-      "comment" : "Workshop preset list truncation notice; first number is how many presets are shown, second is the total published.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Showing the top %lld of %lld presets."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrando los %lld primeros de %lld preajustes."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上位 %lld 件を表示中（全 %lld 件のプリセット）。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅显示前 %lld 个预设，共 %lld 个。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅顯示前 %lld 個預設，共 %lld 個。"
-          }
-        }
-      }
-    },
     "Shown" : {
       "localizations" : {
         "es" : {
@@ -81357,42 +81119,6 @@
         }
       }
     },
-    "View presets on Steam" : {
-      "comment" : "Workshop detail presets section without a usable Web API key: link to the item's Steam page.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View presets on Steam"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ver preajustes en Steam"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam でプリセットを表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Steam 上查看预设"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Steam 上檢視預設"
-          }
-        }
-      }
-    },
     "Viewport" : {
       "localizations" : {
         "en" : {
@@ -85903,6 +85629,135 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "繼續編輯"
+          }
+        }
+      }
+    },
+    "Download Again" : {
+      "comment" : "Context menu item on an installed Workshop wallpaper: downloads it from Steam again, replacing the copy in the library.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download Again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a descargar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再ダウンロード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新下載"
+          }
+        }
+      }
+    },
+    "%lld more presets are only on Steam" : {
+      "comment" : "Caption under the full Workshop preset list: presets past the ones loaded here. Placeholder is their count.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more preset is only on Steam"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more presets are only on Steam"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld preajuste más solo está en Steam"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld preajustes más solo están en Steam"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ほかに %lld 個のプリセットが Steam にのみあります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另有 %lld 个预设仅在 Steam 上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另有 %lld 個預設僅在 Steam 上"
+          }
+        }
+      }
+    },
+    "Set your Steam Web API key in Settings to list presets here." : {
+      "comment" : "Workshop detail presets section without a usable Steam Web API key.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set your Steam Web API key in Settings to list presets here."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Establece tu clave de Steam Web API en Ajustes para ver aquí los preajustes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここにプリセットを表示するには、設定で Steam Web API キーを設定してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在设置中配置 Steam Web API 密钥，以在此列出预设。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在設定中設定 Steam Web API 金鑰，以在此列出預設。"
           }
         }
       }

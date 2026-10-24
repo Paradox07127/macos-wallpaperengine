@@ -213,7 +213,12 @@ struct WorkshopModalHost: View {
             hasLibraryEntry: entry != nil, isDownloading: downloads.isBusy(item.id),
             isFetchingDependencies: downloads.fetchingDependencies.contains(item.id)
         ) else { return nil }
-        return InstalledItemExtras(updateState: .unknown)
+        let isFlagged = entry.map {
+            InstalledLibraryModel.hasNewerVersion($0, remoteEpochs: InstalledLibraryModel.Dependencies.live.loadRemoteUpdateEpochs())
+        } ?? false
+        return InstalledItemExtras(updateState: WorkshopModalContent.updateState(
+            isFlagged: isFlagged, phase: downloads.phase(for: item.id)
+        ))
     }
 
     private func targets(for item: WorkshopQueryItem) -> [ModalDisplayTarget] {
@@ -255,7 +260,7 @@ struct WorkshopModalHost: View {
     }
 
     private func presentation(for item: WorkshopQueryItem, at now: Date) -> WorkshopDownloadPresentation {
-        WorkshopDownloadPresentation.make(
+        var presentation = WorkshopDownloadPresentation.make(
             ticketState: wiring.ticket(for: item.id)?.state,
             screenName: ticketScreenName(for: item),
             wallpapersOn: screenManager.wallpapersGloballyEnabled,
@@ -270,6 +275,10 @@ struct WorkshopModalHost: View {
             blocker: doctor.downloadBlockerMessage,
             transferState: downloads.transferState(for: item.id, at: now)
         )
+        if presentation == WorkshopDownloadPresentation(), installedExtras(for: item)?.updateState == .available {
+            presentation.status = WorkshopDownloadPresentation.updateAvailableText
+        }
+        return presentation
     }
 
     private func unsupportedInstalledOrigin(for item: WorkshopQueryItem) -> WPEOrigin? {
@@ -312,6 +321,9 @@ struct WorkshopModalHost: View {
                 confirmingReplacement(for: item.id) { [wiring] in wiring.saveOnly(itemID: item.id, replacing: $0) }
             },
             cancelDownload: { wiring.cancelDownload(itemID: item.id) },
+            update: {
+                confirmingReplacement(for: item.id) { [wiring] in _ = wiring.downloads.start(item.id, $0) }
+            },
             connectSteam: { onConnectSteam() },
             openInSteam: { openURL(item.steamCommunityURL) },
             reveal: { session.matureReveal.reveal(item.id) },

@@ -199,9 +199,11 @@ struct WallpaperDetailSection<Content: View>: View {
 }
 
 #if !LITE_BUILD
-/// A Workshop transfer as the detail modal shows it over its buttons: status and numbers, then the bar.
+/// A Workshop transfer as the detail modal shows it over its buttons: status, numbers and `button`, then the bar.
 struct ModalDownloadStatusLine: View {
     let presentation: WorkshopDownloadPresentation
+    /// Ends the line, such as Update or Cancel; nil draws none.
+    var button: ModalExtraButton?
 
     var body: some View {
         VStack(spacing: DesignTokens.Spacing.xs) {
@@ -217,6 +219,13 @@ struct ModalDownloadStatusLine: View {
                     .font(DesignTokens.EditDesk.Typography.metaMono)
                     .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
                     .lineLimit(1)
+                if let button {
+                    Button(action: button.action) { Text(verbatim: button.title).lineLimit(1) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!button.isEnabled)
+                        .fixedSize()
+                }
             }
             switch presentation.progress {
             case .none:

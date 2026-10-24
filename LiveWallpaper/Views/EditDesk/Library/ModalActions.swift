@@ -224,12 +224,11 @@ final class ModalActions {
         preferred: CGDirectDisplayID? = nil
     ) -> [ModalDisplayTarget] {
         let displays = displays.sorted { $0.frame.minX < $1.frame.minX }
-        let primary = displays.first { $0.id == preferred } ?? displays.first
         return displays.enumerated().map { index, display in
             ModalDisplayTarget(
                 id: display.id, name: display.name, shortcutIndex: index + 1,
                 aspectRatio: display.frame.width / display.frame.height,
-                thumbnail: covers[display.id], isPrimary: display.id == primary?.id,
+                thumbnail: covers[display.id], isPrimary: display.id == preferred,
                 isApplied: activeOn.contains(display.id)
             )
         }
@@ -267,14 +266,12 @@ final class ModalActions {
         )
     }
 
-    /// The modal's title-row buttons for `item`: the context menu's rows that do not apply.
+    /// The modal's title-row buttons for `item`: the context menu's rows that neither apply nor update.
     func headerActions(
         for item: LibraryItem, requestRename: @escaping @MainActor () -> Void,
         requestDelete: @escaping @MainActor () -> Void
     ) -> [ModalHeaderAction] {
-        actions(for: item).headerActions(
-            isUpdating: isUpdating(item), requestRename: requestRename, requestDelete: requestDelete
-        )
+        actions(for: item).headerActions(requestRename: requestRename, requestDelete: requestDelete)
     }
 
     #if !LITE_BUILD
@@ -290,10 +287,7 @@ final class ModalActions {
             isInstalled: true, reportsSave: false, blocker: nil
         )
         if status.status.isEmpty, status.progress == .none, updateState(for: entry) == .available {
-            status.status = String(
-                localized: "Update available", bundle: .appLanguage,
-                comment: "A11y: the installed item has a newer version on Steam."
-            )
+            status.status = WorkshopDownloadPresentation.updateAvailableText
         }
         return status.status.isEmpty && status.progress == .none ? nil : status
     }

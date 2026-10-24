@@ -80,7 +80,7 @@ struct ModalActionsTests {
         let targets = modal.targets(for: item, covers: [2: cover])
         #expect(targets.map(\.id) == [1, 2, 3])
         #expect(targets.map(\.shortcutIndex) == [1, 2, 3])
-        #expect(targets.filter(\.isPrimary).map(\.id) == [1] as [CGDirectDisplayID])
+        #expect(targets.filter(\.isPrimary).isEmpty, "with no display to open the library for, none is prominent")
         #expect(targets.filter(\.isApplied).map(\.id) == [1] as [CGDirectDisplayID])
         let expectedRatios: [CGFloat] = [1920.0 / 1080, 1.6, 1200.0 / 900]
         #expect(targets.map(\.aspectRatio) == expectedRatios)
@@ -88,10 +88,12 @@ struct ModalActionsTests {
         #expect(targets[0].thumbnail == nil)
         item.onDisplays = [2]
         let reapplied = modal.targets(for: item)
-        #expect(ModalGeometry.applyButtons(targets: reapplied).primary?.id == 1)
+        let split = ModalGeometry.applyButtons(targets: reapplied)
+        #expect(split.primary == nil)
+        #expect(split.secondary.map(\.id) == [1, 2, 3] as [CGDirectDisplayID])
         #expect(reapplied.filter(\.isApplied).map(\.id) == [2] as [CGDirectDisplayID])
         item.onDisplays = [1, 2, 3]
-        #expect(modal.targets(for: item).filter(\.isPrimary).map(\.id) == [1] as [CGDirectDisplayID])
+        #expect(modal.targets(for: item).filter(\.isPrimary).isEmpty)
     }
 
     @Test func preselectedDisplayTakesThePrimaryButton() {
@@ -103,8 +105,10 @@ struct ModalActionsTests {
         #expect(preselected.filter(\.isPrimary).map(\.id) == [3])
         #expect(preselected.map(\.shortcutIndex) == [1, 2, 3])
         #expect(ModalGeometry.applyButtons(targets: preselected).primary?.id == 3)
-        // A preselected display that is gone leaves the leftmost one primary.
-        #expect(modal.targets(for: item, preferred: 99).filter(\.isPrimary).map(\.id) == [1])
+        #expect(
+            modal.targets(for: item, preferred: 99).filter(\.isPrimary).isEmpty,
+            "a preselected display that is gone handed its prominence to another display"
+        )
     }
 
     private func value(_ kind: WallpaperFact.Kind, in facts: [WallpaperFact]) -> String? {
@@ -150,7 +154,7 @@ struct ModalActionsTests {
         #expect(WallpaperFacts.durationText(3725) == "1:02:05")
     }
 
-    @Test("The title row gets every … row that is not an apply, in one order, each once")
+    @Test("The title row gets every … row that is neither an apply nor an update, grouped into capsules, each once")
     func headerActionsFollowTheItem() throws {
         let fixture = Fixture()
         fixture.displays = displays()
@@ -162,10 +166,13 @@ struct ModalActionsTests {
         let rows = modal.headerActions(
             for: current, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
         )
-        #expect(rows.map(\.kind) == [.showInFinder, .bookmark(isBookmarked: false), .rename, .removeFromLibrary])
+        #expect(rows.map(\.kind) == [.bookmark(isBookmarked: false), .rename, .showInFinder, .removeFromLibrary])
         try #require(rows.count == 4)
         #expect(rows.map(\.isDestructive) == [false, false, false, true])
-        rows[2].perform()
+        #expect(ModalHeaderAction.groups(rows).map { $0.map(\.kind) } == [
+            [.bookmark(isBookmarked: false), .rename], [.showInFinder], [.removeFromLibrary],
+        ])
+        rows[1].perform()
         #expect(requested == ["rename"])
         // Control: the context menus keep Apply to and All Displays; only the title row drops them.
         #expect(modal.menuItems(for: current, requestRename: {}, requestDelete: {}).count == rows.count + 2)
@@ -181,7 +188,7 @@ struct ModalActionsTests {
         )
         #expect(
             modal.headerActions(for: aerial, requestRename: {}, requestDelete: {}).map(\.kind)
-                == [.showInFinder, .bookmark(isBookmarked: false)]
+                == [.bookmark(isBookmarked: false), .showInFinder]
         )
         #if !LITE_BUILD
         var inputs = fixture.inputs()
@@ -191,13 +198,16 @@ struct ModalActionsTests {
         let idle = installedModal.headerActions(
             for: installed, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
         )
-        #expect(idle.map(\.kind) == [.showInFinder, .openInSteam, .bookmark(isBookmarked: false), .checkForUpdate, .delete])
+        #expect(ModalHeaderAction.groups(idle).map { $0.map(\.kind) } == [
+            [.bookmark(isBookmarked: false)], [.showInFinder, .openInSteam], [.delete],
+        ])
         idle.last?.perform()
         #expect(requested == ["rename", "delete"])
         fixture.phase = .downloading
         #expect(
             installedModal.headerActions(for: installed, requestRename: {}, requestDelete: {}).map(\.kind)
-                == [.showInFinder, .openInSteam, .bookmark(isBookmarked: false), .cancelUpdate, .delete]
+                == idle.map(\.kind),
+            "the status line, not the title row, cancels the update"
         )
         #endif
     }
@@ -398,7 +408,7 @@ struct ModalActionsTests {
             String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Open in Steam", bundle: .appLanguage),
             String(localized: "Add Bookmark", bundle: .appLanguage),
-            String(localized: "Check for updates", bundle: .appLanguage),
+            String(localized: "Download Again", bundle: .appLanguage),
             String(localized: "Delete", bundle: .appLanguage),
         ])
         installed.last?.action()
@@ -728,6 +738,33 @@ struct ModalActionsTests {
         #expect(local.openInSteam == nil)
         #expect(local.checkForUpdate == nil)
         #expect(local.deleteInstalled != nil)
+    }
+
+    @Test("The status line offers Update while a newer version waits and Cancel while it downloads, nothing otherwise")
+    func statusLineButtonFollowsTheUpdateState() throws {
+        let fixture = Fixture()
+        let item = workshop("123")
+        fixture.items = [item]
+        var updated = 0
+        var cancelled: [UInt64] = []
+        var inputs = fixture.inputs()
+        inputs.update = { _ in updated += 1 }
+        inputs.cancelUpdate = { cancelled.append($0) }
+        let actions = fixture.modal(inputs: inputs).actions(for: item)
+
+        let update = try #require(actions.statusButton(for: .available))
+        #expect(update.title == String(localized: "Update", bundle: .appLanguage))
+        update.action()
+        #expect(updated == 1)
+        let cancel = try #require(actions.statusButton(for: .checking(progress: 0.5)))
+        #expect(cancel.title == String(localized: "Cancel", bundle: .appLanguage))
+        cancel.action()
+        #expect(cancelled == [123])
+        for state: InstalledItemExtras.UpdateState? in [.upToDate, .unknown, .failed(message: "Offline"), nil] {
+            #expect(actions.statusButton(for: state) == nil, Comment(rawValue: "\(String(describing: state))"))
+        }
+        // Control: an item with no Steam page has nothing to update from.
+        #expect(fixture.modal(inputs: inputs).actions(for: workshop("local-folder")).statusButton(for: .available) == nil)
     }
 
     @Test func installedUpdateFlagsDistinguishAvailableFromUpToDate() async {

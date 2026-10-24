@@ -2,7 +2,7 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// The detail modal's bottom row, centred: a caption, a button per display (the first prominent,
+/// The detail modal's bottom row, centred: a caption, a button per display (the primary one, if any, prominent,
 /// three at most, the rest under Other Displays), All Displays, then any buttons the caller adds.
 @MainActor
 struct ModalDisplayButtons: View {
@@ -204,7 +204,7 @@ struct ModalDisplayButtons: View {
     }
 }
 
-/// A button after the display buttons, such as Save only or Cancel download.
+/// A button after the display buttons, such as Save only or Cancel download, or at the end of the status line.
 struct ModalExtraButton: Identifiable {
     let title: String
     var isEnabled = true

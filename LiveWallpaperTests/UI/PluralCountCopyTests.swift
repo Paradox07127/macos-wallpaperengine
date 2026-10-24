@@ -15,7 +15,6 @@ struct PluralCountCopyTests {
         "Deletes %@ scratch items · %@ created by test runs in the container's tmp folder. Nothing else reads them.": "no call site",
         "Skipped %lld displays that changed afterward.": "only for 2 or more; one display gets a message naming it",
         "Created a playlist of %lld videos on %@": "only a drop of 2 or more videos becomes a playlist",
-        "Showing the top %lld of %lld presets.": "the total is only shown when it exceeds the one or more loaded",
     ]
 
     private static let functionWords: Set<String> = [

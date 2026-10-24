@@ -46,7 +46,7 @@ struct WallpaperModal: View {
             titlebarInset: titlebarInset,
             title: content.title,
             pageID: content.itemID,
-            actions: actions.headerActions(isUpdating: isUpdating, requestRename: requestRename, requestDelete: requestDelete),
+            actions: actions.headerActions(requestRename: requestRename, requestDelete: requestDelete),
             onDismiss: onDismiss,
             onEscape: cancelDragForEscape,
             onTargetShortcut: applyToShortcut,
@@ -160,8 +160,8 @@ struct WallpaperModal: View {
 
     // MARK: Right column
 
-    /// Notices first, then the description, the required items, the presets and the Steam links; an
-    /// item without a Workshop page says where its file lives instead.
+    /// Notices first, then the description, the required items and the presets; an item without a
+    /// Workshop page says where its file lives instead.
     @ViewBuilder
     private var sidebar: some View {
         #if !LITE_BUILD
@@ -199,8 +199,7 @@ struct WallpaperModal: View {
             DetailRequiredItemsSection(itemIDs: requiredItemIDs, onOpenItem: { openURL(WorkshopCommunityURL.item(itemID: $0)) })
         }
         if let id = content.workshopID, let doctor {
-            DetailPresetsSection(wallpaperID: id, communityURL: WorkshopCommunityURL.item(itemID: id), doctor: doctor)
-            WorkshopCommunityLinks(itemID: id)
+            DetailPresetsSection(wallpaperID: id, doctor: doctor)
         }
         #endif
         if !content.fileFacts.isEmpty {
@@ -224,16 +223,11 @@ struct WallpaperModal: View {
     private var status: some View {
         #if !LITE_BUILD
         if let downloadStatus {
-            ModalDownloadStatusLine(presentation: downloadStatus)
+            ModalDownloadStatusLine(
+                presentation: downloadStatus, button: actions.statusButton(for: content.installed?.updateState)
+            )
         }
         #endif
-    }
-
-    private var isUpdating: Bool {
-        if case .checking = content.installed?.updateState {
-            return true
-        }
-        return false
     }
 
     // MARK: Keyboard

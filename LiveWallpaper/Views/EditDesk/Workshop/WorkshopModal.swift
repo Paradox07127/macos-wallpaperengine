@@ -182,7 +182,7 @@ struct WorkshopModal: View {
 
     // MARK: Right column
 
-    /// Notices first, then the description, the required items, the presets and the Steam links.
+    /// Notices first, then the description, the required items and the presets.
     @ViewBuilder
     private var sidebar: some View {
         if let unsupportedOrigin {
@@ -208,10 +208,7 @@ struct WorkshopModal: View {
         if !requiredItemIDs.isEmpty {
             DetailRequiredItemsSection(itemIDs: requiredItemIDs, onOpenItem: actions.openItem, matureReveal: matureReveal)
         }
-        DetailPresetsSection(
-            wallpaperID: item.id, communityURL: item.steamCommunityURL, doctor: doctor, matureReveal: matureReveal
-        )
-        WorkshopCommunityLinks(itemID: item.id, commentCount: item.commentCount)
+        DetailPresetsSection(wallpaperID: item.id, doctor: doctor, matureReveal: matureReveal)
     }
 
     /// The unsupported-project notice already lists the missing ones, so the section would repeat them.
@@ -225,8 +222,13 @@ struct WorkshopModal: View {
     @ViewBuilder
     private var status: some View {
         if download != WorkshopDownloadPresentation() {
-            ModalDownloadStatusLine(presentation: download)
+            ModalDownloadStatusLine(presentation: download, button: updateButton)
         }
+    }
+
+    private var updateButton: ModalExtraButton? {
+        guard content.installed?.updateState == .available, let update = actions.update else { return nil }
+        return ModalExtraButton(title: String(localized: "Update", bundle: .appLanguage), action: update)
     }
 
     private var buttons: some View {
@@ -277,13 +279,12 @@ extension WorkshopModalActions {
         for item: WorkshopQueryItem, isLiked: Bool, toggleLike: @escaping @MainActor () -> Void
     ) -> [ModalHeaderAction] {
         var actions: [ModalHeaderAction] = []
-        if let copyText {
-            actions.append(ModalHeaderAction(kind: .copyLink) { copyText(item.steamCommunityURL.absoluteString) })
-            actions.append(ModalHeaderAction(kind: .copyID) { copyText(String(item.id)) })
-        }
-        actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
         if isLiked || !item.isBanned {
             actions.append(ModalHeaderAction(kind: .like(isLiked: isLiked), perform: toggleLike))
+        }
+        actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
+        if let copyText {
+            actions.append(ModalHeaderAction(kind: .copyLink) { copyText(item.steamCommunityURL.absoluteString) })
         }
         return actions
     }

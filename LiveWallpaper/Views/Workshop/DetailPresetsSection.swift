@@ -6,7 +6,6 @@ struct DetailPresetsSection: View {
     /// Published file id of the wallpaper whose presets these are. A plain id, not a
     /// `WorkshopQueryItem`, so the installed-library inspector can use it too.
     let wallpaperID: UInt64
-    let communityURL: URL
     let doctor: SteamCMDDoctorService
     /// The page's reveal set, so an item uncovered in the grid stays uncovered here. nil keeps the
     /// reveal in this section's own `@State`.
@@ -139,13 +138,13 @@ struct DetailPresetsSection: View {
                     .fixedSize()
             }
         }
-        if totalCount(loaded: presets.count) > presets.count {
-            Text("Showing the top \(presets.count) of \(totalCount(loaded: presets.count)) presets.")
+        let steamOnly = totalCount(loaded: presets.count) - presets.count
+        if hidden == 0, steamOnly > 0 {
+            Text("\(steamOnly) more presets are only on Steam", comment: "Caption under the full Workshop preset list: presets past the ones loaded here. Placeholder is their count.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        communityFallbackLink
     }
 
     private func totalCount(loaded: Int) -> Int {
@@ -191,13 +190,10 @@ struct DetailPresetsSection: View {
     }
 
     private var emptyRow: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text("No presets have been published for this wallpaper.")
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            communityFallbackLink
-        }
+        Text("No presets have been published for this wallpaper.")
+            .font(DesignTokens.Typography.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var noMatchesRow: some View {
@@ -213,15 +209,11 @@ struct DetailPresetsSection: View {
         }
     }
 
-    /// The keyless page cannot list presets, so this is one link to Steam's page.
     private var keylessRow: some View {
-        Button {
-            NSWorkspace.shared.open(communityURL)
-        } label: {
-            Label("View presets on Steam", systemImage: "arrow.up.right.square")
-                .font(DesignTokens.Typography.caption)
-        }
-        .buttonStyle(.link)
+        Text("Set your Steam Web API key in Settings to list presets here.", comment: "Workshop detail presets section without a usable Steam Web API key.")
+            .font(DesignTokens.Typography.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func failureRow(_ error: WorkshopQueryError) -> some View {
@@ -264,18 +256,6 @@ struct DetailPresetsSection: View {
         )
     }
 
-    /// Always offered: `child_publishedfileid` only finds presets whose dependency
-    /// Steam actually indexed, so an empty list is not proof that none exist.
-    private var communityFallbackLink: some View {
-        Button {
-            NSWorkspace.shared.open(communityURL)
-        } label: {
-            Label("Look for more on Steam", systemImage: "arrow.up.right.square")
-                .font(DesignTokens.Typography.caption)
-        }
-        .buttonStyle(.link)
-    }
-
     private func filtered(_ presets: [WorkshopQueryItem]) -> [WorkshopQueryItem] {
         let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return presets }
@@ -295,7 +275,7 @@ final class DetailPresetsModel {
         case loading
         case loaded([WorkshopQueryItem])
         case failed(WorkshopQueryError)
-        /// No usable Web API key: nothing to list, only Steam's page to link to.
+        /// No usable Web API key: nothing to list.
         case keyless
     }
 
@@ -367,7 +347,6 @@ enum DetailPresetsQuery {
         }
     }
 
-    /// Without a usable key there is no list to fetch — only Steam's own page.
     @MainActor
     static func load(wallpaperID: UInt64, services: WorkshopServices) async throws -> Outcome {
         guard !services.isKeyless else { return .keyless }

@@ -95,7 +95,7 @@ struct WorkshopModalTests {
         #expect(idle.mode == .download)
         #expect(pressable(idle) == both)
         #expect(preparing(idle).isEmpty)
-        #expect(leading(idle) == 1, "with nothing queued the leftmost display leads")
+        #expect(leading(idle) == nil, "a display led with no display to open the Workshop for")
         let idleExtras: [WorkshopModalButtonRow.Extra] = [.init(kind: .saveOnly)]
         #expect(idle.extras == idleExtras)
 
@@ -151,8 +151,8 @@ struct WorkshopModalTests {
         #expect(layout(queued).buttons == [1, 2, 3])
         #expect(layout(queued).menu.isEmpty, "the queued display fell into Other Displays")
         #expect(preparing(queued) == [3])
-        // Control: with nothing queued the leftmost display leads and the other two follow it.
-        #expect(leading(row(extra: [far])) == 1)
+        // Control: with nothing queued the three buttons keep the same places, none leading.
+        #expect(leading(row(extra: [far])) == nil)
         #expect(layout(row(extra: [far])).buttons == [1, 2, 3])
     }
 
@@ -178,17 +178,27 @@ struct WorkshopModalTests {
         #expect(WorkshopModalPress.action(isInstalled: true, ticketState: .applying) == .ignore)
     }
 
-    @Test("Targets and the default stay spatially stable when applied state changes")
+    @Test("Targets stay spatially stable when applied state changes, and none is prominent")
     func targetsShareTheLibraryModalsOrdering() {
         let targets = WorkshopModalTargets.make(displays: [right, left], activeOn: [1])
         #expect(targets.map(\.id) == [1, 2])
         #expect(targets.map(\.shortcutIndex) == [1, 2])
-        #expect(targets.first(where: \.isPrimary)?.id == 1)
+        #expect(targets.first(where: \.isPrimary) == nil)
         #expect(targets.first?.isApplied == true)
         #expect(targets.last?.isApplied == false)
 
         let allBusy = WorkshopModalTargets.make(displays: [left, right], activeOn: [1, 2])
-        #expect(allBusy.first(where: \.isPrimary)?.id == 1, "with nowhere free the leftmost display is still the default")
+        #expect(allBusy.first(where: \.isPrimary) == nil, "a display that runs the wallpaper became the default")
+    }
+
+    @Test("An installed item flagged by the library's check offers its update until a download of it runs or lands")
+    func installedUpdateFollowsTheLibraryFlag() {
+        #expect(WorkshopModalContent.updateState(isFlagged: true, phase: .idle) == .available)
+        #expect(WorkshopModalContent.updateState(isFlagged: false, phase: .idle) == .upToDate)
+        #expect(WorkshopModalContent.updateState(isFlagged: true, phase: .downloading) == .checking(progress: nil))
+        #expect(WorkshopModalContent.updateState(isFlagged: true, phase: .importing) == .checking(progress: nil))
+        #expect(WorkshopModalContent.updateState(isFlagged: true, phase: .succeeded) == .upToDate)
+        #expect(WorkshopModalContent.updateState(isFlagged: true, phase: .failed("Offline")) == .failed(message: "Offline"))
     }
 
     private func target(applied: Bool, preparing: Bool = false) -> ModalDisplayTarget {
@@ -491,7 +501,7 @@ struct WorkshopModalTests {
         #expect(has("matureReveal: session.matureReveal", in: host))
     }
 
-    // MARK: Copy link / Copy ID
+    // MARK: Title row
 
     @MainActor
     private final class CopyRecorder {
@@ -505,20 +515,20 @@ struct WorkshopModalTests {
         )
     }
 
-    @Test("The title row offers Copy link and Copy ID ahead of Open in Steam, each copying its own text")
-    func titleRowCopiesTheLinkAndTheID() throws {
+    @Test("The title row groups the like apart from Open in Steam and Copy link, which copies the item's page")
+    func titleRowGroupsTheLikeAndTheLinks() throws {
         let item = try item(posted: Date(timeIntervalSince1970: 0))
         let recorder = CopyRecorder()
         let header = actions(copyText: { recorder.texts.append($0) }).headerActions(for: item, isLiked: false) {}
-        #expect(header.map(\.kind) == [.copyLink, .copyID, .openInSteam, .like(isLiked: false)])
-        for action in header.prefix(2) {
-            action.perform()
-        }
-        #expect(recorder.texts == [item.steamCommunityURL.absoluteString, "42"])
-        // Control: a host that cannot copy draws only the Steam button.
+        #expect(ModalHeaderAction.groups(header).map { $0.map(\.kind) } == [
+            [.like(isLiked: false)], [.openInSteam, .copyLink],
+        ])
+        header.last?.perform()
+        #expect(recorder.texts == [item.steamCommunityURL.absoluteString])
+        // Control: a host that cannot copy draws only the Steam button beside the like.
         #expect(
             actions(copyText: nil).headerActions(for: item, isLiked: false) {}.map(\.kind)
-                == [.openInSteam, .like(isLiked: false)]
+                == [.like(isLiked: false), .openInSteam]
         )
     }
 

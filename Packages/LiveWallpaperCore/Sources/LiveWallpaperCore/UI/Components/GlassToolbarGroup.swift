@@ -1,6 +1,19 @@
 import SwiftUI
 
 public enum GlassToolbarMetrics {
+    /// `.regular` is a native toolbar group; `.compact` sits level with a 28pt `GlassIconButton`, as in a detail modal's title row.
+    public enum Size: Sendable {
+        case regular, compact
+
+        /// The capsule's height and each key's minimum width.
+        public var height: CGFloat {
+            switch self {
+            case .regular: GlassToolbarMetrics.height
+            case .compact: DesignTokens.iconButtonDiameter(.large)
+            }
+        }
+    }
+
     /// A macOS 26+ toolbar glass group (`NSToolbarPlatterView`) measures 36pt tall on macOS 27.
     public static let height: CGFloat = 36
     /// A fixed `ToolbarSpacer` between two native groups.
@@ -9,11 +22,17 @@ public enum GlassToolbarMetrics {
     public static let containerSpacing = DesignTokens.Spacing.xs
 }
 
+extension EnvironmentValues {
+    @Entry var glassToolbarSize: GlassToolbarMetrics.Size = .regular
+}
+
 /// Icon actions sharing one glass capsule, the way a macOS 26 toolbar groups its items.
 public struct GlassToolbarGroup<Content: View>: View {
+    private let size: GlassToolbarMetrics.Size
     private let content: Content
 
-    public init(@ViewBuilder content: () -> Content) {
+    public init(size: GlassToolbarMetrics.Size = .regular, @ViewBuilder content: () -> Content) {
+        self.size = size
         self.content = content()
     }
 
@@ -21,6 +40,7 @@ public struct GlassToolbarGroup<Content: View>: View {
         HStack(spacing: 0) {
             content
         }
+        .environment(\.glassToolbarSize, size)
         .adaptiveGlassSurface(.capsule)
         .accessibilityElement(children: .contain)
     }
@@ -29,11 +49,16 @@ public struct GlassToolbarGroup<Content: View>: View {
 /// One icon action inside a `GlassToolbarGroup`; a destructive role draws a red glyph, never a plate.
 public struct GlassToolbarItem: View {
     private let systemImage: String
+    private let tint: Color?
     private let role: ButtonRole?
     private let action: () -> Void
 
-    public init(_ systemImage: String, role: ButtonRole? = nil, action: @escaping () -> Void) {
+    @Environment(\.glassToolbarSize) private var size
+
+    /// `tint` colours the glyph while it is enabled, such as a filled bookmark; nil keeps the role's colour.
+    public init(_ systemImage: String, tint: Color? = nil, role: ButtonRole? = nil, action: @escaping () -> Void) {
         self.systemImage = systemImage
+        self.tint = tint
         self.role = role
         self.action = action
     }
@@ -42,22 +67,26 @@ public struct GlassToolbarItem: View {
         Button(role: role, action: action) {
             Image(systemName: systemImage)
                 .font(DesignTokens.Typography.body)
-                .imageScale(.large)
+                .imageScale(size == .compact ? .medium : .large)
         }
-        .buttonStyle(GlassToolbarItemStyle(destructive: role == .destructive))
+        .buttonStyle(GlassToolbarItemStyle(destructive: role == .destructive, tint: tint, size: size))
     }
 }
 
 private struct GlassToolbarItemStyle: ButtonStyle {
     let destructive: Bool
+    let tint: Color?
+    let size: GlassToolbarMetrics.Size
 
     func makeBody(configuration: Configuration) -> some View {
-        ItemBody(configuration: configuration, destructive: destructive)
+        ItemBody(configuration: configuration, destructive: destructive, tint: tint, size: size)
     }
 
     private struct ItemBody: View {
         let configuration: ButtonStyleConfiguration
         let destructive: Bool
+        let tint: Color?
+        let size: GlassToolbarMetrics.Size
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.appearsActive) private var appearsActive
         @State private var hovered = false
@@ -66,7 +95,7 @@ private struct GlassToolbarItemStyle: ButtonStyle {
             configuration.label
                 .foregroundStyle(glyph)
                 .padding(.horizontal, DesignTokens.Spacing.xs)
-                .frame(minWidth: GlassToolbarMetrics.height, minHeight: GlassToolbarMetrics.height)
+                .frame(minWidth: size.height, minHeight: size.height)
                 .background(
                     Capsule()
                         .fill(DesignTokens.Colors.textPrimary.opacity(fillOpacity))
@@ -79,6 +108,9 @@ private struct GlassToolbarItemStyle: ButtonStyle {
 
         private var glyph: AnyShapeStyle {
             guard isEnabled, appearsActive else { return AnyShapeStyle(.tertiary) }
+            if let tint {
+                return AnyShapeStyle(tint)
+            }
             return destructive ? AnyShapeStyle(DesignTokens.Colors.Status.danger) : AnyShapeStyle(.primary)
         }
 

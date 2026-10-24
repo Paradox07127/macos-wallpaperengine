@@ -15,7 +15,7 @@ struct EditDeskModalChrome<Panel: View>: View {
     var title = ""
     /// The shown item, whose change fades the title row; nil falls back to `title` to detect a page turn.
     var pageID: String?
-    /// Icon buttons between the title and the close button, in order.
+    /// Icon buttons between the title and the close button, in order; `ModalHeaderAction.group` splits them into capsules.
     var actions: [ModalHeaderAction] = []
     let onDismiss: () -> Void
     /// True when the panel consumed ESC itself, which keeps the modal open.
@@ -122,10 +122,23 @@ struct EditDeskModalChrome<Panel: View>: View {
                 .frame(maxWidth: .infinity, minHeight: ModalGeometry.iconButtonSize, alignment: .leading)
                 .wpeAuthorLabelHelp(title.wallpaperNameHelp)
                 .wpeTranslateWallpaperName(title)
-            ForEach(actions) { action in
-                GlassIconButton(action.symbol, tint: action.tint, role: action.isDestructive ? .destructive : nil, action: action.perform)
-                    .help(Text(verbatim: action.title))
-                    .accessibilityLabel(Text(verbatim: action.title))
+            if !actions.isEmpty {
+                AdaptiveGlassContainer(spacing: GlassToolbarMetrics.containerSpacing) {
+                    HStack(spacing: GlassToolbarMetrics.groupSpacing) {
+                        ForEach(Array(ModalHeaderAction.groups(actions).enumerated()), id: \.offset) { _, group in
+                            GlassToolbarGroup(size: .compact) {
+                                ForEach(group) { action in
+                                    GlassToolbarItem(
+                                        action.symbol, tint: action.tint, role: action.isDestructive ? .destructive : nil,
+                                        action: action.perform
+                                    )
+                                    .help(Text(verbatim: action.title))
+                                    .accessibilityLabel(Text(verbatim: action.title))
+                                }
+                            }
+                        }
+                    }
+                }
             }
             GlassIconButton("xmark", action: escape)
                 .accessibilityLabel(Text("Close"))

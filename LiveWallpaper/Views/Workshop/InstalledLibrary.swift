@@ -312,11 +312,14 @@ final class InstalledLibraryModel {
 
     private func reconcileUpdateFlags() {
         updatedWorkshopIDs = Set(entries.compactMap { entry in
-            guard let remoteEpoch = cachedRemoteUpdateEpochs[entry.origin.workshopID],
-                  remoteEpoch > entry.importedAt.timeIntervalSince1970
-            else { return nil }
-            return entry.origin.workshopID
+            Self.hasNewerVersion(entry, remoteEpochs: cachedRemoteUpdateEpochs) ? entry.origin.workshopID : nil
         })
+    }
+
+    /// `remoteEpochs`: Steam's last-update time per Workshop id, as the daily check saved it.
+    static func hasNewerVersion(_ entry: WPEHistoryEntry, remoteEpochs: [String: Double]) -> Bool {
+        guard let remoteEpoch = remoteEpochs[entry.origin.workshopID] else { return false }
+        return remoteEpoch > entry.importedAt.timeIntervalSince1970
     }
 
     private func invalidateDeletesForReimports() {

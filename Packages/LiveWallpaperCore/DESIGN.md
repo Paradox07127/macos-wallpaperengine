@@ -22,7 +22,9 @@ Icon actions in a hand-drawn title-bar strip (the Edit Desk display detail's top
 | pressed | the same at `Opacity.activeFill` |
 | disabled, or window inactive | `.tertiary` glyph, destructive included |
 
-A segmented control stays a capsule of its own beside the groups; standalone floating icon buttons (canvas, HUD, modals) stay `GlassIconButton`.
+A detail modal's title row uses `GlassToolbarGroup(size: .compact)`: the capsule and each key are 28pt (level with the 28pt close button), glyphs at `.imageScale(.medium)`, three groups at most, the destructive group last, no overflow menu. `GlassToolbarItem(tint:)` colours a marked glyph such as a filled bookmark.
+
+A segmented control stays a capsule of its own beside the groups; standalone floating icon buttons (canvas, HUD, a modal's close button) stay `GlassIconButton`.
 
 ## Icon buttons — `GlassIconButton`
 

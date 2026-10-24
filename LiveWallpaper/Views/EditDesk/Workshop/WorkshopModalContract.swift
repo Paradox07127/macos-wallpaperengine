@@ -28,6 +28,18 @@ struct WorkshopModalContent: Equatable {
         hasLibraryEntry && !(isDownloading && isFetchingDependencies)
     }
 
+    /// `isFlagged`: the library's daily check found a newer version on Steam. A download that just landed is that version.
+    static func updateState(
+        isFlagged: Bool, phase: WorkshopDownloadCoordinator.DownloadPhase
+    ) -> InstalledItemExtras.UpdateState {
+        switch phase {
+        case .downloading, .importing: .checking(progress: nil)
+        case let .failed(message): .failed(message: message)
+        case .succeeded, .succeededAsPreset: .upToDate
+        case .idle: isFlagged ? .available : .upToDate
+        }
+    }
+
     /// Steam's rows for `item`, plus the day the library got it when `importedAt` says it has.
     @MainActor
     static func facts(item: WorkshopQueryItem, importedAt: Date?, now: Date, locale: Locale) -> [WallpaperFact] {
@@ -60,6 +72,14 @@ struct WorkshopDownloadPresentation: Equatable {
     /// `264 MB / 412 MB · 12 MB/s` — numbers only, never translated.
     var detail: String = ""
     var isFailure = false
+
+    @MainActor
+    static var updateAvailableText: String {
+        String(
+            localized: "Update available", bundle: .appLanguage,
+            comment: "A11y: the installed item has a newer version on Steam."
+        )
+    }
 
     /// Bytes per second across one pair of samples. nil when the pair cannot produce a speed: no
     /// time passed, or the counter went backwards because the download restarted.
@@ -369,13 +389,15 @@ struct WorkshopModalActions {
     /// Save only and Cancel Auto-Apply alike: keeps the download, drops any queued apply.
     var saveOnly: @MainActor () -> Void
     var cancelDownload: @MainActor () -> Void
+    /// Downloads the installed item's newer version; nil offers no Update button.
+    var update: (@MainActor () -> Void)?
     var connectSteam: @MainActor () -> Void
     var openInSteam: @MainActor () -> Void
     var reveal: @MainActor () -> Void
     var openItem: @MainActor (UInt64) -> Void
     var selectTag: (@MainActor (String) -> Void)?
     var browseCreator: (@MainActor (String, String?) -> Void)?
-    /// Puts the item's link or ID on the pasteboard; nil leaves both copy buttons out of the title row.
+    /// Puts the item's link on the pasteboard; nil leaves Copy link out of the title row.
     var copyText: (@MainActor (String) -> Void)?
     /// Opens a display's detail page from its button once the wallpaper runs there; nil presses it instead.
     var showDisplay: (@MainActor (CGDirectDisplayID) -> Void)?

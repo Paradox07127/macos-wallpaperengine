@@ -9,18 +9,6 @@ enum WorkshopCommunityURL {
         URL(string: "https://\(host)/sharedfiles/filedetails/?id=\(itemID)")!
     }
 
-    static func changeNotes(itemID: UInt64) -> URL {
-        URL(string: "https://\(host)/sharedfiles/filedetails/changelog/\(itemID)")!
-    }
-
-    static func comments(itemID: UInt64) -> URL {
-        URL(string: "https://\(host)/sharedfiles/filedetails/comments/\(itemID)")!
-    }
-
-    static func collections(itemID: UInt64) -> URL {
-        URL(string: "https://\(host)/workshop/browse/?browsesort=toprated&section=collections&appid=\(WorkshopQueryService.wallpaperEngineAppID)&childpublishedfileid=\(itemID)")!
-    }
-
     /// `steamID` is a SteamID64 from Steam's own payload; it goes through
     /// `URLComponents` so a malformed value cannot break out of the path.
     static func creatorWorkshop(steamID: String) -> URL {

@@ -248,8 +248,9 @@ their own.
   while filters refresh. Genre choices match any selected genre; Miscellaneous
   choices must all be present; tag/creator scopes retain the other filters.
 - Detail pages show posted/updated dates, rating and comment counts, required
-  items, grouped tags and links to the item's change notes, comments and
-  collections on Steam.
+  items and grouped tags. The title row opens the item on Steam or copies its
+  link; when an installed item has a newer version, the status line offers
+  **Update**.
 - **Show presets as wallpapers** is off by default. Presets remain available
   through their base wallpaper's detail page.
 - Steam setup supports managed SteamCMD installation, automatic detection and

@@ -5,14 +5,10 @@ import Testing
 
 @Suite("Workshop detail page links")
 struct WorkshopCommunityURLTests {
-    @Test("Item links match the detail page's anchors verbatim")
-    func itemLinks() {
-        #expect(WorkshopCommunityURL.changeNotes(itemID: 3_737_237_256).absoluteString
-            == "https://steamcommunity.com/sharedfiles/filedetails/changelog/3737237256")
-        #expect(WorkshopCommunityURL.comments(itemID: 3_737_237_256).absoluteString
-            == "https://steamcommunity.com/sharedfiles/filedetails/comments/3737237256")
-        #expect(WorkshopCommunityURL.collections(itemID: 3_737_237_256).absoluteString
-            == "https://steamcommunity.com/workshop/browse/?browsesort=toprated&section=collections&appid=431960&childpublishedfileid=3737237256")
+    @Test("The item link is the detail page's own address")
+    func itemLink() {
+        #expect(WorkshopCommunityURL.item(itemID: 3_737_237_256).absoluteString
+            == "https://steamcommunity.com/sharedfiles/filedetails/?id=3737237256")
     }
 
     @Test("The creator link is the page's own author anchor")
@@ -27,12 +23,9 @@ struct WorkshopDetailCopyTests {
     private static let keys = [
         "%lld ratings",
         "%@ up, %@ down",
-        "%lld comments",
-        "Comments",
-        "Change Notes",
-        "Collections",
         "Required items",
-        "View presets on Steam",
+        "Set your Steam Web API key in Settings to list presets here.",
+        "%lld more presets are only on Steam",
         "Open %@’s Workshop on Steam",
         "Couldn’t load page %lld.",
         "Loading item…",

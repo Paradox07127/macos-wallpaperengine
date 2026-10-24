@@ -111,7 +111,7 @@ struct WallpaperTagChip: Equatable, Identifiable {
 /// A title-row button of the detail modal: one "…" row that is not an apply.
 struct ModalHeaderAction: Identifiable {
     enum Kind: Hashable {
-        case showInFinder, copyLink, copyID, openInSteam, rename, checkForUpdate, cancelUpdate, removeFromLibrary, delete
+        case showInFinder, copyLink, openInSteam, rename, removeFromLibrary, delete
         case bookmark(isBookmarked: Bool)
         case like(isLiked: Bool)
     }
@@ -127,15 +127,26 @@ struct ModalHeaderAction: Identifiable {
         kind == .removeFromLibrary || kind == .delete
     }
 
+    /// The title-row capsule the button sits in: marks, then places to open, then the destructive one last.
+    var group: Int {
+        switch kind {
+        case .bookmark, .like, .rename: 0
+        case .showInFinder, .openInSteam, .copyLink: 1
+        case .removeFromLibrary, .delete: 2
+        }
+    }
+
+    /// The title row's capsules in order, each keeping its buttons' order; a group with no button is absent.
+    static func groups(_ actions: [ModalHeaderAction]) -> [[ModalHeaderAction]] {
+        Dictionary(grouping: actions, by: \.group).sorted { $0.key < $1.key }.map(\.value)
+    }
+
     var symbol: String {
         switch kind {
         case .showInFinder: "folder"
         case .copyLink: "link"
-        case .copyID: "doc.on.doc"
         case .openInSteam: "arrow.up.forward.app"
         case .rename: "pencil"
-        case .checkForUpdate: "arrow.triangle.2.circlepath"
-        case .cancelUpdate: "xmark.circle"
         case .removeFromLibrary, .delete: "trash"
         case let .bookmark(isBookmarked): isBookmarked ? "bookmark.fill" : "bookmark"
         case let .like(isLiked): isLiked ? "heart.fill" : "heart"
@@ -155,15 +166,12 @@ struct ModalHeaderAction: Identifiable {
         switch kind {
         case .showInFinder: String(localized: "Show in Finder", bundle: .appLanguage)
         case .copyLink: String(localized: "Copy link", bundle: .appLanguage)
-        case .copyID: String(localized: "Copy ID", bundle: .appLanguage)
         case .openInSteam: String(localized: "Open in Steam", bundle: .appLanguage)
         case .rename:
             String(
                 localized: "Rename", bundle: .appLanguage,
                 comment: "Context menu item that opens a rename alert, for a display on the Edit Desk stage or for a wallpaper."
             )
-        case .checkForUpdate: String(localized: "Check for updates", bundle: .appLanguage)
-        case .cancelUpdate: String(localized: "Cancel update", bundle: .appLanguage)
         case .removeFromLibrary: String(localized: "Remove from Wallpaper Library", bundle: .appLanguage)
         case .delete: String(localized: "Delete", bundle: .appLanguage)
         case .bookmark(isBookmarked: true): String(localized: "Remove Bookmark", bundle: .appLanguage)
@@ -196,7 +204,7 @@ struct ModalDisplayTarget: Identifiable, Equatable {
     /// Width / height in points; the float layer sizes thumbnails from it (16:9 → 150×84).
     var aspectRatio: CGFloat
     var thumbnail: CGImage?
-    /// Stable first display; applying content must not move another target under the pointer.
+    /// The display the library was opened for, drawn prominent; false for every display when there is none.
     var isPrimary: Bool
     var isApplied = false
     /// An apply to this display is still preparing.
@@ -224,7 +232,7 @@ struct WallpaperModalActions {
     var showInFinder: (@MainActor () -> Void)?
     var openInSteam: (@MainActor () -> Void)?
     var removeFromSaved: (@MainActor () -> Void)?
-    /// Installed Workshop items only.
+    /// Installed Workshop items only. Downloads the item again whether or not Steam has a newer version.
     var checkForUpdate: (@MainActor () -> Void)?
     var cancelUpdate: (@MainActor () -> Void)?
     var deleteInstalled: (@MainActor () -> Void)?
@@ -241,28 +249,24 @@ struct WallpaperModalActions {
 }
 
 extension WallpaperModalActions {
-    /// The modal's title-row buttons: every context-menu row that is not an apply or System Wallpaper, each once. The bottom
-    /// row applies. `requestRename` and `requestDelete` open the presenter's own alert and confirmation.
+    /// The modal's title-row buttons: every context-menu row that is not an apply, System Wallpaper or an update, each
+    /// once. The bottom row applies and the status line updates. `requestRename` and `requestDelete` open the
+    /// presenter's own alert and confirmation.
     func headerActions(
-        isUpdating: Bool, requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
+        requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
     ) -> [ModalHeaderAction] {
         var actions: [ModalHeaderAction] = []
-        if let showInFinder {
-            actions.append(ModalHeaderAction(kind: .showInFinder, perform: showInFinder))
-        }
-        if let openInSteam {
-            actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
-        }
         if let toggleBookmark {
             actions.append(ModalHeaderAction(kind: .bookmark(isBookmarked: isBookmarked), perform: toggleBookmark))
         }
         if rename != nil {
             actions.append(ModalHeaderAction(kind: .rename, perform: requestRename))
         }
-        if isUpdating, let cancelUpdate {
-            actions.append(ModalHeaderAction(kind: .cancelUpdate, perform: cancelUpdate))
-        } else if let checkForUpdate {
-            actions.append(ModalHeaderAction(kind: .checkForUpdate, perform: checkForUpdate))
+        if let showInFinder {
+            actions.append(ModalHeaderAction(kind: .showInFinder, perform: showInFinder))
+        }
+        if let openInSteam {
+            actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
         }
         if let removeFromSaved {
             actions.append(ModalHeaderAction(kind: .removeFromLibrary, perform: removeFromSaved))
@@ -271,6 +275,18 @@ extension WallpaperModalActions {
             actions.append(ModalHeaderAction(kind: .delete, perform: requestDelete))
         }
         return actions
+    }
+
+    /// The status line's button: Update while a newer version waits on Steam, Cancel while it downloads.
+    func statusButton(for state: InstalledItemExtras.UpdateState?) -> ModalExtraButton? {
+        switch state {
+        case .available:
+            checkForUpdate.map { ModalExtraButton(title: String(localized: "Update", bundle: .appLanguage), action: $0) }
+        case .checking:
+            cancelUpdate.map { ModalExtraButton(title: String(localized: "Cancel", bundle: .appLanguage), action: $0) }
+        case .unknown, .upToDate, .failed, nil:
+            nil
+        }
     }
 }
 
@@ -340,8 +356,11 @@ extension WallpaperModalActions {
             ))
         } else if let checkForUpdate {
             items.append(StageMenuItem(
-                title: String(localized: "Check for updates", bundle: .appLanguage), isEnabled: true,
-                action: checkForUpdate
+                title: String(
+                    localized: "Download Again", bundle: .appLanguage,
+                    comment: "Context menu item on an installed Workshop wallpaper: downloads it from Steam again, replacing the copy in the library."
+                ),
+                isEnabled: true, action: checkForUpdate
             ))
         }
         if deleteInstalled != nil {
