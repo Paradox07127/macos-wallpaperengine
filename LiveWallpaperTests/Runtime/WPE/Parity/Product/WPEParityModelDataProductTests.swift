@@ -520,6 +520,29 @@ extension WPEParitySceneDriverTests {
         try modelDataPixel(readBack(renderer.backbuffer, device: device), width: 48, x: 24, y: 16, white: true)
     }
 
+    func testCreatedModelDataRejectsAShapeCountAboveTheProductEntryLimit() async throws {
+        let source = #"""
+        export function init(value) {
+          let limited = false;
+          try { thisScene.createModelData({shapes:new Array(4097)}); }
+          catch (e) { limited = e.message.includes('shapeLimitExceeded'); }
+          return limited ? 0.5 : 0.25;
+        }
+        """#
+        let fixture = try modelDataFixture(script: source)
+        let driver = try WPEParitySceneDriver(device: XCTUnwrap(MTLCreateSystemDefaultDevice()))
+        defer { driver.cleanup() }
+        try await driver.load(document: fixture.document, assets: fixture.assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 48, height: 32), pixelFormat: .bgra8Unorm_srgb,
+                              compiler: fixture.compiler,
+                              diskCache: .init(cachesURL: scratch.appending(path: "model-data-limit-cache")))
+        let renderer = try XCTUnwrap(driver.renderer)
+        let engine = try XCTUnwrap(renderer.instance.script?.engine)
+        XCTAssertEqual(renderer.instance.state.object("1")?.alpha, 0.5,
+                       "a 4097-entry shapes array passed the product entry limit and reached shape conversion")
+        XCTAssertEqual(engine.exceptionCount, 0, engine.exceptions.joined(separator: "\n"))
+    }
+
     func testScriptInitFailureLoadsSceneAndReportsScriptDiagnostic() async throws {
         let fixture = try modelDataFixture(script: "export function init(value) { return value; }")
         let assets = fixture.assets

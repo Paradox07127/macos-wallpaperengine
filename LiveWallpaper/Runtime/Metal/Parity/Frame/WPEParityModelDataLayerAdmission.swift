@@ -14,7 +14,8 @@ enum WPEParityModelDataLayerAdmission {
             throws -> (any WPEParityModelDataPreparedShape)?
     ) -> WPEParityScriptModelDataProvider {
         WPEParityScriptModelDataProvider(
-            maximumArrayEntries: Int(UInt32.max), maximumBufferBytes: Int.max,
+            // Same cap as the MDL mesh count: a script can declare length 2^32-1, which the converter would reserve.
+            maximumArrayEntries: 4096, maximumBufferBytes: Int.max,
             maximumSingleBufferBytes: device.maxBufferLength,
             // Get-or-load by path with no registration lookup (14018c720.c:323-333).
             resolveMaterial: { value, _ in
