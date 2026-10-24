@@ -177,32 +177,39 @@ struct LibraryModalHost: View {
             return
         }
         if reusingRetained, retainedItemID == item.id, content?.itemID == item.id {
-            return
+            #if !LITE_BUILD
+            // Leaving for a display's page may have cut the retained content's Steam lookup short.
+            if let id = content?.workshopID, let known = steamLookups[id], var current = content {
+                Self.apply(known, to: &current)
+                content = current
+            }
+            #endif
+        } else {
+            // Read with `item` and `currentCovers`, before any await: a cover landing meanwhile can show another wallpaper.
+            let liveStill = ModalActions.liveStill(showingOn: item.onDisplays, covers: covers, current: currentCovers)
+            var loaded = await actions.content(for: item)
+            let preview = ModalGeometry.previewSize
+            loaded.preview = await actions.preview(
+                for: item, box: CGSize(width: preview.width * displayScale, height: preview.height * displayScale), liveStill: liveStill
+            )
+            // The item can change under a slow preview decode; a stale load must not replace the newer one.
+            guard !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id else { return }
+            #if !LITE_BUILD
+            if let id = loaded.workshopID, let known = steamLookups[id] {
+                Self.apply(known, to: &loaded)
+            }
+            #endif
+            if content == nil, loaded.preview == nil {
+                loaded.preview = previewSeed(item) ?? liveStill
+            }
+            content = loaded
+            await prepareDetailContent(item)
+            guard !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id else { return }
         }
-        // Read with `item` and `currentCovers`, before any await: a cover landing meanwhile can show another wallpaper.
-        let liveStill = ModalActions.liveStill(showingOn: item.onDisplays, covers: covers, current: currentCovers)
-        var loaded = await actions.content(for: item)
-        let preview = ModalGeometry.previewSize
-        loaded.preview = await actions.preview(
-            for: item, box: CGSize(width: preview.width * displayScale, height: preview.height * displayScale), liveStill: liveStill
-        )
-        // The item can change under a slow preview decode; a stale load must not replace the newer one.
-        guard !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id else { return }
-        #if !LITE_BUILD
-        if let id = loaded.workshopID, let known = steamLookups[id] {
-            Self.apply(known, to: &loaded)
-        }
-        #endif
-        if content == nil, loaded.preview == nil {
-            loaded.preview = previewSeed(item) ?? liveStill
-        }
-        content = loaded
-        await prepareDetailContent(item)
-        guard !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id else { return }
         #if !LITE_BUILD
         // A first open draws the local rows, then Steam's when it answers. The answer goes into whatever
         // content is current by then: a reload may have replaced `loaded` while Steam was being asked.
-        guard let id = loaded.workshopID, steamLookups[id] == nil, let lookup = await steamLookup(id),
+        guard let id = content?.workshopID, steamLookups[id] == nil, let lookup = await steamLookup(id),
               !Task.isCancelled, loadGeneration == generation, presentedItemID == item.id,
               var current = content, current.itemID == item.id else { return }
         Self.apply(lookup, to: &current)

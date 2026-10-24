@@ -644,6 +644,8 @@ struct HomePage: View {
     }
 
     private func clearWallpaper(on screen: Screen) {
+        // An apply still preparing would otherwise land after the clear and bring the wallpaper back.
+        applies.cancel(screen.id)
         let recording = undo?.begin(.clearWallpaper, displays: [screen])
         screenManager.clearWallpaperForScreen(screen)
         recording?.announce(

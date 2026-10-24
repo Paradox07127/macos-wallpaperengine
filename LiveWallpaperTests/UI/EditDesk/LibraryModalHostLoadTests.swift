@@ -133,6 +133,78 @@ struct LibraryModalHostLoadTests {
         #expect(reads == 3, "paging in the presented modal did not load the next item's manifest")
     }
 
+    @Test("Returning to the retained modal asks Steam again when the first lookup was cut off", .timeLimit(.minutes(1)))
+    func returningToTheRetainedModalFinishesTheSteamLookup() async throws {
+        var source = SavedLibraryModel.Inputs()
+        source.history = { [WPEHistoryEntry(origin: WPEOrigin(
+            workshopID: "100", title: "Scene 100", originalType: .scene,
+            sourceFolderBookmark: Data([4]), cacheRelativePath: nil, previewFileName: nil
+        ), importedAt: Date(timeIntervalSince1970: 1_727_000_000))] }
+        let library = SavedLibraryModel(inputs: source)
+        let item = try #require(library.items.first)
+        var reads = 0
+        var inputs = ModalActions.Inputs()
+        inputs.item = { id in library.items.first { $0.id == id } }
+        inputs.localInfo = { _ in reads += 1; return nil }
+        let actions = ModalActions(
+            inputs: inputs, bookmarks: BookmarkStore(persistence: NoBookmarks()), thumbnails: ShelfThumbnailCache(),
+            apply: { _, _ in }, applyToAll: { _, _ in }
+        )
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LibraryModalHostLoadTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        HangingSteamStub.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HangingSteamStub.self]
+        let loader = WorkshopItemDetailsLoader(
+            metadata: SteamWorkshopMetadataService(session: URLSession(configuration: configuration)),
+            retryPolicy: WorkshopRetryPolicy(sleep: { _ in })
+        )
+        let keychain = WorkshopKeychainStore(directory: directory, slot: WorkshopKeychainSlotSpy().slot())
+        let cache = WorkshopQueryCache(directoryURL: directory.appendingPathComponent("cache"))
+        let services = WorkshopServices(
+            keychain: keychain, cache: cache,
+            queryService: WorkshopQueryService(keychain: keychain, cache: cache, countIssuedRequest: {}), itemDetails: loader
+        )
+        let selection = RetainedModalSelection(item.id)
+        let modal = LibraryModalHost(
+            library: library, stage: EditDeskStageModel(), drag: LibraryDragController(), actions: actions,
+            requestRename: { _ in }, requestDelete: { _ in },
+            presentedItemID: Binding(get: { selection.itemID }, set: { selection.itemID = $0 }),
+            showDisplay: { _ in }, retainedItemID: item.id
+        )
+        let host = NSHostingView(rootView: modal.environment(services))
+        host.sizingOptions = []
+        let window = ParkedTestWindow(
+            contentRect: CGRect(origin: .zero, size: StageGeometry.designWindow),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.parkOffScreen()
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+        @MainActor func settle(until ready: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(3)
+            while !ready(), ContinuousClock.now < deadline {
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        try await settle { HangingSteamStub.requests > 0 }
+        try #require(reads == 1 && HangingSteamStub.requests == 1, "the first open did not read the manifest and then ask Steam")
+
+        selection.itemID = nil
+        try await Task.sleep(for: .milliseconds(200))
+        selection.itemID = item.id
+        try await settle { HangingSteamStub.requests > 1 }
+
+        #expect(HangingSteamStub.requests == 2, "returning to the retained modal left it without Steam's answer")
+        #expect(reads == 1, "returning to the retained modal re-read its manifest")
+    }
+
     private static func solid(red: CGFloat, green: CGFloat, blue: CGFloat) throws -> CGImage {
         let context = try #require(CGContext(
             data: nil, width: 1024, height: 576, bitsPerComponent: 8, bytesPerRow: 0,
@@ -243,6 +315,34 @@ struct LibraryModalHostLoadTests {
         #expect(drawn.green > 20000, Comment(rawValue: "control: the modal drew no picture of the item's display (\(drawn))"))
         #expect(drawn.magenta < 100, Comment(rawValue: "the modal drew the cover that landed during its load (\(drawn))"))
     }
+}
+
+/// Records Steam requests and never answers them, so a lookup stays in flight until its task is cancelled.
+private final class HangingSteamStub: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var count = 0 // guarded by `lock`
+
+    static var requests: Int {
+        lock.withLock { count }
+    }
+
+    static func reset() {
+        lock.withLock { count = 0 }
+    }
+
+    override static func canInit(with _: URLRequest) -> Bool {
+        true
+    }
+
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.lock.withLock { Self.count += 1 }
+    }
+
+    override func stopLoading() {}
 }
 
 private struct LibraryModalRefreshObservation: View {

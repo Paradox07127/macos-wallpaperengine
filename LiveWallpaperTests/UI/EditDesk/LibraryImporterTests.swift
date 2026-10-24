@@ -131,6 +131,16 @@ struct LibraryImporterTests {
         #expect(lines.first?.hasPrefix("notes.txt") == true)
     }
 
+    @Test func pageWhoseBookmarkFailsIsReportedAsNoAccess() throws {
+        let folder = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let missing = folder.appendingPathComponent("missing.html")
+
+        let outcome = LibraryImporter(bookmarks: bookmarks, sceneCapable: true).add([missing])
+
+        #expect(outcome.failures.map(\.reason) == [.noAccess], "a page the app couldn't bookmark was reported as an unsupported format")
+    }
+
     private func fixtureFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("LibraryImporterTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

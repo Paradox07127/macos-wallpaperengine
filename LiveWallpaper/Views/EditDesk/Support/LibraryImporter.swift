@@ -153,7 +153,8 @@ struct LibraryImporter {
             case .sceneProject, .sceneLibrary:
                 outcome.projectFolders.append(url)
             case .unsupported:
-                outcome.fail(url, .unsupportedFormat)
+                // The router turns away a web page file or folder only when it couldn't bookmark it.
+                outcome.fail(url, ResourceUtilities.isSupportedHTMLResourceURL(url) ? .noAccess : .unsupportedFormat)
             }
         }
         return outcome
