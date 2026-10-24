@@ -545,6 +545,12 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionNumberDownloadXPCPr
         guard let (item, url) = playable(choiceID, displayID: surface.displayID, in: manifest, store: store) else {
             if choiceID == SystemWallpaperManifest.selectedChoiceID,
                manifest?.items.isEmpty == true || manifest?.isCleared(displayID: surface.displayID) == true {
+                // An empty library keeps the placeholder poster seeded by acquire; only a cleared display goes black.
+                if manifest?.isCleared(displayID: surface.displayID) == true {
+                    surface.renderer.stop()
+                    surface.resolvedItemID = nil
+                    surface.renderer.enqueueStill(posterURL: nil, size: size)
+                }
                 replyOnFirstFrame?(nil)
                 return
             }
@@ -625,8 +631,9 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionNumberDownloadXPCPr
 
     /// The JPEG the app writes next to each published video.
     private func posterURL(for choiceID: String?, displayID: UInt32? = nil) -> URL? {
-        guard let choiceID, let item = store.loadManifest().item(for: choiceID, displayID: displayID) else {
-            return choiceID == SystemWallpaperManifest.selectedChoiceID
+        let manifest = store.loadManifest()
+        guard let choiceID, let item = manifest.item(for: choiceID, displayID: displayID) else {
+            return choiceID == SystemWallpaperManifest.selectedChoiceID && !manifest.isCleared(displayID: displayID)
                 ? Bundle.main.url(forResource: "SelectedWallpaper", withExtension: "png") : nil
         }
         return Self.posterURL(for: item, store: store)
@@ -820,6 +827,10 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionNumberDownloadXPCPr
                 guard let item = manifest.item(for: id, displayID: surface.displayID) else {
                     surface.renderer.stop()
                     surface.resolvedItemID = nil
+                    // stop() leaves the last frame on screen; a cleared display shows black.
+                    if manifest.isCleared(displayID: surface.displayID) {
+                        surface.renderer.enqueueStill(posterURL: nil, size: surface.bridge.rootLayer.bounds.size)
+                    }
                     continue
                 }
                 let identity = WallpaperPublishedContentIdentity.read(at: store.videoURL(for: item))

@@ -1,7 +1,67 @@
+import AppKit
+import CoreGraphics
 import Foundation
+import ImageIO
+import IOSurface
 
 private func check(_ condition: Bool, _ message: String) {
     guard condition else { print("FAIL: \(message)"); exit(1) }
+}
+
+private func isBlack(_ surface: IOSurface) -> Bool {
+    surface.lock(options: .readOnly, seed: nil)
+    defer { surface.unlock(options: .readOnly, seed: nil) }
+    let bytes = surface.baseAddress.assumingMemoryBound(to: UInt8.self)
+    for row in 0 ..< surface.height {
+        for column in 0 ..< surface.width {
+            let pixel = bytes + row * surface.bytesPerRow + column * 4
+            if pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8 {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+/// The renderer publishes a displayed pixel buffer only while its layer is composited.
+@MainActor private func hostOnScreen(_ layer: CALayer) -> NSWindow {
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.accessory)
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless, backing: .buffered, defer: false)
+    window.contentView?.wantsLayer = true
+    window.contentView?.layer = layer
+    window.orderFrontRegardless()
+    return window
+}
+
+/// Polls because the compositor publishes the displayed buffer after the renderer accepts it.
+private func displayedFrameIsBlack(_ renderer: WallpaperRenderer, expected: Bool) async -> Bool? {
+    var last: Bool?
+    for _ in 0 ..< 100 {
+        last = renderer.snapshot().map(isBlack)
+        if last == expected {
+            return last
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return last
+}
+
+private func whitePoster(in directory: URL) throws -> URL {
+    let url = directory.appendingPathComponent("white.png")
+    guard let context = CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+    guard let image = context.makeImage(),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+    return url
 }
 
 private func drainLifecycle() async {
@@ -30,12 +90,13 @@ private struct Fixture {
     }
 
     /// A surface already serving the selected tile with `item`, as `startPlayback` leaves it.
-    func servingSurface(_ item: SystemWallpaperManifest.Item, isPreview: Bool) async -> WallpaperSurface? {
+    func servingSurface(_ item: SystemWallpaperManifest.Item, isPreview: Bool, displayID: UInt32? = nil) async -> WallpaperSurface? {
         let registry = registry
         nonisolated(unsafe) var made: WallpaperSurface?
         await withCheckedContinuation { continuation in
             WallpaperXPCHandler.queue.async {
                 made = registry.makeSurface(for: UUID())
+                made?.displayID = displayID
                 made?.choiceID = SystemWallpaperManifest.selectedChoiceID
                 made?.isPreview = isPreview
                 made?.resolvedItemID = item.id
@@ -218,6 +279,29 @@ private struct Fixture {
             check(beat?.playbackFailures == ["a": "scene.load.failed"],
                   "failure filed as \(beat?.playbackFailures ?? [:]) instead of under the playing item a")
             surface.renderer.stopSync()
+        }
+
+        // Clearing the display a running surface serves replaces its last frame with black.
+        do {
+            let fixture = try Fixture()
+            let a = try fixture.item("a", file: "a.mov", addedAt: old)
+            var manifest = SystemWallpaperManifest(version: 1, items: [a], selectedItemID: "a")
+            try fixture.store.writeManifest(manifest)
+            guard let surface = await fixture.servingSurface(a, isPreview: false, displayID: 7) else { return check(false, "no surface") }
+            let window = hostOnScreen(surface.renderer.layer)
+            let poster = try whitePoster(in: fixture.store.videosDirectory())
+            surface.renderer.enqueueStill(posterURL: poster, size: CGSize(width: 4, height: 4))
+            let seeded = await displayedFrameIsBlack(surface.renderer, expected: false)
+            check(seeded == false, "precondition: the seeded last frame never reached the snapshot (\(String(describing: seeded)))")
+            manifest.clearedDisplays["7"] = 1
+            try fixture.store.writeManifest(manifest)
+            WallpaperXPCHandler.retargetSurfaces(registry: fixture.registry, store: fixture.store)
+            await drainLifecycle()
+            let cleared = await displayedFrameIsBlack(surface.renderer, expected: true)
+            check(cleared == true, "cleared display still shows the last frame instead of black (\(String(describing: cleared)))")
+            print("PASS: cleared display shows black")
+            surface.renderer.stopSync()
+            window.orderOut(nil)
         }
 
         print("PASS: provider retarget checks")
