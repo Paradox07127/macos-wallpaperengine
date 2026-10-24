@@ -238,7 +238,7 @@ final class WPEParityFrameRenderer {
     var baseArenaBytes: Int
     /// False when the caller fixed the particle share.
     private let growsParticleShare: Bool
-    static let maxParticleShare = 256 << 20
+    static let maxParticleShare = WPEParityProgramScene.maxParticleShare
     /// Particle objects whose dropped batches were already logged.
     private var loggedParticleDrops: Set<String> = []
     private static let silence = [Float](repeating: 0, count: 64)
@@ -909,6 +909,7 @@ final class WPEParityFrameRenderer {
     func adoptView(from previous: WPEParityFrameRenderer, userPropertiesJSON: String? = nil) throws {
         try previous.submitMaterialClears()
         instance = previous.instance.copy()
+        buttonEdges = previous.buttonEdges
         // Script registrations belong to the same scene and shader store; resizing changes draw targets only.
         artifacts.merge(previous.artifacts) { current, _ in current }
         arena.capacity = baseArenaBytes + instance.particles.budget

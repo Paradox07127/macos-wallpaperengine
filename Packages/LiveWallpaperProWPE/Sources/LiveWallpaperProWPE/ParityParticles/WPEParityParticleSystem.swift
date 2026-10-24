@@ -566,6 +566,10 @@ public struct WPEParityParticleSystem {
         defer { birthsRecordSpawnEvents = recorded }
         var elapsed: Float = 0
         while elapsed < config.startTime, Float(prewarmStepCount) < stepLimit {
+            // Past Float's step resolution `elapsed` stops growing and would never reach starttime.
+            if elapsed + prewarmStep == elapsed {
+                break
+            }
             simulate(dt: prewarmStep, parentControlPoints: parent, parentCount: parentCount,
                      parentUpdateMatrix: parentUpdateMatrix, parentWorldSpace: parentWorldSpace)
             elapsed += prewarmStep

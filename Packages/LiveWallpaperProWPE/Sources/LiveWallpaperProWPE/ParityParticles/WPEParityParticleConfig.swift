@@ -188,7 +188,8 @@ struct WPEParityParticleConfig: Equatable, Sendable {
     var omittedChildPaths: [String] = []
     var diagnostics: [String] = []
     var unsupportedChildren: [WPEParityParticleChildRejection] = []
-    /// Integer fields of this system's own JSON outside their native range; their values fell back to defaults.
+    /// Integer fields of this system's own JSON outside their native range (read as their defaults), or a
+    /// non-finite starttime.
     var rejectedFields: [String] = []
     /// Effective native CP allocation is the highest referenced index + 1, not the authored array length.
     var controlPointCount = 0
@@ -286,6 +287,9 @@ struct WPEParityParticleConfig: Equatable, Sendable {
         randomFrame = JSON.string(json["animationmode"])?.lowercased() == "randomframe"
         sequenceMultiplier = JSON.number(json["sequencemultiplier"]) ?? 1
         rejectedFields = [("maxcount", authoredMaxCount), ("flags", authoredFlags)].compactMap { $1 == nil ? $0 : nil }
+        if !startTime.isFinite {
+            rejectedFields.append("starttime")
+        }
         for (index, value) in JSON.array(json["controlpoint"]).enumerated() {
             let entry = WPEParityParticleEntry(value)
             let id = entry.integer("id", index)
@@ -783,10 +787,11 @@ enum WPEParityParticleJSON {
         value.flatMap(WPEParityProgramConstants.components)?.first.map { Float($0) }
     }
 
-    /// `number` truncated toward zero; `fallback` when absent, nil when NaN, beyond Float (infinite) or 32 bits.
+    /// The authored Double truncated toward zero; `fallback` when absent, nil when not finite or beyond 32 bits.
+    /// Read without `number`'s Float rounding, which would lose low flag bits above 2^24.
     static func integer(_ value: WPESceneJSONValue?, default fallback: Int) -> Int? {
-        guard let number = number(value) else { return fallback }
-        return WPEAuthoredInteger.truncated(Double(number), as: Int.self, in: WPEAuthoredInteger.native32)
+        guard let number = value.flatMap(WPEParityProgramConstants.components)?.first else { return fallback }
+        return WPEAuthoredInteger.truncated(number, as: Int.self, in: WPEAuthoredInteger.native32)
     }
 
     static func flag(_ value: WPESceneJSONValue?) -> Bool {

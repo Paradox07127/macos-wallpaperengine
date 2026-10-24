@@ -1,6 +1,8 @@
 extension WPEParityProgramScene {
     /// Root depth is 0; a depth-10 system exists but cannot instantiate further children (22ebe0/22f890).
     static let particleChildDepthLimit = 10
+    /// Ceiling in bytes of a frame's particle vertex arena; one larger batch can never be uploaded.
+    public static let maxParticleShare = 256 << 20
 
     /// The draws of the particle JSON at `path`, keyed the way `WPEParityParticleSystem` nests its children.
     static func particleDraws(objectID: String, path: String, assets: WPEParityProgramAssets,

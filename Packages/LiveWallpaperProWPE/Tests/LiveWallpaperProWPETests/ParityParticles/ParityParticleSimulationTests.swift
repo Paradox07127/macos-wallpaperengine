@@ -63,6 +63,14 @@ final class ParityParticleSimulationTests: XCTestCase {
         XCTAssertEqual(large.liveCount, 4)
     }
 
+    func testUnrepresentableEmissionRateSkipsRateBirthsInsteadOfTrapping() {
+        for rate in ["1e30", #""nan""#] {
+            var particles = system(#"{"maxcount": 10, "emitter": [{"name": "sphererandom", "rate": \#(rate)}]}"#)
+            particles.advance(dt: 1.0 / 60)
+            XCTAssertEqual(particles.liveCount, 0, rate)
+        }
+    }
+
     /// 0.2 s steps at rate 50 give 10 births per step, so the accumulator stays integral.
     private func continuousEmitter(startTime: Float, emitterFlags: Int = 0) -> WPEParityParticleSystem {
         system("""

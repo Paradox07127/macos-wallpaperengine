@@ -129,7 +129,7 @@ enum WPEParityParticleMath {
         let wrapped = sector < 0 ? sector + 6 : sector
         let chroma = value * saturation
         let x = chroma * (1 - abs(wrapped.truncatingRemainder(dividingBy: 2) - 1))
-        let base: SIMD3<Float> = switch Int(wrapped) {
+        let base: SIMD3<Float> = switch WPEAuthoredInteger.truncated(Double(wrapped), as: Int.self) ?? 0 {
         case 0: SIMD3(chroma, x, 0)
         case 1: SIMD3(x, chroma, 0)
         case 2: SIMD3(0, chroma, x)

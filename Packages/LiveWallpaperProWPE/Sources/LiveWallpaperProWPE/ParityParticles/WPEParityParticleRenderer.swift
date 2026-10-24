@@ -37,7 +37,8 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
     public let fadeAlpha: Bool
     public let fadeSize: Bool
 
-    /// Nil for an unknown `name`, or an integer field outside its native 32-bit range.
+    /// Nil for an unknown `name`, an integer field outside its native 32-bit range, or ropetrail segments too many
+    /// for one particle's vertices to fit the particle share.
     init?(name: String, json: WPESceneJSONValue) {
         typealias JSON = WPEParityParticleJSON
         guard let kind = Kind(name: name) else { return nil }
@@ -46,7 +47,9 @@ public struct WPEParityParticleRenderer: Equatable, Sendable {
         guard let segments = JSON.integer(json["segments"], default: 3),
               let subdivision = JSON.integer(json["subdivision"], default: kind == .rope ? 4 : 1),
               let numericOrientation = JSON.integer(json["orientation"], default: 0),
-              let flags = JSON.integer(json["flags"], default: 0) else { return nil }
+              let flags = JSON.integer(json["flags"], default: 0),
+              // One particle's 76-byte vertex per segment must fit the particle share, or no frame can upload it.
+              kind != .ropeTrail || segments <= WPEParityProgramScene.maxParticleShare / 76 else { return nil }
         length = JSON.number(json["length"]) ?? 0.05
         maxLength = JSON.number(json["maxlength"]) ?? 10
         minLength = JSON.number(json["minlength"]) ?? 0

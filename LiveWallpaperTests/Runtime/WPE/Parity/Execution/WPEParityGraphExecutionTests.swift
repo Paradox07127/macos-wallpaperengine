@@ -225,6 +225,17 @@ final class WPEParityGraphExecutionTests: XCTestCase {
         try assertEvery(readBack(harness, XCTUnwrap(resized.targets["O_7"])), equals: [0, 255, 0, 255])
     }
 
+    func testRendererResizeKeepsQueuedButtonEdges() async throws {
+        let harness = try makeHarness()
+        let directory = FileManager.default.temporaryDirectory.appending(path: "parity-graph-resize-edges-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = try await commandRenderer(harness, directory: directory, authoredClear: false)
+        original.buttonEdges = [(position: SIMD2(0.25, 0.5), down: true), (position: SIMD2(0.25, 0.5), down: false)]
+        let resized = try await commandRenderer(harness, directory: directory, authoredClear: false, width: 8, height: 8)
+        try resized.adoptView(from: original)
+        XCTAssertEqual(resized.buttonEdges.map(\.down), [true, false])
+    }
+
     func testRendererResizeReappliesAuthoredClearEvenWhenTheFBODescriptorIsUnchanged() async throws {
         let harness = try makeHarness()
         let directory = FileManager.default.temporaryDirectory.appending(path: "parity-graph-resize-clear-\(UUID().uuidString)")

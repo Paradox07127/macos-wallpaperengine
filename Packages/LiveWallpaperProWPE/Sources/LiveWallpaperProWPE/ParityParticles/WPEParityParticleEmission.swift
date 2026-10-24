@@ -34,8 +34,7 @@ extension WPEParityParticleSystem {
                 count += burst
                 if accumulated < 1 || state.durationLeft < 0 {
                     state.accumulator = accumulated - Float(burst + forced)
-                } else {
-                    let requested = Int(accumulated.rounded(.down))
+                } else if let requested = WPEAuthoredInteger.truncated(Double(accumulated), as: Int.self) {
                     state.accumulator = accumulated - Float(requested + burst + forced)
                     var rateCount = emitter.maxOnePerFrame ? min(requested, 1) : requested
                     if emitter.periodic, emitter.maxPerPeriod > 0 {

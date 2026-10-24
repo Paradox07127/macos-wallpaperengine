@@ -192,6 +192,44 @@ final class ParityParticleInitializerTests: XCTestCase {
         XCTAssertEqual(config.children[0].maxCount, 10)
     }
 
+    /// The asset-level config, which is nil when the root JSON has a rejected field.
+    private func admittedConfig(_ text: String) throws -> WPEParityParticleConfig? {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("particles/probe.json")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+        let assets = WPEParityProgramAssets(sceneDirectory: root, assetRoots: [])
+        return WPEParityParticleConfig(path: "particles/probe.json", assets: assets, is3D: false)
+    }
+
+    func testFlagWordsKeepTheirLowBitsAcrossTheWhole32BitRange() throws {
+        let unsigned = try XCTUnwrap(admittedConfig(#"{"maxcount": 10, "flags": 4294967295}"#))
+        XCTAssertEqual(unsigned.flags, 0xFF)
+        let wide = try XCTUnwrap(admittedConfig(#"{"maxcount": 10, "flags": 16777217}"#))
+        XCTAssertEqual(wide.flags, 1)
+        XCTAssertNotNil(try admittedConfig(#"{"maxcount": 10, "renderer": [{"name": "sprite", "flags": 4294967295}]}"#))
+    }
+
+    func testRopeTrailWhoseOneParticleBatchExceedsTheParticleShareRejectsTheSystem() throws {
+        func ropeTrail(_ segments: Int) -> String {
+            #"{"maxcount": 1, "renderer": [{"name": "ropetrail", "segments": \#(segments)}]}"#
+        }
+        for segments in [2_147_483_648, 100_000_000] {
+            XCTAssertNil(try admittedConfig(ropeTrail(segments)), "\(segments)")
+        }
+        // 76-byte ropetrail vertices, one per segment.
+        XCTAssertNotNil(try admittedConfig(ropeTrail(WPEParityProgramScene.maxParticleShare / 76)))
+    }
+
+    func testNonFiniteStartTimeRejectsTheSystem() throws {
+        XCTAssertNil(try admittedConfig(#"{"maxcount": 1, "starttime": 1e100}"#))
+    }
+
+    func testInfiniteHueBirthsWithoutTrapping() {
+        _ = burst(1, initializers: #"{"name": "hsvcolorrandom", "huemin": 1e100, "huemax": 1e100}"#)
+    }
+
     func testHSVDefaultsAndStepRule() {
         let defaults = hsv("{}")
         XCTAssertEqual(defaults.hueMin, 0)
