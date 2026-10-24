@@ -2,7 +2,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// One settings row: the menu selects and manages presets, the always-present subtitle reports changes so the height never varies.
+/// One settings row: the pop-up selects a preset, the actions menu beside it saves and manages them, and the always-present subtitle reports changes so the height never varies.
 struct ScenePresetBar: View {
     /// Already filtered to the descriptor's base wallpaper by the caller.
     let presets: [ScenePreset]
@@ -18,6 +18,7 @@ struct ScenePresetBar: View {
     @State private var editing: Editing?
     @State private var draftName = ""
     @State private var pendingDeletion: ScenePreset?
+    @State private var pendingUpdate: ScenePreset?
     @FocusState private var nameFieldIsFocused: Bool
 
     private enum Editing: Equatable {
@@ -27,7 +28,10 @@ struct ScenePresetBar: View {
 
     var body: some View {
         SettingRow(icon: "square.stack.3d.up", title: "Preset", subtitle: status) {
-            presetMenu
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                actionsMenu
+                presetMenu
+            }
         }
         // Menu items never appear on screen as views, so they can't queue their own names.
         .onChange(of: workshopPresets.map(\.name), initial: true) { _, names in
@@ -60,6 +64,68 @@ struct ScenePresetBar: View {
             if let pendingDeletion {
                 Text("“\(pendingDeletion.name)” will be removed from every display using it. Your own changes on top of it are kept.")
             }
+        }
+        .confirmationDialog(
+            Text("Update this preset?"),
+            isPresented: Binding(
+                get: {
+                    pendingUpdate != nil
+                },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingUpdate = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Update") {
+                if let pendingUpdate {
+                    // `onSave` reuses the id of a same-named local preset, so this call overwrites rather than adds.
+                    onSave(pendingUpdate.name)
+                }
+                pendingUpdate = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingUpdate = nil
+            }
+        } message: {
+            if let pendingUpdate {
+                Text("“\(pendingUpdate.name)” will be replaced with the current settings on every display using it.")
+            }
+        }
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            if let activePreset, activePreset.source == .local, changedCount > 0 {
+                Button("Update “\(activePreset.name)”") {
+                    pendingUpdate = activePreset
+                }
+            }
+            Button("Save as New Preset") {
+                beginEditing(.saveAsNew)
+            }
+
+            if let activePreset, activePreset.source == .local {
+                Divider()
+                Button("Rename “\(activePreset.name)”") {
+                    beginEditing(.rename(activePreset))
+                }
+                Button("Delete “\(activePreset.name)”", role: .destructive) {
+                    pendingDeletion = activePreset
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(Text("Preset Actions"))
+        .accessibilityLabel(Text("Preset Actions"))
+        .appLanguagePopover(isPresented: isNaming, arrowEdge: .bottom) {
+            namingPopover
         }
     }
 
@@ -95,28 +161,6 @@ struct ScenePresetBar: View {
                 EmptyView()
             }
             .pickerStyle(.inline)
-
-            Section {
-                if let activePreset, activePreset.source == .local, changedCount > 0 {
-                    // `onSave` reuses the id of a same-named local preset, so this call overwrites rather than adds.
-                    Button("Update “\(activePreset.name)”") {
-                        onSave(activePreset.name)
-                    }
-                }
-
-                Button("Save as New Preset") {
-                    beginEditing(.saveAsNew)
-                }
-
-                if let activePreset {
-                    Button("Rename") {
-                        beginEditing(.rename(activePreset))
-                    }
-                    Button("Delete Preset", role: .destructive) {
-                        pendingDeletion = activePreset
-                    }
-                }
-            }
         } label: {
             menuLabel
         }
@@ -125,9 +169,6 @@ struct ScenePresetBar: View {
         // Without matching the title's priority the row hands the menu only its minimum width.
         .layoutPriority(1)
         .accessibilityLabel(Text("Preset"))
-        .appLanguagePopover(isPresented: isNaming, arrowEdge: .bottom) {
-            namingPopover
-        }
     }
 
     private var status: LocalizedStringKey {
