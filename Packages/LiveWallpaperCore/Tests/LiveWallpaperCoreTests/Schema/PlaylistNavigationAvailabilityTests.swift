@@ -20,7 +20,7 @@ struct PlaylistNavigationAvailabilityTests {
         legacy["wallpaperMode"] = "single"
         let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: JSONSerialization.data(withJSONObject: legacy))
         #expect(decoded.libraryShuffleRotationMinutes == 15)
-        #expect(decoded.wallpaperMode == .playlist)
+        #expect(decoded.wallpaperMode == .single)
         #expect(decoded.playlistRotationMinutes == 120)
         legacy["libraryShuffleRotationMinutes"] = -1
         #expect(try JSONDecoder().decode(ScreenConfiguration.self, from: JSONSerialization.data(withJSONObject: legacy)).libraryShuffleRotationMinutes == 1)

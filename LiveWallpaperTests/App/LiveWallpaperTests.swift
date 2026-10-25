@@ -789,8 +789,8 @@ struct ScreenConfigurationDecoderTests {
         #expect(decoded.wallpaperMode == .playlist)
     }
 
-    @Test("Legacy `single` value in stored wallpaperMode rolls forward to .playlist")
-    func legacySingleStringRollsToPlaylist() throws {
+    @Test("A stored `single` wallpaperMode decodes to single wallpaper")
+    func storedSingleStringDecodesToSingle() throws {
         let config = ScreenConfiguration(
             screenID: 4,
             videoBookmarkData: Data([0x01])
@@ -801,7 +801,7 @@ struct ScreenConfigurationDecoderTests {
         dict["wallpaperMode"] = "single"
         let mutated = try JSONSerialization.data(withJSONObject: dict)
         let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: mutated)
-        #expect(decoded.wallpaperMode == .playlist)
+        #expect(decoded.wallpaperMode == .single)
     }
 
     @Test("Explicit wallpaperMode field round-trips intact")
