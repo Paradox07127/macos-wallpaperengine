@@ -381,7 +381,9 @@ private struct SchemeTile: View {
 
     private var updatedBadge: some View {
         ThumbnailBadge(
-            verbatim: scheme.updatedAt.formatted(date: .abbreviated, time: .omitted),
+            verbatim: scheme.updatedAt.formatted(
+                Date.FormatStyle(date: .abbreviated, time: .omitted).locale(AppLanguagePreference.current.locale)
+            ),
             systemImage: "clock"
         )
     }

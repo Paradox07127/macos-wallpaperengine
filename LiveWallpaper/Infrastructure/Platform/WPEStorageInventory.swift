@@ -8,6 +8,8 @@ struct WPEStorageInventory: Sendable {
         let workshopID: String
         let sizeBytes: UInt64
         let folderURL: URL
+        /// Top-level `title` of the project's `project.json`; nil when absent, empty or unreadable.
+        let title: String?
         var id: String {
             workshopID
         }
@@ -151,10 +153,18 @@ actor WPEStorageInventoryScanner {
             )
             guard bytes > 0 else { continue }
             entries.append(
-                WPEStorageInventory.ProjectEntry(workshopID: id, sizeBytes: bytes, folderURL: child)
+                WPEStorageInventory.ProjectEntry(workshopID: id, sizeBytes: bytes, folderURL: child, title: manifestTitle(in: child))
             )
         }
         return (entries.sorted { $0.sizeBytes > $1.sizeBytes }, root)
+    }
+
+    private func manifestTitle(in folder: URL) -> String? {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("project.json", isDirectory: false)),
+              let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let title = (manifest["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return nil }
+        return title
     }
 
     private func scanEngineAssets(

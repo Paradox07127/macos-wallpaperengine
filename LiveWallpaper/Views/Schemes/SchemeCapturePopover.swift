@@ -116,6 +116,9 @@ struct SchemeCapturePopover: View {
     }
 
     private var defaultName: String {
-        "\(screen.name) · \(Date().formatted(date: .abbreviated, time: .omitted))"
+        let date = Date().formatted(
+            Date.FormatStyle(date: .abbreviated, time: .omitted).locale(AppLanguagePreference.current.locale)
+        )
+        return "\(screen.name) · \(date)"
     }
 }

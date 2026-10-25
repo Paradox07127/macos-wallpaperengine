@@ -186,7 +186,7 @@ struct MenuBarContent: View {
             ("CPU", "cpu", FormatUtils.formatPercent(cpuPercent.rounded()), usageColor(for: cpuPercent)),
             ("GPU", "square.3.layers.3d", gpuPercent.map { FormatUtils.formatPercent($0.rounded()) } ?? "-",
              gpuPercent.map { usageColor(for: $0) } ?? DesignTokens.Colors.textTertiary),
-            ("RAM", "memorychip", FormatUtils.formatPercent(ramPercent.rounded()), usageColor(for: ramPercent)),
+            (String(localized: "Memory", bundle: .appLanguage), "memorychip", FormatUtils.formatPercent(ramPercent.rounded()), usageColor(for: ramPercent)),
             ("THERM", "thermometer", thermalShortLabel(for: thermalState), thermalColor(for: thermalState)),
         ]
 
@@ -332,7 +332,7 @@ struct MenuBarContent: View {
 
             var sourceText = AttributedString(source)
             sourceText.font = DesignTokens.EditDesk.Typography.footnote
-            sourceText.foregroundColor = Color.secondary
+            sourceText.foregroundColor = DesignTokens.Colors.textPrimary
             attributed.append(sourceText)
         }
 
@@ -382,6 +382,12 @@ struct MenuBarContent: View {
            let name = screenManager.currentVideoDisplayName(for: screen),
            !name.isEmpty {
             return name
+        }
+
+        if summary.wallpaperType == .scene,
+           let title = screenManager.getConfiguration(for: screen)?.wpeOrigin?.title,
+           !title.isEmpty {
+            return title
         }
 
         if let name = screenManager.wallpaperDisplayName(for: screen), !name.isEmpty {
@@ -812,7 +818,7 @@ private struct VolumeControlRow: View {
                 readout: { live in
                     Text(verbatim: "\(volumePercent(live))%")
                         .font(DesignTokens.Typography.metric)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DesignTokens.Colors.textPrimary)
                         .frame(width: 38, alignment: .trailing)
                         .monospacedDigit()
                 }

@@ -470,7 +470,7 @@ extension WPECacheManagementView {
                     Divider()
                     ForEach(inventory?.projects ?? []) { project in
                         Button { openFolder(project.folderURL, scopeRoot: inventory?.projectsScopeRootURL) } label: {
-                            Text(verbatim: project.workshopID + " · " + formattedDiskBytes(project.sizeBytes))
+                            Text(verbatim: (project.title ?? project.workshopID) + " · " + formattedDiskBytes(project.sizeBytes))
                         }
                     }
                 } label: {

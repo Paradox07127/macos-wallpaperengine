@@ -173,7 +173,7 @@ struct AgentActivityPanel: View {
                 }
             }
             LabeledContent("Last activity") {
-                Text(verbatim: Format.ago(max(0, displayTime - session.lastEventAt)))
+                Text(verbatim: Self.lastActivityText(max(0, displayTime - session.lastEventAt)))
                     .font(DesignTokens.Typography.metric)
             }
             if session.livenessEvidence != "processDescriptor" {
@@ -182,6 +182,15 @@ struct AgentActivityPanel: View {
                     .foregroundStyle(DesignTokens.Colors.textSecondary)
             }
         }
+    }
+
+    static func lastActivityText(_ seconds: Double) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = AppLanguagePreference.current.locale
+        formatter.unitsStyle = .abbreviated
+        // Named style renders zero as "now"; numeric would say "in 0 sec.".
+        formatter.dateTimeStyle = .named
+        return formatter.localizedString(fromTimeInterval: -seconds)
     }
 
     private func usage(_ session: MonitorAgentSessionState) -> some View {

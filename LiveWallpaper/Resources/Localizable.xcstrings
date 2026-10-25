@@ -4743,13 +4743,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ANE 内存"
+            "value" : "神经网络引擎内存"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ANE 記憶體"
+            "value" : "神經網路引擎記憶體"
           }
         }
       }

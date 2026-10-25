@@ -214,7 +214,7 @@ struct DisplayDefaultsView: View {
         ) {
             Picker("", selection: playbackBinding(\.videoColorSpace, for: .video)) {
                 ForEach(VideoColorSpace.allCases) { colorSpace in
-                    Text(verbatim: colorSpace.titleKey).tag(colorSpace)
+                    Text(LocalizedStringKey(colorSpace.titleKey)).tag(colorSpace)
                 }
             }
             .pickerStyle(.menu)

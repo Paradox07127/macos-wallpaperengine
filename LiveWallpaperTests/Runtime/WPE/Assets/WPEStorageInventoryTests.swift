@@ -86,6 +86,35 @@ struct WPEStorageInventoryTests {
         #expect(inventory.projectsTotalBytes > 0)
     }
 
+    @Test("A project entry carries the title from its project.json")
+    func projectEntryCarriesManifestTitle() async throws {
+        let steamRoot = try makeSteamFixture(projectCount: 1, filesPerProject: 1, bytesPerFile: 16)
+        defer { try? FileManager.default.removeItem(at: steamRoot) }
+        try writeManifest(#"{"title": "Ocean Dusk", "type": "scene"}"#, toProject: 0, in: steamRoot)
+
+        let inventory = await WPEStorageInventoryScanner.shared.scan(
+            roots: WPEStorageInventory.ScanRoots(steamRoot: steamRoot, engineAssetsRoot: nil),
+            budget: .max
+        )
+
+        #expect(inventory.projects.first?.title == "Ocean Dusk")
+    }
+
+    @Test("A project without a manifest title has a nil title")
+    func projectEntryWithoutTitleIsNil() async throws {
+        let steamRoot = try makeSteamFixture(projectCount: 1, filesPerProject: 1, bytesPerFile: 16)
+        defer { try? FileManager.default.removeItem(at: steamRoot) }
+        try writeManifest(#"{"type": "scene"}"#, toProject: 0, in: steamRoot)
+
+        let inventory = await WPEStorageInventoryScanner.shared.scan(
+            roots: WPEStorageInventory.ScanRoots(steamRoot: steamRoot, engineAssetsRoot: nil),
+            budget: .max
+        )
+
+        #expect(inventory.projects.count == 1)
+        #expect(inventory.projects.first?.title == nil)
+    }
+
     @Test("A symlink as the root still measures the tree behind it")
     func symlinkRootIsMeasured() throws {
         let directory = try makeFixture(fileCount: 4, bytesPerFile: 16)
@@ -155,6 +184,14 @@ struct WPEStorageInventoryTests {
             }
         }
         return root
+    }
+
+    private func writeManifest(_ json: String, toProject index: Int, in steamRoot: URL) throws {
+        let folder = steamRoot.appendingPathComponent(
+            "steamapps/workshop/content/\(SteamCMDDoctorService.wallpaperEngineAppID)/300000000\(index)",
+            isDirectory: true
+        )
+        try Data(json.utf8).write(to: folder.appendingPathComponent("project.json"))
     }
 
     private func makeFixture(fileCount: Int, bytesPerFile: Int) throws -> URL {

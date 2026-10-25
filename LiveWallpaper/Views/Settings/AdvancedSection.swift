@@ -136,9 +136,7 @@ extension GeneralSettingsView {
     private var activeWallpapers: [String] {
         screenManager.screens.compactMap { screen in
             guard let kind = screenManager.wallpaperSummary(for: screen).wallpaperType?.rawValue else { return nil }
-            let identity = [screenManager.wallpaperDisplayName(for: screen), screenManager.wallpaperOriginTitle(for: screen)]
-                .compactMap { $0 }
-                .joined(separator: " — ")
+            let identity = screenManager.wallpaperOriginTitle(for: screen) ?? screenManager.wallpaperDisplayName(for: screen) ?? ""
             return identity.isEmpty ? "screen \(screen.id): \(kind)" : "screen \(screen.id): \(kind) — \(identity)"
         }
     }
