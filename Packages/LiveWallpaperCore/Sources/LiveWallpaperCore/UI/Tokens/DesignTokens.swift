@@ -250,6 +250,18 @@ public enum DesignTokens {
         }
     }
 
+    /// Playlist crate records; each shadow pair is the design's two CSS layers, `radius` = blur ÷ 2.
+    public enum PlaylistCrate {
+        public static let restShadow = EditDesk.Shadow(color: .black.opacity(0.38), radius: 12, y: 10)
+        public static let restShadowEdge = EditDesk.Shadow(color: .black.opacity(0.5), radius: 1, y: 1)
+        public static let centeredShadow = EditDesk.Shadow(color: .black.opacity(0.5), radius: 22, y: 22)
+        public static let centeredShadowEdge = EditDesk.Shadow(color: .black.opacity(0.45), radius: 3, y: 2)
+        public static let liftedShadow = EditDesk.Shadow(color: .black.opacity(0.6), radius: 32, y: 32)
+        public static let liftedShadowEdge = EditDesk.Shadow(color: .black.opacity(0.45), radius: 5, y: 4)
+        /// Records already played, stacked left of the one in view.
+        public static let playedOpacity: Double = 0.6
+    }
+
     public enum Spacing {
         public static let xxs: CGFloat = 2
         public static let xs: CGFloat = 4
