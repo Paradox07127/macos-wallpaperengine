@@ -43,17 +43,20 @@ Closing the management window keeps Loomscreen and its wallpapers running. Use t
 ## 4) Playlists and rotation
 
 Open **Wallpaper Automation** from the display's top bar. Its modes are
-**Playlist**, **Daily Schedule** and **Library Shuffle**. In **Playlist**:
+**Playlist**, **Daily Schedule**, **Library Shuffle** and **Single Wallpaper**.
+It opens as a full page inside display detail. In **Playlist**:
 
-- Add wallpapers from the library, including video, web and scene entries supported by your edition.
-- Use each row's arrows to reorder, its play button to try it on this display, and its remove button to remove it from the queue.
-- Select **Manual** or a rotation interval of 1, 5, 15, 30, 60 or 120 minutes, and optionally enable **Shuffle**.
+- Add wallpapers through the in-page library, with search, type filters and numbered selections.
+- Drag records in the crate or use the queue's controls to reorder, try or remove entries.
+- Enable **Auto-Advance** and choose an interval of 1, 5, 15, 30, 60 or 120 minutes (15 by default). Turn **Loop** off to stop automatic switching at the last entry; manual previous/next still wraps. **Shuffle** ignores the loop setting.
 - **Save** commits the draft. **Cancel** discards draft changes and restores the configuration from before trial playback.
 
 Prev/next also appear in the menu bar for displays running a playlist.
 
 **Library Shuffle** needs no list: it picks a random wallpaper from your whole
-library at the interval you choose. **Next Random Wallpaper** skips ahead.
+library at the interval you choose. Exclude wallpapers per display, draw the next
+wallpaper, return to a previous one or reshuffle the deck. History lasts until
+the app closes. **Single Wallpaper** turns automatic switching off.
 
 Picking a wallpaper yourself, applying a scheme or applying a Workshop item
 (Pro) restarts the countdown. A wallpaper that fails to load twice moves to
@@ -62,8 +65,9 @@ Picking a wallpaper yourself, applying a scheme or applying a Workshop item
 ## 5) Time-of-day schedule
 
 Switch the same editor to **Daily Schedule**. Slots sit on a **24-hour
-schedule** dial. Select a slot to pick its wallpaper and hours; drag the ends of
-its arc to change the hours; double-click an empty hour to add a slot.
+schedule** dial. Select a slot to pick its wallpaper and enter times to the minute;
+drag the ends of its arc in 30-minute steps, including across midnight;
+double-click empty space to add a slot.
 Overlapping ranges show an error and prevent saving. A range can cross midnight.
 **Save and Use Daily Schedule** switches the display to that mode. **Unscheduled
 Hours** sets the wallpaper for hours no slot covers. Automation pauses while you're away

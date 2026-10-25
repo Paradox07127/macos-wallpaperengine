@@ -58,7 +58,7 @@ The menu bar keeps everyday controls close. Closing the management window keeps 
 - **Per-display control** — every monitor runs its own wallpaper; apply one wallpaper to all screens, or span a video or Pro scene across them.
 - **Playlists & scheduling** — shuffle, rotation intervals, time-of-day slots, and a bookmark library for one-click swaps.
 - **Menu bar first** — global on/off, per-display play/pause and prev/next, plus a live CPU / GPU / RAM / thermal strip.
-- **One overlay canvas** — arrange eleven widget types, a freely resizable Nixie clock and music per display. Add 12 particle effects and weather response through the effect layer.
+- **One overlay canvas** — arrange eleven widget types, a freely resizable Nixie or Split-Flap clock and music per display. Add 12 particle effects and weather response through the effect layer.
 - **Opening & switching animations** — choose how your desktop appears and how wallpapers change, with simpler motion under Reduce Motion and Low Power Mode.
 - **Music layer** — Spotify and Apple Music, Poster/Vinyl/Aurora layouts, cover art, playback controls and optional synchronized lyrics. Pro adds system audio-driven visual effects.
 - **System Wallpaper (macOS 26+)** — publish videos to the macOS wallpaper provider so they can play with Loomscreen closed, subject to provider compatibility.

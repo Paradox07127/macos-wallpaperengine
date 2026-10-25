@@ -13,6 +13,44 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.9.2] — 2026-10-25
+
+### Added
+
+- Wallpaper Automation is a full page inside display detail, with a record
+  crate for playlists, a day ring for schedules and a deck for library shuffle.
+  **Single Wallpaper** keeps the current wallpaper without automatic switching.
+- Playlists gain **Auto-Advance** and **Loop** controls, with a default interval
+  of 15 minutes. Existing manual playlists keep automatic switching off.
+- Daily schedules support minute-level times and dragging across midnight,
+  with 30-minute snapping on the dial.
+- Library shuffle gains per-display exclusions, previous-wallpaper history and
+  reshuffling. Wallpaper selection uses the in-page library with search and filters.
+- The clock overlay gains a **Split-Flap** style.
+
+### Changed
+
+- Display detail, library filters, menus and action buttons are clearer and
+  more consistent, with improved contrast, hit targets and localized labels.
+- Preset selection and preset actions have separate menus. Workshop paste and
+  System Wallpaper removal ask before discarding pending work or changing a video.
+
+### Fixed
+
+- Scene preset updates stay ordered, scene teardown stays off the main thread,
+  and clearing a wallpaper preserves the display's scene settings.
+- System Wallpaper clearing reaches disk before the visible state changes and
+  shows black for a cleared display.
+- Automatic switching rechecks time zone changes; display-detail transitions
+  handle returning, switching and closing without stale hand-offs.
+- File writes respect the read-size limit and deletes are durable. Shortcut
+  key labels, network counters, weather updates and Steam metadata lookups are
+  more reliable.
+- Invalid saved schedule times are rejected instead of overflowing during
+  migration or reaching the schedule dial.
+- Pro: invalid scene object IDs, script slots and particle numbers are rejected
+  before they can crash or corrupt rendering state.
+
 ## [0.9.1] — 2026-10-23
 
 ### Changed
@@ -1451,6 +1489,7 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[0.9.2]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.1...loomscreen-v0.9.2
 [0.9.1]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.0...loomscreen-v0.9.1
 [0.9.0]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.9...loomscreen-v0.9.0
 [0.8.9]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.8...loomscreen-v0.8.9

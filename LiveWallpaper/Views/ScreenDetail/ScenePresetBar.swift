@@ -29,9 +29,10 @@ struct ScenePresetBar: View {
     var body: some View {
         SettingRow(icon: "square.stack.3d.up", title: "Preset", subtitle: status) {
             HStack(spacing: DesignTokens.Spacing.sm) {
-                actionsMenu
                 presetMenu
+                actionsMenu
             }
+            .layoutPriority(1)
         }
         // Menu items never appear on screen as views, so they can't queue their own names.
         .onChange(of: workshopPresets.map(\.name), initial: true) { _, names in
@@ -167,8 +168,6 @@ struct ScenePresetBar: View {
         }
         .lineLimit(1)
         .truncationMode(.tail)
-        // Without matching the title's priority the row hands the menu only its minimum width.
-        .layoutPriority(1)
         .atlasRole("ScenePresetMenu")
         .accessibilityLabel(Text("Preset"))
     }

@@ -49,6 +49,7 @@ struct UserShortcutBindingRow: View {
                 .disabled(current == nil)
                 bindingMenu
             }
+            .layoutPriority(1)
             .confirmationDialog("Clear this shortcut?", isPresented: $confirmingClear, titleVisibility: .visible) {
                 Button("Clear") { saveFailed = !UserShortcutBindingStore.shared.clear(key) }
                 Button("Cancel", role: .cancel) {}
@@ -106,7 +107,6 @@ struct UserShortcutBindingRow: View {
         .lineLimit(1)
         .truncationMode(.tail)
         .frame(minWidth: 96, alignment: .trailing)
-        .layoutPriority(1)
         .accessibilityLabel(title)
         .appLanguagePopover(isPresented: isEditing, arrowEdge: .bottom) {
             if let editing {

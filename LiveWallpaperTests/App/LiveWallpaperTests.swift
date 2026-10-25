@@ -484,6 +484,21 @@ struct ScheduleSlotTests {
         #expect(slot.endMinute == 360)
     }
 
+    @Test("Invalid persisted schedule times throw instead of overflowing or reaching the dial", arguments: [
+        ("startHour", Int.max), ("endHour", Int.min), ("startHour", 24), ("endHour", 25),
+        ("startMinute", -1), ("startMinute", 1440), ("endMinute", -1), ("endMinute", Int.max),
+    ])
+    func invalidStoredTimesAreRejected(key: String, value: Int) throws {
+        var payload: [String: Any] = [
+            "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF", "startHour": 6, "endHour": 12, "label": "Range",
+        ]
+        payload[key] = value
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(ScheduleSlot.self, from: data)
+        }
+    }
+
     @Test("A slot writes its minutes plus whole hours an older app can read, and decodes back unchanged")
     func encodedSlotCarriesMinutesAndHours() throws {
         let slot = ScheduleSlot(startMinute: 450, endMinute: 765, label: "Morning")

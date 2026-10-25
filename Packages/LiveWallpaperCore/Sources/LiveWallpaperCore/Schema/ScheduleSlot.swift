@@ -52,13 +52,22 @@ public struct ScheduleSlot: Codable, Equatable, Identifiable, Sendable {
     }
 
     private static func decodeMinute(_ container: KeyedDecodingContainer<CodingKeys>, minuteKey: CodingKeys, hourKey: CodingKeys) throws -> Int {
-        if let minute = try container.decodeIfPresent(Int.self, forKey: minuteKey) {
-            return minute
+        let minute: Int
+        if let value = try container.decodeIfPresent(Int.self, forKey: minuteKey) {
+            minute = value
+        } else {
+            let hour = try container.decode(Int.self, forKey: hourKey)
+            let conversion = hour.multipliedReportingOverflow(by: 60)
+            guard !conversion.overflow else {
+                throw DecodingError.dataCorruptedError(forKey: hourKey, in: container, debugDescription: "Schedule hour overflows minutes")
+            }
+            minute = conversion.partialValue
         }
-        if let hour = try container.decodeIfPresent(Int.self, forKey: hourKey) {
-            return hour * 60
+        let maximum = minuteKey == .startMinute ? 1439 : 1440
+        guard (0 ... maximum).contains(minute) else {
+            throw DecodingError.dataCorruptedError(forKey: minuteKey, in: container, debugDescription: "Schedule minute is outside the day")
         }
-        return try container.decode(Int.self, forKey: minuteKey)
+        return minute
     }
 
     public func encode(to encoder: Encoder) throws {

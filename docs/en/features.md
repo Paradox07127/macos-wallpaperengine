@@ -127,20 +127,25 @@ and volume changes also reach span displays that are disconnected.
   display's setup after confirmation. Positions adapt to the target display.
   The particle and weather layer is not part of a scheme; applying one leaves
   it unchanged.
-- **Wallpaper Automation**: a sheet opened from the display's top bar, with
-  three modes — Playlist, Daily Schedule and Library Shuffle.
+- **Wallpaper Automation**: a full page opened from the display's top bar, with
+  four modes — Playlist, Daily Schedule, Library Shuffle and Single Wallpaper.
+  The in-page wallpaper picker shares the library's search and filters.
 - **Playlists**: videos, web pages and (Pro) scenes, drag-reordering, shuffle,
-  and rotation every 1, 5, 15, 30, 60 or 120 minutes, or manual.
+  **Auto-Advance** and **Loop**, and rotation every 1, 5, 15, 30, 60 or 120
+  minutes (15 by default). Existing manual playlists keep auto-advance off.
 - **Schedules**: time slots, conflict checks and fallback to the primary
   wallpaper. Automation pauses during lock/sleep and reconciles once on wake.
   Slots sit on a **24-hour schedule** dial. Drag the ends of a slot's arc to
-  change its hours; double-click an empty hour to add a slot. **Unscheduled
+  change times in 30-minute steps, including across midnight; enter exact
+  minutes in the slot editor. Double-click empty space to add a slot. **Unscheduled
   Hours** sets the wallpaper for hours no slot covers.
 - **Library Shuffle**: picks a random wallpaper from the whole library at the
   chosen interval. New imports join automatically. The same wallpaper never
-  plays twice in a row. **Next Random Wallpaper** skips ahead.
+  plays twice in a row. Per-display exclusions, previous-wallpaper history and
+  reshuffling are available from the deck. History is kept in memory only.
+- **Single Wallpaper**: keeps the current wallpaper without automatic switching.
 - **Skipped wallpapers**: a wallpaper that fails to load is retried once, then
-  skipped. The sheet lists each one with its reason — missing file, failed
+  skipped. The automation page lists each one with its reason — missing file, failed
   load or load timeout — and **Enable Again** brings it back.
 - The rotation countdown starts over when you pick a wallpaper yourself, apply
   a scheme or apply a Workshop item (Pro). While you are away (lock or display
@@ -180,8 +185,8 @@ See [Workspace](workspace.md#arrange-overlays).
 - **System Overview**: one medium or large instrument panel for CPU, memory,
   GPU, network throughput, disk I/O and power. Large adds history curves and
   optional temperature/fan readings. Uses the existing shared sampling pipeline.
-- **Clock**: an independent, transparent Nixie clock with a metal base and glass
-  separators. Drag to place and freely resize it; choose 12/24-hour time, hour
+- **Clock**: an independent clock with **Nixie** and **Split-Flap** styles.
+  Drag to place and freely resize it; choose 12/24-hour time, hour
   leading zero, opacity and separator blinking. It has its own display switch
   and layer, and pauses while hidden without starting metric samplers.
 - **Weather widget**: a sky scene with condition/place caption, day/night
