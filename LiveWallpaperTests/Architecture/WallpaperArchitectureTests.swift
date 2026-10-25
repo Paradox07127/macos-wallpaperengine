@@ -2007,17 +2007,23 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(chosen.failed == 1)
     }
 
-    @Test("The end picker shows a stored midnight 0 as 24:00 and writes a choice back unchanged")
-    func endPickerShowsStoredMidnightAsTwentyFour() {
+    @Test("Time fields round-trip minutes; an end set to 00:00 is stored as a midnight end, a start as 0")
+    func timeFieldsRoundTripMinutes() throws {
         var stored = 0
-        let end = WallpaperAutomationSheet.endHourBinding(Binding(get: { stored }, set: { stored = $0 }))
+        let start = WallpaperAutomationSheet.timeBinding(Binding(get: { stored }, set: { stored = $0 }), isEnd: false)
+        for minute in [0, 450, 1439] {
+            stored = minute
+            start.wrappedValue = start.wrappedValue
+            #expect(stored == minute)
+        }
+        let end = WallpaperAutomationSheet.timeBinding(Binding(get: { stored }, set: { stored = $0 }), isEnd: true)
+        end.wrappedValue = WallpaperAutomationSheet.clockDate(minute: 0)
+        #expect(stored == 1440)
+        start.wrappedValue = WallpaperAutomationSheet.clockDate(minute: 0)
+        #expect(stored == 0)
 
-        #expect(end.wrappedValue == 24)
-        end.wrappedValue = 6
-        #expect(stored == 6)
-
-        stored = 18
-        #expect(end.wrappedValue == 18)
+        let inserted = try #require(WallpaperAutomationSheet.insertedSlot(atMinute: 450, in: []))
+        #expect(inserted.startMinute == 450 && inserted.endMinute == 570)
     }
 
     @Test("The playing row is the saved queue's cursor entry, only while the playlist runs")
@@ -2096,29 +2102,53 @@ struct WallpaperAutomationCoordinatorTests {
     @Test("A preset adds its own hours when they are free, and nothing when they overlap a slot")
     func presetAddsItsHoursOnlyWhenFree() throws {
         let evening = try #require(WallpaperAutomationSheet.presetSlot(.evening, in: Self.morningAndAfternoon))
-        #expect(evening.startHour == 18 && evening.endHour == 22)
+        #expect(evening.startMinute == 1080 && evening.endMinute == 1320)
         #expect(WallpaperAutomationSheet.presetSlot(.midday, in: Self.morningAndAfternoon) == nil, "an overlapping preset was added")
     }
 
     @Test("A drag onto another slot's hours is dropped; a drag into free hours moves the slot")
     func retimingRejectsOverlaps() throws {
         let slots = Self.morningAndAfternoon
-        #expect(WallpaperAutomationSheet.retimed(slots, id: slots[1].id, start: 10, end: 16) == nil, "an overlapping drag was kept")
-        let moved = try #require(WallpaperAutomationSheet.retimed(slots, id: slots[1].id, start: 13, end: 19))
-        #expect(moved.map { [$0.startHour, $0.endHour] } == [[6, 12], [13, 19]])
+        #expect(WallpaperAutomationSheet.retimed(slots, id: slots[1].id, start: 600, end: 960) == nil, "an overlapping drag was kept")
+        let moved = try #require(WallpaperAutomationSheet.retimed(slots, id: slots[1].id, start: 780, end: 1140))
+        #expect(moved.map { [$0.startMinute, $0.endMinute] } == [[360, 720], [780, 1140]])
     }
 
     @Test("A drag that leaves a slot with no hours is dropped")
     func retimingRejectsEmptySlots() {
         let slots = Self.morningAndAfternoon
-        #expect(WallpaperAutomationSheet.retimed(slots, id: slots[0].id, start: 6, end: 6) == nil, "a zero-length drag was kept")
+        #expect(WallpaperAutomationSheet.retimed(slots, id: slots[0].id, start: 360, end: 360) == nil, "a zero-length drag was kept")
     }
 
     @Test("A double-click inserts two hours, or one where two do not fit")
     func insertFallsBackToOneHour() throws {
         let slots = [ScheduleSlot(startHour: 6, endHour: 12, label: "Morning"), ScheduleSlot(startHour: 13, endHour: 18, label: "Afternoon")]
-        let inserted = try #require(WallpaperAutomationSheet.insertedSlot(atHour: 12, in: slots))
-        #expect(inserted.startHour == 12 && inserted.endHour == 13)
+        let inserted = try #require(WallpaperAutomationSheet.insertedSlot(atMinute: 720, in: slots))
+        #expect(inserted.startMinute == 720 && inserted.endMinute == 780)
+    }
+
+    @Test("A slot starting on the half hour stays off until its start minute, then takes the display")
+    func halfHourSlotSwitchesAtItsMinute() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        var config = ScreenConfiguration(screenID: screen.id, wallpaper: Self.fallbackVideo.content)
+        config.wallpaperMode = .schedule
+        config.scheduleFallback = Self.fallbackVideo
+        config.scheduleSlots = [ScheduleSlot(startMinute: 450, endMinute: 720, label: "Day", wallpaper: Self.dayPage)]
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([config]))
+        var clock = automationTime(7, 29)
+        var restored: [WallpaperContent] = []
+        let orchestrator = Self.scheduleOrchestrator(store: store, screen: screen, clock: { clock }, restore: { _, proposed in
+            restored.append(proposed.activeWallpaper)
+            store.save(proposed)
+        })
+
+        orchestrator.checkAndApplySchedule(for: screen, force: true)
+        await Self.settle()
+        #expect(restored.isEmpty, "the slot took the display a minute before it starts")
+        clock = automationTime(7, 30)
+        orchestrator.checkAndApplySchedule(for: screen, force: true)
+        await Self.settle()
+        #expect(restored == [Self.dayPage.content])
     }
 
 }
@@ -2916,13 +2946,13 @@ struct SchedulePolicyTests {
         config.wallpaperMode = .schedule
         config.scheduleFallback = video
         config.scheduleSlots = [ScheduleSlot(startHour: 22, endHour: 6, label: "Night", wallpaper: web)]
-        #expect(SchedulePolicy.decision(for: config, hour: 23) == .applyWallpaper(web))
-        #expect(SchedulePolicy.decision(for: config, hour: 0) == .applyWallpaper(web))
+        #expect(SchedulePolicy.decision(for: config, minute: 23 * 60) == .applyWallpaper(web))
+        #expect(SchedulePolicy.decision(for: config, minute: 0) == .applyWallpaper(web))
         config = config.applyingAutomationEntry(web)
-        #expect(SchedulePolicy.decision(for: config, hour: 3) == .none)
-        #expect(SchedulePolicy.decision(for: config, hour: 6) == .applyWallpaper(video))
+        #expect(SchedulePolicy.decision(for: config, minute: 3 * 60) == .none)
+        #expect(SchedulePolicy.decision(for: config, minute: 6 * 60) == .applyWallpaper(video))
         let allDay = ScheduleSlot(startHour: 0, endHour: 24, label: "All day", wallpaper: web)
-        #expect(SchedulePolicy.hourRanges(for: allDay) == [0 ..< 24])
+        #expect(SchedulePolicy.minuteRanges(for: allDay) == [0 ..< 1440])
         #expect(try !SchedulePolicy.conflicts(slot: allDay, against: #require(config.scheduleSlots)).isEmpty)
         config.scheduleSlots = [allDay]
         #expect(WallpaperAutomationCoordinator.hasDemand(config))
@@ -2940,7 +2970,7 @@ struct SchedulePolicyTests {
         )
         configuration.wallpaperMode = .schedule
 
-        let result = SchedulePolicy.decision(for: configuration, hour: 8)
+        let result = SchedulePolicy.decision(for: configuration, minute: 8 * 60)
 
         #expect(result == .applySlot(slot: slot, bookmarkData: scheduled))
     }
@@ -2957,7 +2987,7 @@ struct SchedulePolicyTests {
         )
         configuration.wallpaperMode = .schedule
 
-        let result = SchedulePolicy.decision(for: configuration, hour: 8)
+        let result = SchedulePolicy.decision(for: configuration, minute: 8 * 60)
 
         #expect(result == .none)
     }
@@ -2975,7 +3005,7 @@ struct SchedulePolicyTests {
         )
         configuration.wallpaperMode = .schedule
 
-        let result = SchedulePolicy.decision(for: configuration, hour: 8)
+        let result = SchedulePolicy.decision(for: configuration, minute: 8 * 60)
 
         #expect(result == .applySlot(slot: slot, bookmarkData: primary))
     }
@@ -3032,12 +3062,12 @@ struct SchedulePolicyTests {
         var config = ScreenConfiguration(screenID: 1, wallpaper: web.content)
         config.wallpaperMode = .schedule
         config.scheduleFallback = video
-        #expect(SchedulePolicy.decision(for: config, hour: 13) == .applyWallpaper(video))
+        #expect(SchedulePolicy.decision(for: config, minute: 13 * 60) == .applyWallpaper(video))
         config.scheduleSlots = []
-        #expect(SchedulePolicy.decision(for: config, hour: 13) == .applyWallpaper(video))
-        #expect(SchedulePolicy.decision(for: config.applyingAutomationEntry(video), hour: 13) == .none)
+        #expect(SchedulePolicy.decision(for: config, minute: 13 * 60) == .applyWallpaper(video))
+        #expect(SchedulePolicy.decision(for: config.applyingAutomationEntry(video), minute: 13 * 60) == .none)
         config.scheduleFallback = nil
-        #expect(SchedulePolicy.decision(for: config, hour: 13) == .none)
+        #expect(SchedulePolicy.decision(for: config, minute: 13 * 60) == .none)
     }
 
     // MARK: - decision mode-gate
@@ -3055,19 +3085,19 @@ struct SchedulePolicyTests {
         )
 
         configuration.wallpaperMode = .playlist
-        #expect(SchedulePolicy.decision(for: configuration, hour: 8) == .none)
+        #expect(SchedulePolicy.decision(for: configuration, minute: 8 * 60) == .none)
     }
 
-    // MARK: - hourRanges
+    // MARK: - minuteRanges
 
-    @Test("hourRanges handles normal, midnight-wrap and empty slots", arguments: [
-        (6, 12, "Morning", [6 ..< 12]),
-        (22, 6, "Night", [22 ..< 24, 0 ..< 6]),
+    @Test("minuteRanges handles normal, midnight-wrap and empty slots", arguments: [
+        (6, 12, "Morning", [360 ..< 720]),
+        (22, 6, "Night", [1320 ..< 1440, 0 ..< 360]),
         (8, 8, "Empty", []),
     ] as [(Int, Int, String, [Range<Int>])])
-    func hourRanges(start: Int, end: Int, label: String, expected: [Range<Int>]) {
+    func minuteRanges(start: Int, end: Int, label: String, expected: [Range<Int>]) {
         let slot = ScheduleSlot(startHour: start, endHour: end, label: label)
-        #expect(SchedulePolicy.hourRanges(for: slot) == expected)
+        #expect(SchedulePolicy.minuteRanges(for: slot) == expected)
     }
 
     // MARK: - conflicts
@@ -3108,22 +3138,22 @@ struct SchedulePolicyTests {
             ScheduleSlot(startHour: 6, endHour: 9, label: "A"),
             ScheduleSlot(startHour: 14, endHour: 18, label: "B"),
         ]
-        let gap = SchedulePolicy.findFreeRange(in: slots, minHours: 2)
+        let gap = SchedulePolicy.findFreeRange(in: slots, minMinutes: 120)
         #expect(gap != nil)
-        #expect((gap?.end ?? 0) - (gap?.start ?? 0) >= 5)
+        #expect((gap?.end ?? 0) - (gap?.start ?? 0) >= 300)
     }
 
-    @Test("findFreeRange: returns nil when no segment satisfies minHours")
+    @Test("findFreeRange: returns nil when no segment satisfies minMinutes")
     func findFreeRangeReturnsNil() {
         let slots = [ScheduleSlot(startHour: 0, endHour: 23, label: "AlmostFull")]
-        #expect(SchedulePolicy.findFreeRange(in: slots, minHours: 2) == nil)
+        #expect(SchedulePolicy.findFreeRange(in: slots, minMinutes: 120) == nil)
     }
 
     @Test("findFreeRange: returns whole day when slots empty")
     func findFreeRangeAllFree() {
-        let gap = SchedulePolicy.findFreeRange(in: [], minHours: 24)
+        let gap = SchedulePolicy.findFreeRange(in: [], minMinutes: 1440)
         #expect(gap?.start == 0)
-        #expect(gap?.end == 24)
+        #expect(gap?.end == 1440)
     }
 
     @Test("findFreeRange: detects cross-midnight wrap when it is the longest gap")
@@ -3132,10 +3162,10 @@ struct SchedulePolicyTests {
             ScheduleSlot(startHour: 4, endHour: 7, label: "A"),
             ScheduleSlot(startHour: 8, endHour: 22, label: "B"),
         ]
-        let gap = SchedulePolicy.findFreeRange(in: slots, minHours: 2)
-        #expect(gap?.start == 22)
-        #expect(gap?.end == 28)
-        #expect((gap?.end ?? 0) % 24 == 4)
+        let gap = SchedulePolicy.findFreeRange(in: slots, minMinutes: 120)
+        #expect(gap?.start == 1320)
+        #expect(gap?.end == 1680)
+        #expect((gap?.end ?? 0) % 1440 == 240)
     }
 
     @Test("findFreeRange: prefers a longer linear gap over a shorter wrap gap")
@@ -3144,9 +3174,41 @@ struct SchedulePolicyTests {
             ScheduleSlot(startHour: 1, endHour: 5, label: "A"),
             ScheduleSlot(startHour: 8, endHour: 23, label: "B"),
         ]
-        let gap = SchedulePolicy.findFreeRange(in: slots, minHours: 2)
-        #expect(gap?.start == 5)
-        #expect(gap?.end == 8)
+        let gap = SchedulePolicy.findFreeRange(in: slots, minMinutes: 120)
+        #expect(gap?.start == 300)
+        #expect(gap?.end == 480)
+    }
+
+    @Test("A slot starting on the half hour takes over at its start minute, not at the hour before")
+    func halfHourSlotStartsOnItsMinute() {
+        let day = WallpaperQueueEntry(title: "Day", content: .html(source: .inline("day"), config: .default))
+        let fallback = WallpaperQueueEntry(title: "Fallback", content: .video(bookmarkData: Data([1])))
+        var config = ScreenConfiguration(screenID: 1, wallpaper: fallback.content)
+        config.wallpaperMode = .schedule
+        config.scheduleFallback = fallback
+        config.scheduleSlots = [ScheduleSlot(startMinute: 450, endMinute: 720, label: "Day", wallpaper: day)]
+        #expect(SchedulePolicy.plannedEntry(for: config, minute: 449) == fallback)
+        #expect(SchedulePolicy.plannedEntry(for: config, minute: 450) == day)
+    }
+
+    @Test("A hold ends at a slot edge on the half hour")
+    func nextBoundaryLandsOnHalfHour() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 7)))
+        let edge = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 7, minute: 30)))
+        let slots = [ScheduleSlot(startMinute: 450, endMinute: 720, label: "Day")]
+        #expect(SchedulePolicy.nextBoundary(after: now, slots: slots, calendar: calendar) == edge)
+    }
+
+    @Test("Free ranges are found to the minute, including a gap that wraps midnight")
+    func findFreeRangeToTheMinute() {
+        let split = [ScheduleSlot(startMinute: 0, endMinute: 450, label: "A"), ScheduleSlot(startMinute: 480, endMinute: 1440, label: "B")]
+        #expect(SchedulePolicy.findFreeRange(in: split, minMinutes: 60) == nil)
+        let gap = SchedulePolicy.findFreeRange(in: split, minMinutes: 30)
+        #expect(gap?.start == 450 && gap?.end == 480)
+        let wrap = SchedulePolicy.findFreeRange(in: [ScheduleSlot(startMinute: 60, endMinute: 1410, label: "C")], minMinutes: 60)
+        #expect(wrap?.start == 1410 && wrap?.end == 1500)
     }
 }
 

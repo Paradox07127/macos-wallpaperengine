@@ -22,23 +22,23 @@ struct ScheduleDialTests {
 
     @Test("An edge drag keeps at least one hour and never crosses the other edge or flips across midnight")
     func edgeDragClamp() {
-        func drag(_ start: Int, _ end: Int, movingEnd: Bool, to hour: Int) -> [Int] {
-            let hours = ScheduleDialGeometry.draggedHours(ScheduleSlot(startHour: start, endHour: end, label: "Slot"), movingEnd: movingEnd, to: hour)
-            return [hours.start, hours.end]
+        func drag(_ start: Int, _ end: Int, movingEnd: Bool, to minute: Int) -> [Int] {
+            let minutes = ScheduleDialGeometry.draggedMinutes(ScheduleSlot(startMinute: start, endMinute: end, label: "Slot"), movingEnd: movingEnd, to: minute)
+            return [minutes.start, minutes.end]
         }
-        #expect(drag(6, 12, movingEnd: true, to: 6) == [6, 7], "the end landed on the start")
-        #expect(drag(10, 18, movingEnd: true, to: 9) == [10, 11], "the end crossed the start into a 23-hour wrap")
-        #expect(drag(10, 18, movingEnd: true, to: 0) == [10, 24])
-        #expect(drag(10, 18, movingEnd: true, to: 2) == [10, 24], "a drag just past midnight snapped back to the start")
-        #expect(drag(10, 18, movingEnd: true, to: 14) == [10, 14])
-        #expect(drag(10, 18, movingEnd: false, to: 18) == [17, 18])
-        #expect(drag(10, 18, movingEnd: false, to: 20) == [17, 18])
-        #expect(drag(10, 18, movingEnd: false, to: 23) == [0, 18])
-        #expect(drag(22, 6, movingEnd: true, to: 23) == [22, 24], "a wrapping slot's end crossed its start")
-        #expect(drag(22, 6, movingEnd: true, to: 3) == [22, 3])
-        #expect(drag(22, 6, movingEnd: false, to: 5) == [7, 6], "a wrapping slot's start crossed its end")
-        #expect(drag(22, 6, movingEnd: false, to: 0) == [23, 6], "a wrapping slot's start flipped across midnight")
-        #expect(drag(18, 0, movingEnd: false, to: 20) == [20, 24])
+        #expect(drag(360, 720, movingEnd: true, to: 360) == [360, 420], "the end landed on the start")
+        #expect(drag(600, 1080, movingEnd: true, to: 540) == [600, 660], "the end crossed the start into a 23-hour wrap")
+        #expect(drag(600, 1080, movingEnd: true, to: 0) == [600, 1440])
+        #expect(drag(600, 1080, movingEnd: true, to: 120) == [600, 1440], "a drag just past midnight snapped back to the start")
+        #expect(drag(600, 1080, movingEnd: true, to: 840) == [600, 840])
+        #expect(drag(600, 1080, movingEnd: false, to: 1080) == [1020, 1080])
+        #expect(drag(600, 1080, movingEnd: false, to: 1200) == [1020, 1080])
+        #expect(drag(600, 1080, movingEnd: false, to: 1380) == [0, 1080])
+        #expect(drag(1320, 360, movingEnd: true, to: 1380) == [1320, 1440], "a wrapping slot's end crossed its start")
+        #expect(drag(1320, 360, movingEnd: true, to: 180) == [1320, 180])
+        #expect(drag(1320, 360, movingEnd: false, to: 300) == [420, 360], "a wrapping slot's start crossed its end")
+        #expect(drag(1320, 360, movingEnd: false, to: 0) == [1380, 360], "a wrapping slot's start flipped across midnight")
+        #expect(drag(1080, 0, movingEnd: false, to: 1200) == [1200, 1440])
     }
 
     @Test("Callout lanes never overlap or clip, including clustered sections and compact overflow selection")

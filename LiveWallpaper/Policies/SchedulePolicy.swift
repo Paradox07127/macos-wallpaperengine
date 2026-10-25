@@ -9,19 +9,24 @@ enum SchedulePolicy {
         case restorePrimary(bookmarkData: Data)
     }
 
-    static func activeSlot(in slots: [ScheduleSlot], hour: Int) -> ScheduleSlot? {
-        let normalizedHour = ((hour % 24) + 24) % 24
-        return slots.first { $0.containsHour(normalizedHour) }
+    static func activeSlot(in slots: [ScheduleSlot], minute: Int) -> ScheduleSlot? {
+        let normalizedMinute = clampMinute(minute)
+        return slots.first { $0.containsMinute(normalizedMinute) }
     }
 
-    static func decision(for configuration: ScreenConfiguration, hour: Int) -> Decision {
+    static func minuteOfDay(_ date: Date, calendar: Calendar) -> Int {
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+    }
+
+    static func decision(for configuration: ScreenConfiguration, minute: Int) -> Decision {
         let slots = configuration.scheduleSlots ?? []
         guard configuration.wallpaperMode == .schedule, !slots.isEmpty || configuration.scheduleFallback != nil else {
             return .none
         }
 
         if usesEntries(configuration) {
-            guard let entry = plannedEntry(for: configuration, hour: hour) else { return .none }
+            guard let entry = plannedEntry(for: configuration, minute: minute) else { return .none }
             let proposed = configuration.applyingAutomationEntry(entry)
             return proposed.activeWallpaper == configuration.activeWallpaper && proposed.wpeOrigin == configuration.wpeOrigin
                 ? .none : .applyWallpaper(entry)
@@ -29,7 +34,7 @@ enum SchedulePolicy {
 
         let activeBookmark = configuration.activeWallpaper.activeVideoBookmarkData
 
-        if let slot = activeSlot(in: slots, hour: hour),
+        if let slot = activeSlot(in: slots, minute: minute),
            let bookmark = slot.videoBookmarkData {
             if activeBookmark == bookmark {
                 return .none
@@ -47,9 +52,9 @@ enum SchedulePolicy {
         return .none
     }
 
-    /// The entry the plan wants on screen at `hour`; nil when the plan leaves that hour alone.
-    static func plannedEntry(for configuration: ScreenConfiguration, hour: Int) -> WallpaperQueueEntry? {
-        let active = activeSlot(in: configuration.scheduleSlots ?? [], hour: hour)
+    /// The entry the plan wants on screen at `minute`; nil when the plan leaves that minute alone.
+    static func plannedEntry(for configuration: ScreenConfiguration, minute: Int) -> WallpaperQueueEntry? {
+        let active = activeSlot(in: configuration.scheduleSlots ?? [], minute: minute)
         let slotVideo = active?.videoBookmarkData.map {
             WallpaperQueueEntry(title: active?.label ?? "", content: .video(bookmarkData: $0))
         }
@@ -71,14 +76,14 @@ enum SchedulePolicy {
 
     // MARK: - Manual override
 
-    /// Next hour at which the planned content can change: any slot edge, or midnight when no slot has a length.
+    /// Next minute at which the planned content can change: any slot edge, or midnight when no slot has a length.
     static func nextBoundary(after now: Date, slots: [ScheduleSlot], calendar: Calendar) -> Date {
-        var hours = Set(slots.filter { !hourRanges(for: $0).isEmpty }.flatMap { [clampHour($0.startHour), clampHour($0.endHour)] })
-        if hours.isEmpty {
-            hours = [0]
+        var minutes = Set(slots.filter { !minuteRanges(for: $0).isEmpty }.flatMap { [clampMinute($0.startMinute), clampMinute($0.endMinute)] })
+        if minutes.isEmpty {
+            minutes = [0]
         }
-        return hours.compactMap {
-            calendar.nextDate(after: now, matching: DateComponents(hour: $0, minute: 0, second: 0), matchingPolicy: .nextTime)
+        return minutes.compactMap {
+            calendar.nextDate(after: now, matching: DateComponents(hour: $0 / 60, minute: $0 % 60, second: 0), matchingPolicy: .nextTime)
         }.min() ?? now.addingTimeInterval(24 * 60 * 60)
     }
 
@@ -99,7 +104,7 @@ enum SchedulePolicy {
     static func pausedUntil(for configuration: ScreenConfiguration, now: Date, calendar: Calendar) -> Date? {
         guard configuration.wallpaperMode == .schedule,
               let until = configuration.scheduleSettledUntil, now < until,
-              let entry = plannedEntry(for: configuration, hour: calendar.component(.hour, from: now)),
+              let entry = plannedEntry(for: configuration, minute: minuteOfDay(now, calendar: calendar)),
               !isSameContent(entry.content, configuration.activeWallpaper) else { return nil }
         return until
     }
@@ -111,14 +116,14 @@ enum SchedulePolicy {
         now: Date,
         calendar: Calendar
     ) -> ScreenConfiguration {
-        let hour = calendar.component(.hour, from: now)
+        let minute = minuteOfDay(now, calendar: calendar)
         guard configuration.wallpaperMode == .schedule,
-              let entry = plannedEntry(for: configuration, hour: hour),
+              let entry = plannedEntry(for: configuration, minute: minute),
               isSameContent(entry.content, edited),
               entry.content != edited else { return configuration }
         var result = configuration
         if var slots = configuration.scheduleSlots,
-           let index = slots.firstIndex(where: { $0.containsHour(hour) }), slots[index].wallpaper != nil {
+           let index = slots.firstIndex(where: { $0.containsMinute(minute) }), slots[index].wallpaper != nil {
             slots[index].wallpaper?.content = edited
             result.scheduleSlots = slots
         } else {
@@ -158,7 +163,7 @@ enum SchedulePolicy {
 
     static func firstProblem(in slots: [ScheduleSlot]) -> SlotProblem? {
         for slot in slots {
-            if hourRanges(for: slot).isEmpty {
+            if minuteRanges(for: slot).isEmpty {
                 return .noLength(slot.id)
             }
             let overlapping = conflicts(slot: slot, against: slots)
@@ -170,12 +175,12 @@ enum SchedulePolicy {
     }
 
     static func conflicts(slot: ScheduleSlot, against others: [ScheduleSlot]) -> Set<UUID> {
-        let ours = hourRanges(for: slot)
+        let ours = minuteRanges(for: slot)
         guard !ours.isEmpty else { return [] }
 
         var conflicting: Set<UUID> = []
         for other in others where other.id != slot.id {
-            let theirs = hourRanges(for: other)
+            let theirs = minuteRanges(for: other)
             outer: for ourRange in ours {
                 for theirRange in theirs where ourRange.overlaps(theirRange) {
                     conflicting.insert(other.id)
@@ -186,32 +191,32 @@ enum SchedulePolicy {
         return conflicting
     }
 
-    /// Decompose a slot into `[start, end)` half-open ranges within 0-24.
-    static func hourRanges(for slot: ScheduleSlot) -> [Range<Int>] {
-        let s = clampHour(slot.startHour)
-        let e = slot.endHour == 24 ? 24 : clampHour(slot.endHour)
+    /// Decompose a slot into `[start, end)` half-open minute ranges within 0-1440.
+    static func minuteRanges(for slot: ScheduleSlot) -> [Range<Int>] {
+        let s = clampMinute(slot.startMinute)
+        let e = slot.endMinute == 1440 ? 1440 : clampMinute(slot.endMinute)
         if s == e {
             return []
         }
         if s < e {
             return [s ..< e]
         }
-        return [s ..< 24, 0 ..< e]
+        return [s ..< 1440, 0 ..< e]
     }
 
-    /// Finds the longest free range; an end above 24 represents a midnight wrap.
-    static func findFreeRange(in slots: [ScheduleSlot], minHours: Int = 2) -> (start: Int, end: Int)? {
-        var occupied = Array(repeating: false, count: 24)
+    /// Finds the longest free range; an end above 1440 represents a midnight wrap.
+    static func findFreeRange(in slots: [ScheduleSlot], minMinutes: Int = 120) -> (start: Int, end: Int)? {
+        var occupied = Array(repeating: false, count: 1440)
         for slot in slots {
-            for range in hourRanges(for: slot) {
-                for h in range where h >= 0 && h < 24 {
-                    occupied[h] = true
+            for range in minuteRanges(for: slot) {
+                for m in range where m >= 0 && m < 1440 {
+                    occupied[m] = true
                 }
             }
         }
 
         if !occupied.contains(true) {
-            return minHours <= 24 ? (0, 24) : nil
+            return minMinutes <= 1440 ? (0, 1440) : nil
         }
         if !occupied.contains(false) {
             return nil
@@ -219,18 +224,20 @@ enum SchedulePolicy {
 
         var runs: [(start: Int, end: Int)] = []
         var index = 0
-        while index < 24 {
+        while index < 1440 {
             guard !occupied[index] else { index += 1; continue }
             let runStart = index
-            while index < 24, !occupied[index] { index += 1 }
+            while index < 1440, !occupied[index] {
+                index += 1
+            }
             runs.append((runStart, index))
         }
 
-        // Stitch a leading 0-anchored run with a trailing 24-anchored run into a
-        // single wrap-around range so the gap `23 → 1` is discoverable.
+        // Stitch a leading 0-anchored run with a trailing 1440-anchored run into a
+        // single wrap-around range so a gap across midnight is discoverable.
         if runs.count >= 2,
            let first = runs.first, first.start == 0,
-           let last = runs.last, last.end == 24 {
+           let last = runs.last, last.end == 1440 {
             let leadingLength = first.end - first.start
             let trailingLength = last.end - last.start
             let wrap = (start: last.start, end: last.start + trailingLength + leadingLength)
@@ -242,7 +249,9 @@ enum SchedulePolicy {
         var best: (start: Int, end: Int)?
         for run in runs {
             let length = run.end - run.start
-            if length < minHours { continue }
+            if length < minMinutes {
+                continue
+            }
             if let currentBest = best {
                 if length > (currentBest.end - currentBest.start) {
                     best = run
@@ -254,7 +263,7 @@ enum SchedulePolicy {
         return best
     }
 
-    private static func clampHour(_ hour: Int) -> Int {
-        ((hour % 24) + 24) % 24
+    private static func clampMinute(_ minute: Int) -> Int {
+        ((minute % 1440) + 1440) % 1440
     }
 }

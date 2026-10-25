@@ -11,7 +11,7 @@ enum Preset: String, Identifiable, CaseIterable {
 
     var id: String { rawValue }
 
-    /// `endHour` exclusive; night wraps midnight (`containsHour` semantics).
+    /// `endHour` exclusive; night wraps midnight (`containsMinute` semantics).
     var hours: (start: Int, end: Int) {
         switch self {
         case .morning:   return (6, 12)

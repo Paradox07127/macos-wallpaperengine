@@ -458,22 +458,59 @@ struct FrameRateLimitEnforcesCompositionCapTests {
     }
 }
 
-@Suite("ScheduleSlot.containsHour")
+@Suite("ScheduleSlot")
 struct ScheduleSlotTests {
     @Test("Ranges include their start and exclude their end across midnight", arguments: [
         (6, 12, 9, true), (6, 12, 13, false), (6, 12, 6, true), (6, 12, 12, false),
         (22, 6, 23, true), (22, 6, 3, true), (22, 6, 12, false), (22, 6, 0, true),
     ])
     func containsHour(start: Int, end: Int, hour: Int, expected: Bool) {
-        #expect(ScheduleSlot(startHour: start, endHour: end, label: "Range").containsHour(hour) == expected)
+        #expect(ScheduleSlot(startHour: start, endHour: end, label: "Range").containsMinute(hour * 60) == expected)
     }
 
     @Test("Default slots cover all 24 hours")
     func defaultSlotsCoverAllHours() {
         let slots = ScheduleSlot.defaultSlots
         for hour in 0..<24 {
-            #expect(slots.contains { $0.containsHour(hour) }, "Hour \(hour) is not covered by any default slot")
+            #expect(slots.contains { $0.containsMinute(hour * 60) }, "Hour \(hour) is not covered by any default slot")
         }
+    }
+
+    @Test("A slot saved with only whole hours decodes to the same minutes")
+    func hourOnlySlotDecodesToMinutes() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","startHour":22,"endHour":6,"label":"Night"}"#
+        let slot = try JSONDecoder().decode(ScheduleSlot.self, from: Data(json.utf8))
+        #expect(slot.startMinute == 1320)
+        #expect(slot.endMinute == 360)
+    }
+
+    @Test("A slot writes its minutes plus whole hours an older app can read, and decodes back unchanged")
+    func encodedSlotCarriesMinutesAndHours() throws {
+        let slot = ScheduleSlot(startMinute: 450, endMinute: 765, label: "Morning")
+        let data = try JSONEncoder().encode(slot)
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["startMinute"] as? Int == 450)
+        #expect(object["endMinute"] as? Int == 765)
+        #expect(object["startHour"] as? Int == 7)
+        #expect(object["endHour"] as? Int == 12)
+        #expect(try JSONDecoder().decode(ScheduleSlot.self, from: data) == slot)
+    }
+
+    @Test("A slot across midnight includes its start minute and excludes its end minute")
+    func minuteRangeAcrossMidnight() {
+        let slot = ScheduleSlot(startMinute: 1350, endMinute: 375, label: "Night")
+        #expect(!slot.containsMinute(1349))
+        #expect(slot.containsMinute(1350))
+        #expect(slot.containsMinute(0))
+        #expect(slot.containsMinute(374))
+        #expect(!slot.containsMinute(375))
+    }
+
+    @Test("Range text shows a midnight end as 24:00 and drops :00 in compact form only when both ends are on the hour")
+    func rangeTextFormats() {
+        #expect(ScheduleSlot(startMinute: 450, endMinute: 0, label: "A").rangeText() == "07:30–24:00")
+        #expect(ScheduleSlot(startMinute: 360, endMinute: 720, label: "B").rangeText(compact: true) == "06–12")
+        #expect(ScheduleSlot(startMinute: 390, endMinute: 720, label: "C").rangeText(compact: true) == "06:30–12:00")
     }
 }
 

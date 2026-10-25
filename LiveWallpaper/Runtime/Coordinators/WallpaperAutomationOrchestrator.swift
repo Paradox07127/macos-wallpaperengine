@@ -402,7 +402,7 @@ final class WallpaperAutomationOrchestrator {
             return
         }
         let calendar = calendar()
-        let decision = SchedulePolicy.decision(for: config, hour: calendar.component(.hour, from: currentTime))
+        let decision = SchedulePolicy.decision(for: config, minute: SchedulePolicy.minuteOfDay(currentTime, calendar: calendar))
         // Saving here would move the revision and discard a launch restore candidate that is still preparing.
         guard decision != .none else { return }
         config.scheduleSettledUntil = SchedulePolicy.nextBoundary(after: currentTime, slots: slots, calendar: calendar)

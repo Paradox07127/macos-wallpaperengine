@@ -90,7 +90,7 @@ extension QAControlPlane {
                 "queueCursor": config.playlistCursorIndex ?? 0,
                 "queue": config.effectiveWallpaperQueue.map { ["id": $0.id, "title": $0.title, "type": $0.content.wallpaperType.rawValue] },
                 "schedule": (config.scheduleSlots ?? []).map { slot -> [String: Any] in
-                    ["start": slot.startHour, "end": slot.endHour, "title": slot.wallpaper?.title ?? slot.label,
+                    ["start": ScheduleSlot.clockText(minute: slot.startMinute), "end": ScheduleSlot.clockText(minute: slot.endMinute), "title": slot.wallpaper?.title ?? slot.label,
                      "type": slot.wallpaper?.content.wallpaperType.rawValue ?? "video"]
                 },
             ]

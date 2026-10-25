@@ -199,9 +199,22 @@ struct WallpaperAutomationSheet: View {
         shownBeforeTrial = nil
     }
 
-    /// 0 and 24 both mean a midnight end; the end picker lists 1–24, so a stored 0 must read as 24.
-    static func endHourBinding(_ hour: Binding<Int>) -> Binding<Int> {
-        Binding(get: { hour.wrappedValue == 0 ? 24 : hour.wrappedValue }, set: { hour.wrappedValue = $0 })
+    static func clockDate(minute: Int) -> Date {
+        clockCalendar.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: minute / 60, minute: minute % 60)) ?? Date(timeIntervalSinceReferenceDate: 0)
+    }
+
+    /// An end set to 00:00 is stored as 1440: the slot ends at midnight.
+    static func timeBinding(_ minute: Binding<Int>, isEnd: Bool) -> Binding<Date> {
+        Binding(get: { clockDate(minute: minute.wrappedValue % 1440) }, set: { date in
+            let value = SchedulePolicy.minuteOfDay(date, calendar: clockCalendar)
+            minute.wrappedValue = isEnd && value == 0 ? 1440 : value
+        })
+    }
+
+    private static var clockCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
     }
 
     /// In library order. IDs with no item are hidden, not dropped: the library may still be loading.
@@ -213,21 +226,21 @@ struct WallpaperAutomationSheet: View {
         preset.conflicts(with: slots) ? nil : preset.makeSlot()
     }
 
-    /// nil when the new hours are empty or overlap another slot: the timeline then drops the drag.
+    /// nil when the new times are empty or overlap another slot: the timeline then drops the drag.
     static func retimed(_ slots: [ScheduleSlot], id: UUID, start: Int, end: Int) -> [ScheduleSlot]? {
         guard let index = slots.firstIndex(where: { $0.id == id }) else { return nil }
         var retimed = slots
-        retimed[index].startHour = start
-        retimed[index].endHour = end
-        guard !SchedulePolicy.hourRanges(for: retimed[index]).isEmpty else { return nil }
+        retimed[index].startMinute = start
+        retimed[index].endMinute = end
+        guard !SchedulePolicy.minuteRanges(for: retimed[index]).isEmpty else { return nil }
         return SchedulePolicy.conflicts(slot: retimed[index], against: retimed).isEmpty ? retimed : nil
     }
 
-    static func insertedSlot(atHour hour: Int, in slots: [ScheduleSlot]) -> ScheduleSlot? {
-        let label = Preset.suggestion(forStartHour: hour).labelKey
-        for length in [2, 1] {
-            let end = hour + length
-            let slot = ScheduleSlot(startHour: hour, endHour: end > 24 ? end - 24 : end, label: label)
+    static func insertedSlot(atMinute minute: Int, in slots: [ScheduleSlot]) -> ScheduleSlot? {
+        let label = Preset.suggestion(forStartHour: minute / 60).labelKey
+        for length in [120, 60] {
+            let end = minute + length
+            let slot = ScheduleSlot(startMinute: minute, endMinute: end > 1440 ? end - 1440 : end, label: label)
             if SchedulePolicy.conflicts(slot: slot, against: slots).isEmpty {
                 return slot
             }
@@ -648,7 +661,7 @@ struct WallpaperAutomationSheet: View {
                     }
                     .help(Text("Add schedule slot"))
                     .accessibilityLabel(Text("Add schedule slot"))
-                    .disabled(SchedulePolicy.findFreeRange(in: slots, minHours: 1) == nil)
+                    .disabled(SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) == nil)
                 }
                 timeline.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -662,7 +675,7 @@ struct WallpaperAutomationSheet: View {
     private var scheduleInspector: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
             slotEditor
-            if SchedulePolicy.findFreeRange(in: slots, minHours: 1) != nil, let entry = fallback ?? derivedFallback {
+            if SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) != nil, let entry = fallback ?? derivedFallback {
                 unscheduledHoursSection(entry: entry)
             }
             validationSection
@@ -677,9 +690,11 @@ struct WallpaperAutomationSheet: View {
             GroupBox("Time Slot") {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                     HStack {
-                        hourPicker("Start", hour: $slots[index].startHour, hours: 0 ..< 24)
+                        DatePicker("Start", selection: Self.timeBinding($slots[index].startMinute, isEnd: false), displayedComponents: .hourAndMinute)
+                            .datePickerStyle(.stepperField).labelsHidden().help(Text("Start"))
                         Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                        hourPicker("End", hour: Self.endHourBinding($slots[index].endHour), hours: 1 ..< 25)
+                        DatePicker("End", selection: Self.timeBinding($slots[index].endMinute, isEnd: true), displayedComponents: .hourAndMinute)
+                            .datePickerStyle(.stepperField).labelsHidden().help(Text("End"))
                     }
                     Button {
                         picking = .slot(slot.id)
@@ -781,8 +796,8 @@ struct WallpaperAutomationSheet: View {
                     error = String(localized: "Time slots overlap. Choose different hours.", bundle: .appLanguage)
                 }
             },
-            onInsert: { hour in
-                if let slot = Self.insertedSlot(atHour: hour, in: slots) {
+            onInsert: { minute in
+                if let slot = Self.insertedSlot(atMinute: minute, in: slots) {
                     slots.append(slot)
                     selectedSlotID = slot.id
                     error = nil
@@ -884,12 +899,6 @@ struct WallpaperAutomationSheet: View {
         }
     }
 
-    private func hourPicker(_ label: LocalizedStringKey, hour: Binding<Int>, hours: Range<Int>) -> some View {
-        Picker(label, selection: hour) {
-            ForEach(hours, id: \.self) { value in Text(verbatim: String(format: "%02d:00", value)).tag(value) }
-        }.labelsHidden().frame(width: 80).help(Text(label))
-    }
-
     private func icon(
         _ symbol: String, _ label: LocalizedStringKey, tint: Color? = nil, action: @escaping () -> Void
     ) -> some View {
@@ -919,9 +928,9 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func addSlot() {
-        guard let range = SchedulePolicy.findFreeRange(in: slots, minHours: 1) else { return }
-        let end = min(range.start + 6, range.end)
-        let slot = ScheduleSlot(startHour: range.start, endHour: end > 24 ? end - 24 : end, label: "")
+        guard let range = SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) else { return }
+        let end = min(range.start + 360, range.end)
+        let slot = ScheduleSlot(startMinute: range.start, endMinute: end > 1440 ? end - 1440 : end, label: "")
         slots.append(slot)
         selectedSlotID = slot.id
     }
@@ -934,7 +943,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func rangeText(for id: UUID) -> String {
-        slots.first { $0.id == id }.map { String(format: "%02d:00–%02d:00", $0.startHour, $0.endHour) } ?? ""
+        slots.first { $0.id == id }.map { $0.rangeText() } ?? ""
     }
 
     private func chooseVideoFiles(for target: PickTarget) {
@@ -1036,7 +1045,7 @@ struct WallpaperAutomationSheet: View {
             return migrated
         }
         failures = config.automationFailures
-        selectedSlotID = slots.first { $0.containsHour(Calendar.current.component(.hour, from: openedAt)) }?.id ?? slots.first?.id
+        selectedSlotID = slots.first { $0.containsMinute(SchedulePolicy.minuteOfDay(openedAt, calendar: .current)) }?.id ?? slots.first?.id
         autoAdvance = config.playlistAutoAdvance
         rotation = config.playlistRotationMinutes ?? ScreenConfiguration.defaultPlaylistRotationMinutes
         loops = config.playlistLoops
