@@ -424,16 +424,9 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func rowHighlight(selected: Bool, hovered: Bool, tint: Color = DesignTokens.Colors.accent) -> some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .fill(tint.opacity(selected ? DesignTokens.Opacity.selectedFill : DesignTokens.Opacity.hoverFill))
-            if selected {
-                Capsule()
-                    .fill(tint)
-                    .frame(width: 3)
-            }
-        }
-        .opacity(selected || hovered ? 1 : 0)
+        RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+            .fill(tint.opacity(selected ? DesignTokens.Opacity.selectedFill : DesignTokens.Opacity.hoverFill))
+            .opacity(selected || hovered ? 1 : 0)
     }
 
     private func sectionHeader(
@@ -1259,7 +1252,7 @@ struct WallpaperAutomationSheet: View {
                     Circle()
                         .fill(slotColor(slot))
                         .frame(width: 8, height: 8)
-                    Text("Time Slot")
+                    Text("Slot Details")
                     Spacer()
                     Text(slotDurationText(slot))
                         .font(DesignTokens.Typography.metric)
