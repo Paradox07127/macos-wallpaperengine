@@ -3,17 +3,20 @@ import SwiftUI
 public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
     private let title: String
     private let isHovering: Bool
+    private let titleColor: Color
     private let leading: Leading
     private let trailing: Trailing
 
     public init(
         title: String,
         isHovering: Bool,
+        titleColor: Color = DesignTokens.Colors.overlayForeground,
         @ViewBuilder leading: () -> Leading,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title
         self.isHovering = isHovering
+        self.titleColor = titleColor
         self.leading = leading()
         self.trailing = trailing()
     }
@@ -25,7 +28,7 @@ public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
             // Click-through, or the band blocks the whole-card apply gesture beneath it.
             MarqueeText(title, lineLimit: 1, isActive: isHovering)
                 .font(DesignTokens.EditDesk.Typography.cardTitle)
-                .foregroundStyle(DesignTokens.Colors.overlayForeground)
+                .foregroundStyle(titleColor)
                 .clipped()
                 .allowsHitTesting(false)
 
@@ -42,8 +45,13 @@ public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
 }
 
 public extension ThumbnailTitleBand where Leading == EmptyView {
-    init(title: String, isHovering: Bool, @ViewBuilder trailing: () -> Trailing) {
-        self.init(title: title, isHovering: isHovering, leading: { EmptyView() }, trailing: trailing)
+    init(
+        title: String,
+        isHovering: Bool,
+        titleColor: Color = DesignTokens.Colors.overlayForeground,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.init(title: title, isHovering: isHovering, titleColor: titleColor, leading: { EmptyView() }, trailing: trailing)
     }
 }
 

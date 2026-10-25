@@ -50,8 +50,12 @@ struct ReportBugSheet: View {
 
     private var diagnosticPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Diagnostic snapshot")
-                .font(DesignTokens.Typography.bodyEmphasized)
+            HStack {
+                Text("Diagnostic snapshot")
+                    .font(DesignTokens.Typography.bodyEmphasized)
+                Spacer(minLength: DesignTokens.Spacing.sm)
+                copyDiagnosticsButton
+            }
 
             ScrollView {
                 Text(verbatim: report.diagnosticMarkdown)
@@ -74,15 +78,26 @@ struct ReportBugSheet: View {
                     .foregroundStyle(DesignTokens.Colors.Status.warning)
             }
             if let logURL = sanitizedLogURL {
-                Label {
-                    Text("Attach the sanitized log from Finder to the GitHub issue.")
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                } icon: {
-                    Image(systemName: "doc.text")
-                        .foregroundStyle(.secondary)
+                HStack {
+                    Label {
+                        Text("Attach the sanitized log from Finder to the GitHub issue.")
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    } icon: {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                    }
+                    .help(Text(verbatim: logURL.path))
+                    Spacer(minLength: DesignTokens.Spacing.sm)
+                    Button {
+                        BugReporter.revealLogInFinder(logURL)
+                    } label: {
+                        Label("Show Log in Finder", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .help(Text("Open Finder and highlight the sanitized log file"))
+                    .accessibilityLabel(Text("Show sanitized log in Finder"))
                 }
-                .help(Text(verbatim: logURL.path))
             }
         }
     }
@@ -115,24 +130,17 @@ struct ReportBugSheet: View {
             .buttonStyle(.bordered)
             .disabled(isCopyingScenes)
             #endif
-            Button {
-                NSPasteboard.general.clearContents()
-                copied = NSPasteboard.general.setString(report.diagnosticMarkdown, forType: .string)
-            } label: {
-                Label(copied ? "Copied" : "Copy Diagnostics", systemImage: copied ? "checkmark" : "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
-            if let logURL = sanitizedLogURL {
-                Button {
-                    BugReporter.revealLogInFinder(logURL)
-                } label: {
-                    Label("Show Log in Finder", systemImage: "folder")
-                }
-                .buttonStyle(.bordered)
-                .help(Text("Open Finder and highlight the sanitized log file"))
-                .accessibilityLabel(Text("Show sanitized log in Finder"))
-            }
         }
+    }
+
+    private var copyDiagnosticsButton: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            copied = NSPasteboard.general.setString(report.diagnosticMarkdown, forType: .string)
+        } label: {
+            Label(copied ? "Copied" : "Copy Diagnostics", systemImage: copied ? "checkmark" : "doc.on.doc")
+        }
+        .buttonStyle(.bordered)
     }
 
     nonisolated private static func makeSanitizedLogCopy(from source: URL) async -> URL? {

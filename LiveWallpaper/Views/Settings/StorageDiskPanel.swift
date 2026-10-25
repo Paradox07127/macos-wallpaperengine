@@ -174,7 +174,7 @@ private struct StorageDonutRing: View {
                         .lineLimit(1)
                     Text(verbatim: (total > 0 ? Double(activeItem.bytes) / Double(total) : 0).formatted(.percent.precision(.fractionLength(1))))
                         .font(DesignTokens.Typography.badge)
-                        .foregroundStyle(activeItem.color)
+                        .foregroundStyle(DesignTokens.Colors.textPrimary)
                 } else {
                     Text(verbatim: (isTotalPartial ? "≥ " : "") + formatBytes(total))
                         .font(DesignTokens.Typography.pageTitle)

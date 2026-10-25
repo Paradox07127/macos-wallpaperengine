@@ -45,12 +45,13 @@ public struct StatusChip: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .imageScale(.small)
+                    .foregroundStyle(tint)
             }
             title
                 .font(DesignTokens.Typography.badge)
                 .lineLimit(1)
+                .foregroundStyle(DesignTokens.Colors.textPrimary)
         }
-        .foregroundStyle(tint)
         .padding(.horizontal, DesignTokens.Spacing.sm)
         .padding(.vertical, 3)
         .background(Capsule().fill(tint.opacity(DesignTokens.Opacity.selectedFill)))

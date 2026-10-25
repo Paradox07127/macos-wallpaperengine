@@ -187,9 +187,16 @@ public struct InfoTooltipButton: View {
             Image(systemName: "info.circle")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.tertiary)
+                .frame(
+                    width: DesignTokens.iconButtonDiameter(.small),
+                    height: DesignTokens.iconButtonDiameter(.small)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .atlasRole("InfoTooltipButton")
+        // Gives back the hit area's growth over the 12pt glyph so row height and spacing stay put.
+        .padding(-DesignTokens.Spacing.xs)
         .help(localizedText)
         .accessibilityLabel(Text("More information"))
         .accessibilityHint(Text(verbatim: localizedText))

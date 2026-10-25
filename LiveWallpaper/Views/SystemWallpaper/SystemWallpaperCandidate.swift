@@ -165,7 +165,13 @@ struct SystemWallpaperCandidateTile: View {
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {
-                ThumbnailTitleBand(title: candidate.title, isHovering: isHovering) { EmptyView() }
+                ThumbnailTitleBand(
+                    title: candidate.title,
+                    isHovering: isHovering,
+                    titleColor: thumbnail == nil
+                        ? DesignTokens.Colors.textPrimary
+                        : DesignTokens.Colors.overlayForeground
+                ) { EmptyView() }
             }
     }
 
