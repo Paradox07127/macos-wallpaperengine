@@ -71,6 +71,7 @@ struct WallpaperAutomationSheet: View {
     @State private var loops = true
     @State private var libraryRotation = 15
     @State private var shuffle = false
+    @State private var excludedIDs: Set<LibraryItem.ID> = []
     @State private var fallback: WallpaperQueueEntry?
     @State private var derivedFallback: WallpaperQueueEntry?
     @State private var shownBeforeTrial: ScreenConfiguration?
@@ -108,7 +109,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private enum PickTarget: Equatable {
-        case queue, slot(UUID), fallback
+        case queue, slot(UUID), fallback, exclusions
     }
 
     /// The edits Save would commit.
@@ -122,12 +123,14 @@ struct WallpaperAutomationSheet: View {
         let loops: Bool
         let libraryRotation: Int
         let shuffle: Bool
+        let excludedIDs: Set<String>
     }
 
     private var draft: Draft {
         Draft(
             mode: mode, queue: queue, slots: slots, fallback: fallback,
-            autoAdvance: autoAdvance, rotation: rotation, loops: loops, libraryRotation: libraryRotation, shuffle: shuffle
+            autoAdvance: autoAdvance, rotation: rotation, loops: loops, libraryRotation: libraryRotation, shuffle: shuffle,
+            excludedIDs: excludedIDs
         )
     }
 
@@ -199,6 +202,11 @@ struct WallpaperAutomationSheet: View {
     /// 0 and 24 both mean a midnight end; the end picker lists 1–24, so a stored 0 must read as 24.
     static func endHourBinding(_ hour: Binding<Int>) -> Binding<Int> {
         Binding(get: { hour.wrappedValue == 0 ? 24 : hour.wrappedValue }, set: { hour.wrappedValue = $0 })
+    }
+
+    /// In library order. IDs with no item are hidden, not dropped: the library may still be loading.
+    static func excludedItems(_ ids: Set<LibraryItem.ID>, in items: [LibraryItem]) -> [LibraryItem] {
+        items.filter { ids.contains($0.id) }
     }
 
     static func presetSlot(_ preset: Preset, in slots: [ScheduleSlot]) -> ScheduleSlot? {
@@ -420,11 +428,52 @@ struct WallpaperAutomationSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .groupBoxStyle(ContainerGroupBoxStyle())
+            excludedWallpapers
             skippedSources
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, DesignTokens.Spacing.xl)
         .padding(.vertical, DesignTokens.Spacing.md)
+    }
+
+    private var excludedWallpapers: some View {
+        let items = Self.excludedItems(excludedIDs, in: library.items)
+        let rows = VStack(spacing: DesignTokens.Spacing.md) {
+            ForEach(items, content: excludedRow)
+        }
+        return GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                Text("Library shuffle never picks these wallpapers.")
+                    .font(DesignTokens.Typography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if items.count > 6 {
+                    ScrollView { rows }.frame(maxHeight: 280)
+                } else if !items.isEmpty {
+                    rows
+                }
+                Button("Choose from Library") { picking = .exclusions }
+                    .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Text("Excluded wallpapers")
+        }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
+    private func excludedRow(for item: LibraryItem) -> some View {
+        HStack(spacing: DesignTokens.Spacing.md) {
+            // No queue entry here: building one per redraw gives it a new ID and resolves Workshop bookmarks again.
+            ScheduleSlotThumbnail(entry: nil, thumbnails: thumbnails) { item.thumbnail }
+                .frame(width: 80, height: 45)
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
+                .accessibilityHidden(true)
+            Text(verbatim: item.title.translatedWallpaperName).lineLimit(2)
+            Spacer(minLength: DesignTokens.Spacing.sm)
+            Button("Include Again") { excludedIDs.remove(item.id) }
+                .buttonStyle(.bordered)
+        }
     }
 
     @ViewBuilder
@@ -794,10 +843,17 @@ struct WallpaperAutomationSheet: View {
             )
         case .fallback:
             return .single(title: "Choose Fallback Wallpaper", current: itemID(fallback ?? derivedFallback))
+        case .exclusions:
+            return .exclude(excluded: excludedIDs)
         }
     }
 
     private func commitPick(_ ids: [LibraryItem.ID], to target: PickTarget) {
+        if target == .exclusions {
+            excludedIDs = Set(ids)
+            picking = nil
+            return
+        }
         let picked = AutomationPickOrder.entries(for: ids, in: library.items)
         switch target {
         case .queue:
@@ -810,6 +866,8 @@ struct WallpaperAutomationSheet: View {
             if let entry = picked.entries.first {
                 fallback = entry
             }
+        case .exclusions:
+            break
         }
         error = picked.unavailable > 0
             ? String(localized: "This wallpaper is unavailable. Reimport it from the library.", bundle: .appLanguage)
@@ -905,6 +963,8 @@ struct WallpaperAutomationSheet: View {
                     if let entry = chosen.entries.first {
                         fallback = entry
                     }
+                case .exclusions:
+                    break
                 }
             }
         }
@@ -982,6 +1042,7 @@ struct WallpaperAutomationSheet: View {
         loops = config.playlistLoops
         libraryRotation = max(1, config.libraryShuffleRotationMinutes)
         shuffle = config.shufflePlaylist
+        excludedIDs = Set(config.libraryShuffleExcludedIDs)
         fallback = config.scheduleFallback
         derivedFallback = currentEntry.map { SchedulePolicy.initialFallback(for: config, current: $0) }
     }
@@ -990,7 +1051,7 @@ struct WallpaperAutomationSheet: View {
         manager.updateWallpaperAutomation(
             queue: queue, slots: slots, fallback: fallback ?? (mode == .schedule ? derivedFallback : nil), mode: mode,
             rotationMinutes: rotation, autoAdvance: autoAdvance, loops: loops, shuffle: shuffle,
-            libraryShuffleRotationMinutes: libraryRotation, previewedEntryID: preview?.entryID, for: screen
+            libraryShuffleRotationMinutes: libraryRotation, libraryShuffleExcludedIDs: excludedIDs.sorted(), previewedEntryID: preview?.entryID, for: screen
         )
     }
 }

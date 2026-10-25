@@ -36,6 +36,8 @@ struct AutomationLibraryPicker: View {
         case playlist(inPlaylist: Set<LibraryItem.ID>)
         /// A tap picks and returns; `current` is the item assigned now, nil when none matches.
         case single(title: LocalizedStringKey, current: LibraryItem.ID?)
+        /// Unordered multi-pick; `excluded` holds the items library shuffle skips now.
+        case exclude(excluded: Set<LibraryItem.ID>)
     }
 
     let library: SavedLibraryModel
@@ -49,15 +51,41 @@ struct AutomationLibraryPicker: View {
     let chooseVideos: ([LibraryItem.ID]) -> Void
     let cancel: () -> Void
 
-    @State private var order = AutomationPickOrder()
+    @State private var order: AutomationPickOrder
     @State private var search = ""
     /// nil shows every kind.
     @State private var kindName: String?
 
     private static let kinds: [LibraryItem.Kind] = [.video, .web, .scene, .aerial]
 
+    init(
+        library: SavedLibraryModel, thumbnails: ShelfThumbnailCache, purpose: Purpose, width: CGFloat,
+        commit: @escaping ([LibraryItem.ID]) -> Void, chooseVideos: @escaping ([LibraryItem.ID]) -> Void,
+        cancel: @escaping () -> Void
+    ) {
+        self.library = library
+        self.thumbnails = thumbnails
+        self.purpose = purpose
+        self.width = width
+        self.commit = commit
+        self.chooseVideos = chooseVideos
+        self.cancel = cancel
+        if case let .exclude(excluded) = purpose {
+            _order = State(initialValue: AutomationPickOrder(ids: excluded.sorted()))
+        } else {
+            _order = State(initialValue: AutomationPickOrder())
+        }
+    }
+
     private var isOrdered: Bool {
         if case .playlist = purpose {
+            return true
+        }
+        return false
+    }
+
+    private var isExcluding: Bool {
+        if case .exclude = purpose {
             return true
         }
         return false
@@ -67,6 +95,15 @@ struct AutomationLibraryPicker: View {
         switch purpose {
         case .playlist: "Add to Playlist"
         case let .single(title, _): title
+        case .exclude: "Exclude from Library Shuffle"
+        }
+    }
+
+    private func mark(for item: LibraryItem) -> AutomationPickerTile.Mark {
+        switch purpose {
+        case .playlist: .order(order.number(of: item.id))
+        case .single: .none
+        case .exclude: .check(order.ids.contains(item.id))
         }
     }
 
@@ -142,10 +179,10 @@ struct AutomationLibraryPicker: View {
                                 for: item, stageWidth: width, size: .small, scale: NSScreen.main?.backingScaleFactor ?? 2
                             ),
                             thumbnails: thumbnails,
-                            mark: isOrdered ? .order(order.number(of: item.id)) : .none,
+                            mark: mark(for: item),
                             badge: badge(for: item)
                         ) {
-                            if isOrdered {
+                            if isOrdered || isExcluding {
                                 order.toggle(item.id)
                             } else {
                                 commit([item.id])
@@ -162,12 +199,29 @@ struct AutomationLibraryPicker: View {
         switch purpose {
         case let .playlist(inPlaylist): inPlaylist.contains(item.id) ? "In Playlist" : nil
         case let .single(_, current): current == item.id ? "Current" : nil
+        case .exclude: nil
         }
+    }
+
+    private var selectedCount: some View {
+        Text("\(order.ids.count) selected")
+            .font(DesignTokens.Typography.subheadline)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
     }
 
     @ViewBuilder
     private var footer: some View {
-        if isOrdered {
+        if isExcluding {
+            // An empty pick clears the list, so Done stays enabled.
+            SheetFooterBar(
+                primaryTitle: "Done",
+                primaryAction: { commit(order.ids) },
+                cancelTitle: "Cancel",
+                cancelAction: cancel,
+                leading: { selectedCount }
+            )
+        } else if isOrdered {
             SheetFooterBar(
                 primaryTitle: "Add",
                 primaryAction: { commit(order.ids) },
@@ -176,10 +230,7 @@ struct AutomationLibraryPicker: View {
                 cancelAction: cancel,
                 leading: {
                     Button("Choose Videos") { chooseVideos(order.ids) }
-                    Text("\(order.ids.count) selected")
-                        .font(DesignTokens.Typography.subheadline)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    selectedCount
                 }
             )
         } else {
@@ -196,6 +247,8 @@ private struct AutomationPickerTile: View {
     enum Mark: Equatable {
         /// The item's 1-based pick number; nil while unpicked.
         case order(Int?)
+        /// Unnumbered multi-pick; true while picked.
+        case check(Bool)
         case none
     }
 
@@ -227,6 +280,10 @@ private struct AutomationPickerTile: View {
         return nil
     }
 
+    private var isSelected: Bool {
+        number != nil || mark == .check(true)
+    }
+
     private var image: CGImage? {
         guard let thumbnail, !isOffScreen else { return nil }
         if let loaded, loaded.thumbnail == thumbnail {
@@ -239,7 +296,7 @@ private struct AutomationPickerTile: View {
         Button(action: action) { poster }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .galleryTileChrome(isHovering: isHovering, isSelected: number != nil, reduceMotion: reduceMotion)
+            .galleryTileChrome(isHovering: isHovering, isSelected: isSelected, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
             .disabled(!item.isSupported)
             .opacity(item.isSupported ? 1 : DesignTokens.Opacity.disabledContent)
@@ -262,7 +319,7 @@ private struct AutomationPickerTile: View {
             }
             .accessibilityLabel(accessibilityLabel)
             .accessibilityValue(number.map { Text($0, format: .number) } ?? Text(verbatim: ""))
-            .accessibilityAddTraits(number != nil ? .isSelected : [])
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var accessibilityLabel: Text {
@@ -284,7 +341,7 @@ private struct AutomationPickerTile: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if case .order = mark {
+                if mark != Mark.none {
                     orderMark
                         .padding(DesignTokens.Spacing.sm)
                         .allowsHitTesting(false)
@@ -328,6 +385,13 @@ private struct AutomationPickerTile: View {
             Text(number, format: .number)
                 .font(DesignTokens.Typography.captionEmphasized)
                 .monospacedDigit()
+                .foregroundStyle(DesignTokens.Colors.overlayForeground)
+                .frame(width: 22, height: 22)
+                .background(DesignTokens.Colors.accent, in: Circle())
+                .accessibilityHidden(true)
+        } else if mark == .check(true) {
+            Image(systemName: "checkmark")
+                .font(DesignTokens.Typography.captionEmphasized)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
                 .frame(width: 22, height: 22)
                 .background(DesignTokens.Colors.accent, in: Circle())

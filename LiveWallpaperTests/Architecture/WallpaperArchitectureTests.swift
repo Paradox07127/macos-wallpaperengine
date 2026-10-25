@@ -1967,6 +1967,33 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(picked.unavailable == 1)
     }
 
+    @Test("Excluded rows follow library order; an excluded ID with no library item is not shown")
+    func excludedRowsFollowLibraryOrder() {
+        func item(_ label: String) -> LiveWallpaper.LibraryItem {
+            let bookmark = WallpaperBookmark(label: label, content: .html(source: .inline(label), config: .default))
+            return LiveWallpaper.LibraryItem(
+                id: "bookmark:\(bookmark.id)", title: label, kind: .web, source: .bookmark(bookmark),
+                isSteam: false, createdAt: bookmark.createdAt, lastUsedAt: nil, onDisplays: [],
+                thumbnail: nil, metadata: nil, isVariant: false, parentID: nil, isSupported: true
+            )
+        }
+        let (a, b, c) = (item("A"), item("B"), item("C"))
+
+        let shown = WallpaperAutomationSheet.excludedItems([c.id, a.id, "bookmark:gone"], in: [a, b, c])
+
+        #expect(shown.map(\.id) == [a.id, c.id])
+    }
+
+    @Test("Toggling exclusions keeps preset IDs the picker never showed")
+    func exclusionPickKeepsUntouchedIDs() {
+        var order = AutomationPickOrder(ids: ["gone", "a"])
+
+        order.toggle("a")
+        order.toggle("b")
+
+        #expect(Set(order.ids) == ["gone", "b"])
+    }
+
     @Test("Chosen video files become entries in panel order; a file without a bookmark is counted, not added")
     func chosenVideoFilesBecomeEntriesInOrder() {
         let urls = ["a.mp4", "broken.mp4", "b.mov"].map { URL(fileURLWithPath: "/tmp/\($0)") }
