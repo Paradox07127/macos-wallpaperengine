@@ -330,6 +330,21 @@ public enum DesignTokens {
         public static let restingSegment: Double = 0.80
     }
 
+    /// Library shuffle deck card moves; every curve is the deck design's `cubic-bezier(.2, .8, .2, 1)`.
+    public enum ShuffleDeck {
+        public static let liftDuration: TimeInterval = 0.15
+        public static let travelDuration: TimeInterval = 0.4
+        public static let gatherDuration: TimeInterval = 0.34
+        public static let splitDuration: TimeInterval = 0.2
+        public static let settleDuration: TimeInterval = 0.15
+        /// Delay between neighbouring cards while the deck splits and merges.
+        public static let stagger: TimeInterval = 0.03
+
+        public static func curve(_ duration: TimeInterval) -> Animation {
+            .timingCurve(0.2, 0.8, 0.2, 1, duration: duration)
+        }
+    }
+
     /// Page-top status bars (storage breakdown, Workshop setup).
     public enum StatusBar {
         public static let height: CGFloat = 6
