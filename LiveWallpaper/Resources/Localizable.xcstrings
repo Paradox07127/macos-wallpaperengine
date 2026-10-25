@@ -86778,25 +86778,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inicio de la cola"
+            "value" : "Inicio de la playlist"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キューの先頭"
+            "value" : "プレイリストの先頭"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "队首"
+            "value" : "播放列表开头"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隊首"
+            "value" : "播放列表開頭"
           }
         }
       }
@@ -86812,25 +86812,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Final de la cola"
+            "value" : "Final de la playlist"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キューの末尾"
+            "value" : "プレイリストの末尾"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "队尾"
+            "value" : "播放列表末尾"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隊尾"
+            "value" : "播放列表末尾"
           }
         }
       }
@@ -87084,25 +87084,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cola"
+            "value" : "Orden de reproducción"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キュー"
+            "value" : "再生順"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "队列"
+            "value" : "播放顺序"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "佇列"
+            "value" : "播放順序"
           }
         }
       }
@@ -87176,25 +87176,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Haz clic en un disco para seleccionarlo o arrástralo para reordenar la cola."
+            "value" : "Haz clic en un disco para seleccionarlo o arrástralo para cambiar el orden de reproducción."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "レコードをクリックして選択、ドラッグしてキューを並べ替えます。"
+            "value" : "レコードをクリックして選択、ドラッグして再生順を並べ替えます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点按唱片可选中，拖动可调整队列顺序。"
+            "value" : "点按唱片可选中，拖动可调整播放顺序。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點按唱片可選取，拖移可調整佇列順序。"
+            "value" : "點按唱片可選取，拖移可調整播放順序。"
           }
         }
       }
