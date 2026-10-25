@@ -233,7 +233,8 @@ enum ProbeRenderer {
         settle: TimeInterval = 0.7, @ViewBuilder _ view: () -> some View
     ) async -> ProbeImage {
         let host = NSHostingView(rootView: AppLanguageScope(defaults: .standard) {
-            view().frame(width: size.width, height: size.height)
+            // Offscreen bitmap caching cannot composite Liquid Glass; these probes measure geometry.
+            view().environment(\._accessibilityReduceTransparency, true).frame(width: size.width, height: size.height)
         })
         host.frame = CGRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)

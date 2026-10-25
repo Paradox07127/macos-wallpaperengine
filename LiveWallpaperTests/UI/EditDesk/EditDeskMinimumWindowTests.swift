@@ -87,7 +87,7 @@ private struct MinimumHost {
         Self.views(host).lazy.compactMap { $0 as? EditDeskStageView }.first
     }
 
-    /// The home top bar's drag region, or the detail top bar's two drag strips.
+    /// One drag region per mounted top bar.
     var dragStrips: [NSView] {
         Self.views(host).filter { $0 is WindowDragRegion.DragView && $0.window != nil }
     }
@@ -171,10 +171,10 @@ struct EditDeskMinimumWindowTests {
         let host = MinimumHost()
         defer { host.close() }
         host.router.showDetail(host.screen.id, section: .overlay)
-        await host.settle(seconds: 3) { host.canvasColumn != nil && host.dragStrips.count == 3 }
+        await host.settle(seconds: 3) { host.canvasColumn != nil && host.dragStrips.count == 2 }
         try #require(host.canvasColumn != nil, "the overlay workspace never mounted")
         // The home top bar stays mounted, hidden, under the detail page.
-        try #require(host.dragStrips.count == 3, "the detail top bar never mounted")
+        try #require(host.dragStrips.count == 2, "the detail top bar never mounted")
         await host.shrinkToMinimum()
         Self.expectMinimum(host, "overlay")
         let size = host.host.bounds.size

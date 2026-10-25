@@ -39,6 +39,8 @@ what shipped at that time; current behavior is documented in `docs/`.
 
 - Scene preset updates stay ordered, scene teardown stays off the main thread,
   and clearing a wallpaper preserves the display's scene settings.
+- Queued preset edits yield to later wallpaper choices. Shuffle history skips
+  removed library items and refreshes their presets before playback.
 - System Wallpaper clearing reaches disk before the visible state changes and
   shows black for a cleared display.
 - Automatic switching rechecks time zone changes; display-detail transitions
@@ -48,6 +50,12 @@ what shipped at that time; current behavior is documented in `docs/`.
   more reliable.
 - Invalid saved schedule times are rejected instead of overflowing during
   migration or reaching the schedule dial.
+- Information overlays disable covered controls for keyboard and accessibility
+  interaction. Schedule colors use the shared safe color-registration path.
+- Saved Steam sessions can be removed even when the Steam app has no local accounts.
+- Schedule dragging preserves all-day intervals, short gaps stay editable and
+  minute-sized sections stay inside their ranges. Repeated shuffle wallpapers
+  keep distinct cards, and the deck count matches the available next picks.
 - Pro: invalid scene object IDs, script slots and particle numbers are rejected
   before they can crash or corrupt rendering state.
 

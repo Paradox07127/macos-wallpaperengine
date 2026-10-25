@@ -107,7 +107,8 @@ private final class GridDragHost {
         router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
         router.select(.library)
         let library = SavedLibraryModel(inputs: inputs)
-        let hosting = NSHostingView(rootView: HomePage(router: router, toasts: toasts, library: library).environment(manager))
+        let hosting = NSHostingView(rootView: HomePage(router: router, toasts: toasts, library: library)
+            .environment(manager).environment(\._accessibilityReduceTransparency, true))
         hosting.sizingOptions = []
         window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: size),

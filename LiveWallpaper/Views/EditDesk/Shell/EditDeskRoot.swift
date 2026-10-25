@@ -58,6 +58,7 @@ struct EditDeskRoot: View {
     var body: some View {
         guidedContent
             .modifier(UndoCommands(undo: undo, toasts: toasts))
+            .onPreferenceChange(InfoOverlayPresentedKey.self) { undo?.commandsSuppressed = $0 }
             .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
             .providesGalleryCardPreferences()
             .background { EditDeskBackdrop(frosted: background == .frosted) }
@@ -224,8 +225,8 @@ struct EditDeskRoot: View {
         #if DEBUG
         QAControlPlane.shared.router = router
         QAControlPlane.shared.pageGuide = pageGuide
-        QAControlPlane.shared.startTour = { [weak router, weak progress, pageGuide] page in
-            guard let router, let progress else { return }
+        QAControlPlane.shared.startTour = { [weak router, weak progress, weak pageGuide] page in
+            guard let router, let progress, let pageGuide else { return }
             pageGuide.startTour(progress: progress, router: router, from: page)
         }
         #endif

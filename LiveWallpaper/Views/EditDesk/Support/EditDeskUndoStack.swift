@@ -174,6 +174,7 @@ final class EditDeskUndoStack {
 
     private(set) var undoSteps: [Step] = []
     private(set) var redoSteps: [Step] = []
+    var commandsSuppressed = false
     /// Posts the line announcing a step a `record…` call added, with that step's Undo button.
     @ObservationIgnored var onRecord: (@MainActor (_ text: String, _ stepID: UUID) -> Void)?
     @ObservationIgnored private let manager: any UndoRestoring
@@ -227,12 +228,14 @@ final class EditDeskUndoStack {
     /// Puts back the newest step; nothing happens when `stepID` is given and is no longer the newest.
     @discardableResult
     func undo(expecting stepID: UUID? = nil) async -> Outcome? {
-        await enqueue { await self.run(isRedo: false, expecting: stepID) }
+        guard !commandsSuppressed else { return nil }
+        return await enqueue { await self.run(isRedo: false, expecting: stepID) }
     }
 
     @discardableResult
     func redo() async -> Outcome? {
-        await enqueue { await self.run(isRedo: true, expecting: nil) }
+        guard !commandsSuppressed else { return nil }
+        return await enqueue { await self.run(isRedo: true, expecting: nil) }
     }
 
     func perform(redo: Bool, announcingTo toasts: EditDeskToastCenter) {
@@ -251,7 +254,11 @@ final class EditDeskUndoStack {
     }
 
     var canUndo: Bool {
-        !undoSteps.isEmpty || overlayEditor?.hasUnrecordedMovement == true
+        !commandsSuppressed && (!undoSteps.isEmpty || overlayEditor?.hasUnrecordedMovement == true)
+    }
+
+    var canRedo: Bool {
+        !commandsSuppressed && !redoSteps.isEmpty
     }
 
     /// Appends immediately, so Undo is available before the board's disk debounce runs.

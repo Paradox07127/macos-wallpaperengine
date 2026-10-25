@@ -1070,7 +1070,7 @@ struct WallpaperAutomationCoordinatorTests {
     @Test("Library shuffle rewinds through its in-memory history and draws the returned card first")
     func libraryShuffleRewindsThroughHistory() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
-        let library = ["a", "b", "c", "d"].map {
+        var library = ["a", "b", "c", "d"].map {
             WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default))
         }
         let initialContent = library[0].content
@@ -1146,6 +1146,26 @@ struct WallpaperAutomationCoordinatorTests {
         orchestrator.reshuffleLibrary(for: screen)
         #expect(orchestrator.shuffleDecks[screen.id] == LibraryShuffleDeck())
         #expect(store.get(for: screen.id)?.activeWallpaper == drawn)
+
+        let current = try #require(library.first { $0.content == drawn })
+        let removed = try #require(library.first { $0.id != current.id })
+        let replacement = try #require(library.first { $0.id != current.id && $0.id != removed.id })
+        library = [current, removed]
+        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == removed.content)
+        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == drawn)
+        library = [current]
+        let count = restored.count
+        orchestrator.regressLibraryShuffle(for: screen)
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(restored.count == count, "a removed history row played again")
+
+        library = [current, removed]
+        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == removed.content)
+        #expect(try await land { orchestrator.regressLibraryShuffle(for: screen) } == drawn)
+        library = [current, replacement]
+        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == replacement.content)
     }
 
     @Test("Library shuffle has its own timer without needing a playlist")
@@ -2308,14 +2328,15 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(WallpaperAutomationSheet.revisionRefresh(after: nil, handledSerial: nil).refreshes, "a revision change with no switch held the deck back")
     }
 
-    @Test("The deck's remaining count leaves out excluded, current and played wallpapers, and never drops below zero")
-    func shuffleDeckRemainingCountsUnplayedWallpapers() {
+    @Test("The deck counts next-draw candidates, including wallpapers previously played")
+    func shuffleDeckCountsNextDrawCandidates() {
         let remaining = WallpaperAutomationSheet.deckRemaining(
-            libraryIDs: ["a", "b", "c", "d", "e"], excludedIDs: ["b"], currentID: "a", playedIDs: ["c"]
+            libraryIDs: ["a", "b", "c", "d", "e"], excludedIDs: ["b"], currentID: "a"
         )
-        #expect(remaining == 2)
+        #expect(remaining == 3)
+        #expect(WallpaperAutomationSheet.deckRemaining(libraryIDs: ["a", "b"], excludedIDs: [], currentID: "b") == 1)
 
-        let none = WallpaperAutomationSheet.deckRemaining(libraryIDs: ["a"], excludedIDs: ["a"], currentID: "a", playedIDs: ["a", "gone"])
+        let none = WallpaperAutomationSheet.deckRemaining(libraryIDs: ["a"], excludedIDs: ["a"], currentID: "a")
         #expect(none == 0, "the deck counted a negative or phantom remainder")
     }
 

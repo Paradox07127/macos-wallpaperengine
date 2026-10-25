@@ -133,7 +133,8 @@ struct ShuffleDeck: View {
             withAnimation(DesignTokens.Motion.reducedMotionFade) { cards = target }
         } else if old.reshuffles != new.reshuffles {
             shuffle(into: target)
-        } else if let previousID = old.current, let drawn = current, new.played == old.played + [previousID] {
+        } else if let previousID = old.current, let drawn = current, !new.played.isEmpty,
+                  new.played == Array((old.played + [previousID]).suffix(new.played.count)) {
             draw(drawn, replacing: previousID, into: target)
         } else if let risen = current, risen.id == old.played.last, new.played == Array(old.played.dropLast()) {
             rewind(to: risen, sending: old.current, into: target)
@@ -144,6 +145,7 @@ struct ShuffleDeck: View {
 
     private func draw(_ drawn: Card, replacing previousID: String, into target: [Placed]) {
         let motion = DesignTokens.ShuffleDeck.self
+        let outgoingID = target.last { $0.role == .played && $0.card?.id == previousID }?.id
         let flying = Placed(role: .current, card: drawn, pose: .deck(depth: 0), z: Layout.Z.flying)
         let start = cards.filter { $0.role != .deck } + target.filter { $0.role == .deck } + [flying]
         snap(start)
@@ -157,7 +159,7 @@ struct ShuffleDeck: View {
                 var placed = placed
                 placed.motion = motion.curve(motion.travelDuration)
                 // Keeps the replaced card's identity, so it slides onto the pile instead of fading.
-                if placed.id == Placed.id(.played, previousID) {
+                if placed.id == outgoingID {
                     placed.id = Placed.id(.current, previousID)
                 }
                 if placed.role == .current {
@@ -177,7 +179,7 @@ struct ShuffleDeck: View {
             var placed = placed
             placed.motion = motion.curve(motion.travelDuration)
             if placed.role == .current {
-                placed.id = Placed.id(.played, risen.id)
+                placed.id = cards.last { $0.role == .played && $0.card?.id == risen.id }?.id ?? placed.id
             }
             return placed
         }
@@ -272,8 +274,9 @@ struct ShuffleDeck: View {
         var layout = (0 ..< layers).map { depth in
             Placed(id: "deck-\(depth)", role: .deck, card: nil, pose: .deck(depth: depth), z: Double(Layout.maxLayers - depth))
         }
-        for (index, card) in played.suffix(Layout.visiblePile).enumerated() {
-            layout.append(Placed(role: .played, card: card, pose: .pile(card.id), z: Layout.Z.pile + Double(index)))
+        for (index, card) in played.enumerated().suffix(Layout.visiblePile) {
+            let id = Placed.id(.played, "\(index)-\(card.id)")
+            layout.append(Placed(id: id, role: .played, card: card, pose: .pile(id), z: Layout.Z.pile + Double(index)))
         }
         if let current {
             layout.append(Placed(role: .current, card: current, pose: .playing, z: Layout.Z.playing))

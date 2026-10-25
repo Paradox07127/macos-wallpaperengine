@@ -111,6 +111,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                     .opacity(chromeVisible && !automationEntered ? 1 : 0)
                     .offset(y: chromeVisible || reduceMotion ? 0 : -8)
                     .allowsHitTesting(heroVisible && chromeVisible && automation == nil)
+                    .disabled(automation != nil)
                     .accessibilityHidden(automation != nil)
                     // Above the workspace, whose content can reach up into this strip and take its clicks.
                     .zIndex(1)
@@ -119,10 +120,12 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                     .clipped()
                     .opacity(automationEntered ? 0 : 1)
                     .allowsHitTesting(heroVisible && automation == nil)
+                    .disabled(automation != nil)
                     .accessibilityHidden(automation != nil)
             }
             if let automation {
                 automation.page(DetailAutomationPresentation(entered: automationEntered, segments: segments, close: closeAutomation))
+                    .preference(key: InfoOverlayPresentedKey.self, value: true)
                     .onAppear {
                         withAnimation(DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion)) { automationEntered = true }
                     }

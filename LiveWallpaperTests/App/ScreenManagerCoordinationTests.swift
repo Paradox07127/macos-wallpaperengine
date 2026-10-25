@@ -1067,8 +1067,8 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
-    @Test("Clearing a display keeps each scene's look for the display's next configuration")
-    func clearingKeepsRememberedSceneLooks() throws {
+    @Test("Clearing a display keeps scene looks and retains its source when archiving fails", arguments: [true, false])
+    func clearingKeepsRememberedSceneLooks(archiveWritable: Bool) async throws {
         let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false, startAutomation: false,
@@ -1078,7 +1078,13 @@ struct ScreenManagerCoordinationTests {
         ))
         let previousSettings = SettingsManager.shared.loadGlobalSettings()
         let previousConfiguration = manager.configurationStore.get(for: screen.id)
+        let directory = ConfigurationDirectory()
+        try #require(directory.root.path.contains("LiveWallpaperTests-Configuration-"))
+        let lockURL = directory.url(for: .globalSettings).appendingPathExtension("lock")
         defer {
+            if !archiveWritable {
+                try? FileManager.default.removeItem(at: lockURL)
+            }
             SettingsManager.shared.saveGlobalSettings(previousSettings)
             if let previousConfiguration {
                 manager.configurationStore.save(previousConfiguration)
@@ -1088,17 +1094,38 @@ struct ScreenManagerCoordinationTests {
         let preset = ScenePreset.local(name: "Calm", baseWorkshopID: "cleared-look", values: ["fog": .bool(true)])
         var settings = previousSettings
         settings.scenePresets[preset.id] = preset
+        let earlier = SceneDescriptor(workshopID: "earlier-look", cacheRelativePath: "wpe-cache/earlier-look", entryFile: "scene.json", capabilityTier: .imageOnly)
+        settings.clearedSceneCustomizations[screen.displayFingerprint] = [earlier]
         SettingsManager.shared.saveGlobalSettings(settings)
         let bare = SceneDescriptor(
             workshopID: "cleared-look", cacheRelativePath: "wpe-cache/cleared-look", entryFile: "scene.pkg", capabilityTier: .imageOnly
         )
         let look = bare.withPresetLayer(id: preset.id, snapshot: preset.values)
         manager.configurationStore.save(ScreenConfiguration(screenID: screen.id, wallpaper: .scene(look)))
+        try #require(await SettingsManager.shared.flushPendingWrites())
+        if !archiveWritable {
+            if FileManager.default.fileExists(atPath: lockURL.path) {
+                try FileManager.default.removeItem(at: lockURL)
+            }
+            try FileManager.default.createDirectory(at: lockURL, withIntermediateDirectories: false)
+        }
 
         manager.clearWallpaperForScreen(screen)
 
-        #expect(manager.configurationStore.get(for: screen.id) == nil)
-        #expect(SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint) == [look])
+        let deadline = ContinuousClock.now + .seconds(3)
+        while archiveWritable ? manager.configurationStore.get(for: screen.id) != nil : !SettingsManager.shared.persistenceStatus.hasFailure,
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        if archiveWritable {
+            #expect(manager.configurationStore.get(for: screen.id) == nil)
+        } else {
+            try #require(SettingsManager.shared.persistenceStatus.hasFailure)
+            #expect(manager.configurationStore.get(for: screen.id)?.activeWallpaper == .scene(look))
+            let stored = AtomicFileStore<[ScreenConfiguration]>(fileURL: directory.url(for: .screenConfigurations)).read()
+            #expect(stored?.contains { $0.screenID == screen.id && $0.activeWallpaper == .scene(look) } == true)
+        }
+        #expect(SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint) == [earlier, look])
     }
 
     // MARK: - Wallpaper type lifecycle regressions

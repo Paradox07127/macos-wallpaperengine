@@ -158,6 +158,41 @@ struct ScenePresetLiveUpdateTests {
             #expect(session.rendered == expected, "the renderer kept a value the saved configuration no longer has")
         }
     }
+
+    @Test("Reverting a preset while its first patch finishes also reverts the rendered value")
+    func revertDuringCommitReachesScene() async throws {
+        try await Self.withPatchableScene { manager, screen, session, presetID in
+            session.holdsFirstCommit = true
+            defer { session.releaseHeldCommit() }
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: ["a": .number(1), "b": .number(0)]))
+            await Self.settle { session.heldCommit != nil }
+            try #require(session.heldCommit != nil)
+            let expected: [String: WallpaperEngineProjectPropertyValue] = ["a": .number(0), "b": .number(0)]
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: expected))
+            session.releaseHeldCommit()
+            await Self.settle { session.rendered == expected }
+            #expect(session.rendered == expected)
+            #expect(Self.storedScene(manager, screen)?.presetSnapshot == expected)
+        }
+    }
+
+    @Test("A queued preset update yields to a newer explicit wallpaper selection")
+    func queuedEditYieldsToNewSelection() async throws {
+        try await Self.withPatchableScene { manager, screen, session, presetID in
+            session.holdsFirstPrepare = true
+            defer { session.releaseHeldPrepare() }
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: ["a": .number(1), "b": .number(0)]))
+            await Self.settle { session.heldPrepare != nil }
+            try #require(session.heldPrepare != nil)
+            await SettingsManager.shared.registerScenePreset(Self.preset(id: presetID, values: ["a": .number(1), "b": .number(1)]))
+            let selection = manager.beginExplicitWallpaperSelection(for: screen)
+            session.releaseHeldPrepare()
+            await Self.settle { manager.scenePresetUpdateTasks[screen.id] == nil }
+            let keptSelection = manager.isCurrentTransition(selection, for: screen.id)
+            #expect(keptSelection)
+            #expect(session.committed.isEmpty)
+        }
+    }
 }
 
 /// Applies each committed patch's changed keys to `rendered`, the way a live renderer would.
@@ -167,6 +202,8 @@ private final class PresetPatchRecordingSceneSession: SceneWallpaperRuntime {
     private(set) var committed: [WPEScenePropertyPatch] = []
     var holdsFirstPrepare = false
     private(set) var heldPrepare: CheckedContinuation<Void, Never>?
+    var holdsFirstCommit = false
+    private(set) var heldCommit: CheckedContinuation<Void, Never>?
     private let mutationAuthority = ScenePropertyMutationAuthority()
     private let posterGate = ScenePropertyPosterCommitGate()
 
@@ -177,6 +214,11 @@ private final class PresetPatchRecordingSceneSession: SceneWallpaperRuntime {
     func releaseHeldPrepare() {
         heldPrepare?.resume()
         heldPrepare = nil
+    }
+
+    func releaseHeldCommit() {
+        heldCommit?.resume()
+        heldCommit = nil
     }
 
     let wallpaperType = WallpaperType.scene
@@ -278,6 +320,10 @@ private final class PresetPatchRecordingSceneSession: SceneWallpaperRuntime {
         committed.append(prepared.patch)
         for key in prepared.patch.changedKeys {
             rendered[key] = prepared.patch.newValues[key]
+        }
+        if holdsFirstCommit {
+            holdsFirstCommit = false
+            await withCheckedContinuation { heldCommit = $0 }
         }
         return true
     }

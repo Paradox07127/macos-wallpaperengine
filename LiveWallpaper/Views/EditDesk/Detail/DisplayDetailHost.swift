@@ -186,7 +186,7 @@ struct DisplayDetailHost: View {
             automation: automation(for: screen)
         )
         .dropDestination(for: URL.self) { urls, _ in
-            section == .wallpaper && dropFiles(urls, screen)
+            !showAutomation && !infoOverlayPresented && section == .wallpaper && dropFiles(urls, screen)
         }
     }
 
@@ -714,7 +714,7 @@ struct DisplayDetailHost: View {
 
     /// Ignored while the hero is not up, so a swipe during a flight cannot start another.
     private func swipe(_ step: DetailSwipeStep) {
-        guard !modalPresented, !showAutomation, coordinator?.heroVisible == true, let current = router.detailDisplayID else { return }
+        guard !modalPresented, !showAutomation, !infoOverlayPresented, coordinator?.heroVisible == true, let current = router.detailDisplayID else { return }
         switch Self.swipeTarget(step, from: current, in: Self.displayOrder(stage.displays).map(\.id)) {
         case .home?:
             requestBack()

@@ -81,4 +81,22 @@ struct ScheduleDialTests {
         #expect(drag(0, 30, movingEnd: false, to: 600) == [0, 30], "the start passed its own end")
         #expect(drag(1410, 1440, movingEnd: true, to: 0) == [1410, 1440])
     }
+
+    @Test("Dragging at midnight preserves an all-day slot, while equal endpoints stay an empty draft")
+    func fullDayAndEmptySlotDrag() {
+        #expect(drag(0, 1440, movingEnd: true, to: 0) == [0, 1440])
+        #expect(drag(0, 1440, movingEnd: false, to: 0) == [0, 1440])
+        #expect(drag(480, 480, movingEnd: true, to: 510) == [480, 510])
+        #expect(drag(480, 480, movingEnd: false, to: 450) == [450, 480])
+    }
+
+    @Test("Short schedule sections stay inside their time range instead of drawing a full ring", arguments: [1, 5, 30])
+    func shortSectionStaysBounded(minutes: Int) {
+        let slot = ScheduleSlot(startMinute: 360, endMinute: 360 + minutes, label: "Short")
+        let dial = ScheduleDial(slots: [slot], now: .distantPast, selectedID: .constant(nil), onRetimed: { _, _, _ in }, onInsert: { _ in })
+        let path = dial.sectionShape(slot, radius: 206, center: .zero, width: 28)
+        #expect(path.boundingRect.width < 40 && path.boundingRect.height < 40)
+        #expect(!path.contains(ScheduleDialGeometry.point(hour: 5.9, radius: 206, center: .zero)))
+        #expect(!path.contains(ScheduleDialGeometry.point(hour: 6 + Double(minutes + 1) / 60, radius: 206, center: .zero)))
+    }
 }

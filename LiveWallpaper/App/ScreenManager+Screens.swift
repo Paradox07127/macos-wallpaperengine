@@ -97,14 +97,37 @@ extension ScreenManager {
 
     func clearWallpaperForScreen(_ screen: Screen) {
         Logger.notice("Clearing wallpaper for screen \(screen.id)", category: .screenManager)
-        releaseRuntimeSession(screen)
-        if var configuration = configurationStore.get(for: screen.id) {
+        if var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) {
             configuration.rememberCurrentSceneCustomization()
-            var settings = SettingsManager.shared.loadGlobalSettings()
-            settings.clearedSceneCustomizations[screen.displayFingerprint] =
-                configuration.savedSceneCustomizations.isEmpty ? nil : configuration.savedSceneCustomizations
-            SettingsManager.shared.saveGlobalSettings(settings)
+            if !configuration.savedSceneCustomizations.isEmpty {
+                var settings = SettingsManager.shared.loadGlobalSettings()
+                var archived = settings.clearedSceneCustomizations[screen.displayFingerprint] ?? []
+                for descriptor in configuration.savedSceneCustomizations {
+                    archived.removeAll { $0.isSameScene(as: descriptor) }
+                    archived.append(descriptor)
+                }
+                settings.clearedSceneCustomizations[screen.displayFingerprint] = archived
+                SettingsManager.shared.saveGlobalSettings(settings)
+                let generation = beginExplicitWallpaperSelection(for: screen)
+                let revision = configurationStore.revision(for: screen.id)
+                Task { @MainActor [weak self] in
+                    guard await SettingsManager.shared.flushPendingWrites() else {
+                        Logger.error("Wallpaper clear kept its source configuration because scene settings could not be saved", category: .screenManager)
+                        return
+                    }
+                    guard let self, !isTerminating, isCurrentTransition(generation, for: screen.id),
+                          configurationStore.revision(for: screen.id) == revision,
+                          let current = screens.first(where: { $0.id == screen.id && $0.displayFingerprint == screen.displayFingerprint }) else { return }
+                    finishClearingWallpaper(for: current)
+                }
+                return
+            }
         }
+        finishClearingWallpaper(for: screen)
+    }
+
+    private func finishClearingWallpaper(for screen: Screen) {
+        releaseRuntimeSession(screen)
         configurationController.remove(for: screen.id)
         notifyWallpaperSessionChanged()
         NotificationCenter.default.post(name: .wallpaperSelectionCleared, object: self,

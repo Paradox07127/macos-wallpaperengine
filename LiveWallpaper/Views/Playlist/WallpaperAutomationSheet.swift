@@ -284,9 +284,8 @@ struct WallpaperAutomationSheet: View {
         return (false, mark.serial)
     }
 
-    static func deckRemaining(libraryIDs: [LibraryItem.ID], excludedIDs: Set<LibraryItem.ID>, currentID: String?, playedIDs: [String]) -> Int {
-        let played = Set(playedIDs)
-        return max(0, libraryIDs.filter { !excludedIDs.contains($0) && $0 != currentID && !played.contains($0) }.count)
+    static func deckRemaining(libraryIDs: [LibraryItem.ID], excludedIDs: Set<LibraryItem.ID>, currentID: String?) -> Int {
+        Set(libraryIDs).subtracting(excludedIDs).filter { $0 != currentID }.count
     }
 
     static func slotListOrder(_ slots: [ScheduleSlot]) -> [ScheduleSlot] {
@@ -295,7 +294,7 @@ struct WallpaperAutomationSheet: View {
 
     /// Same wrap rule as `ScheduleSlot.containsMinute`; an end of 1440 ends at midnight and does not cross it.
     static func crossesMidnight(_ slot: ScheduleSlot) -> Bool {
-        slot.endMinute < slot.startMinute
+        slot.endMinute != 0 && slot.endMinute < slot.startMinute
     }
 
     var body: some View {
@@ -339,6 +338,8 @@ struct WallpaperAutomationSheet: View {
             }
         }
         .onChange(of: manager.libraryShuffleDeck(for: screen)) { refreshDeck() }
+        .onChange(of: library.items) { refreshDeck() }
+        .onChange(of: excludedIDs) { refreshDeck() }
         .task(id: missingArtwork.map(\.key)) {
             var loaded: [String: CGImage] = [:]
             // The largest picture this mode draws: the single record at full scale, else the crate's centre record (the deck stops there).
@@ -659,9 +660,9 @@ struct WallpaperAutomationSheet: View {
                 ScaleToFit(maximumScale: PlaylistCrate.centeredRecordSize.width / ShuffleDeck.thumbnailSize.width) {
                     VStack(spacing: DesignTokens.Spacing.md) {
                         shuffleDeck
-                            .disabled(savedMode != .libraryShuffle)
+                            .disabled(!canDrawFromLibrary)
                         Group {
-                            if savedMode == .libraryShuffle {
+                            if canDrawFromLibrary {
                                 Text("\(deck.remaining) left · \(deck.played.count) played")
                                     .monospacedDigit()
                             } else {
@@ -702,6 +703,11 @@ struct WallpaperAutomationSheet: View {
         }
     }
 
+    private var canDrawFromLibrary: Bool {
+        savedMode == .libraryShuffle
+            && excludedIDs == Set(manager.getConfiguration(for: screen)?.libraryShuffleExcludedIDs ?? [])
+    }
+
     private var shuffleDeck: some View {
         ShuffleDeck(
             current: deck.current.map(deckCard),
@@ -738,8 +744,8 @@ struct WallpaperAutomationSheet: View {
         deck = DeckSnapshot(
             current: current, played: played,
             remaining: Self.deckRemaining(
-                libraryIDs: library.items.map(\.id), excludedIDs: Set(config.libraryShuffleExcludedIDs),
-                currentID: current.id, playedIDs: played.map(\.id)
+                libraryIDs: library.items.filter(\.isSupported).map(\.id),
+                excludedIDs: excludedIDs.union(config.automationFailures.keys), currentID: current.id
             )
         )
     }
@@ -1107,7 +1113,7 @@ struct WallpaperAutomationSheet: View {
         GroupBox {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 ForEach(Self.slotListOrder(slots), content: slotRow)
-                if SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) != nil, let entry = fallback ?? derivedFallback {
+                if SchedulePolicy.findFreeRange(in: slots, minMinutes: 1) != nil, let entry = fallback ?? derivedFallback {
                     fallbackRow(entry: entry)
                 }
                 addSlotButton
@@ -1130,7 +1136,7 @@ struct WallpaperAutomationSheet: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .fixedSize()
-        .disabled(SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) == nil)
+        .disabled(SchedulePolicy.findFreeRange(in: slots, minMinutes: 30) == nil)
     }
 
     private func slotColor(_ slot: ScheduleSlot) -> Color {
@@ -1243,7 +1249,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private var dialFallbackTitle: String? {
-        guard SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) != nil else { return nil }
+        guard SchedulePolicy.findFreeRange(in: slots, minMinutes: 1) != nil else { return nil }
         return (fallback ?? derivedFallback).map { Self.rowTitle(for: $0, in: library) }
     }
 
@@ -1343,7 +1349,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func slotDurationText(_ slot: ScheduleSlot) -> String {
-        let end = slot.endMinute > slot.startMinute ? slot.endMinute : slot.endMinute + 1440
+        let end = slot.endMinute >= slot.startMinute ? slot.endMinute : slot.endMinute + 1440
         return Duration.seconds((end - slot.startMinute) * 60)
             .formatted(.units(allowed: [.hours, .minutes], width: .narrow).locale(AppLanguagePreference.current.locale))
     }
@@ -1518,7 +1524,7 @@ struct WallpaperAutomationSheet: View {
     }
 
     private func addSlot() {
-        guard let range = SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) else { return }
+        guard let range = SchedulePolicy.findFreeRange(in: slots, minMinutes: 30) else { return }
         let end = min(range.start + 360, range.end)
         let slot = ScheduleSlot(startMinute: range.start, endMinute: end > 1440 ? end - 1440 : end, label: "")
         slots.append(slot)

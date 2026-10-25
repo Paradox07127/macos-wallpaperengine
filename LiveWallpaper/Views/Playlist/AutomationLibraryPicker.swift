@@ -160,7 +160,7 @@ struct AutomationLibraryPicker: View {
         if case .single = purpose {
             return Text("\(shownItems.count) wallpapers")
         }
-        return Text("\(order.ids.count) selected · \(shownItems.count) wallpapers")
+        return Text("\(order.ids.count) selected") + Text(verbatim: " · ") + Text("\(shownItems.count) wallpapers")
     }
 
     @ViewBuilder

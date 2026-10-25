@@ -63,6 +63,7 @@ final class DetailTransitionCoordinator {
     }
 
     private func destination(for display: CGDirectDisplayID) async -> CGRect? {
+        guard !Task.isCancelled else { return nil }
         guard usesMeasuredFrame else { return heroFrame() }
         if let measuredFrame, measuredFrame.display == display {
             return measuredFrame.rect

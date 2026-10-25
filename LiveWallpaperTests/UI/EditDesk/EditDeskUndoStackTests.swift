@@ -96,6 +96,27 @@ struct EditDeskUndoStackTests {
         #expect(stack.redoSteps.isEmpty)
     }
 
+    @Test("Covered workspace commands preserve undo and redo until the presentation closes")
+    func coveredWorkspaceSuppressesHistoryCommands() async throws {
+        let stack = stack()
+        apply(Self.page("B"), on: [manager.left], in: stack)
+        let menu = menuUndo(.stack, over: stack, toasts: EditDeskToastCenter())
+        stack.commandsSuppressed = true
+        #expect(!menu.canUndo)
+        #expect(await stack.undo() == nil)
+        #expect(stack.undoSteps.count == 1)
+        #expect(manager.restores.isEmpty)
+        stack.commandsSuppressed = false
+        _ = try #require(await stack.undo())
+        stack.commandsSuppressed = true
+        #expect(!menu.canRedo)
+        #expect(await stack.redo() == nil)
+        #expect(stack.redoSteps.count == 1)
+        stack.commandsSuppressed = false
+        _ = try #require(await stack.redo())
+        #expect(stack.undoSteps.count == 1)
+    }
+
     @Test("Undoing a clear puts the configuration back; redoing it clears again", .timeLimit(.minutes(1)))
     func clearUndoRedo() async throws {
         let stack = stack()

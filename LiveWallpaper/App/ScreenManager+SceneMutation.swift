@@ -69,12 +69,14 @@ extension ScreenManager {
                   ),
                   case let .scene(reconciled) = configuration.activeWallpaper,
                   reconciled != previous else { continue }
-            // Queued updates run in order from the oldest queued baseline: a queued one can be superseded before it patches the session, and re-sending an applied value is harmless.
             let prior = scenePresetUpdateTasks[screen.id]
             let baseline = prior?.baseline ?? previous
+            let generation = beginExplicitWallpaperSelection(for: screen)
             let update = Task { @MainActor [weak self] in
                 await prior?.task.value
-                await self?.updateSceneDescriptor(reconciled, previous: baseline, for: screen)
+                guard let self, isCurrentTransition(generation, for: screen.id) else { return }
+                let rendered = scenePresetUpdateTasks[screen.id]?.baseline ?? baseline
+                await updateSceneDescriptor(reconciled, previous: rendered, generation: generation, for: screen)
             }
             scenePresetUpdateTasks[screen.id] = (update, baseline)
             Task { @MainActor [weak self] in
@@ -94,11 +96,12 @@ extension ScreenManager {
     private func updateSceneDescriptor(
         _ descriptor: SceneDescriptor,
         previous: SceneDescriptor?,
+        generation queuedGeneration: Int? = nil,
         for screen: Screen
     ) async {
         guard !isTerminating else { return }
         // User edits are intent boundaries even when equal to persisted values.
-        let generation = beginExplicitWallpaperSelection(for: screen)
+        let generation = queuedGeneration ?? beginExplicitWallpaperSelection(for: screen)
         guard var configuration = configurationStore.get(
             for: screen.id,
             fingerprint: screen.displayFingerprint
@@ -170,6 +173,9 @@ extension ScreenManager {
                         posterCommit: posterCommit,
                         updatedDescriptor: descriptor
                     )
+                    if didCommit, previous != nil {
+                        scenePresetUpdateTasks[screen.id]?.baseline = descriptor
+                    }
                     if !didCommit {
                         restorePersistedSceneAfterFailedPatchDelivery(
                             descriptor,
@@ -196,7 +202,10 @@ extension ScreenManager {
             let members = screens.filter { getConfiguration(for: $0)?.sceneSpanGroupID == groupID }
             await withCheckedContinuation { continuation in
                 setSceneSpanWallpaper(descriptor: descriptor, origin: configuration.wpeOrigin,
-                                      fitMode: configuration.fitMode, targets: members) { _ in
+                                      fitMode: configuration.fitMode, targets: members) { [weak self] result in
+                    if result == .ready, previous != nil {
+                        self?.scenePresetUpdateTasks[screen.id]?.baseline = descriptor
+                    }
                     continuation.resume()
                 }
             }
@@ -205,7 +214,11 @@ extension ScreenManager {
         #endif
         configuration.activeWallpaper = .scene(descriptor)
         configuration.savedSceneDescriptor = descriptor
-        restoreProposedWallpaperSession(for: screen, configuration: configuration)
+        restoreProposedWallpaperSession(for: screen, configuration: configuration) { [weak self] in
+            if previous != nil {
+                self?.scenePresetUpdateTasks[screen.id]?.baseline = descriptor
+            }
+        }
     }
 
     #if !LITE_BUILD

@@ -60,7 +60,7 @@ final class ModalActions {
     /// nil offers no System Wallpaper rows.
     private let exportService: WallpaperExportService?
     /// Shows the presenter's confirmation; the action runs only from its confirm button.
-    private let confirm: @MainActor (PendingDestructive) -> Void
+    private var confirm: @MainActor (PendingDestructive) -> Void
 
     init(
         inputs: Inputs, bookmarks: BookmarkStore, thumbnails: ShelfThumbnailCache, undo: EditDeskUndoStack? = nil,
@@ -157,6 +157,7 @@ final class ModalActions {
     func detach() {
         apply = { _, _ in }
         applyToAll = { _, _ in }
+        confirm = { _ in }
         #if !LITE_BUILD
         inputs.update = { _ in }
         #endif

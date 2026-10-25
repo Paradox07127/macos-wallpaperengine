@@ -293,8 +293,8 @@ public enum DesignTokens {
     /// The daily schedule's 24-hour dial.
     public enum ScheduleDial {
         /// Section colors, OKLCH(0.62 0.1 h) for h = 230, 165, 330, 270, 75, 20 in sRGB; darkened in light mode.
-        public static let palette: [Color] = [tone(0.22, 0.57, 0.72), tone(0.26, 0.60, 0.47), tone(0.66, 0.44, 0.64),
-                                              tone(0.43, 0.51, 0.76), tone(0.66, 0.49, 0.23), tone(0.73, 0.43, 0.43)]
+        public static let palette: [Color] = [tone("blue", 0.22, 0.57, 0.72), tone("green", 0.26, 0.60, 0.47), tone("pink", 0.66, 0.44, 0.64),
+                                              tone("purple", 0.43, 0.51, 0.76), tone("amber", 0.66, 0.49, 0.23), tone("red", 0.73, 0.43, 0.43)]
         /// Reference ring for the center thumbnail: at this radius it is `thumbnailDiameter` wide, and it scales with the ring.
         public static let ringRadius: CGFloat = 250
         public static let ringWidth: CGFloat = 28
@@ -303,11 +303,11 @@ public enum DesignTokens {
         public static let thumbnailDiameter: CGFloat = 200
         public static let handleDiameter: CGFloat = 14
 
-        private static func tone(_ red: Double, _ green: Double, _ blue: Double) -> Color {
-            Color(nsColor: NSColor(name: nil) { appearance in
+        private static func tone(_ name: String, _ red: Double, _ green: Double, _ blue: Double) -> Color {
+            DesignTokens.dynamicColor(name: NSColor.Name("scheduleDial" + name)) { appearance in
                 let factor = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 1.0 : 0.67
                 return NSColor(srgbRed: red * factor, green: green * factor, blue: blue * factor, alpha: 1)
-            })
+            }
         }
     }
 

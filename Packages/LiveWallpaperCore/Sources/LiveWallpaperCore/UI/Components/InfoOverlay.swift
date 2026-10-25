@@ -41,7 +41,7 @@ public extension View {
     }
 }
 
-/// True while an `infoOverlay` in the subtree is shown, so a page can hand Escape to the overlay instead of its own `.cancelAction`.
+/// True while an in-window presentation covers the workspace, suspending its keyboard and swipe commands.
 public struct InfoOverlayPresentedKey: PreferenceKey {
     public static let defaultValue = false
 
@@ -60,6 +60,8 @@ private struct InfoOverlayModifier<OverlayContent: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .disabled(isShown)
+            .accessibilityHidden(isShown)
             .overlay {
                 if isShown {
                     InfoOverlayHost(dismiss: dismiss, requestDismiss: requestDismiss, content: overlayContent)

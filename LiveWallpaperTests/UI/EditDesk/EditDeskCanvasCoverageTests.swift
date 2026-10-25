@@ -75,6 +75,8 @@ struct EditDeskCanvasCoverageTests {
             Color(nsColor: NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1)).ignoresSafeArea()
             page
         }
+        // Root cacheDisplay cannot composite Liquid Glass; measure canvas coverage with its opaque fallback.
+        .environment(\._accessibilityReduceTransparency, true)
         .frame(width: Self.size.width, height: Self.size.height)
         let hosting = NSHostingView(rootView: AppLanguageScope(defaults: .standard) { root })
         hosting.sizingOptions = []

@@ -33,16 +33,16 @@ enum ScheduleDialGeometry {
         let start = slot.startMinute
         let length = (slot.endMinute % 1440 - start + 1440) % 1440
         // Unwrapped end, so the movable range below is one contiguous interval even across midnight.
-        let end = start + (length == 0 ? 1440 : length)
+        let end = start + (slot.startMinute == 0 && slot.endMinute == 1440 ? 1440 : length)
         let others = slots.filter { $0.id != slot.id && $0.startMinute != $0.endMinute }
         let lo: Int, hi: Int
         if movingEnd {
             let gap = others.map { ($0.startMinute - start + 1440) % 1440 }.filter { $0 > 0 }.min()
             lo = start + 30
-            hi = start + (gap ?? 1410)
+            hi = start + (gap ?? (start == 0 ? 1440 : 1410))
         } else {
             let gap = others.map { (end - $0.endMinute % 1440 + 1440) % 1440 }.filter { $0 > 0 }.min()
-            lo = end - (gap ?? 1410)
+            lo = end - (gap ?? (slot.endMinute == 1440 ? 1440 : 1410))
             hi = end - 30
         }
         let previous = pointer ?? (movingEnd ? end : start)
@@ -103,8 +103,7 @@ struct ScheduleDial: View {
     }
 
     private var nowHour: Double {
-        let components = Calendar.current.dateComponents([.hour, .minute], from: now)
-        return Double(components.hour ?? 0) + Double(components.minute ?? 0) / 60
+        Double(SchedulePolicy.minuteOfDay(now, calendar: .current)) / 60
     }
 
     private func motion(_ animation: Animation) -> Animation {
@@ -125,7 +124,7 @@ struct ScheduleDial: View {
                 .onTapGesture { point in select(at: point, center: center, radius: radius) }
                 .onTapGesture(count: 2) { point in
                     guard abs(hypot(point.x - center.x, point.y - center.y) - radius) < 22 else { return }
-                    let minute = Int(ScheduleDialGeometry.fractionalHour(at: point, center: center) * 2) * 30
+                    let minute = Int((ScheduleDialGeometry.fractionalHour(at: point, center: center) * 60).rounded()) % 1440
                     if !slots.contains(where: { $0.containsMinute(minute) }) {
                         onInsert(minute)
                     }
@@ -189,7 +188,7 @@ struct ScheduleDial: View {
             return Path(ellipseIn: CGRect(x: center.x - distance, y: center.y - distance, width: distance * 2, height: distance * 2))
         }
         // Trim both ends by the cap radius plus a 2pt gap (18 minutes on the full-size ring). A wrap is one continuous arc, not two sections at midnight.
-        let inset = min(span * 15 / 3, asin(min(1, (Metrics.ringWidth / 2 + 2) / radius)) * 180 / .pi)
+        let inset = asin(min(1, (Metrics.ringWidth / 2 + 2) / radius)) * 180 / .pi
         var path = Path()
         path.addArc(center: center, radius: distance,
                     startAngle: .degrees(Double(slot.startMinute) / 60 * 15 - 90 + inset),
@@ -203,7 +202,7 @@ struct ScheduleDial: View {
         let selected = selectedID == slot.id
         let lip = Metrics.ringWidth / 2 - 1.5
         return ZStack {
-            if slots.count >= 12 {
+            if slots.count >= 12 || ScheduleDialGeometry.span(visible) * .pi / 12 * radius <= Metrics.ringWidth + 4 {
                 sectionShape(visible, radius: radius, center: center, width: Metrics.ringWidth).fill(tint)
             } else {
                 arc(visible, radius: radius, center: center)
@@ -265,15 +264,16 @@ struct ScheduleDial: View {
     }
 
     /// Dense schedules use softly squared section edges, leaving room for short intervals without a bead-like ring.
-    private func sectionShape(_ slot: ScheduleSlot, radius: Double, center: CGPoint, width: Double) -> Path {
+    func sectionShape(_ slot: ScheduleSlot, radius: Double, center: CGPoint, width: Double) -> Path {
         let span = ScheduleDialGeometry.span(slot)
         guard span > 0 else { return Path() }
-        let start = Double(slot.startMinute) / 60 * 15 - 90 + 0.65
-        let end = (Double(slot.startMinute) / 60 + span) * 15 - 90 - 0.65
+        let gap = min(0.65, span * 15 / 6)
+        let start = Double(slot.startMinute) / 60 * 15 - 90 + gap
+        let end = (Double(slot.startMinute) / 60 + span) * 15 - 90 - gap
         let outer = radius + width / 2
         let inner = radius - width / 2
-        let corner = 2.0
-        let trim = corner / radius * 180 / .pi
+        let trim = min(2 / radius * 180 / .pi, (end - start) / 4)
+        let corner = trim * .pi / 180 * radius
         func point(_ angle: Double, _ distance: Double) -> CGPoint {
             CGPoint(x: center.x + cos(angle * .pi / 180) * distance, y: center.y + sin(angle * .pi / 180) * distance)
         }
@@ -329,7 +329,7 @@ struct ScheduleDial: View {
 
     private func dialCenter(radius: Double) -> some View {
         let diameter = Metrics.thumbnailDiameter * radius / Metrics.ringRadius
-        let minute = Int(nowHour * 60)
+        let minute = SchedulePolicy.minuteOfDay(now, calendar: .current)
         let current = slots.first { $0.containsMinute(minute) }
         return Group {
             if let current {

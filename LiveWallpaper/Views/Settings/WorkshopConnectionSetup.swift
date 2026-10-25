@@ -218,23 +218,24 @@ struct WorkshopConnectionSetup: View {
                 .fixedSize()
                 .atlasRole("SteamAccountMenu")
 
-                Button {
-                    Task { await controller.loadAccounts() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .help(Text("Rescan"))
-                .accessibilityLabel(Text("Rescan"))
-
-                if service.username != nil {
-                    Button("Remove saved session", role: .destructive) { showingRemoveSessionConfirm = true }
-                        .buttonStyle(.bordered)
-                        .fixedSize()
-                }
             } else {
                 Button("Sign in to a new account") { showingSignIn = true }
                     .buttonStyle(.borderedProminent)
+                    .fixedSize()
+            }
+
+            Button {
+                Task { await controller.loadAccounts() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help(Text("Rescan"))
+            .accessibilityLabel(Text("Rescan"))
+
+            if service.username != nil {
+                Button("Remove saved session", role: .destructive) { showingRemoveSessionConfirm = true }
+                    .buttonStyle(.bordered)
                     .fixedSize()
             }
         }

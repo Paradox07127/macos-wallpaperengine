@@ -201,7 +201,7 @@ private final class GridPreviewHost {
         let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
         router.select(.library)
         let page = HomePage(router: router, toasts: EditDeskToastCenter(), library: library, gridPreview: preview)
-        let hosting = NSHostingView(rootView: page.environment(manager))
+        let hosting = NSHostingView(rootView: page.environment(manager).environment(\._accessibilityReduceTransparency, true))
         hosting.sizingOptions = []
         window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: Self.size),

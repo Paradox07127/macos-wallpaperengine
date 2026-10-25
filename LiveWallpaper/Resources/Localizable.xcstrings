@@ -392,42 +392,6 @@
         }
       }
     },
-    "%@ · Currently: %@" : {
-      "comment" : "Wallpaper automation sheet subtitle. Placeholders are the display name and the automation mode currently in use on that display.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · Currently: %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · Actualmente: %2$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · 現在: %2$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · 当前：%2$@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · 目前：%2$@"
-          }
-        }
-      }
-    },
     "%@ (%lld)" : {
       "comment" : "Library filter menu item: the filter name and how many rows it would list.",
       "localizations" : {
@@ -3076,7 +3040,6 @@
     },
     "%lld selected" : {
       "comment" : "Playlist wallpaper picker footer: how many library wallpapers are picked while the picker is open.",
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -3130,40 +3093,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已選 %lld 項"
-          }
-        }
-      }
-    },
-    "%lld selected · %lld wallpapers" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld selected · %lld total"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld seleccionados · %lld en total"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 件選択 · 全 %lld 件"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选 %lld 张 · 共 %lld 张"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已選 %lld 張 · 共 %lld 張"
           }
         }
       }
@@ -57224,41 +57153,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重複失敗"
-          }
-        }
-      }
-    },
-    "Repeats every day" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repeats every day"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se repite cada día"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "毎日繰り返す"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每天循环"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每天循環"
           }
         }
       }

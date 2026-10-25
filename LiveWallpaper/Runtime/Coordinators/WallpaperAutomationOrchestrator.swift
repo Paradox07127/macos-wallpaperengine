@@ -307,10 +307,16 @@ final class WallpaperAutomationOrchestrator {
         )
         let screenID = screen.id
         var deck = shuffleDecks[screenID]
-        while let top = deck.returned.last,
-              top.content == config.activeWallpaper || config.libraryShuffleExcludedIDs.contains(top.id)
-              || config.automationFailures[top.id]?.entry.content == top.content {
-            deck.returned.removeLast()
+        let live = libraryEntries()
+        while let top = deck.returned.last {
+            guard let refreshed = historyEntry(top, in: live), refreshed.content != config.activeWallpaper,
+                  !config.libraryShuffleExcludedIDs.contains(top.id),
+                  config.automationFailures[top.id]?.entry.content != refreshed.content else {
+                deck.returned.removeLast()
+                continue
+            }
+            deck.returned[deck.returned.count - 1] = refreshed
+            break
         }
         shuffleDecks[screenID] = deck
         let returnedTop = deck.returned.last
@@ -338,8 +344,15 @@ final class WallpaperAutomationOrchestrator {
               config.wallpaperMode == .libraryShuffle else { return }
         let screenID = screen.id
         var deck = shuffleDecks[screenID]
-        while let top = deck.played.last, top.content == config.activeWallpaper || config.libraryShuffleExcludedIDs.contains(top.id) {
-            deck.played.removeLast()
+        let live = libraryEntries()
+        while let top = deck.played.last {
+            guard let refreshed = historyEntry(top, in: live), refreshed.content != config.activeWallpaper,
+                  !config.libraryShuffleExcludedIDs.contains(top.id) else {
+                deck.played.removeLast()
+                continue
+            }
+            deck.played[deck.played.count - 1] = refreshed
+            break
         }
         shuffleDecks[screenID] = deck
         guard let target = deck.played.last else { return }
@@ -375,6 +388,11 @@ final class WallpaperAutomationOrchestrator {
 
     /// Bounds the history of a display left rotating for days; it would otherwise grow without limit.
     private static let playedHistoryLimit = 50
+
+    private func historyEntry(_ entry: WallpaperQueueEntry, in live: [LibraryShuffleCandidate]) -> WallpaperQueueEntry? {
+        live.first { $0.id == entry.id }?.resolve()?
+            .refreshingScenePresets(in: SettingsManager.shared.loadGlobalSettings().scenePresets)
+    }
 
     /// Must be read before dispatch: once a selection lands, the configuration already holds the new wallpaper.
     private func showingLibraryEntry(_ config: ScreenConfiguration, on screenID: CGDirectDisplayID) -> WallpaperQueueEntry {

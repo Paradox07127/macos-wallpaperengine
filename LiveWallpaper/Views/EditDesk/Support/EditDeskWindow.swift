@@ -18,7 +18,7 @@ final class EditDeskMenuUndoManager: UndoManager {
     override var canRedo: Bool {
         switch route() {
         case .text: super.canRedo
-        case .stack: stack?.redoSteps.isEmpty == false
+        case .stack: stack?.canRedo == true
         case .ignore: false
         }
     }

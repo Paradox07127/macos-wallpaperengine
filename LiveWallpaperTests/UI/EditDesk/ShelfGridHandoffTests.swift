@@ -90,7 +90,8 @@ private struct HandoffHost {
         } else {
             suiteName = nil
         }
-        let hosting = NSHostingView(rootView: root)
+        // Liquid Glass blanks sibling scroll views in cacheDisplay captures on macOS 27.
+        let hosting = NSHostingView(rootView: root.environment(\._accessibilityReduceTransparency, true))
         hosting.sizingOptions = []
         window = ParkedTestWindow(
             contentRect: CGRect(origin: .zero, size: size),
@@ -178,18 +179,23 @@ private struct HandoffHost {
     }
 
     /// The SwiftUI layers alone: the stage's CALayers are hidden for the capture.
-    func renderWithoutStage() throws -> ProbeImage {
+    func renderWithoutStage(_ name: String? = nil) throws -> ProbeImage {
         let stageView = stage
         stageView?.isHidden = true
         defer { stageView?.isHidden = false }
-        return try render()
+        return try render(name)
     }
 
     /// Everything the page draws, the stage included.
-    func render() throws -> ProbeImage {
+    func render(_ name: String? = nil) throws -> ProbeImage {
         host.layoutSubtreeIfNeeded()
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
+        if let name, let png = bitmap.representation(using: .png, properties: [:]) {
+            let path = ProbeRenderer.outputDirectory.appendingPathComponent("\(name).png")
+            try png.write(to: path)
+            print("HANDOFF-PNG \(path.path)")
+        }
         return try ProbeImage(cgImage: #require(bitmap.cgImage), viewWidth: host.bounds.width)
     }
 
@@ -268,7 +274,8 @@ private enum TileFinder {
             guard let widest = columns.map({ $0.upperBound - $0.lowerBound }).max(), widest < columnWidth * 1.4 else { continue }
             for (column, span) in columns.enumerated() {
                 let cx = Int((((span.lowerBound + span.upperBound) / 2) * scale).rounded(.down))
-                let down = runs(count: image.height, scale: scale, from: max(scroll.minY, row.lowerBound - 12), to: min(scroll.maxY, row.upperBound + 12)) {
+                // A title can interrupt the blue scan well before the dark gradient reaches the tile's edge.
+                let down = runs(count: image.height, scale: scale, from: max(scroll.minY, row.lowerBound - 12), to: min(scroll.maxY, row.upperBound + columnWidth)) {
                     isOffPage(image.rgb(px: cx, $0))
                 }
                 guard let vertical = down.first(where: { $0.overlaps(row) }) else { continue }
@@ -375,7 +382,10 @@ struct ShelfGridHandoffTests {
                 let scroll = try #require(host.grid)
                 let model = stage.model
                 let columnWidth = StageGeometry.gridCellSize(windowWidth: size.width, size: model.gridTileSize).width
-                let found = try TileFinder.tiles(in: host.renderWithoutStage(), scroll: host.gridFrame(scroll), columnWidth: columnWidth)
+                let found = try TileFinder.tiles(
+                    in: host.renderWithoutStage("landing-\(Int(size.width))-\(onboarding)-\(target)"),
+                    scroll: host.gridFrame(scroll), columnWidth: columnWidth
+                )
                 let columns = (found.map(\.column).max() ?? -1) + 1
                 try #require(found.count >= 4, Comment(rawValue: "\(label): found \(found.count) tiles"))
                 var worst: (offset: CGFloat, index: Int, card: CGRect, tile: CGRect)?

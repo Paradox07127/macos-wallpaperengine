@@ -7,6 +7,7 @@ struct OverlayCanvas: View {
     let cover: CGImage?
     let size: CGSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
     @FocusState private var focused: Bool
 
     private static let coordinateSpace = "EditDeskOverlayCanvas"
@@ -41,9 +42,13 @@ struct OverlayCanvas: View {
         .focused($focused)
         .focusEffectDisabled()
         .simultaneousGesture(TapGesture().onEnded { focused = true })
-        .onDeleteCommand { session.deleteSelection() }
+        .onDeleteCommand {
+            if isEnabled {
+                session.deleteSelection()
+            }
+        }
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow], phases: [.down, .repeat, .up]) { press in
-            guard press.modifiers.isDisjoint(with: [.command, .control, .option, .shift]) else {
+            guard isEnabled, press.modifiers.isDisjoint(with: [.command, .control, .option, .shift]) else {
                 session.endKeyboardMove()
                 return .ignored
             }
@@ -63,6 +68,12 @@ struct OverlayCanvas: View {
         }
         .onChange(of: focused) {
             if !focused {
+                session.endKeyboardMove()
+            }
+        }
+        .onChange(of: isEnabled) {
+            if !isEnabled {
+                focused = false
                 session.endKeyboardMove()
             }
         }

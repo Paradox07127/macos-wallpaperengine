@@ -69,6 +69,7 @@ extension ScreenManager {
             beginExplicitWallpaperSelection(for: screen)
             var configuration = getConfiguration(for: screen) ?? ScreenConfiguration(screenID: screen.id, wallpaper: .scene(descriptor))
                 .applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
+                .adoptingClearedSceneCustomizations(SettingsManager.shared.clearedSceneCustomizations(for: screen.displayFingerprint))
             configuration.setSceneWallpaper(descriptor, origin: origin)
             configuration.activeWallpaper = .scene(descriptor)
             configuration.savedSceneDescriptor = descriptor

@@ -10,7 +10,10 @@ struct DynamicColorConcurrencyTests {
         let colors = await withTaskGroup(of: Color.self, returning: [Color].self) { group in
             for index in 0 ..< 256 {
                 group.addTask {
-                    DesignTokens.EditDesk.Colors.adaptive("concurrency-\(index)", light: .white, dark: .black)
+                    if index.isMultiple(of: 2) {
+                        _ = DesignTokens.ScheduleDial.palette
+                    }
+                    return DesignTokens.EditDesk.Colors.adaptive("concurrency-\(index)", light: .white, dark: .black)
                 }
             }
             var colors: [Color] = []

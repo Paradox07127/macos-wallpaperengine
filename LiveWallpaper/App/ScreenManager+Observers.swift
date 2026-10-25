@@ -28,7 +28,7 @@ extension ScreenManager {
             .store(in: &cleanupTasks)
 
         NotificationCenter.default.publisher(for: .scenePresetLibraryDidChange)
-            .receive(on: DispatchQueue.main)
+            // SettingsManager posts on MainActor; delaying this lets an old preset edit overtake a new selection.
             .sink { [weak self] notification in
                 let previous = notification.userInfo?[SettingsManager.previousSceneDescriptorsKey]
                     as? [CGDirectDisplayID: SceneDescriptor] ?? [:]
