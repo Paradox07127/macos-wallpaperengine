@@ -31,6 +31,7 @@ struct LibraryChipsRow: View {
     let onImport: () -> Void
     /// True shows Add to Library on the shelf too: with an empty library the shelf has nothing else to click.
     var keepsImportOnShelf = false
+    var showsAerialsControls = false
 
     var body: some View {
         LibraryToolbarRow(centersFilters: true) {
@@ -48,6 +49,9 @@ struct LibraryChipsRow: View {
                     .id(stage.snappedIndex)
             }
         } actions: {
+            if showsAerialsControls {
+                AerialsSourceControls()
+            }
             LibraryOnlyControl(stage: stage, pinned: keepsImportOnShelf) { importButton }
         }
     }

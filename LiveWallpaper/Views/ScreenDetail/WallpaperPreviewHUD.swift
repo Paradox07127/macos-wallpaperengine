@@ -14,7 +14,7 @@ struct WallpaperPreviewHUD<Viewport: View, Playback: View, Actions: View>: View 
         }
         .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 6)
-        .adaptiveGlassOverMedia(.capsule)
+        .adaptiveGlassOverMedia(.capsule, scrim: 0.6)
     }
 
     private var row: some View {

@@ -124,6 +124,63 @@ struct TopBarBudgetTests {
         }
     }
 
+    /// The library's filter row as `HomePage` mounts it with the Aerials chip selected.
+    @MainActor
+    private static func aerialsRow(windowWidth: CGFloat, searchText: String, showsAerialsControls: Bool) -> some View {
+        let stage = EditDeskStageModel()
+        stage.report(stageSize: CGSize(width: windowWidth, height: 820))
+        stage.setProgress(2, animated: false)
+        return LibraryChipsRow(
+            chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: "\($0)", title: HomePage.chipTitle($0)) },
+            selection: .constant("\(SavedLibraryModel.Chip.aerials)"),
+            searchText: .constant(searchText),
+            searchPrompt: "Search by name or tag",
+            searchShortPrompt: "Search",
+            stage: stage,
+            sort: .constant(.recentlyUsed),
+            filter: .constant(nil),
+            filterCount: { _ in 0 },
+            onImport: {},
+            showsAerialsControls: showsAerialsControls
+        )
+    }
+
+    @MainActor
+    private final class ChipFrame {
+        var minX: CGFloat?
+
+        func record(_ anchors: [PageGuideTarget: Anchor<CGRect>], in proxy: GeometryProxy) -> Color {
+            minX = anchors[.aerials].map { proxy[$0].minX }
+            return .clear
+        }
+    }
+
+    /// Where the Aerials chip lands in the row, read off the page guide's anchor on it.
+    @MainActor
+    private static func aerialsChipX(windowWidth: CGFloat, showsAerialsControls: Bool) throws -> CGFloat {
+        let frame = ChipFrame()
+        let width = windowWidth - 2 * DesignTokens.EditDesk.Spacing.gutter
+        let row = aerialsRow(windowWidth: windowWidth, searchText: "", showsAerialsControls: showsAerialsControls)
+            .frame(width: width)
+            .overlayPreferenceValue(PageGuideAnchorKey.self) { anchors in
+                GeometryReader { proxy in frame.record(anchors, in: proxy) }
+            }
+        let host = NSHostingView(rootView: row)
+        host.frame = NSRect(x: 0, y: 0, width: width, height: 60)
+        host.layoutSubtreeIfNeeded()
+        return try #require(frame.minX, "the row drew no Aerials chip")
+    }
+
+    @MainActor
+    @Test("The chips hold their place when the Aerials controls appear, at 1040 and 1280")
+    func chipsHoldTheirPlaceBesideTheAerialsControls() throws {
+        for windowWidth in [CGFloat(1040), 1280] {
+            let bare = try Self.aerialsChipX(windowWidth: windowWidth, showsAerialsControls: false)
+            let connected = try Self.aerialsChipX(windowWidth: windowWidth, showsAerialsControls: true)
+            #expect(abs(connected - bare) < 0.5, Comment(rawValue: "\(Int(windowWidth)): the chip moved from \(bare) to \(connected)"))
+        }
+    }
+
     /// The placeholder the search field draws once `HomePage` has laid out the Aerials chip's row, connected, at `windowWidth`.
     @MainActor
     private static func aerialsSearchPlaceholder(_ language: AppLanguagePreference, windowWidth: CGFloat) throws -> (shown: String, fieldWidth: CGFloat) {
@@ -134,24 +191,7 @@ struct TopBarBudgetTests {
             return view.subviews.lazy.compactMap(textField).first
         }
         return try AppLanguageOverride.with(language) {
-            let stage = EditDeskStageModel()
-            stage.report(stageSize: CGSize(width: windowWidth, height: 820))
-            stage.setProgress(2, animated: false)
-            let row = HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-                LibraryChipsRow(
-                    chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: "\($0)", title: HomePage.chipTitle($0)) },
-                    selection: .constant("\(SavedLibraryModel.Chip.aerials)"),
-                    searchText: .constant("a"),
-                    searchPrompt: "Search by name or tag",
-                    searchShortPrompt: "Search",
-                    stage: stage,
-                    sort: .constant(.recentlyUsed),
-                    filter: .constant(nil),
-                    filterCount: { _ in 0 },
-                    onImport: {}
-                )
-                AerialsSourceControls()
-            }
+            let row = Self.aerialsRow(windowWidth: windowWidth, searchText: "a", showsAerialsControls: true)
             let width = windowWidth - 2 * DesignTokens.EditDesk.Spacing.gutter
             let host = NSHostingView(rootView: row.frame(width: width).environment(\.locale, Locale(identifier: language.rawValue)))
             host.frame = NSRect(x: 0, y: 0, width: width, height: 60)

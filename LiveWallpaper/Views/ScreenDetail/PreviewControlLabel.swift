@@ -39,7 +39,7 @@ struct PreviewControlLabel: View {
             return AnyShapeStyle(tint)
         }
         return AnyShapeStyle(
-            DesignTokens.Colors.overlayForeground.opacity(isActive ? 1 : 0.62)
+            DesignTokens.Colors.overlayForeground.opacity(isActive ? 1 : DesignTokens.Opacity.restingSegment)
         )
     }
 }

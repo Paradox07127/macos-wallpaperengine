@@ -863,24 +863,20 @@ struct HomePage: View {
 
     private var chipsRow: some View {
         VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s12) {
-            HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-                LibraryChipsRow(
-                    chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
-                    selection: chipBinding,
-                    searchText: queryBinding,
-                    searchPrompt: featureCatalog.isEnabled(.wpeImport) ? "Search by name or tag" : "Search by name",
-                    searchShortPrompt: "Search",
-                    stage: stage,
-                    sort: Binding(get: { library?.sort ?? .recentlyUsed }, set: { library?.sort = $0 }),
-                    filter: Binding(get: { library?.filter }, set: { library?.filter = $0 }),
-                    filterCount: { library?.count(of: $0) ?? 0 },
-                    onImport: promptLibraryImport,
-                    keepsImportOnShelf: library?.items.isEmpty == true
-                )
-                if library?.chip == .aerials, library?.aerialsStatus.isAuthorized == true {
-                    AerialsSourceControls()
-                }
-            }
+            LibraryChipsRow(
+                chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
+                selection: chipBinding,
+                searchText: queryBinding,
+                searchPrompt: featureCatalog.isEnabled(.wpeImport) ? "Search by name or tag" : "Search by name",
+                searchShortPrompt: "Search",
+                stage: stage,
+                sort: Binding(get: { library?.sort ?? .recentlyUsed }, set: { library?.sort = $0 }),
+                filter: Binding(get: { library?.filter }, set: { library?.filter = $0 }),
+                filterCount: { library?.count(of: $0) ?? 0 },
+                onImport: promptLibraryImport,
+                keepsImportOnShelf: library?.items.isEmpty == true,
+                showsAerialsControls: library?.chip == .aerials && library?.aerialsStatus.isAuthorized == true
+            )
             shelfEmptyHint
         }
     }
