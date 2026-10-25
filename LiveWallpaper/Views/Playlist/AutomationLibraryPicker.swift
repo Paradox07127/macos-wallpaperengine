@@ -127,14 +127,14 @@ struct AutomationLibraryPicker: View {
                 .padding(.bottom, DesignTokens.Spacing.lg)
 
             LibraryToolbarRow {
-                Picker("Type", selection: $kindName) {
-                    Text("All").tag(String?.none)
-                    ForEach(presentKinds, id: \.localizedName) { kind in
-                        Text(verbatim: kind.localizedName).tag(Optional(kind.localizedName))
+                FilterChip(title: Text("All"), isSelected: kindName == nil) {
+                    kindName = nil
+                }
+                ForEach(presentKinds, id: \.localizedName) { kind in
+                    FilterChip(title: Text(verbatim: kind.localizedName), isSelected: kindName == kind.localizedName) {
+                        kindName = kind.localizedName
                     }
                 }
-                .labelsHidden()
-                .fixedSize()
             } search: {
                 LibrarySearchField(text: $search, prompt: "Search wallpapers")
             } sort: {
@@ -147,6 +147,8 @@ struct AutomationLibraryPicker: View {
 
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            LibraryStatusBar(summary: Text("\(shownItems.count) wallpapers"))
 
             footer
         }
