@@ -113,7 +113,7 @@ struct ClockOverlayTests {
         for name in names {
             let image = try #require(NSImage(named: name), "\(name)")
             let cg = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
-            #expect(cg.width == 324 && cg.height == 537, "\(name)")
+            #expect(cg.width == 338 && cg.height == 557, "\(name)")
         }
         let assembly = try #require(NSImage(named: "SplitFlapAssembly"))
         let cg = try #require(assembly.cgImage(forProposedRect: nil, context: nil, hints: nil))

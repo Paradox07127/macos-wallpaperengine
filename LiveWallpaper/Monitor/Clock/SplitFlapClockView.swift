@@ -36,9 +36,9 @@ struct SplitFlapClockView: View {
 
     // Design-canvas points; the sprites are rendered at 2 px per point.
     private nonisolated static let designWidth: CGFloat = 1256
-    private nonisolated static let windowWidth: CGFloat = 162
-    private nonisolated static let windowHeight: CGFloat = 268.5
-    private nonisolated static let windowTop: CGFloat = 93
+    private nonisolated static let windowWidth: CGFloat = 169
+    private nonisolated static let windowHeight: CGFloat = 278.5
+    private nonisolated static let windowTop: CGFloat = 84
     private nonisolated static let windowLeft: [CGFloat] = [56, 234, 458, 636, 860, 1038]
 
     /// Faces the flap reveals on its way from `from` to `to`, ending with `to`; -1 is the blank flap.
