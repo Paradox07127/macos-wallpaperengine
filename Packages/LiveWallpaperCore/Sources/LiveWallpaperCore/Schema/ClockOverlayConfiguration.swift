@@ -1,5 +1,9 @@
 import Foundation
 
+public enum ClockOverlayStyle: String, Codable, CaseIterable, Sendable {
+    case nixie, splitFlap
+}
+
 /// One decorative clock per display, independent of the widget grid.
 public struct ClockOverlayConfiguration: Codable, Equatable, Sendable {
     public var enabled: Bool
@@ -12,6 +16,7 @@ public struct ClockOverlayConfiguration: Codable, Equatable, Sendable {
     public var padsHour: Bool
     public var blinksSeparators: Bool
     public var opacity: Double
+    public var style: ClockOverlayStyle
 
     public static let widthRange = 180.0 ... 1600.0
     public static let aspectRatio = 1256.0 / 460.0
@@ -21,7 +26,7 @@ public struct ClockOverlayConfiguration: Codable, Equatable, Sendable {
         enabled: Bool = false, level: MonitorOverlayLevel = .desktop,
         x: Double = 0.35, y: Double = 0.66, width: Double = 480,
         uses24HourTime: Bool = true, padsHour: Bool = true,
-        blinksSeparators: Bool = false, opacity: Double = 1
+        blinksSeparators: Bool = false, opacity: Double = 1, style: ClockOverlayStyle = .nixie
     ) {
         self.enabled = enabled
         self.level = level
@@ -32,12 +37,13 @@ public struct ClockOverlayConfiguration: Codable, Equatable, Sendable {
         self.padsHour = padsHour
         self.blinksSeparators = blinksSeparators
         self.opacity = Self.clamp(opacity, to: 0.2 ... 1, fallback: 1)
+        self.style = style
     }
 
     public var normalized: Self {
         Self(enabled: enabled, level: level, x: x, y: y, width: width,
              uses24HourTime: uses24HourTime, padsHour: padsHour,
-             blinksSeparators: blinksSeparators, opacity: opacity)
+             blinksSeparators: blinksSeparators, opacity: opacity, style: style)
     }
 
     private static func clamp(_ value: Double, to range: ClosedRange<Double>, fallback: Double) -> Double {
@@ -45,7 +51,7 @@ public struct ClockOverlayConfiguration: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, level, x, y, width, uses24HourTime, padsHour, blinksSeparators, opacity
+        case enabled, level, x, y, width, uses24HourTime, padsHour, blinksSeparators, opacity, style
     }
 
     public init(from decoder: Decoder) throws {
@@ -59,7 +65,8 @@ public struct ClockOverlayConfiguration: Codable, Equatable, Sendable {
             uses24HourTime: c.decodeIfPresent(Bool.self, forKey: .uses24HourTime) ?? true,
             padsHour: c.decodeIfPresent(Bool.self, forKey: .padsHour) ?? true,
             blinksSeparators: c.decodeIfPresent(Bool.self, forKey: .blinksSeparators) ?? false,
-            opacity: c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
+            opacity: c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1,
+            style: (try? c.decodeIfPresent(ClockOverlayStyle.self, forKey: .style)) ?? .nixie
         )
     }
 }

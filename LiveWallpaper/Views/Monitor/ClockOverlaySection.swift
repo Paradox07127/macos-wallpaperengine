@@ -21,6 +21,8 @@ struct ClockOverlaySection: View {
         VStack(spacing: 12) {
             GroupBox {
                 VStack(spacing: 8) {
+                    styleRow
+                    Divider()
                     SettingRow(icon: "square.stack.3d.up", iconColor: .blue, title: "Layer",
                                info: "Desktop: below windows. On Top: above windows.") {
                         GlassSegmentedPicker(selection: binding(\.level), values: [.desktop, .front], shell: .flat,
@@ -45,8 +47,10 @@ struct ClockOverlaySection: View {
                     Divider()
                     toggleRow("Leading Hour Zero", icon: "textformat.123", keyPath: \.padsHour)
                     Divider()
-                    toggleRow("Blink Separators", icon: "lightbulb", keyPath: \.blinksSeparators)
-                    Divider()
+                    if clock.style == .nixie {
+                        toggleRow("Blink Separators", icon: "lightbulb", keyPath: \.blinksSeparators)
+                        Divider()
+                    }
                     SettingRow(icon: "circle.lefthalf.filled", iconColor: .purple, title: "Opacity") {
                         CoalescedSlider(
                             value: clock.opacity, in: 0.2 ... 1, owner: screen.id,
@@ -66,6 +70,30 @@ struct ClockOverlaySection: View {
                 .disabled(!clock.enabled)
             }
             .groupBoxStyle(ContainerGroupBoxStyle())
+        }
+    }
+
+    private var styleRow: some View {
+        SettingRow(
+            icon: "paintpalette",
+            iconColor: .purple,
+            title: "Style"
+        ) {
+            GlassSegmentedPicker(
+                selection: binding(\.style),
+                values: [.nixie, .splitFlap],
+                shell: .flat,
+                title: { (style: ClockOverlayStyle) in
+                    switch style {
+                    case .nixie: "Nixie"
+                    case .splitFlap: "Split-Flap"
+                    }
+                }
+            )
+            .frame(width: 180)
+            .disabled(!clock.enabled)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(Text("Style"))
         }
     }
 

@@ -36,6 +36,19 @@ struct NixieClockConfigurationTests {
         #expect(!decoded.enabled && !decoded.music.enabled && decoded.clock.enabled)
     }
 
+    @Test func clockStyleDecodesWithNixieFallback() throws {
+        func decode(_ json: String) throws -> ClockOverlayConfiguration {
+            try JSONDecoder().decode(ClockOverlayConfiguration.self, from: Data(json.utf8))
+        }
+        #expect(try decode(#"{"enabled":true}"#).style == .nixie)
+        #expect(try decode(#"{"style":"splitFlap"}"#).style == .splitFlap)
+        let future = try decode(#"{"style":"futureStyle","enabled":true,"width":620,"padsHour":false}"#)
+        #expect(future.style == .nixie)
+        #expect(future.enabled && future.width == 620 && !future.padsHour)
+        let flap = ClockOverlayConfiguration(width: 731.5, style: .splitFlap)
+        #expect(try JSONDecoder().decode(ClockOverlayConfiguration.self, from: JSONEncoder().encode(flap)) == flap)
+    }
+
     @Test func explicitClockWinsOverLegacyPlacement() throws {
         let json = #"{"enabled":true,"clock":{"enabled":false,"width":620},"board":{"widgets":[{"kind":"nixieClock"}]}}"#
         let decoded = try JSONDecoder().decode(MonitorOverlayConfiguration.self, from: Data(json.utf8))

@@ -98,8 +98,8 @@ struct OverlayCanvas: View {
     @ViewBuilder
     private func singleton(_ selection: OverlaySelection) -> some View {
         if selection == .clock {
-            NixieClockView(configuration: session.overlay.clock,
-                           now: session.preview.chartReference(fallback: Date()), animatesSeparators: false)
+            ClockOverlayFace(configuration: session.overlay.clock,
+                             now: session.preview.chartReference(fallback: Date()), animates: false)
         } else {
             NowPlayingWidgetView(context: MusicOverlayContext(
                 snapshot: session.preview.snapshot ?? MonitorSnapshot(), size: session.overlay.music.size,

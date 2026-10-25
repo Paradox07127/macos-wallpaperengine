@@ -55,15 +55,41 @@ final class ClockOverlayModel: ObservableObject {
 struct ClockOverlaySchedule: TimelineSchedule {
     let suspended: Bool
     let blinking: Bool
+    var splitFlap: ClockOverlayConfiguration?
 
     func entries(from startDate: Date, mode _: TimelineScheduleMode) -> AnyIterator<Date> {
         let interval = blinking ? 0.5 : 1.0
         var next: Date? = startDate
         return AnyIterator {
             guard let current = next else { return nil }
-            next = suspended ? nil : Date(timeIntervalSince1970:
-                (floor(current.timeIntervalSince1970 / interval) + 1) * interval)
+            if suspended {
+                next = nil
+            } else if let splitFlap {
+                let s = floor(current.timeIntervalSince1970)
+                let slot = SplitFlapClockView.frameSlot(current.timeIntervalSince1970 - s)
+                let last = SplitFlapClockView.lastAnimatedSlot(at: current, uses24HourTime: splitFlap.uses24HourTime,
+                                                               padsHour: splitFlap.padsHour)
+                next = slot < last ? Date(timeIntervalSince1970: s + Double(slot + 1) / 60)
+                    : Date(timeIntervalSince1970: s + 1)
+            } else {
+                next = Date(timeIntervalSince1970: (floor(current.timeIntervalSince1970 / interval) + 1) * interval)
+            }
             return current
+        }
+    }
+}
+
+struct ClockOverlayFace: View {
+    let configuration: ClockOverlayConfiguration
+    let now: Date
+    let animates: Bool
+
+    var body: some View {
+        switch configuration.style {
+        case .nixie:
+            NixieClockView(configuration: configuration, now: now, animatesSeparators: animates)
+        case .splitFlap:
+            SplitFlapClockView(configuration: configuration, now: now, animatesFlaps: animates)
         }
     }
 }
@@ -73,13 +99,17 @@ struct ClockOverlayRoot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(ClockOverlaySchedule(suspended: model.suspended,
-                                          blinking: model.configuration.blinksSeparators && !reduceMotion)) { timeline in
+        let style = model.configuration.style
+        TimelineView(ClockOverlaySchedule(
+            suspended: model.suspended,
+            blinking: style == .nixie && model.configuration.blinksSeparators && !reduceMotion,
+            splitFlap: style == .splitFlap && !reduceMotion ? model.configuration : nil
+        )) { timeline in
             GeometryReader { proxy in
                 let rect = ClockOverlayLayout.renderRect(configuration: model.configuration,
                                                          canvas: proxy.size, safeArea: model.safeArea)
-                NixieClockView(configuration: model.configuration, now: timeline.date,
-                               animatesSeparators: !reduceMotion && !model.suspended)
+                ClockOverlayFace(configuration: model.configuration, now: timeline.date,
+                                 animates: !reduceMotion && !model.suspended)
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
             }
