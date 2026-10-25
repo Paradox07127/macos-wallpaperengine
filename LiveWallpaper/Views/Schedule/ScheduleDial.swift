@@ -59,72 +59,11 @@ enum ScheduleDialGeometry {
     static func midpoint(_ slot: ScheduleSlot) -> Double {
         (Double(slot.startMinute) / 60 + span(slot) / 2).truncatingRemainder(dividingBy: 24)
     }
-
-    struct Callout: Identifiable {
-        let slot: ScheduleSlot
-        let anchor: CGPoint
-        let frame: CGRect
-        let left: Bool
-        var id: UUID {
-            slot.id
-        }
-    }
-
-    /// Order-preserving lanes keep adjacent sections apart, including an uneven distribution on either half.
-    static func callouts(slots: [ScheduleSlot], selectedID: UUID?, size: CGSize, radius: Double, cardWidth: Double) -> [Callout] {
-        let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        var result: [Callout] = []
-        for left in [true, false] {
-            let entries = slots.filter {
-                (point(hour: midpoint($0), radius: radius, center: center).x < center.x) == left
-            }.sorted {
-                point(hour: midpoint($0), radius: radius, center: center).y < point(hour: midpoint($1), radius: radius, center: center).y
-            }
-            let available = max(0, size.height - 40)
-            let capacity = max(1, Int(available / 34))
-            var visible = Array(entries.prefix(capacity))
-            if let selected = entries.first(where: { $0.id == selectedID }), !visible.contains(where: { $0.id == selectedID }) {
-                visible[visible.count - 1] = selected
-                visible.sort {
-                    point(hour: midpoint($0), radius: radius, center: center).y < point(hour: midpoint($1), radius: radius, center: center).y
-                }
-            }
-            guard !visible.isEmpty else { continue }
-            let height = min(56, available / Double(visible.count) - 6)
-            let stride = height + 6
-            // Anchor toward the arc when there is room; pack only as far as collision avoidance requires.
-            var centers = visible.map {
-                min(size.height - 20 - height / 2, max(20 + height / 2, point(hour: midpoint($0), radius: radius + 20, center: center).y))
-            }
-            for index in centers.indices.dropFirst() {
-                centers[index] = max(centers[index], centers[index - 1] + stride)
-            }
-            let overflow = max(0, centers.last! + height / 2 + 20 - size.height)
-            centers = centers.map { $0 - overflow }
-            for index in centers.indices.reversed().dropFirst() {
-                centers[index] = min(centers[index], centers[index + 1] - stride)
-            }
-            for (index, slot) in visible.enumerated() {
-                let x = left ? 10 : size.width - cardWidth - 10
-                result.append(Callout(slot: slot, anchor: point(hour: midpoint(slot), radius: radius + 13, center: center),
-                                      frame: CGRect(x: x, y: centers[index] - height / 2, width: cardWidth, height: height), left: left))
-            }
-        }
-        return result
-    }
 }
 
-/// Muted, appearance-aware section colors; numbers also identify sections when colors repeat.
+/// Numbers also identify sections when colors repeat.
 enum ScheduleDialStyle {
-    static let palette: [Color] = [tone(0.52, 0.68, 0.82), tone(0.49, 0.71, 0.67), tone(0.67, 0.63, 0.80),
-                                   tone(0.78, 0.66, 0.48), tone(0.74, 0.57, 0.64), tone(0.54, 0.65, 0.73)]
-
-    private static func tone(_ red: Double, _ green: Double, _ blue: Double) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let factor = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 1.0 : 0.67
-            return NSColor(srgbRed: red * factor, green: green * factor, blue: blue * factor, alpha: 1)
-        })
-    }
+    static let palette: [Color] = DesignTokens.ScheduleDial.palette
 
     static func number(_ slot: ScheduleSlot, in slots: [ScheduleSlot]) -> Int {
         (slots.sorted { $0.startMinute < $1.startMinute }.firstIndex { $0.id == slot.id } ?? 0) + 1
@@ -132,6 +71,8 @@ enum ScheduleDialStyle {
 }
 
 struct ScheduleDial: View {
+    private typealias Metrics = DesignTokens.ScheduleDial
+
     let slots: [ScheduleSlot]
     let now: Date
     var palette: [Color] = ScheduleDialStyle.palette
@@ -141,9 +82,13 @@ struct ScheduleDial: View {
     /// Minute of the day of the empty spot that was double-clicked.
     let onInsert: (Int) -> Void
     var thumbnail: (ScheduleSlot) -> AnyView = { _ in AnyView(Image(systemName: "photo")) }
+    /// Wallpaper named after the time in the center capsule; nil shows the time alone.
+    var nowPlayingTitle: String?
+    /// Wallpaper of the unscheduled hours, labelled in each long gap; nil hides the labels.
+    var fallbackTitle: String?
     @State private var draggedMinutes: (id: UUID, movingEnd: Bool, start: Int, end: Int, pointer: Int)?
     @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func shown(_ slot: ScheduleSlot) -> ScheduleSlot {
         guard let drag = draggedMinutes, drag.id == slot.id else { return slot }
@@ -157,19 +102,24 @@ struct ScheduleDial: View {
         palette.isEmpty ? .accentColor : palette[(ScheduleDialStyle.number(slot, in: slots) - 1) % palette.count]
     }
 
+    private var nowHour: Double {
+        let components = Calendar.current.dateComponents([.hour, .minute], from: now)
+        return Double(components.hour ?? 0) + Double(components.minute ?? 0) / 60
+    }
+
+    private func motion(_ animation: Animation) -> Animation {
+        reduceMotion ? DesignTokens.Motion.reducedMotionFade : animation
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let radius = min(size.width * (size.width < 560 ? 0.20 : 0.225), (size.height - 96) / 2)
-            let cardWidth = min(148.0, size.width * 0.225)
-            let callouts = ScheduleDialGeometry.callouts(slots: slots, selectedID: selectedID, size: size, radius: radius, cardWidth: cardWidth)
+            // Hour labels and the drag capsule reach about 64pt beyond the ring.
+            let radius = max(Metrics.ringWidth, min(Metrics.ringRadius, min(size.width, size.height) / 2 - 64))
             ZStack {
-                Circle().fill(DesignTokens.Colors.surfaceRaised.opacity(0.4))
-                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.035), lineWidth: 1))
-                    .frame(width: max(0, radius * 2 - 46), height: max(0, radius * 2 - 46)).position(center)
                 Canvas { context, _ in
-                    drawDial(context: &context, size: size, radius: radius, center: center, callouts: callouts)
+                    drawFace(context: &context, radius: radius, center: center)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { point in select(at: point, center: center, radius: radius) }
@@ -181,12 +131,28 @@ struct ScheduleDial: View {
                     }
                 }
                 .accessibilityHidden(true)
-                dialLabels(center: center, radius: radius)
-                dialCenter(radius: radius).position(center)
-                ForEach(callouts) { callout in
-                    calloutCard(callout, compact: size.width < 560)
-                        .position(x: callout.frame.midX, y: callout.frame.midY)
+                Canvas { context, _ in
+                    drawSnapTicks(context: &context, radius: radius, center: center)
                 }
+                .opacity(draggedMinutes == nil ? 0 : 1)
+                .animation(motion(DesignTokens.Motion.stateChange), value: draggedMinutes == nil)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                ForEach(slots) { slot in
+                    section(slot, radius: radius, center: center)
+                }
+                Canvas { context, _ in
+                    let dot = ScheduleDialGeometry.point(hour: nowHour, radius: radius, center: center)
+                    for (size, opacity) in [(18.0, 0.16), (7.0, 1.0)] {
+                        let disc = Path(ellipseIn: CGRect(x: dot.x - size / 2, y: dot.y - size / 2, width: size, height: size))
+                        context.fill(disc, with: .color(.primary.opacity(opacity)))
+                    }
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                hourLabels(center: center, radius: radius)
+                fallbackLabels(center: center, radius: radius)
+                dialCenter(radius: radius).position(center)
                 if let slot = slots.first(where: { $0.id == selectedID }) {
                     ForEach([false, true], id: \.self) { end in
                         edgeHandle(slot, end: end, radius: radius, center: center)
@@ -196,7 +162,7 @@ struct ScheduleDial: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("24-hour schedule"))
-        // Callouts drop slots that do not fit, so every slot stays selectable from here.
+        // The ring is hidden from accessibility, so these actions are how VoiceOver selects a slot.
         .accessibilityActions {
             ForEach(slots.sorted { $0.startMinute < $1.startMinute }) { slot in
                 Button { selectedID = slot.id } label: { Text(verbatim: accessibilityName(slot)) }
@@ -214,73 +180,88 @@ struct ScheduleDial: View {
         selectedID = slots.first { $0.containsMinute(minute) }?.id
     }
 
-    private func arc(_ slot: ScheduleSlot, radius: Double, center: CGPoint) -> Path {
+    /// `offset` moves the path off the ring's centerline while keeping the section's trimmed angles.
+    private func arc(_ slot: ScheduleSlot, radius: Double, center: CGPoint, offset: Double = 0) -> Path {
         let span = ScheduleDialGeometry.span(slot)
         guard span > 0 else { return Path() }
+        let distance = radius + offset
         if span == 24 {
-            return Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+            return Path(ellipseIn: CGRect(x: center.x - distance, y: center.y - distance, width: distance * 2, height: distance * 2))
         }
-        // Trim both ends by the cap radius plus a hairline gap. A wrap is one continuous arc, not two sections at midnight.
-        let halfWidth = radius < 110 ? 5.0 : 7.0
-        let inset = min(span * 15 / 3, asin(min(1, halfWidth / radius)) * 180 / .pi + 1.2)
+        // Trim both ends by the cap radius plus a 2pt gap (18 minutes on the full-size ring). A wrap is one continuous arc, not two sections at midnight.
+        let inset = min(span * 15 / 3, asin(min(1, (Metrics.ringWidth / 2 + 2) / radius)) * 180 / .pi)
         var path = Path()
-        path.addArc(center: center, radius: radius,
+        path.addArc(center: center, radius: distance,
                     startAngle: .degrees(Double(slot.startMinute) / 60 * 15 - 90 + inset),
                     endAngle: .degrees((Double(slot.startMinute) / 60 + span) * 15 - 90 - inset), clockwise: false)
         return path
     }
 
-    private func drawDial(context: inout GraphicsContext, size _: CGSize, radius: Double, center: CGPoint, callouts: [ScheduleDialGeometry.Callout]) {
-        let circle = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-        let ringWidth = radius < 110 ? 10.0 : 14.0
-        context.stroke(circle, with: .color(.primary.opacity(0.04)), lineWidth: ringWidth)
-        for hour in 0 ..< 24 {
-            let from = ScheduleDialGeometry.point(hour: Double(hour), radius: radius - (hour % 3 == 0 ? 33 : 28), center: center)
-            let to = ScheduleDialGeometry.point(hour: Double(hour), radius: radius - 24, center: center)
-            var tick = Path(); tick.move(to: from); tick.addLine(to: to)
-            context.stroke(tick, with: .color(.secondary.opacity(contrast == .increased ? 0.8 : 0.38)), lineWidth: hour % 3 == 0 ? 1 : 0.6)
-        }
-        for slot in slots {
-            let visible = shown(slot)
-            let tint = color(slot)
-            let shading = GraphicsContext.Shading.linearGradient(Gradient(colors: [tint, tint.opacity(scheme == .light ? 1 : 0.88)]),
-                                                                 startPoint: CGPoint(x: center.x, y: center.y - radius), endPoint: CGPoint(x: center.x, y: center.y + radius))
+    private func section(_ slot: ScheduleSlot, radius: Double, center: CGPoint) -> some View {
+        let visible = shown(slot)
+        let tint = color(slot)
+        let selected = selectedID == slot.id
+        let lip = Metrics.ringWidth / 2 - 1.5
+        return ZStack {
             if slots.count >= 12 {
-                let path = sectionShape(visible, radius: radius, center: center, width: ringWidth)
-                if selectedID == slot.id {
-                    context.stroke(path, with: .color(tint.opacity(0.15)), style: StrokeStyle(lineWidth: 5, lineJoin: .round))
-                }
-                context.fill(path, with: shading)
+                sectionShape(visible, radius: radius, center: center, width: Metrics.ringWidth).fill(tint)
             } else {
-                let path = arc(visible, radius: radius, center: center)
-                if selectedID == slot.id {
-                    context.stroke(path, with: .color(tint.opacity(0.13)), style: StrokeStyle(lineWidth: ringWidth + 7, lineCap: .round))
-                }
-                context.stroke(path, with: shading, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
+                arc(visible, radius: radius, center: center)
+                    .stroke(tint, style: StrokeStyle(lineWidth: Metrics.ringWidth, lineCap: .round))
+                arc(visible, radius: radius, center: center, offset: lip)
+                    .stroke(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+                arc(visible, radius: radius, center: center, offset: -lip)
+                    .stroke(Color.black.opacity(0.28), style: StrokeStyle(lineWidth: 1, lineCap: .round))
             }
-            if slots.count > 6, radius >= 110 || selectedID == slot.id {
-                let label = Text(verbatim: String(ScheduleDialStyle.number(slot, in: slots)))
-                    .font(DesignTokens.Typography.badge).foregroundStyle(radius < 110 ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.pageBackground)
-                context.draw(label, at: ScheduleDialGeometry.point(hour: ScheduleDialGeometry.midpoint(visible), radius: radius < 110 ? radius - 17 : radius, center: center))
+            if slots.count > 6 {
+                Text(verbatim: String(ScheduleDialStyle.number(slot, in: slots)))
+                    .font(DesignTokens.Typography.badge).foregroundStyle(DesignTokens.Colors.pageBackground)
+                    .position(ScheduleDialGeometry.point(hour: ScheduleDialGeometry.midpoint(visible), radius: radius, center: center))
             }
         }
-        for callout in callouts {
-            let start = ScheduleDialGeometry.point(hour: ScheduleDialGeometry.midpoint(shown(callout.slot)), radius: radius + 13, center: center)
-            let end = CGPoint(x: callout.left ? callout.frame.maxX + 6 : callout.frame.minX - 6, y: callout.frame.midY)
-            let direction = callout.left ? -1.0 : 1.0
-            let reach = min(34, abs(start.x - end.x) / 2)
-            var line = Path(); line.move(to: start)
-            line.addCurve(to: end, control1: CGPoint(x: start.x + direction * reach, y: start.y),
-                          control2: CGPoint(x: end.x - direction * reach, y: end.y))
-            let selected = selectedID == callout.id
-            context.stroke(line, with: .color(selected ? color(callout.slot).opacity(0.7) : .secondary.opacity(contrast == .increased ? 0.65 : 0.25)),
-                           style: StrokeStyle(lineWidth: selected ? 1.2 : 0.75, lineCap: .round))
-            context.fill(Path(ellipseIn: CGRect(x: start.x - 1.5, y: start.y - 1.5, width: 3, height: 3)), with: .color(color(callout.slot)))
+        .scaleEffect(selected ? (radius + Metrics.selectionLift) / radius : 1)
+        .shadow(color: .black.opacity(selected ? 0.5 : 0), radius: 5, y: selected ? 6 : 0)
+        .animation(motion(.snappy(duration: 0.25)), value: selected)
+        .zIndex(selected ? 1 : 0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func drawFace(context: inout GraphicsContext, radius: Double, center: CGPoint) {
+        func circle(_ distance: Double) -> Path {
+            Path(ellipseIn: CGRect(x: center.x - distance, y: center.y - distance, width: distance * 2, height: distance * 2))
         }
-        let components = Calendar.current.dateComponents([.hour, .minute], from: now)
-        let time = Double(components.hour ?? 0) + Double(components.minute ?? 0) / 60
-        let marker = ScheduleDialGeometry.point(hour: time, radius: radius - 13, center: center)
-        context.fill(Path(ellipseIn: CGRect(x: marker.x - 2, y: marker.y - 2, width: 4, height: 4)), with: .color(.primary))
+        let half = Metrics.ringWidth / 2
+        context.stroke(circle(radius), with: .color(.primary.opacity(0.035)), lineWidth: Metrics.ringWidth)
+        context.stroke(circle(radius), with: .color(.primary.opacity(0.34)), style: StrokeStyle(lineWidth: 1, dash: [2, 6]))
+        for edge in [radius - half, radius + half] {
+            context.stroke(circle(edge), with: .color(.primary.opacity(0.06)), lineWidth: 1)
+        }
+        for hour in 0 ..< 24 {
+            let major = hour % 6 == 0
+            var tick = Path()
+            tick.move(to: ScheduleDialGeometry.point(hour: Double(hour), radius: radius + half + 4, center: center))
+            tick.addLine(to: ScheduleDialGeometry.point(hour: Double(hour), radius: radius + half + (major ? 18 : 10), center: center))
+            let opacity = contrast == .increased ? 0.8 : (major ? 0.45 : 0.2)
+            context.stroke(tick, with: .color(.primary.opacity(opacity)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+        }
+        var pointer = Path()
+        pointer.move(to: center)
+        pointer.addLine(to: ScheduleDialGeometry.point(hour: nowHour, radius: radius - 16, center: center))
+        context.stroke(pointer, with: .color(.primary.opacity(0.5)), lineWidth: 1)
+    }
+
+    /// One tick per half hour just inside the ring; the hour ticks are longer.
+    private func drawSnapTicks(context: inout GraphicsContext, radius: Double, center: CGPoint) {
+        let inner = radius - Metrics.ringWidth / 2 - 3
+        for index in 0 ..< 48 {
+            let hour = Double(index) / 2
+            var tick = Path()
+            tick.move(to: ScheduleDialGeometry.point(hour: hour, radius: inner - (index % 2 == 0 ? 11 : 6), center: center))
+            tick.addLine(to: ScheduleDialGeometry.point(hour: hour, radius: inner, center: center))
+            context.stroke(tick, with: .color(DesignTokens.Colors.accent.opacity(index % 2 == 0 ? 0.9 : 0.55)),
+                           style: StrokeStyle(lineWidth: 1, lineCap: .round))
+        }
     }
 
     /// Dense schedules use softly squared section edges, leaving room for short intervals without a bead-like ring.
@@ -310,72 +291,96 @@ struct ScheduleDial: View {
         return path
     }
 
-    private func dialLabels(center: CGPoint, radius: Double) -> some View {
-        ForEach(Array(stride(from: 0, to: 24, by: radius >= 125 ? 3 : 6)), id: \.self) { hour in
-            Text(verbatim: String(format: "%02d", hour)).font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
-                .position(ScheduleDialGeometry.point(hour: Double(hour), radius: radius - 46, center: center))
+    private func hourLabels(center: CGPoint, radius: Double) -> some View {
+        ForEach([0, 6, 12, 18], id: \.self) { hour in
+            Text(verbatim: String(format: "%02d", hour)).font(DesignTokens.Typography.metric)
+                .foregroundStyle(hour == 0 ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textSecondary)
+                .position(ScheduleDialGeometry.point(hour: Double(hour), radius: radius + 44, center: center))
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Midpoint minute of each unscheduled stretch long enough to hold a label.
+    private var fallbackGapMidpoints: [Int] {
+        let filled = slots.filter { $0.startMinute != $0.endMinute }.map(shown).sorted { $0.startMinute < $1.startMinute }
+        guard !filled.isEmpty else { return [720] }
+        return filled.indices.compactMap { index in
+            let end = filled[index].endMinute % 1440
+            let gap = (filled[(index + 1) % filled.count].startMinute - end + 1440) % 1440
+            // Two hours is 30°, about one label's width at the label radius.
+            return gap >= 120 ? (end + gap / 2) % 1440 : nil
+        }
+    }
+
+    @ViewBuilder
+    private func fallbackLabels(center: CGPoint, radius: Double) -> some View {
+        if let fallbackTitle {
+            ForEach(fallbackGapMidpoints, id: \.self) { minute in
+                VStack(spacing: DesignTokens.Spacing.xxs) {
+                    Text("Fallback").font(DesignTokens.Typography.badge).foregroundStyle(DesignTokens.Colors.textSecondary)
+                    Text(verbatim: fallbackTitle).font(DesignTokens.Typography.caption).lineLimit(1)
+                }
+                .frame(maxWidth: 96)
+                .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: radius - 46, center: center))
+                .allowsHitTesting(false)
+            }
         }
     }
 
     private func dialCenter(radius: Double) -> some View {
-        VStack(spacing: 8) {
-            Text(now, format: .dateTime.hour().minute())
-                .font(radius < 120 ? DesignTokens.Typography.caption : DesignTokens.Typography.modalTitle.weight(.regular)).monospacedDigit()
-                .lineLimit(1).minimumScaleFactor(0.5)
-            if radius >= 120 {
-                Text("Repeats every day").font(DesignTokens.Typography.caption).foregroundStyle(.tertiary)
+        let diameter = Metrics.thumbnailDiameter * radius / Metrics.ringRadius
+        let minute = Int(nowHour * 60)
+        let current = slots.first { $0.containsMinute(minute) }
+        return Group {
+            if let current {
+                thumbnail(current)
+            } else {
+                Color.clear
             }
-        }.frame(width: radius * (radius < 120 ? 0.6 : 1.0))
+        }
+        .frame(width: diameter, height: diameter)
+        .background(DesignTokens.Colors.surfaceRaised)
+        .clipShape(Circle())
+        .overlay(Circle().strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 14, y: 12)
+        .accessibilityHidden(true)
+        .overlay(alignment: .bottom) {
+            nowCapsule
+                // Overlays are proposed the thumbnail's width; this lets the capsule run wider, still inside the snap ticks.
+                .frame(width: radius * 1.4)
+                .alignmentGuide(.bottom) { $0[.top] - 4 }
+        }
     }
 
-    private func calloutCard(_ callout: ScheduleDialGeometry.Callout, compact: Bool) -> some View {
-        let slot = callout.slot
-        let selected = selectedID == slot.id
-        let dense = callout.frame.height < 48
-        return Button { selectedID = slot.id } label: {
-            HStack(spacing: compact || dense ? 6 : 8) {
-                if dense, !compact {
-                    Text(verbatim: String(ScheduleDialStyle.number(slot, in: slots))).font(DesignTokens.Typography.badge)
-                        .foregroundStyle(color(slot)).frame(width: 18)
-                }
-                thumbnail(slot).frame(width: compact || dense ? 26 : 42, height: dense ? 20 : 30).clipped()
-                    .background(color(slot).opacity(0.12), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
-                    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
-                    .overlay(alignment: .topLeading) {
-                        if !compact, !dense {
-                            Text(verbatim: String(ScheduleDialStyle.number(slot, in: slots))).font(DesignTokens.Typography.badge)
-                                .foregroundStyle(.primary).frame(width: 16, height: 16)
-                                .background(DesignTokens.Colors.surfaceRaised, in: Circle()).offset(x: -4, y: -4)
-                        }
-                    }
-                VStack(alignment: .leading, spacing: 3) {
-                    if !dense, !compact {
-                        Text(verbatim: slot.wallpaper?.displayTitle ?? slot.localizedLabel)
-                            .font(DesignTokens.Typography.captionEmphasized).lineLimit(1)
-                    }
-                    Text(verbatim: shown(slot).rangeText(compact: compact)).font(DesignTokens.Typography.caption).monospacedDigit()
-                        .foregroundStyle(selected ? .primary : .secondary).lineLimit(1).minimumScaleFactor(0.8)
-                }
-                Spacer(minLength: 0)
-            }.padding(.horizontal, 8).frame(width: callout.frame.width, height: callout.frame.height)
-                .background(DesignTokens.Colors.surfaceRaised.opacity(selected ? 0.9 : 0.55), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
-                .overlay(RoundedRectangle(cornerRadius: DesignTokens.Corner.md).strokeBorder(selected ? color(slot).opacity(0.55) : Color.primary.opacity(0.06), lineWidth: 1))
+    private var nowCapsule: some View {
+        HStack(spacing: 6) {
+            Text(now, format: .dateTime.hour().minute()).font(DesignTokens.Typography.metric)
+            if let nowPlayingTitle {
+                Text(verbatim: "·").foregroundStyle(DesignTokens.Colors.textSecondary).accessibilityHidden(true)
+                Text("Now playing").foregroundStyle(DesignTokens.Colors.textSecondary)
+                Text(verbatim: nowPlayingTitle).font(DesignTokens.Typography.captionEmphasized)
+            }
         }
-        .buttonStyle(.plain)
-        .help(Text(verbatim: slot.wallpaper?.displayTitle ?? slot.localizedLabel))
-        .accessibilityLabel(Text(verbatim: accessibilityName(slot)))
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .font(DesignTokens.Typography.caption)
+        .lineLimit(1)
+        .padding(.horizontal, 11).padding(.vertical, 5)
+        .adaptiveGlassSurface(.capsule)
+        .accessibilityElement(children: .combine)
     }
 
     private func edgeHandle(_ slot: ScheduleSlot, end: Bool, radius: Double, center: CGPoint) -> some View {
         let visible = shown(slot)
         let minute = end ? visible.endMinute : visible.startMinute
         let dragging = draggedMinutes.map { $0.id == slot.id && $0.movingEnd == end } ?? false
+        let lifted = radius + Metrics.selectionLift
         return ZStack {
-            Circle().fill(DesignTokens.Colors.pageBackground).frame(width: 9, height: 9)
-                .overlay(Circle().stroke(color(slot), lineWidth: 2))
+            Color.clear.frame(width: Metrics.handleDiameter, height: Metrics.handleDiameter)
+                .adaptiveGlassSurface(.circle, interactive: true)
+                .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
+                .scaleEffect(dragging ? 1.2 : 1)
+                .animation(motion(.snappy(duration: 0.2)), value: dragging)
                 .frame(width: 28, height: 28).contentShape(Circle())
-                .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: radius, center: center))
+                .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: lifted, center: center))
                 .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("schedule-dial")).onChanged { value in
                     let previous = draggedMinutes.flatMap { $0.id == slot.id && $0.movingEnd == end ? $0 : nil }
                     let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: end, pointer: previous?.pointer, to: ScheduleDialGeometry.minute(at: value.location, center: center), among: slots)
@@ -392,11 +397,12 @@ struct ScheduleDial: View {
             if dragging {
                 Text(verbatim: ScheduleSlot.clockText(minute: end && minute == 0 ? 1440 : minute))
                     .font(DesignTokens.Typography.captionEmphasized).monospacedDigit()
-                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
                     .adaptiveGlassSurface(.capsule, interactive: false)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
-                    .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: radius + 22, center: center))
+                    // 22pt clear of the handle, plus about half the capsule's height to reach its center.
+                    .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: lifted + Metrics.handleDiameter / 2 + 22 + 12, center: center))
             }
         }
         .accessibilityHidden(true)
@@ -406,5 +412,5 @@ struct ScheduleDial: View {
 #Preview("24-hour Schedule") {
     ScheduleDial(slots: ScheduleSlot.defaultSlots, now: Date(timeIntervalSince1970: 0),
                  selectedID: .constant(nil), onRetimed: { _, _, _ in }, onInsert: { _ in })
-        .frame(width: 650, height: 460).padding(20)
+        .frame(width: 540, height: 540).padding(20)
 }

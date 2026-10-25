@@ -81,34 +81,4 @@ struct ScheduleDialTests {
         #expect(drag(0, 30, movingEnd: false, to: 600) == [0, 30], "the start passed its own end")
         #expect(drag(1410, 1440, movingEnd: true, to: 0) == [1410, 1440])
     }
-
-    @Test("Callout lanes never overlap or clip, including clustered sections and compact overflow selection")
-    func calloutPacking() {
-        for size in [CGSize(width: 650, height: 460), CGSize(width: 420, height: 360)] {
-            let radius = Double(size.width) * (size.width < 560 ? 0.20 : 0.225)
-            let width = min(148, Double(size.width) * 0.225)
-            for slots in [ScheduleSlot.defaultSlots, (0 ..< 24).map { ScheduleSlot(startHour: $0, endHour: $0 + 1, label: "Slot") },
-                          (0 ..< 12).map { ScheduleSlot(startHour: $0, endHour: $0 + 1, label: "Cluster") }, [],
-                          [ScheduleSlot(startHour: 0, endHour: 24, label: "Day")]] {
-                let selected = slots.last?.id
-                let callouts = ScheduleDialGeometry.callouts(slots: slots, selectedID: selected, size: size, radius: radius, cardWidth: width)
-                if let selected {
-                    #expect(callouts.contains { $0.id == selected })
-                }
-                for callout in callouts {
-                    #expect(callout.frame.minY >= 19.9)
-                    #expect(callout.frame.maxY <= size.height - 19.9)
-                    #expect(callout.frame.minX >= 0 && callout.frame.maxX <= size.width)
-                    #expect(callout.frame.height >= 28)
-                }
-                for left in [false, true] {
-                    let lane = callouts.filter { $0.left == left }.sorted { $0.frame.minY < $1.frame.minY }
-                    for (first, second) in zip(lane, lane.dropFirst()) {
-                        #expect(second.frame.minY - first.frame.maxY >= 5.9)
-                    }
-                }
-                #expect(Set(callouts.map(\.id)).count == callouts.count)
-            }
-        }
-    }
 }

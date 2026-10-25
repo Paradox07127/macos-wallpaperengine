@@ -288,6 +288,27 @@ public enum DesignTokens {
         public static let sheet: CGFloat = 22
     }
 
+    /// The daily schedule's 24-hour dial.
+    public enum ScheduleDial {
+        /// Section colors, OKLCH(0.62 0.1 h) for h = 230, 165, 330, 270, 75, 20 in sRGB; darkened in light mode.
+        public static let palette: [Color] = [tone(0.22, 0.57, 0.72), tone(0.26, 0.60, 0.47), tone(0.66, 0.44, 0.64),
+                                              tone(0.43, 0.51, 0.76), tone(0.66, 0.49, 0.23), tone(0.73, 0.43, 0.43)]
+        /// Full-size ring; the dial shrinks it to fit and scales the center thumbnail with it.
+        public static let ringRadius: CGFloat = 206
+        public static let ringWidth: CGFloat = 28
+        /// How far the selected section moves outward.
+        public static let selectionLift: CGFloat = 4
+        public static let thumbnailDiameter: CGFloat = 156
+        public static let handleDiameter: CGFloat = 14
+
+        private static func tone(_ red: Double, _ green: Double, _ blue: Double) -> Color {
+            Color(nsColor: NSColor(name: nil) { appearance in
+                let factor = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 1.0 : 0.67
+                return NSColor(srgbRed: red * factor, green: green * factor, blue: blue * factor, alpha: 1)
+            })
+        }
+    }
+
     /// Only interaction-state alpha routes through these; decorative strokes, shadows
     /// and media scrims stay literal by design.
     public enum Opacity {
