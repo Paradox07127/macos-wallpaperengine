@@ -195,8 +195,8 @@ private final class GridDragHost {
     }
 
     /// The SwiftUI layers alone: the stage's own layers are hidden for the capture. `band`, top-left origin,
-    /// limits it to those rows; the image then starts at the band's top.
-    func render(band: CGRect? = nil) throws -> ProbeImage {
+    /// limits it to those rows; the image then starts at the band's top. `view` draws it; nil = the host.
+    func render(band: CGRect? = nil, from view: NSView? = nil) throws -> ProbeImage {
         let stageView = stage
         // Hiding the focused stage hands the keyboard to the next key view, the library's search field.
         let responder = window.firstResponder
@@ -206,14 +206,21 @@ private final class GridDragHost {
             window.makeFirstResponder(responder)
         }
         host.layoutSubtreeIfNeeded()
-        let area = band.map {
+        let source = view ?? host
+        let area = source.convert(band.map {
             host.convert(CGRect(x: $0.minX, y: size.height - $0.maxY, width: $0.width, height: $0.height), from: nil)
-        } ?? host.bounds
-        let rep = host.bitmapImageRepForCachingDisplay(in: area)
+        } ?? host.bounds, from: host)
+        let rep = source.bitmapImageRepForCachingDisplay(in: area)
         let bitmap = try #require(rep)
-        host.cacheDisplay(in: area, to: bitmap)
+        source.cacheDisplay(in: area, to: bitmap)
         let image = bitmap.cgImage
         return try ProbeImage(cgImage: #require(image), viewWidth: host.bounds.width)
+    }
+
+    /// The tiles as the grid draws them, over the host's whole bounds.
+    func renderGrid() throws -> ProbeImage {
+        // Drawn from the host, the tiles come out blank while the nav pill's glass selection capsule is in the window.
+        try render(from: #require(grid, "the library grid is not mounted"))
     }
 
     /// Thumbnail-wide runs of each display's cover along the row through the strip's middle.
@@ -382,7 +389,7 @@ struct LibraryGridDragWindowTests {
         let strip = try #require(found, "a tile drag never brought the display strip in")
         let tookCursor = NSCursor.current == NSCursor.closedHand
         #expect(tookCursor, "the drag never took the cursor")
-        let dragging = try host.render()
+        let dragging = try host.renderGrid()
         let draggedTileDimmed = try !TileSample.isBlue(dragging, host.tileSample(0))
         let otherTileBlue = try TileSample.isBlue(dragging, host.tileSample(1))
         #expect(draggedTileDimmed, "the dragged tile did not dim under the ghost")

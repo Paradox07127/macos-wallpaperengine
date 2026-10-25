@@ -119,10 +119,13 @@ struct SettingsSearchRowEmphasisTests {
         await settle(window, for: 1.0)
         let page = try page(in: root)
         let visible = page.convert(page.contentView.frame, to: root)
-        let marked = try snapshot(root)
+        let flipped = page.isFlipped
+        #expect(flipped, "control: the page rect below is read top-down, as the bitmap is")
+        // Drawn from the window's root, the page comes out blank while the nav pill's glass selection capsule is in the window.
+        let marked = try snapshot(page)
         await settle(window, for: 3.6)
-        let faded = try snapshot(root)
-        return (page, visible, changedBox(marked, faded, in: visible))
+        let faded = try snapshot(page)
+        return (page, visible, changedBox(marked, faded, in: page.contentView.frame))
     }
 
     private static func expectRowMark(_ box: CGRect, in visible: CGRect) {
@@ -147,7 +150,6 @@ struct SettingsSearchRowEmphasisTests {
         let query = "Follow Cursor"
         // Pro, for the Video, Web and Scene sections that make Display Defaults taller than the window.
         try await Self.withSettingsWindow(featureCatalog: FeatureCatalog(capabilities: .pro)) { window, root in
-            #expect(root.isFlipped, "control: the page rect below is read top-down, as the bitmap is")
             let search = try await Self.search(query, in: window, root: root)
             #expect(search.rows == 2, "control: expected the Search Results header and one result, found \(search.rows) rows")
 

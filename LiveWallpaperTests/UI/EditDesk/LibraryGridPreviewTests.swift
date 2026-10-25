@@ -307,22 +307,28 @@ private final class GridPreviewHost {
         )
     }
 
-    /// The SwiftUI layers alone: the stage's own layers are hidden for the capture.
-    func render(_ rect: CGRect? = nil) throws -> ProbeImage {
+    /// The SwiftUI layers alone: the stage's own layers are hidden for the capture. `rect` is in the host's
+    /// coordinates; `view` draws it, nil = the host.
+    func render(_ rect: CGRect? = nil, from view: NSView? = nil) throws -> ProbeImage {
         let stageView = stage
         stageView?.isHidden = true
         defer { stageView?.isHidden = false }
         host.layoutSubtreeIfNeeded()
-        let area = rect ?? host.bounds
-        let rep = host.bitmapImageRepForCachingDisplay(in: area)
+        let source = view ?? host
+        let area = source.convert(rect ?? host.bounds, from: host)
+        let rep = source.bitmapImageRepForCachingDisplay(in: area)
         let bitmap = try #require(rep)
-        host.cacheDisplay(in: area, to: bitmap)
+        source.cacheDisplay(in: area, to: bitmap)
         let image = bitmap.cgImage
         return try ProbeImage(cgImage: #require(image), viewWidth: area.width)
     }
 
     func hue(at point: CGPoint) throws -> FrameHue {
-        let image = try render(CGRect(x: point.x.rounded(.down) - 2, y: point.y.rounded(.down) - 2, width: 4, height: 4))
+        // Drawn from the host, the tiles come out blank while the nav pill's glass selection capsule is in the window.
+        let image = try render(
+            CGRect(x: point.x.rounded(.down) - 2, y: point.y.rounded(.down) - 2, width: 4, height: 4),
+            from: #require(grid, "the library grid is not mounted")
+        )
         return FrameHue(image.rgb(px: image.width / 2, image.height / 2))
     }
 
