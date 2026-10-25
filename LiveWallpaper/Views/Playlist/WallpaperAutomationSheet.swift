@@ -340,8 +340,9 @@ struct WallpaperAutomationSheet: View {
         .onChange(of: manager.libraryShuffleDeck(for: screen)) { refreshDeck() }
         .task(id: missingArtwork.map(\.key)) {
             var loaded: [String: CGImage] = [:]
-            // The crate's centred record is the largest picture either the crate or the deck draws.
-            let pixelSize = CGSize(width: PlaylistCrate.cardSize.width * displayScale, height: PlaylistCrate.cardSize.height * displayScale)
+            // The crate's centred record at full size is the largest picture either view draws; the deck stops growing there.
+            let largest = PlaylistCrate.centeredRecordSize
+            let pixelSize = CGSize(width: largest.width * displayScale, height: largest.height * displayScale)
             for wanted in missingArtwork {
                 if let image = await thumbnails.image(wanted.request, pixelSize: pixelSize, scale: displayScale) {
                     loaded[wanted.key] = image
@@ -605,7 +606,7 @@ struct WallpaperAutomationSheet: View {
                 title: "Library Shuffle", caption: Text("\(library.items.count) wallpapers"),
                 hint: "Click the deck to draw the next wallpaper."
             ) {
-                ShrinkToFit {
+                ScaleToFit(maximumScale: PlaylistCrate.centeredRecordSize.width / ShuffleDeck.thumbnailSize.width) {
                     VStack(spacing: DesignTokens.Spacing.md) {
                         shuffleDeck
                             .disabled(savedMode != .libraryShuffle)
@@ -872,46 +873,61 @@ struct WallpaperAutomationSheet: View {
 
     private var playlistSettings: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                let stopsAtEnd = !shuffle && autoAdvance && !loops
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    Image(systemName: shuffle ? "shuffle" : stopsAtEnd ? "arrow.right" : "repeat")
-                        .font(DesignTokens.Typography.caption)
-                    Text(shuffle ? "Shuffle" : stopsAtEnd ? "Plays in order, then stops" : "Plays in order, then repeats")
-                        .font(DesignTokens.Typography.caption)
-                }
-                .foregroundStyle(.secondary)
-                .padding(.bottom, DesignTokens.Spacing.xxs)
-
-                SettingRow(icon: "arrow.triangle.2.circlepath", iconColor: DesignTokens.Colors.accent, title: "Rotate") {
-                    Picker("Rotate", selection: $rotation) {
-                        ForEach([1, 5, 15, 30, 60, 120], id: \.self) { value in
-                            Text("Every \(value) min").tag(value)
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingRow(icon: "forward.fill", iconColor: DesignTokens.Colors.accent, title: "Auto-Advance") {
+                        Toggle("Auto-Advance", isOn: $autoAdvance)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+                    HStack(spacing: DesignTokens.Spacing.sm) {
+                        Rectangle()
+                            .fill(DesignTokens.EditDesk.Colors.strokePanel)
+                            .frame(width: 1)
+                            // Centres the rule under SettingRow's 24pt icon.
+                            .padding(.leading, 11.5)
+                            .accessibilityHidden(true)
+                        SettingRow(icon: "arrow.triangle.2.circlepath", iconColor: DesignTokens.Colors.accent, title: "Rotate") {
+                            Picker("Rotate", selection: $rotation) {
+                                ForEach([1, 5, 15, 30, 60, 120], id: \.self) { value in
+                                    Text("Every \(value) min").tag(value)
+                                }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
                         }
                     }
-                    .labelsHidden()
-                    .fixedSize()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .disabled(!autoAdvance)
+                    .opacity(autoAdvance ? 1 : DesignTokens.Opacity.disabledContent)
                 }
-                .disabled(!autoAdvance)
+                .padding(.horizontal, DesignTokens.Spacing.sm)
+                .padding(.vertical, DesignTokens.Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                        .fill(DesignTokens.Colors.surfaceSunken)
+                )
 
-                SettingRow(icon: "forward.fill", iconColor: DesignTokens.Colors.accent, title: "Auto-Advance") {
-                    Toggle("Auto-Advance", isOn: $autoAdvance)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                    HStack(spacing: DesignTokens.Spacing.sm) {
+                        let loopEnabled = autoAdvance && !shuffle
+                        FilterChip(title: Text("Loop"), isSelected: loops) { loops.toggle() }
+                            .disabled(!loopEnabled)
+                            .opacity(loopEnabled ? 1 : DesignTokens.Opacity.disabledContent)
+                        FilterChip(title: Text("Shuffle"), isSelected: shuffle) { shuffle.toggle() }
+                    }
+                    if !shuffle {
+                        let stopsAtEnd = autoAdvance && !loops
+                        Label {
+                            Text(stopsAtEnd ? "Plays in order, then stops" : "Plays in order, then repeats")
+                        } icon: {
+                            Image(systemName: stopsAtEnd ? "arrow.right" : "repeat")
+                        }
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-
-                SettingRow(icon: "repeat", iconColor: DesignTokens.Colors.accent, title: "Loop") {
-                    Toggle("Loop", isOn: $loops)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-                .disabled(!autoAdvance || shuffle)
-
-                SettingRow(icon: "shuffle", iconColor: DesignTokens.Colors.accent, title: "Shuffle") {
-                    Toggle("Shuffle", isOn: $shuffle)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
+                .padding(.horizontal, DesignTokens.Spacing.sm)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
@@ -1665,15 +1681,16 @@ private struct ScheduleSlotThumbnail: View {
     }
 }
 
-/// Lays `content` out at its ideal size and scales it down, never up, until it fits the offered space.
-private struct ShrinkToFit<Content: View>: View {
+/// Lays `content` out at its ideal size and scales it to fit the offered space, up to `maximumScale`.
+private struct ScaleToFit<Content: View>: View {
+    let maximumScale: CGFloat
     @ViewBuilder let content: Content
     @State private var ideal = CGSize.zero
 
     var body: some View {
         GeometryReader { proxy in
             let scale = ideal.width > 0 && ideal.height > 0
-                ? min(1, proxy.size.width / ideal.width, proxy.size.height / ideal.height)
+                ? min(maximumScale, proxy.size.width / ideal.width, proxy.size.height / ideal.height)
                 : 1
             content
                 .fixedSize()

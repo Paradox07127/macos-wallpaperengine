@@ -20,6 +20,9 @@ struct ShuffleDeck: View {
     let onRewind: (() -> Void)?
     let onReshuffle: () -> Void
 
+    /// The face-up card's thumbnail in points, before any scaling by the caller.
+    static let thumbnailSize = CGSize(width: Layout.cardSize.width - 2 * Layout.facePadding, height: Layout.thumbnailHeight)
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var cards: [Placed]
     /// Non-nil while a draw, rewind or shuffle is still moving cards.
@@ -349,13 +352,14 @@ private struct Pose: Equatable {
         // FNV-1a over the scalars: `hashValue` is reseeded every launch, and the pile must not reshuffle with it.
         let hash = cardID.unicodeScalars.reduce(UInt32(2_166_136_261)) { ($0 ^ $1.value) &* 16_777_619 }
         let reach = Layout.pileReach
-        let tilt = Layout.pileTilt
+        let spread = Layout.pileTiltSpread
+        let magnitude = Layout.pileTiltMinimum + Double((hash >> 16) % (spread + 1)) / 10
         return Pose(
             center: CGPoint(
                 x: Layout.playingCenter.x + CGFloat(Int(hash % (2 * reach + 1)) - Int(reach)),
                 y: Layout.playingCenter.y + CGFloat(Int((hash >> 8) % (2 * reach + 1)) - Int(reach))
             ),
-            tilt: Double(Int((hash >> 16) % (2 * tilt + 1)) - Int(tilt))
+            tilt: (hash >> 28) & 1 == 0 ? magnitude : -magnitude
         )
     }
 
@@ -370,29 +374,32 @@ private struct Pose: Equatable {
 
 /// Geometry from the deck design; the deck shows cards at `deckScale` of the playing card.
 private enum Layout {
-    static let cardSize = CGSize(width: 260, height: 178)
+    static let cardSize = CGSize(width: 312, height: 212)
     static let deckScale: CGFloat = 0.62
     static let deckCardSize = CGSize(width: cardSize.width * deckScale, height: cardSize.height * deckScale)
     /// Leaves room for the split halves, the lift and the pile's tilted corners.
-    static let tableSize = CGSize(width: 530, height: 270)
-    static let deckCenter = CGPoint(x: 130, y: 119)
-    static let playingCenter = CGPoint(x: 370, y: 135)
+    static let tableSize = CGSize(width: 630, height: 320)
+    static let deckCenter = CGPoint(x: 155, y: 140)
+    static let playingCenter = CGPoint(x: 445, y: 160)
     /// Each card further down the deck sits this far right and down.
     static let layerStep: CGFloat = 2
     static let maxLayers = 8
     static let visiblePile = 4
-    /// Pile offset (pt) and tilt (degrees) bounds, each ±.
+    /// Pile offset bound in pt, ±.
     static let pileReach: UInt32 = 10
-    static let pileTilt: UInt32 = 6
-    static let liftRise: CGFloat = 26
+    /// Pile tilt in degrees runs from the minimum up by `pileTiltSpread` tenths, either way; the floor keeps
+    /// the card under the playing one showing a corner.
+    static let pileTiltMinimum: Double = 3.5
+    static let pileTiltSpread: UInt32 = 35
+    static let liftRise: CGFloat = 30
     static let liftGrowth: CGFloat = 0.04
-    static let splitReach = CGSize(width: 46, height: 30)
+    static let splitReach = CGSize(width: 55, height: 35)
     static let splitTilt: Double = 7
     static let facePadding: CGFloat = 6
     static let titleGap: CGFloat = 7
-    static let thumbnailHeight: CGFloat = 140
+    static let thumbnailHeight: CGFloat = 168
     static let stripeWidth: CGFloat = 6
-    static let emblemDiameter: CGFloat = 54
+    static let emblemDiameter: CGFloat = 62
 
     enum Z {
         static let gathered: Double = 10

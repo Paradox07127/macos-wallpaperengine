@@ -47,7 +47,6 @@ struct PlaylistCrate: View {
             let anchor = lift?.anchor ?? currentIndex
             ZStack(alignment: .topLeading) {
                 guide(fit)
-                queueEndLabels(fit)
                 if let lift {
                     dropGap(at: Self.slot(lift.target - anchor), fit: fit)
                 }
@@ -85,7 +84,8 @@ struct PlaylistCrate: View {
         let isPlaying = record.id == currentID
         let isSelected = selectedID == record.id
         let number = String(format: "%02d", position + 1)
-        let played = lifted == nil && offset != 0 && playingPosition.map { position < $0 } == true
+        // The played record next to the centre stays undimmed; earlier ones darken under an opaque scrim.
+        let dimmed = lifted == nil && offset != 0 && playingPosition.map { position < $0 - 1 } == true
         let elevation: CrateElevation = lifted != nil ? .lifted : offset == 0 ? .centered : .resting
         // Played records stack nearer the viewer the farther they sit from the centre; upcoming ones recede.
         let layer: Double = lifted != nil ? 300 : offset == 0 ? 100 : Double(50 - offset)
@@ -99,6 +99,7 @@ struct PlaylistCrate: View {
                 isPlaying: isPlaying,
                 showsNowPlaying: isPlaying && offset == 0,
                 isSelected: isSelected,
+                isDimmed: dimmed,
                 elevation: elevation,
                 tabScale: 1 / scale
             )
@@ -110,7 +111,6 @@ struct PlaylistCrate: View {
         .accessibilityValue(isPlaying ? Text("Now playing") : Text(verbatim: ""))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .crateTransform(Slot(center: center, scale: scale, tilt: slot.tilt, roll: slot.roll), fit: fit)
-        .opacity(played ? DesignTokens.PlaylistCrate.playedOpacity : 1)
         .zIndex(layer)
     }
 
@@ -176,22 +176,6 @@ struct PlaylistCrate: View {
         .accessibilityHidden(true)
     }
 
-    private func queueEndLabels(_ fit: CanvasFit) -> some View {
-        let shelf = fit.rect(Self.shelfRect)
-        return ZStack {
-            Text("Start of queue")
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            Text("End of queue")
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        }
-        .font(DesignTokens.EditDesk.Typography.metaMono)
-        .foregroundStyle(DesignTokens.Colors.textSecondary)
-        .frame(width: shelf.width, height: shelf.height)
-        .offset(x: shelf.minX, y: shelf.minY)
-        .allowsHitTesting(false)
-        .zIndex(120)
-    }
-
     private func dropGap(at slot: Slot, fit: CanvasFit) -> some View {
         let shape = RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
         return shape
@@ -218,12 +202,17 @@ extension PlaylistCrate {
         var roll: Double
     }
 
-    // Canvas units follow the design: a 992×500 shelf holding 340×191 records on a 5pt mat.
+    // Canvas units follow the design: a 992×500 shelf holding 360×202 records on a 5pt mat.
     nonisolated static let shelfRect = CGRect(x: 0, y: 0, width: 992, height: 500)
-    nonisolated static let cardSize = CGSize(width: 340, height: 191)
+    nonisolated static let cardSize = CGSize(width: 360, height: 202)
     nonisolated static let cardInset: CGFloat = 5
-    /// `rotation3DEffect` measures perspective against the card's size: the design's 1000pt eye distance over 340.
-    nonisolated static let perspective: CGFloat = 0.34
+    nonisolated static let centeredScale: CGFloat = 1.2
+    /// Largest size, in points, any record is drawn at: the centred one once the canvas reaches full size.
+    nonisolated static let centeredRecordSize = CGSize(
+        width: cardSize.width * centeredScale, height: cardSize.height * centeredScale
+    )
+    /// `rotation3DEffect` measures perspective against the card's size: the design's 1000pt eye distance.
+    nonisolated static let perspective: CGFloat = cardSize.width / 1000
     nonisolated static let hoverRise: CGFloat = 12
     nonisolated static let liftRise: CGFloat = 10
     nonisolated static let liftScale: CGFloat = 1.12
@@ -249,20 +238,20 @@ extension PlaylistCrate {
     /// Pose of the record `offset` places from the one in view: negative is played (bottom-left), positive upcoming.
     nonisolated static func slot(_ offset: Int) -> Slot {
         guard offset != 0 else {
-            return Slot(center: CGPoint(x: 500, y: 246), scale: 1, tilt: 0, roll: -1)
+            return Slot(center: CGPoint(x: 500, y: 246), scale: centeredScale, tilt: 0, roll: -1)
         }
         let steps = abs(offset)
         let run = spread(steps)
         if offset < 0 {
             return Slot(
                 center: CGPoint(x: 250 - 24 * run, y: 338 + 15 * run),
-                scale: 0.6 + 0.02 * CGFloat(min(steps - 1, 5)),
+                scale: 0.65 + 0.02 * CGFloat(min(steps - 1, 5)),
                 tilt: 18, roll: -4
             )
         }
         return Slot(
             center: CGPoint(x: 752 + 28 * run, y: 150 - 17 * run),
-            scale: 0.6 * pow(0.95, CGFloat(steps - 1)),
+            scale: 0.65 * pow(0.95, CGFloat(steps - 1)),
             tilt: -22, roll: 3
         )
     }
@@ -317,7 +306,8 @@ private struct CanvasFit {
 
     init(size: CGSize) {
         let canvas = PlaylistCrate.canvas
-        scale = max(0, min(size.width / canvas.width, size.height / canvas.height))
+        // Capped at 1 so no record outgrows `centeredRecordSize`, the size the artwork loads at.
+        scale = max(0, min(1, size.width / canvas.width, size.height / canvas.height))
         origin = CGPoint(
             x: (size.width - canvas.width * scale) / 2 - canvas.minX * scale,
             y: (size.height - canvas.height * scale) / 2 - canvas.minY * scale
@@ -326,10 +316,6 @@ private struct CanvasFit {
 
     func point(_ point: CGPoint) -> CGPoint {
         CGPoint(x: origin.x + point.x * scale, y: origin.y + point.y * scale)
-    }
-
-    func rect(_ rect: CGRect) -> CGRect {
-        CGRect(origin: point(rect.origin), size: CGSize(width: rect.width * scale, height: rect.height * scale))
     }
 }
 
@@ -372,12 +358,18 @@ private struct CrateRecordCard: View {
     let isPlaying: Bool
     let showsNowPlaying: Bool
     let isSelected: Bool
+    let isDimmed: Bool
     let elevation: CrateElevation
     /// Undoes the slot's scale so the queue tab reads at one size along the whole row.
     let tabScale: CGFloat
 
     var body: some View {
         cover
+            .overlay {
+                if isDimmed {
+                    DesignTokens.PlaylistCrate.playedScrim
+                }
+            }
             .overlay(alignment: .topLeading) {
                 if showsNowPlaying {
                     nowPlayingBadge
@@ -453,13 +445,13 @@ private struct CrateRecordCard: View {
             ? DesignTokens.Colors.accent
             : DesignTokens.Colors.textPrimary.opacity(DesignTokens.Card.strokeOpacity)
         return Text(verbatim: tab)
-            .font(DesignTokens.EditDesk.Typography.badgeMono)
+            .font(DesignTokens.PlaylistCrate.tabNumber)
             .lineLimit(1)
             .fixedSize()
             .foregroundStyle(isPlaying ? DesignTokens.Colors.onAccentFill : DesignTokens.Colors.textPrimary)
-            .padding(.horizontal, 7)
-            .padding(.top, 2)
-            .padding(.bottom, 1)
+            .padding(.horizontal, 8)
+            .padding(.top, 3)
+            .padding(.bottom, 2)
             .background(shape.fill(isPlaying ? DesignTokens.Colors.accent : DesignTokens.Colors.surfaceRaised))
             .overlay(shape.stroke(border, lineWidth: 1))
             .scaleEffect(tabScale, anchor: .bottomLeading)

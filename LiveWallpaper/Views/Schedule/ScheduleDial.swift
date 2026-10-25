@@ -116,7 +116,7 @@ struct ScheduleDial: View {
             let size = geometry.size
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
             // Hour labels and the drag capsule reach about 64pt beyond the ring.
-            let radius = max(Metrics.ringWidth, min(Metrics.ringRadius, min(size.width, size.height) / 2 - 64))
+            let radius = max(Metrics.ringWidth, min(size.width, size.height) / 2 - 64)
             ZStack {
                 Canvas { context, _ in
                     drawFace(context: &context, radius: radius, center: center)
