@@ -172,9 +172,9 @@ enum PageGuideContext: CaseIterable {
         switch self {
         case .overview:
             [
-                .init(.navigation, "Welcome to Loomscreen", "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."),
+                .init(.page, "Welcome to Loomscreen", "Thanks for downloading Loomscreen! Loomscreen is a menu bar app. Closing this window keeps wallpapers running. Click its menu bar icon and choose Manage to return. Show in Dock in General settings also makes the app available in the Dock and Command-Tab."),
                 .init(.navigation, "Find your way around", "Overview shows your displays. Wallpaper Library holds your sources; its Bookmarks filter shows the ones you marked. Schemes holds saved display setups. Settings contains app-wide preferences."),
-                .init(.display, "Choose a display", "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper. While a playlist runs, Previous and Next appear when you move the pointer over the display and in the menu bar.", footnote: Self.importHint),
+                .init(.display, "Choose a display", "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there. Point at a display to pause or resume it; while a playlist runs, Previous and Next also appear there and in the menu bar. Its context menu renames or reloads the display, applies its wallpaper to all displays, or clears it.", footnote: Self.importHint),
                 .init(.shelfHandle, "Open the wallpaper shelf", "Click Wallpaper Library at the bottom, or scroll upward, to reveal the shelf. Continue upward for the full library. You can also use the top navigation."),
                 .init(.status, "Understand playback", "The status capsule describes system load. If a wallpaper stops, check its display status and Settings › Performance for automatic pause rules. Closing this window keeps wallpapers running; the menu bar opens it again."),
             ]
@@ -232,7 +232,7 @@ enum PageGuideContext: CaseIterable {
                 .init(.overlayAdd, "Add a widget", "Choose an item in Add Widget below. Click to add it, or drag it onto the canvas; select it to edit its appearance."),
                 .init(.overlayCanvas, "Arrange and configure", "Drag an object to move it. Select it and open Settings to adjust its appearance. The layer list shows or hides individual objects; Alignment Snapping helps position them."),
                 .init(.overlayCanvas, "Preview and desktop", "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations; music needs a supported player."),
-                .init(.detailShared, "Copy or remove overlays", "Copy to Other Displays opens a target chooser. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper."),
+                .init(.detailShared, "Copy or remove overlays", "Copy to Other Displays asks for confirmation, then replaces overlays on every other connected display. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper."),
             ]
         case .automation:
             [

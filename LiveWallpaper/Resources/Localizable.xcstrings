@@ -15112,37 +15112,37 @@
         }
       }
     },
-    "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper. While a playlist runs, Previous and Next appear when you move the pointer over the display and in the menu bar." : {
+    "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there. Point at a display to pause or resume it; while a playlist runs, Previous and Next also appear there and in the menu bar. Its context menu renames or reloads the display, applies its wallpaper to all displays, or clears it." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there; use its context menu to pause or change its wallpaper. While a playlist runs, Previous and Next appear when you move the pointer over the display and in the menu bar."
+            "value" : "Click a display to open its configuration and overlay layers. Drop a file onto a display to apply it only there. Point at a display to pause or resume it; while a playlist runs, Previous and Next also appear there and in the menu bar. Its context menu renames or reloads the display, applies its wallpaper to all displays, or clears it."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Haz clic en una pantalla para abrir su configuración y superposiciones. Arrastra un archivo para aplicarlo solo allí; su menú contextual permite pausar o cambiar el fondo. Con una playlist en curso, Fondo anterior y Fondo siguiente aparecen al pasar el puntero sobre la pantalla y en la barra de menús."
+            "value" : "Haz clic en una pantalla para abrir su configuración y superposiciones. Arrastra un archivo a una pantalla para aplicarlo solo allí. Pasa el puntero sobre una pantalla para pausarla o reanudarla; con una playlist en curso, Fondo anterior y Fondo siguiente también aparecen allí y en la barra de menús. Su menú contextual permite Renombrar, Recargar, Aplicar a todas las pantallas o Quitar fondo de pantalla."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ディスプレイをクリックして設定とオーバーレイを開きます。ファイルをドロップするとそのディスプレイだけに適用します。右クリックで一時停止や変更ができます。プレイリストの再生中は、ディスプレイにポインタを重ねるかメニューバーから「前の壁紙」「次の壁紙」を選べます。"
+            "value" : "ディスプレイをクリックして設定とオーバーレイを開きます。ファイルをドロップするとそのディスプレイだけに適用します。ディスプレイにポインタを重ねると一時停止や再開ができます。プレイリストの再生中は、そこにもメニューバーにも「前の壁紙」「次の壁紙」が表示されます。右クリックメニューでは「名前を変更」「再読み込み」「すべてのディスプレイに適用」「壁紙をクリア」を選べます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击显示器打开配置层和叠加层。将文件拖到某台显示器上只会应用到该显示器；右键菜单可暂停或更换壁纸。播放列表运行时，将指针移到显示器上即可看到“上一张”和“下一张”，菜单栏中也提供这两项。"
+            "value" : "点击显示器打开配置层和叠加层。将文件拖到某台显示器上只会应用到该显示器。将指针移到显示器上可暂停或继续播放；播放列表运行时，那里还会出现“上一张”和“下一张”，菜单栏中也提供这两项。右键菜单可重命名、重新加载、应用到所有显示器或清除壁纸。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點按顯示器開啟設定層和疊加層。將檔案拖到某台顯示器上只會套用至該顯示器；右鍵選單可暫停或更換桌布。播放列表執行時，將指標移到顯示器上即可看到「上一張」和「下一張」，選單列中也提供這兩項。"
+            "value" : "點按顯示器開啟設定層和疊加層。將檔案拖到某台顯示器上只會套用至該顯示器。將指標移到顯示器上可暫停或繼續播放；播放列表執行時，那裡還會出現「上一張」和「下一張」，選單列中也提供這兩項。右鍵選單可重新命名、重新載入、套用到所有顯示器或清除桌布。"
           }
         }
       }
@@ -17646,37 +17646,37 @@
         }
       }
     },
-    "Copy to Other Displays opens a target chooser. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper." : {
+    "Copy to Other Displays asks for confirmation, then replaces overlays on every other connected display. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copy to Other Displays opens a target chooser. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper."
+            "value" : "Copy to Other Displays asks for confirmation, then replaces overlays on every other connected display. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar a otras pantallas abre el selector de destino. Quitar afecta al objeto seleccionado; Quitar todo, a las superposiciones de esta pantalla. Es distinto de quitar el fondo."
+            "value" : "Copiar a otras pantallas pide confirmación y luego reemplaza las superposiciones de todas las demás pantallas conectadas. Eliminar afecta a la superposición seleccionada; Eliminar todo, a los objetos superpuestos de esta pantalla. Estos controles son distintos de Quitar fondo de pantalla."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "他のディスプレイへコピーは対象選択を開きます。削除は選択したオーバーレイ、すべて削除はこのディスプレイの全オブジェクトに作用し、壁紙の解除とは別です。"
+            "value" : "「ほかのディスプレイにコピー」は確認のあと、接続中のほかのすべてのディスプレイのオーバーレイを置き換えます。「削除」は選択したオーバーレイ、「すべて削除」はこのディスプレイのオーバーレイオブジェクトに作用し、「壁紙をクリア」とは別の操作です。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“复制到其他显示器”可选择目标。“移除”影响所选叠加对象，“全部移除”影响当前显示器的叠加对象，与“清除壁纸”不同。"
+            "value" : "“复制到其他显示器”会先确认，再覆盖其他所有已连接显示器上的叠加层。“移除”影响所选叠加对象，“全部移除”影响当前显示器的叠加对象，与“清除壁纸”不同。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「複製到其他顯示器」可選擇目標。「移除」影響所選疊加物件，「全部移除」影響目前顯示器的疊加物件，與「清除桌布」不同。"
+            "value" : "「複製到其他顯示器」會先確認，再覆蓋其他所有已連接顯示器上的疊加層。「移除」影響所選疊加物件，「全部移除」影響目前顯示器的疊加物件，與「清除桌布」不同。"
           }
         }
       }
@@ -29244,25 +29244,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "General permite configurar el idioma, el inicio de sesión, el Dock y las transiciones y animaciones de apertura del fondo."
+            "value" : "General permite configurar Idioma, Abrir al iniciar sesión, Mostrar en el Dock, Transición de fondo y Animación de apertura."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一般設定では、言語、ログイン時の起動、Dock への表示、壁紙のトランジションと開始アニメーションを設定できます。"
+            "value" : "一般設定では、言語、「ログイン時に起動」、「Dock に表示」、「壁紙の切り替え効果」、「オープニングアニメーション」を設定できます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通用设置管理语言、登录时启动、程序坞显示，以及壁纸切换过渡和开场动画。"
+            "value" : "通用设置管理语言、登录时启动、在 Dock 中显示，以及换壁纸动画和开场动画。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一般設定管理語言、登入時啟動、Dock 顯示，以及桌布的轉場和開場動畫。"
+            "value" : "一般設定管理語言、登入時啟動、在 Dock 中顯示，以及換桌布動畫和開場動畫。"
           }
         }
       }
@@ -32205,13 +32205,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "集成设置管理天气位置和受支持的音频响应。请按所用功能的需要授予权限。"
+            "value" : "系统联动管理天气位置和受支持的音频响应。请按所用功能的需要授予权限。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "整合設定管理天氣位置和支援的音訊回應。請依所用功能的需要授予權限。"
+            "value" : "系統聯動管理天氣位置和支援的音訊回應。請依所用功能的需要授予權限。"
           }
         }
       }
@@ -50443,41 +50443,6 @@
         }
       }
     },
-    "Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualiza cada minuto las imágenes del escritorio de las pantallas activadas mientras el Mac está desbloqueado. Se conservan tras desbloquearlo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ロック解除中、対象ディスプレイのデスクトップ画像を毎分更新します。ロック解除後も残ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解锁时每分钟更新已启用显示器的 macOS 墙纸。解锁后仍会保留。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解鎖時每分鐘更新已啟用顯示器的 macOS 背景圖片。解鎖後仍會保留。"
-          }
-        }
-      }
-    },
     "Registration is pending or blocked" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -67687,7 +67652,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "感谢下载 Loomscreen！Loomscreen 常驻菜单栏，关闭此窗口后壁纸仍会继续播放。点按菜单栏图标并选择“管理”即可返回。在“通用”设置中启用“在程序坞中显示”，还可通过程序坞或 Command-Tab 切换到本应用。"
+            "value" : "感谢下载 Loomscreen！Loomscreen 常驻菜单栏，关闭此窗口后壁纸仍会继续播放。点按菜单栏图标并选择“管理”即可返回。在“通用”设置中启用“在 Dock 中显示”，还可通过 Dock 或 Command-Tab 切换到本应用。"
           }
         },
         "zh-Hant" : {
@@ -80091,6 +80056,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行中"
+          }
+        }
+      }
+    },
+    "While your Mac is unlocked, the current frame of a playing video becomes the macOS desktop picture every minute on displays with On Lock turned on. The last frame stays after you lock, pause or quit; it isn't restored automatically." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While your Mac is unlocked, the current frame of a playing video becomes the macOS desktop picture every minute on displays with On Lock turned on. The last frame stays after you lock, pause or quit; it isn't restored automatically."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mientras el Mac está desbloqueado, el fotograma actual del vídeo en reproducción se convierte cada minuto en la imagen del escritorio de macOS en las pantallas con Al bloquear activado. El último fotograma se mantiene al bloquear, pausar o salir; no se restaura automáticamente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac のロック解除中は、「ロック時」がオンのディスプレイで、再生中の動画の現在のフレームを毎分 macOS のデスクトップ画像に設定します。ロック、一時停止、終了後も最後のフレームが残り、自動では元に戻りません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 解锁时，每分钟将正在播放的视频当前帧设为 macOS 墙纸（仅限已打开“锁屏时”的显示器）。锁屏、暂停或退出后仍保留最后一帧，不会自动还原。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 解鎖時，每分鐘將正在播放的影片目前影格設為 macOS 背景圖片（僅限已開啟「鎖定時」的顯示器）。鎖定、暫停或結束後仍保留最後一個影格，不會自動還原。"
           }
         }
       }

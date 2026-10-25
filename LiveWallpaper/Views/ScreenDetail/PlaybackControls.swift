@@ -332,7 +332,7 @@ struct PlaybackControls: View {
             isOn: syncToLockScreen,
             binding: syncToLockScreenBinding,
             label: Text("Keep a video frame as the desktop picture"),
-            help: Text("Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."),
+            help: Text("While your Mac is unlocked, the current frame of a playing video becomes the macOS desktop picture every minute on displays with On Lock turned on. The last frame stays after you lock, pause or quit; it isn't restored automatically."),
             badge: lockScreenExtracted
         )
     }

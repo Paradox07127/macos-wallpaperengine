@@ -118,14 +118,14 @@ extension GeneralSettingsView {
                 icon: "lock.display",
                 iconColor: .blue,
                 title: "Keep a video frame as the desktop picture",
-                subtitle: "Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."
+                subtitle: "While your Mac is unlocked, the current frame of a playing video becomes the macOS desktop picture every minute on displays with On Lock turned on. The last frame stays after you lock, pause or quit; it isn't restored automatically."
             ) {
                 Toggle("", isOn: $preservePlaybackOnLock)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: preservePlaybackOnLock) { _, _ in updateGlobalSettings() }
                     .accessibilityLabel(Text("Keep a video frame as the desktop picture"))
-                    .accessibilityHint(Text("Refreshes enabled displays’ desktop pictures every minute while unlocked. These remain after unlock."))
+                    .accessibilityHint(Text("While your Mac is unlocked, the current frame of a playing video becomes the macOS desktop picture every minute on displays with On Lock turned on. The last frame stays after you lock, pause or quit; it isn't restored automatically."))
             }
 
             SettingRow(
