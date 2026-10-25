@@ -1069,6 +1069,7 @@ struct WallpaperAutomationCoordinatorTests {
         let first = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
         let second = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
         #expect(played() == [initialContent, first])
+        #expect(orchestrator.shuffleDecks[screen.id].played.first?.id == library[0].id)
 
         #expect(try await land { orchestrator.regressLibraryShuffle(for: screen) } == first)
         #expect(played() == [initialContent])

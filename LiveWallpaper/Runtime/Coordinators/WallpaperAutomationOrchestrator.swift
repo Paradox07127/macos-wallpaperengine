@@ -381,7 +381,14 @@ final class WallpaperAutomationOrchestrator {
         if let landed = landedLibraryEntries[screenID], landed.content == config.activeWallpaper {
             return landed
         }
-        return WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
+        // The library's own id, which exclusions and the deck's cards match on; a fresh UUID would match nothing.
+        let entries = libraryEntries()
+        let others = Set(LibraryShufflePolicy.candidates(in: entries, excluding: config.activeWallpaper, origin: config.wpeOrigin).map(\.id))
+        let match = entries.first { !others.contains($0.id) }
+        return WallpaperQueueEntry(
+            id: match?.id ?? UUID().uuidString, title: match?.resolvedEntry?.title ?? "",
+            content: config.activeWallpaper, origin: config.wpeOrigin
+        )
     }
 
     private func startAutomaticSelection(
