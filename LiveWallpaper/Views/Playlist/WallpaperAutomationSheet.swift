@@ -238,7 +238,7 @@ struct WallpaperAutomationSheet: View {
 
     static func insertedSlot(atMinute minute: Int, in slots: [ScheduleSlot]) -> ScheduleSlot? {
         let label = Preset.suggestion(forStartHour: minute / 60).labelKey
-        for length in [120, 60] {
+        for length in [120, 60, 30] {
             let end = minute + length
             let slot = ScheduleSlot(startMinute: minute, endMinute: end > 1440 ? end - 1440 : end, label: label)
             if SchedulePolicy.conflicts(slot: slot, against: slots).isEmpty {

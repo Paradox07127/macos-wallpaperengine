@@ -2127,6 +2127,13 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(inserted.startMinute == 720 && inserted.endMinute == 780)
     }
 
+    @Test("A double-click inserts half an hour where one hour does not fit")
+    func insertFallsBackToHalfHour() throws {
+        let slots = [ScheduleSlot(startHour: 6, endHour: 12, label: "Morning"), ScheduleSlot(startMinute: 750, endMinute: 1080, label: "Afternoon")]
+        let inserted = try #require(WallpaperAutomationSheet.insertedSlot(atMinute: 720, in: slots))
+        #expect(inserted.startMinute == 720 && inserted.endMinute == 750)
+    }
+
     @Test("A slot starting on the half hour stays off until its start minute, then takes the display")
     func halfHourSlotSwitchesAtItsMinute() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))

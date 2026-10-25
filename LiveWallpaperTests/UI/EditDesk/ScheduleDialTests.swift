@@ -10,35 +10,62 @@ struct ScheduleDialTests {
         let center = CGPoint(x: 200, y: 200)
         for hour in 0 ..< 24 {
             let point = ScheduleDialGeometry.point(hour: Double(hour), radius: 100, center: center)
-            #expect(ScheduleDialGeometry.hour(at: point, center: center) == hour)
+            #expect(ScheduleDialGeometry.minute(at: point, center: center) == hour * 60)
         }
         #expect(ScheduleDialGeometry.midpoint(ScheduleSlot(startHour: 22, endHour: 6, label: "Night")) == 2)
         #expect(ScheduleDialGeometry.midpoint(ScheduleSlot(startHour: 0, endHour: 24, label: "Day")) == 12)
-        let beforeBoundary = ScheduleDialGeometry.point(hour: 5.75, radius: 100, center: center)
+        let beforeBoundary = ScheduleDialGeometry.point(hour: 5.8, radius: 100, center: center)
         #expect(Int(ScheduleDialGeometry.fractionalHour(at: beforeBoundary, center: center)) == 5)
-        #expect(ScheduleDialGeometry.hour(at: beforeBoundary, center: center) == 6)
+        #expect(ScheduleDialGeometry.minute(at: beforeBoundary, center: center) == 360)
         #expect(ScheduleDialGeometry.span(ScheduleSlot(startHour: 8, endHour: 8, label: "Empty")) == 0)
     }
 
-    @Test("An edge drag keeps at least one hour and never crosses the other edge or flips across midnight")
-    func edgeDragClamp() {
-        func drag(_ start: Int, _ end: Int, movingEnd: Bool, to minute: Int) -> [Int] {
-            let minutes = ScheduleDialGeometry.draggedMinutes(ScheduleSlot(startMinute: start, endMinute: end, label: "Slot"), movingEnd: movingEnd, to: minute)
-            return [minutes.start, minutes.end]
+    @Test("A pointer angle snaps to the nearest half hour, wrapping 23:50 to midnight")
+    func pointerSnapsToHalfHour() {
+        let center = CGPoint(x: 200, y: 200)
+        func minute(_ hour: Int, _ minute: Int) -> Int {
+            let point = ScheduleDialGeometry.point(hour: Double(hour) + Double(minute) / 60, radius: 100, center: center)
+            return ScheduleDialGeometry.minute(at: point, center: center)
         }
-        #expect(drag(360, 720, movingEnd: true, to: 360) == [360, 420], "the end landed on the start")
-        #expect(drag(600, 1080, movingEnd: true, to: 540) == [600, 660], "the end crossed the start into a 23-hour wrap")
-        #expect(drag(600, 1080, movingEnd: true, to: 0) == [600, 1440])
-        #expect(drag(600, 1080, movingEnd: true, to: 120) == [600, 1440], "a drag just past midnight snapped back to the start")
-        #expect(drag(600, 1080, movingEnd: true, to: 840) == [600, 840])
-        #expect(drag(600, 1080, movingEnd: false, to: 1080) == [1020, 1080])
-        #expect(drag(600, 1080, movingEnd: false, to: 1200) == [1020, 1080])
-        #expect(drag(600, 1080, movingEnd: false, to: 1380) == [0, 1080])
-        #expect(drag(1320, 360, movingEnd: true, to: 1380) == [1320, 1440], "a wrapping slot's end crossed its start")
-        #expect(drag(1320, 360, movingEnd: true, to: 180) == [1320, 180])
-        #expect(drag(1320, 360, movingEnd: false, to: 300) == [420, 360], "a wrapping slot's start crossed its end")
-        #expect(drag(1320, 360, movingEnd: false, to: 0) == [1380, 360], "a wrapping slot's start flipped across midnight")
-        #expect(drag(1080, 0, movingEnd: false, to: 1200) == [1200, 1440])
+        #expect(minute(7, 14) == 420)
+        #expect(minute(7, 16) == 450, "07:16 snapped to the hour instead of the half hour")
+        #expect(minute(23, 50) == 0)
+    }
+
+    private func drag(_ start: Int, _ end: Int, movingEnd: Bool, to minute: Int, among others: [ScheduleSlot] = []) -> [Int] {
+        let slot = ScheduleSlot(startMinute: start, endMinute: end, label: "Slot")
+        let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: movingEnd, to: minute, among: [slot] + others)
+        return [minutes.start, minutes.end]
+    }
+
+    @Test("Either edge can be dragged across midnight to make or undo an overnight slot")
+    func edgeDragCrossesMidnight() {
+        #expect(drag(1080, 1320, movingEnd: true, to: 120) == [1080, 120], "the end could not pass midnight")
+        #expect(drag(60, 360, movingEnd: false, to: 1380) == [1380, 360], "the start could not pass midnight")
+        #expect(drag(1320, 120, movingEnd: true, to: 1380) == [1320, 1380], "dragging back did not undo the overnight slot")
+        #expect(drag(1080, 1320, movingEnd: true, to: 0) == [1080, 1440])
+    }
+
+    @Test("An edge drag keeps at least 30 minutes, choosing the shorter slot on a tie")
+    func edgeDragKeepsHalfHour() {
+        #expect(drag(420, 540, movingEnd: true, to: 420) == [420, 450], "the end landed on the start")
+        #expect(drag(420, 540, movingEnd: false, to: 540) == [510, 540], "the start landed on the end")
+    }
+
+    @Test("An edge drag stops at the neighbouring slot's edge, including across midnight")
+    func edgeDragStopsAtNeighbour() {
+        let morning = ScheduleSlot(startMinute: 360, endMinute: 720, label: "Morning")
+        let afternoon = ScheduleSlot(startMinute: 780, endMinute: 1080, label: "Afternoon")
+        #expect(drag(360, 720, movingEnd: true, to: 900, among: [afternoon]) == [360, 780], "the end ran into the next slot")
+        #expect(drag(780, 1080, movingEnd: false, to: 600, among: [morning]) == [720, 1080], "the start ran into the previous slot")
+        let night = ScheduleSlot(startMinute: 120, endMinute: 360, label: "Night")
+        #expect(drag(1200, 1380, movingEnd: true, to: 180, among: [night]) == [1200, 120], "the end ran past midnight into the next slot")
+    }
+
+    @Test("Dragging an edge of a 30-minute slot at either end of the day stays in range")
+    func halfHourSlotDrag() {
+        #expect(drag(0, 30, movingEnd: false, to: 600) == [600, 30])
+        #expect(drag(1410, 1440, movingEnd: true, to: 0) == [1410, 1440])
     }
 
     @Test("Callout lanes never overlap or clip, including clustered sections and compact overflow selection")

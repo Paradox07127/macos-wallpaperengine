@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Midnight is at the top, noon at the bottom; angles are clockwise over a full day.
 enum ScheduleDialGeometry {
-    static func hour(at point: CGPoint, center: CGPoint) -> Int {
-        Int(fractionalHour(at: point, center: center).rounded()) % 24
+    /// Nearest half hour, 0..<1440.
+    static func minute(at point: CGPoint, center: CGPoint) -> Int {
+        Int((fractionalHour(at: point, center: center) * 2).rounded()) * 30 % 1440
     }
 
     static func fractionalHour(at point: CGPoint, center: CGPoint) -> Double {
@@ -26,27 +27,36 @@ enum ScheduleDialGeometry {
         return Double(minutes) / 60
     }
 
-    /// Minutes after dragging one edge to `minute`: at least one hour long, never past the other edge, and wrapping only if it already wrapped.
-    static func draggedMinutes(_ slot: ScheduleSlot, movingEnd: Bool, to minute: Int) -> (start: Int, end: Int) {
+    /// Minutes after dragging one edge to `minute`: at least 30 minutes long, free to cross midnight, and stopped at a neighbouring slot's edge.
+    static func draggedMinutes(_ slot: ScheduleSlot, movingEnd: Bool, to minute: Int, among slots: [ScheduleSlot]) -> (start: Int, end: Int) {
         let start = slot.startMinute
-        let end = slot.endMinute == 0 ? 1440 : slot.endMinute
-        let wraps = start > end
-        let bounds = switch (movingEnd, wraps) {
-        case (false, false): (0, end - 60)
-        case (false, true): (end + 60, 1440 - 60)
-        case (true, false): (start + 60, 1440)
-        case (true, true): (0, start - 60)
-        }
-        // The dial reports an angle, not a delta: outside the range, snap to whichever bound is nearer around the circle.
-        let distance = { (bound: Int) in min(abs(minute - bound) % 1440, 1440 - abs(minute - bound) % 1440) }
-        let clamped = if (bounds.0 ... bounds.1).contains(minute) {
-            minute
-        } else if (bounds.0 ... bounds.1).contains(minute + 1440) {
-            minute + 1440
+        let length = (slot.endMinute % 1440 - start + 1440) % 1440
+        // Unwrapped end, so the movable range below is one contiguous interval even across midnight.
+        let end = start + (length == 0 ? 1440 : length)
+        let others = slots.filter { $0.id != slot.id && $0.startMinute != $0.endMinute }
+        let lo: Int, hi: Int, target: Int
+        if movingEnd {
+            let gap = others.map { ($0.startMinute - start + 1440) % 1440 }.filter { $0 > 0 }.min()
+            lo = start + 30
+            hi = start + (gap ?? 1410)
+            target = start + (minute - start + 1440) % 1440
         } else {
-            distance(bounds.0) <= distance(bounds.1) ? bounds.0 : bounds.1
+            let gap = others.map { (end - $0.endMinute % 1440 + 1440) % 1440 }.filter { $0 > 0 }.min()
+            lo = end - (gap ?? 1410)
+            hi = end - 30
+            target = end - (end - minute + 1440) % 1440
         }
-        return movingEnd ? (start, clamped == 0 ? 1440 : clamped) : (clamped, end)
+        guard lo <= hi else { return (slot.startMinute, slot.endMinute) }
+        // The dial reports an angle, not a delta: outside the range, snap to whichever bound is nearer around the circle.
+        let distance = { (bound: Int) in min(abs(target - bound) % 1440, 1440 - abs(target - bound) % 1440) }
+        let clamped = if (lo ... hi).contains(target) {
+            target
+        } else if distance(lo) == distance(hi) {
+            movingEnd ? lo : hi
+        } else {
+            distance(lo) < distance(hi) ? lo : hi
+        }
+        return movingEnd ? (start, clamped % 1440 == 0 ? 1440 : clamped % 1440) : ((clamped % 1440 + 1440) % 1440, slot.endMinute)
     }
 
     static func midpoint(_ slot: ScheduleSlot) -> Double {
@@ -134,7 +144,7 @@ struct ScheduleDial: View {
     /// Minute of the day of the empty spot that was double-clicked.
     let onInsert: (Int) -> Void
     var thumbnail: (ScheduleSlot) -> AnyView = { _ in AnyView(Image(systemName: "photo")) }
-    @State private var draggedMinutes: (id: UUID, start: Int, end: Int)?
+    @State private var draggedMinutes: (id: UUID, movingEnd: Bool, start: Int, end: Int)?
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var scheme
 
@@ -168,9 +178,9 @@ struct ScheduleDial: View {
                 .onTapGesture { point in select(at: point, center: center, radius: radius) }
                 .onTapGesture(count: 2) { point in
                     guard abs(hypot(point.x - center.x, point.y - center.y) - radius) < 22 else { return }
-                    let hour = Int(ScheduleDialGeometry.fractionalHour(at: point, center: center))
-                    if !slots.contains(where: { $0.containsMinute(hour * 60) }) {
-                        onInsert(hour * 60)
+                    let minute = Int(ScheduleDialGeometry.fractionalHour(at: point, center: center) * 2) * 30
+                    if !slots.contains(where: { $0.containsMinute(minute) }) {
+                        onInsert(minute)
                     }
                 }
                 .accessibilityHidden(true)
@@ -203,8 +213,8 @@ struct ScheduleDial: View {
 
     private func select(at point: CGPoint, center: CGPoint, radius: Double) {
         guard abs(hypot(point.x - center.x, point.y - center.y) - radius) < 22 else { return }
-        let hour = Int(ScheduleDialGeometry.fractionalHour(at: point, center: center))
-        selectedID = slots.first { $0.containsMinute(hour * 60) }?.id
+        let minute = Int(ScheduleDialGeometry.fractionalHour(at: point, center: center) * 60)
+        selectedID = slots.first { $0.containsMinute(minute) }?.id
     }
 
     private func arc(_ slot: ScheduleSlot, radius: Double, center: CGPoint) -> Path {
@@ -235,8 +245,7 @@ struct ScheduleDial: View {
         }
         for slot in slots {
             let visible = shown(slot)
-            let conflict = draggedMinutes?.id == slot.id && SchedulePolicy.firstProblem(in: slots.map { $0.id == slot.id ? visible : $0 }) != nil
-            let tint = conflict ? Color.red : color(slot)
+            let tint = color(slot)
             let shading = GraphicsContext.Shading.linearGradient(Gradient(colors: [tint, tint.opacity(scheme == .light ? 1 : 0.88)]),
                                                                  startPoint: CGPoint(x: center.x, y: center.y - radius), endPoint: CGPoint(x: center.x, y: center.y + radius))
             if slots.count >= 12 {
@@ -347,7 +356,7 @@ struct ScheduleDial: View {
                         Text(verbatim: slot.wallpaper?.displayTitle ?? slot.localizedLabel)
                             .font(DesignTokens.Typography.captionEmphasized).lineLimit(1)
                     }
-                    Text(verbatim: slot.rangeText(compact: compact)).font(DesignTokens.Typography.caption).monospacedDigit()
+                    Text(verbatim: shown(slot).rangeText(compact: compact)).font(DesignTokens.Typography.caption).monospacedDigit()
                         .foregroundStyle(selected ? .primary : .secondary).lineLimit(1).minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 0)
@@ -363,20 +372,38 @@ struct ScheduleDial: View {
 
     private func edgeHandle(_ slot: ScheduleSlot, end: Bool, radius: Double, center: CGPoint) -> some View {
         let visible = shown(slot)
-        return Circle().fill(DesignTokens.Colors.pageBackground).frame(width: 9, height: 9)
-            .overlay(Circle().stroke(color(slot), lineWidth: 2))
-            .frame(width: 28, height: 28).contentShape(Circle())
-            .position(ScheduleDialGeometry.point(hour: Double(end ? visible.endMinute : visible.startMinute) / 60, radius: radius, center: center))
-            .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("schedule-dial")).onChanged { value in
-                let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: end, to: ScheduleDialGeometry.hour(at: value.location, center: center) * 60)
-                draggedMinutes = (slot.id, minutes.start, minutes.end)
-            }.onEnded { _ in
-                if let drag = draggedMinutes {
-                    onRetimed(drag.id, drag.start, drag.end)
-                }
-                draggedMinutes = nil
-            })
-            .accessibilityHidden(true)
+        let minute = end ? visible.endMinute : visible.startMinute
+        let dragging = draggedMinutes.map { $0.id == slot.id && $0.movingEnd == end } ?? false
+        return ZStack {
+            Circle().fill(DesignTokens.Colors.pageBackground).frame(width: 9, height: 9)
+                .overlay(Circle().stroke(color(slot), lineWidth: 2))
+                .frame(width: 28, height: 28).contentShape(Circle())
+                .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: radius, center: center))
+                .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("schedule-dial")).onChanged { value in
+                    let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: end, to: ScheduleDialGeometry.minute(at: value.location, center: center), among: slots)
+                    let next = (id: slot.id, movingEnd: end, start: minutes.start, end: minutes.end)
+                    if let previous = draggedMinutes {
+                        guard previous != next else { return }
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                    }
+                    draggedMinutes = next
+                }.onEnded { _ in
+                    if let drag = draggedMinutes {
+                        onRetimed(drag.id, drag.start, drag.end)
+                    }
+                    draggedMinutes = nil
+                })
+            if dragging {
+                Text(verbatim: ScheduleSlot.clockText(minute: end && minute == 0 ? 1440 : minute))
+                    .font(DesignTokens.Typography.captionEmphasized).monospacedDigit()
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .adaptiveGlassSurface(.capsule, interactive: false)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: radius + 22, center: center))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
