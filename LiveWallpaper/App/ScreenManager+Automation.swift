@@ -148,7 +148,7 @@ extension ScreenManager {
     func updateWallpaperAutomation(
         queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
         rotationMinutes: Int?, autoAdvance: Bool, loops: Bool,
-        shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil,
+        shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil, libraryShuffleExcludedIDs: [String]? = nil,
         previewedEntryID: WallpaperQueueEntry.ID? = nil, for screen: Screen
     ) {
         guard !isTerminating else { return }
@@ -156,7 +156,7 @@ extension ScreenManager {
             queue: queue, slots: slots, fallback: fallback, mode: mode, rotationMinutes: rotationMinutes,
             autoAdvance: autoAdvance, loops: loops,
             shuffle: shuffle, libraryShuffleRotationMinutes: libraryShuffleRotationMinutes,
-            previewedEntryID: previewedEntryID, for: screen
+            libraryShuffleExcludedIDs: libraryShuffleExcludedIDs, previewedEntryID: previewedEntryID, for: screen
         )
     }
 

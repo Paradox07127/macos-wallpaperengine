@@ -141,7 +141,10 @@ final class WallpaperAutomationOrchestrator {
             source = .playlist
         case .libraryShuffle:
             // Resolved up front: `isDeleted` cannot outlive this call, so it cannot run inside the selection loop.
-            candidates = LibraryShufflePolicy.candidates(in: libraryEntries(), excluding: config.activeWallpaper, origin: config.wpeOrigin)
+            candidates = LibraryShufflePolicy.candidates(
+                in: libraryEntries(), excluding: config.activeWallpaper, origin: config.wpeOrigin,
+                excludedIDs: Set(config.libraryShuffleExcludedIDs)
+            )
                 .compactMap { $0.resolve() }.filter { !isDeleted($0) }.shuffled().map { ($0, nil) }
             source = .libraryShuffle
         case .schedule:
@@ -175,7 +178,7 @@ final class WallpaperAutomationOrchestrator {
     func updateAutomation(
         queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
         rotationMinutes: Int?, autoAdvance: Bool = true, loops: Bool = true,
-        shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil,
+        shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil, libraryShuffleExcludedIDs: [String]? = nil,
         previewedEntryID: WallpaperQueueEntry.ID? = nil, for screen: Screen
     ) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
@@ -207,6 +210,10 @@ final class WallpaperAutomationOrchestrator {
         config.shufflePlaylist = shuffle
         if let libraryShuffleRotationMinutes {
             config.libraryShuffleRotationMinutes = max(1, libraryShuffleRotationMinutes)
+        }
+        if let libraryShuffleExcludedIDs {
+            var seenExcluded: Set<String> = []
+            config.libraryShuffleExcludedIDs = libraryShuffleExcludedIDs.filter { seenExcluded.insert($0).inserted }
         }
         cancelAutomaticSelection(for: screen.id)
         saveConfiguration(config)
@@ -264,7 +271,10 @@ final class WallpaperAutomationOrchestrator {
         guard !isSuspendedForUserAbsence,
               let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.wallpaperMode == .libraryShuffle else { return }
-        let candidates = LibraryShufflePolicy.candidates(in: libraryEntries(), excluding: config.activeWallpaper, origin: config.wpeOrigin)
+        let candidates = LibraryShufflePolicy.candidates(
+            in: libraryEntries(), excluding: config.activeWallpaper, origin: config.wpeOrigin,
+            excludedIDs: Set(config.libraryShuffleExcludedIDs)
+        )
         startAutomaticSelection(candidates.shuffled().map { ($0, nil) }, source: .libraryShuffle, for: screen)
     }
 

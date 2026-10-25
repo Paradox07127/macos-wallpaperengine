@@ -346,6 +346,56 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
+    @Test("Library shuffle only tries the candidate outside the display's exclusion list")
+    func libraryShuffleSkipsExcludedCandidates() async throws {
+        let entries = ["a", "b", "c"].map {
+            WallpaperQueueEntry(id: "bookmark:\($0)", title: $0, content: .html(source: .inline($0), config: .default))
+        }
+        try await Self.runWithHTMLConfiguration { manager, screen in
+            var config = try #require(manager.getConfiguration(for: screen))
+            config.wallpaperMode = .libraryShuffle
+            config.libraryShuffleExcludedIDs = ["bookmark:a", "bookmark:c"]
+            manager.configurationStore.save(config)
+            var tried: [WallpaperContent] = []
+            manager.automationOrchestrator = WallpaperAutomationOrchestrator(
+                configurationStore: manager.configurationStore, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+                saveConfiguration: { manager.configurationStore.save($0) }, restoreProposedConfiguration: { _, _ in },
+                bumpTransition: { manager.bumpTransition(for: $0) },
+                isCurrentTransition: { manager.isCurrentTransition($0, for: $1) },
+                prepareAutomation: { _, proposed, _, _ in
+                    tried.append(proposed.activeWallpaper)
+                    return .failed
+                },
+                libraryEntries: { entries.map(LibraryShuffleCandidate.init) },
+                libraryEntryAvailable: { _ in true }
+            )
+            manager.automationOrchestrator.advanceLibraryShuffle(for: screen)
+            for _ in 0 ..< 200 where manager.getConfiguration(for: screen)?.automationFailures.isEmpty != false {
+                await Task.yield()
+            }
+            for _ in 0 ..< 100 {
+                await Task.yield()
+            }
+            #expect(!tried.isEmpty)
+            #expect(tried.allSatisfy { $0 == entries[1].content }, "tried \(tried)")
+        }
+    }
+
+    @Test("Saving automation stores the exclusion list deduplicated and nil keeps it")
+    func updateAutomationStoresLibraryShuffleExclusions() async throws {
+        try await Self.runWithHTMLConfiguration { manager, screen in
+            manager.updateWallpaperAutomation(
+                queue: [], slots: [], mode: .playlist, rotationMinutes: nil, autoAdvance: true, loops: true, shuffle: false,
+                libraryShuffleExcludedIDs: ["bookmark:b", "workshop:1", "bookmark:b"], for: screen
+            )
+            #expect(manager.getConfiguration(for: screen)?.libraryShuffleExcludedIDs == ["bookmark:b", "workshop:1"])
+            manager.updateWallpaperAutomation(
+                queue: [], slots: [], mode: .playlist, rotationMinutes: nil, autoAdvance: true, loops: true, shuffle: false, for: screen
+            )
+            #expect(manager.getConfiguration(for: screen)?.libraryShuffleExcludedIDs == ["bookmark:b", "workshop:1"])
+        }
+    }
+
     // MARK: - PlaybackTransitionRegistry
 
     @Test("bumpTransition starts at 1 and increments monotonically per screen")

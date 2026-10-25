@@ -79,7 +79,8 @@ enum LibraryShufflePolicy {
 
     /// `origin` is the showing wallpaper's Workshop origin; it identifies a showing Workshop video or web page.
     static func candidates(
-        in entries: [LibraryShuffleCandidate], excluding current: WallpaperContent, origin: WPEOrigin?
+        in entries: [LibraryShuffleCandidate], excluding current: WallpaperContent, origin: WPEOrigin?,
+        excludedIDs: Set<String> = []
     ) -> [LibraryShuffleCandidate] {
         let currentWorkshopID: String? = if case let .scene(descriptor) = current {
             descriptor.workshopID
@@ -88,7 +89,7 @@ enum LibraryShufflePolicy {
         }
         var seen: Set<WallpaperQueueEntry.ID> = []
         return entries.filter { candidate in
-            guard seen.insert(candidate.id).inserted else { return false }
+            guard !excludedIDs.contains(candidate.id), seen.insert(candidate.id).inserted else { return false }
             if let entry = candidate.resolvedEntry {
                 return !SchedulePolicy.isSameContent(entry.content, current)
             }

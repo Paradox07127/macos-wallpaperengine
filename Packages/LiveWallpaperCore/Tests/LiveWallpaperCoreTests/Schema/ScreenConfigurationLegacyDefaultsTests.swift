@@ -66,4 +66,25 @@ struct ScreenConfigurationLegacyDefaultsTests {
         let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: data)
         #expect(decoded.frameRateLimit == .matchDisplay)
     }
+
+    @Test("A stored config with no library shuffle exclusions decodes an empty list")
+    func missingLibraryShuffleExclusionsDecodeEmpty() throws {
+        let data = try JSONEncoder().encode(ScreenConfiguration(screenID: 4, wallpaper: .video(bookmarkData: Data([1]))))
+        let json = try JSONSerialization.jsonObject(with: data)
+        var object = try #require(json as? [String: Any])
+        object.removeValue(forKey: "libraryShuffleExcludedIDs")
+        let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded.libraryShuffleExcludedIDs.isEmpty)
+    }
+
+    @Test("Library shuffle exclusions round-trip and an empty list writes no key")
+    func libraryShuffleExclusionsRoundTrip() throws {
+        var configuration = ScreenConfiguration(screenID: 4, wallpaper: .video(bookmarkData: Data([1])))
+        let emptyJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
+        #expect((emptyJSON as? [String: Any])?["libraryShuffleExcludedIDs"] == nil)
+
+        configuration.libraryShuffleExcludedIDs = ["workshop:1", "bookmark:2", "aerial:/a.mov"]
+        let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: JSONEncoder().encode(configuration))
+        #expect(decoded.libraryShuffleExcludedIDs == ["workshop:1", "bookmark:2", "aerial:/a.mov"])
+    }
 }

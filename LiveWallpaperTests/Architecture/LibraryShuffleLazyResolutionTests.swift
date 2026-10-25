@@ -81,6 +81,22 @@ struct LibraryShuffleLazyResolutionTests {
         #expect(byOrigin.map(\.id) == ["workshop:\(items[0].id)", "workshop:\(items[1].id)"])
         #expect(resolutions == 0)
     }
+
+    @Test("Excluded ids are dropped whether or not the candidate is resolved")
+    func dropsExcludedResolvedAndUnresolvedCandidates() {
+        let items = Self.history(2)
+        let workshop = LibraryShufflePolicy.workshopCandidates(in: items) { Self.content(for: $0) }
+        let bookmarks = ["kept", "excluded"].map { name in
+            LibraryShuffleCandidate(WallpaperQueueEntry(id: "bookmark:\(name)", title: name, content: .html(source: .inline(name), config: .default)))
+        }
+
+        let remaining = LibraryShufflePolicy.candidates(
+            in: workshop + bookmarks, excluding: .video(bookmarkData: Data([9])), origin: nil,
+            excludedIDs: ["workshop:\(items[1].id)", "bookmark:excluded"]
+        )
+
+        #expect(remaining.map(\.id) == ["workshop:\(items[0].id)", "bookmark:kept"])
+    }
 }
 
 @MainActor

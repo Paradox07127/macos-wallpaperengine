@@ -27,6 +27,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var playlistBookmarks: [Data]?
     public var wallpaperQueue: [WallpaperQueueEntry]?
     public var automationFailures: [String: WallpaperAutomationFailure] = [:]
+    /// `LibraryItem.id`s that library shuffle never picks on this display.
+    public var libraryShuffleExcludedIDs: [String] = []
     public var scheduleFallback: WallpaperQueueEntry?
     /// Until this instant the daily schedule leaves the content alone; nil = not reconciled yet.
     public var scheduleSettledUntil: Date?
@@ -76,6 +78,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case playlistBookmarks
         case wallpaperQueue
         case automationFailures
+        case libraryShuffleExcludedIDs
         case scheduleFallback
         case scheduleSettledUntil
         case shufflePlaylist
@@ -261,6 +264,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         sceneClickCaptureEnabled = try c.decodeIfPresent(Bool.self, forKey: .sceneClickCaptureEnabled) ?? true
 
         automationFailures = try c.decodeIfPresent([String: WallpaperAutomationFailure].self, forKey: .automationFailures) ?? [:]
+        libraryShuffleExcludedIDs = try c.decodeIfPresent([String].self, forKey: .libraryShuffleExcludedIDs) ?? []
         wallpaperMode = try c.decodeIfPresent(WallpaperMode.self, forKey: .wallpaperMode) ?? .playlist
         libraryShuffleRotationMinutes = try max(1, c.decodeIfPresent(Int.self, forKey: .libraryShuffleRotationMinutes) ?? 15)
 
@@ -322,6 +326,9 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encodeIfPresent(wallpaperQueue, forKey: .wallpaperQueue)
         if !automationFailures.isEmpty {
             try c.encode(automationFailures, forKey: .automationFailures)
+        }
+        if !libraryShuffleExcludedIDs.isEmpty {
+            try c.encode(libraryShuffleExcludedIDs, forKey: .libraryShuffleExcludedIDs)
         }
         try c.encodeIfPresent(scheduleFallback, forKey: .scheduleFallback)
         try c.encodeIfPresent(scheduleSettledUntil, forKey: .scheduleSettledUntil)
