@@ -1402,7 +1402,10 @@ struct WallpaperAutomationSheet: View {
                 }
             },
             thumbnail: { slot in
-                AnyView(ScheduleSlotThumbnail(entry: slot.wallpaper, thumbnails: thumbnails) { slot.wallpaper.map(thumbnailRequest) })
+                // The centre circle grows with the window: 0.8 × (half the dial's short side − 64), so 360pt holds up to a 1028pt dial.
+                AnyView(ScheduleSlotThumbnail(entry: slot.wallpaper, thumbnails: thumbnails, pointSize: CGSize(width: 360, height: 360)) {
+                    slot.wallpaper.map(thumbnailRequest)
+                })
             },
             nowPlayingTitle: dialNowPlayingTitle(now: now),
             fallbackTitle: dialFallbackTitle
@@ -1715,6 +1718,7 @@ private struct QueueEntryLabel: View {
 private struct ScheduleSlotThumbnail: View {
     let entry: WallpaperQueueEntry?
     let thumbnails: ShelfThumbnailCache
+    var pointSize = CGSize(width: 92, height: 60)
     let request: () -> ShelfThumbnailCache.Request?
     @State private var image: CGImage?
     @Environment(\.displayScale) private var scale
@@ -1728,7 +1732,7 @@ private struct ScheduleSlotThumbnail: View {
             }
         }.task(id: entry?.id) {
             guard let request = request() else { image = nil; return }
-            image = await thumbnails.image(request, pixelSize: CGSize(width: 92 * scale, height: 60 * scale), scale: scale)
+            image = await thumbnails.image(request, pixelSize: CGSize(width: pointSize.width * scale, height: pointSize.height * scale), scale: scale)
         }
     }
 }
