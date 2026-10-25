@@ -34,7 +34,7 @@ struct ScheduleDialTests {
 
     private func drag(_ start: Int, _ end: Int, movingEnd: Bool, to minute: Int, among others: [ScheduleSlot] = []) -> [Int] {
         let slot = ScheduleSlot(startMinute: start, endMinute: end, label: "Slot")
-        let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: movingEnd, to: minute, among: [slot] + others)
+        let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: movingEnd, pointer: nil, to: minute, among: [slot] + others)
         return [minutes.start, minutes.end]
     }
 
@@ -62,9 +62,23 @@ struct ScheduleDialTests {
         #expect(drag(1200, 1380, movingEnd: true, to: 180, among: [night]) == [1200, 120], "the end ran past midnight into the next slot")
     }
 
+    @Test("A clamped edge stays put while the pointer keeps going, and follows again once it comes back")
+    func clampedEdgeDoesNotJump() {
+        let slot = ScheduleSlot(startMinute: 600, endMinute: 1080, label: "Slot")
+        var pointer: Int?
+        var edges: [Int] = []
+        for minute in [840, 600, 570, 540, 900] {
+            let moved = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: true, pointer: pointer, to: minute, among: [slot])
+            pointer = moved.pointer
+            edges.append(contentsOf: [moved.start, moved.end])
+        }
+        #expect(edges[4 ..< 8] == [600, 630, 600, 630], "the end jumped across its own start into a 23-hour slot")
+        #expect(edges[8 ..< 10] == [600, 900])
+    }
+
     @Test("Dragging an edge of a 30-minute slot at either end of the day stays in range")
     func halfHourSlotDrag() {
-        #expect(drag(0, 30, movingEnd: false, to: 600) == [600, 30])
+        #expect(drag(0, 30, movingEnd: false, to: 600) == [0, 30], "the start passed its own end")
         #expect(drag(1410, 1440, movingEnd: true, to: 0) == [1410, 1440])
     }
 

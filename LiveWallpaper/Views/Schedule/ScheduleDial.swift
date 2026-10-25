@@ -27,36 +27,33 @@ enum ScheduleDialGeometry {
         return Double(minutes) / 60
     }
 
-    /// Minutes after dragging one edge to `minute`: at least 30 minutes long, free to cross midnight, and stopped at a neighbouring slot's edge.
-    static func draggedMinutes(_ slot: ScheduleSlot, movingEnd: Bool, to minute: Int, among slots: [ScheduleSlot]) -> (start: Int, end: Int) {
+    /// Edges after the pointer moves to `minute`: at least 30 minutes long, free to cross midnight, and stopped at a neighbouring slot's edge.
+    /// `pointer` is the unwrapped pointer this drag's previous call returned; nil on its first event.
+    static func draggedMinutes(_ slot: ScheduleSlot, movingEnd: Bool, pointer: Int?, to minute: Int, among slots: [ScheduleSlot]) -> (start: Int, end: Int, pointer: Int) {
         let start = slot.startMinute
         let length = (slot.endMinute % 1440 - start + 1440) % 1440
         // Unwrapped end, so the movable range below is one contiguous interval even across midnight.
         let end = start + (length == 0 ? 1440 : length)
         let others = slots.filter { $0.id != slot.id && $0.startMinute != $0.endMinute }
-        let lo: Int, hi: Int, target: Int
+        let lo: Int, hi: Int
         if movingEnd {
             let gap = others.map { ($0.startMinute - start + 1440) % 1440 }.filter { $0 > 0 }.min()
             lo = start + 30
             hi = start + (gap ?? 1410)
-            target = start + (minute - start + 1440) % 1440
         } else {
             let gap = others.map { (end - $0.endMinute % 1440 + 1440) % 1440 }.filter { $0 > 0 }.min()
             lo = end - (gap ?? 1410)
             hi = end - 30
-            target = end - (end - minute + 1440) % 1440
         }
-        guard lo <= hi else { return (slot.startMinute, slot.endMinute) }
-        // The dial reports an angle, not a delta: outside the range, snap to whichever bound is nearer around the circle.
-        let distance = { (bound: Int) in min(abs(target - bound) % 1440, 1440 - abs(target - bound) % 1440) }
-        let clamped = if (lo ... hi).contains(target) {
-            target
-        } else if distance(lo) == distance(hi) {
-            movingEnd ? lo : hi
-        } else {
-            distance(lo) < distance(hi) ? lo : hi
-        }
-        return movingEnd ? (start, clamped % 1440 == 0 ? 1440 : clamped % 1440) : ((clamped % 1440 + 1440) % 1440, slot.endMinute)
+        let previous = pointer ?? (movingEnd ? end : start)
+        // The dial reports an angle, not a delta: adding the shortest step (-720..<720) keeps the pointer unwrapped,
+        // so a clamped edge stays put instead of jumping to the far bound when the pointer passes behind it.
+        let moved = previous + ((minute - previous) % 1440 + 2160) % 1440 - 720
+        guard lo <= hi else { return (slot.startMinute, slot.endMinute, moved) }
+        let clamped = min(max(moved, lo), hi)
+        return movingEnd
+            ? (start, clamped % 1440 == 0 ? 1440 : clamped % 1440, moved)
+            : ((clamped % 1440 + 1440) % 1440, slot.endMinute, moved)
     }
 
     static func midpoint(_ slot: ScheduleSlot) -> Double {
@@ -144,7 +141,7 @@ struct ScheduleDial: View {
     /// Minute of the day of the empty spot that was double-clicked.
     let onInsert: (Int) -> Void
     var thumbnail: (ScheduleSlot) -> AnyView = { _ in AnyView(Image(systemName: "photo")) }
-    @State private var draggedMinutes: (id: UUID, movingEnd: Bool, start: Int, end: Int)?
+    @State private var draggedMinutes: (id: UUID, movingEnd: Bool, start: Int, end: Int, pointer: Int)?
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var scheme
 
@@ -380,13 +377,12 @@ struct ScheduleDial: View {
                 .frame(width: 28, height: 28).contentShape(Circle())
                 .position(ScheduleDialGeometry.point(hour: Double(minute) / 60, radius: radius, center: center))
                 .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("schedule-dial")).onChanged { value in
-                    let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: end, to: ScheduleDialGeometry.minute(at: value.location, center: center), among: slots)
-                    let next = (id: slot.id, movingEnd: end, start: minutes.start, end: minutes.end)
-                    if let previous = draggedMinutes {
-                        guard previous != next else { return }
+                    let previous = draggedMinutes.flatMap { $0.id == slot.id && $0.movingEnd == end ? $0 : nil }
+                    let minutes = ScheduleDialGeometry.draggedMinutes(slot, movingEnd: end, pointer: previous?.pointer, to: ScheduleDialGeometry.minute(at: value.location, center: center), among: slots)
+                    if let previous, (previous.start, previous.end) != (minutes.start, minutes.end) {
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                     }
-                    draggedMinutes = next
+                    draggedMinutes = (slot.id, end, minutes.start, minutes.end, minutes.pointer)
                 }.onEnded { _ in
                     if let drag = draggedMinutes {
                         onRetimed(drag.id, drag.start, drag.end)
