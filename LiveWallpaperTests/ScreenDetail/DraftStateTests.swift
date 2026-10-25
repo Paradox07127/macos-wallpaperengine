@@ -58,6 +58,8 @@ struct DraftStateTests {
             playlistBookmarks: playlistBookmarks,
             shufflePlaylist: true,
             playlistRotationMinutes: 15,
+            playlistAutoAdvance: false,
+            playlistLoops: false,
             setAsLockScreen: true
         )
         config.wallpaperMode = .schedule
@@ -87,6 +89,8 @@ struct DraftStateTests {
         #expect(draft.playlistBookmarks == playlistBookmarks)
         #expect(draft.shufflePlaylist == true)
         #expect(draft.playlistRotationMinutes == 15)
+        #expect(draft.playlistAutoAdvance == false)
+        #expect(draft.playlistLoops == false)
         #expect(draft.scheduleSlots == scheduleSlots)
         #expect(draft.videoMuted == false)
         #expect(draft.videoVolume == 0.4)

@@ -16,6 +16,8 @@ struct DraftState: Sendable, Equatable {
     var playlistBookmarks: [Data]
     var shufflePlaylist: Bool
     var playlistRotationMinutes: Int?
+    var playlistAutoAdvance: Bool
+    var playlistLoops: Bool
     var scheduleSlots: [ScheduleSlot]
     var videoMuted: Bool
     var videoVolume: Double
@@ -46,6 +48,8 @@ struct DraftState: Sendable, Equatable {
         playlistBookmarks: [],
         shufflePlaylist: false,
         playlistRotationMinutes: nil,
+        playlistAutoAdvance: true,
+        playlistLoops: true,
         scheduleSlots: [],
         videoMuted: true,
         videoVolume: 1.0,
@@ -99,6 +103,8 @@ struct DraftState: Sendable, Equatable {
             playlistBookmarks: config.playlistBookmarks ?? [],
             shufflePlaylist: config.shufflePlaylist,
             playlistRotationMinutes: config.playlistRotationMinutes,
+            playlistAutoAdvance: config.playlistAutoAdvance,
+            playlistLoops: config.playlistLoops,
             scheduleSlots: config.scheduleSlots ?? [],
             videoMuted: config.muted,
             videoVolume: config.videoVolume,

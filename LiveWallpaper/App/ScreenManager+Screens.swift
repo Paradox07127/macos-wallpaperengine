@@ -456,7 +456,8 @@ extension ScreenManager {
         return config.effectConfig != .default
             || config.scheduleSlots != nil
             || config.shufflePlaylist
-            || config.playlistRotationMinutes != nil
+            || config.playlistRotationMinutes.map { $0 != ScreenConfiguration.defaultPlaylistRotationMinutes } ?? false
+            || !config.playlistAutoAdvance || !config.playlistLoops
             || config.setAsLockScreen
             || config.wallpaperMode != .playlist
     }
@@ -489,6 +490,8 @@ extension ScreenManager {
         config.scheduleFallback = nil
         config.shufflePlaylist = false
         config.playlistRotationMinutes = nil
+        config.playlistAutoAdvance = true
+        config.playlistLoops = true
         config.setAsLockScreen = false
         config.wallpaperMode = .playlist
         config.savedHTMLConfig = Self.resetHTMLConfig(keepingOriginOf: config.savedHTMLConfig)

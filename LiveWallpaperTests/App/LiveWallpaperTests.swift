@@ -671,7 +671,9 @@ struct ScreenConfigurationDecoderTests {
             scheduleSlots: slots,
             playlistBookmarks: bookmarks,
             shufflePlaylist: true,
-            playlistRotationMinutes: 15
+            playlistRotationMinutes: 15,
+            playlistAutoAdvance: false,
+            playlistLoops: false
         )
 
         let data = try JSONEncoder().encode(original)
@@ -681,6 +683,58 @@ struct ScreenConfigurationDecoderTests {
         #expect(decoded.playlistBookmarks == bookmarks)
         #expect(decoded.shufflePlaylist == true)
         #expect(decoded.playlistRotationMinutes == 15)
+        #expect(decoded.playlistAutoAdvance == false)
+        #expect(decoded.playlistLoops == false)
+    }
+
+    private static func decodedWithoutPlaybackSwitches(_ config: ScreenConfiguration) throws -> ScreenConfiguration {
+        let encoded = try JSONEncoder().encode(config)
+        var dict = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(dict["playlistAutoAdvance"] as? Bool == config.playlistAutoAdvance)
+        #expect(dict["playlistLoops"] as? Bool == config.playlistLoops)
+        dict.removeValue(forKey: "playlistAutoAdvance")
+        dict.removeValue(forKey: "playlistLoops")
+        return try JSONDecoder().decode(ScreenConfiguration.self, from: JSONSerialization.data(withJSONObject: dict))
+    }
+
+    private static func htmlQueue(_ count: Int) -> [WallpaperQueueEntry] {
+        (0 ..< count).map { WallpaperQueueEntry(id: "row\($0)", title: "", content: .html(source: .inline("row\($0)"), config: .default)) }
+    }
+
+    @Test("Legacy JSON: a multi-entry list without an interval stays manual; loop defaults on")
+    func legacyManualListStaysManual() throws {
+        var config = ScreenConfiguration(screenID: 5, wallpaper: .html(source: .inline("row0"), config: .default))
+        config.wallpaperQueue = Self.htmlQueue(2)
+        let decoded = try Self.decodedWithoutPlaybackSwitches(config)
+        #expect(decoded.playlistRotationMinutes == nil)
+        #expect(decoded.playlistAutoAdvance == false)
+        #expect(decoded.playlistLoops == true)
+    }
+
+    @Test("Legacy JSON: a list with an interval keeps advancing")
+    func legacyTimedListKeepsAdvancing() throws {
+        var config = ScreenConfiguration(screenID: 6, wallpaper: .html(source: .inline("row0"), config: .default))
+        config.wallpaperQueue = Self.htmlQueue(2)
+        config.playlistRotationMinutes = 30
+        let decoded = try Self.decodedWithoutPlaybackSwitches(config)
+        #expect(decoded.playlistAutoAdvance == true)
+        #expect(decoded.playlistLoops == true)
+    }
+
+    @Test("Legacy JSON: a display with a single entry takes the new auto-advance default")
+    func legacySingleEntryTakesNewDefault() throws {
+        var config = ScreenConfiguration(screenID: 7, wallpaper: .html(source: .inline("row0"), config: .default))
+        config.wallpaperQueue = Self.htmlQueue(1)
+        let decoded = try Self.decodedWithoutPlaybackSwitches(config)
+        #expect(decoded.playlistAutoAdvance == true)
+    }
+
+    @Test("Legacy JSON: a video list kept only in bookmarks without an interval stays manual")
+    func legacyBookmarkVideoListStaysManual() throws {
+        let config = ScreenConfiguration(screenID: 8, videoBookmarkData: Data([0x01]), playlistBookmarks: [Data([0x02])])
+        #expect(config.wallpaperQueue == nil)
+        let decoded = try Self.decodedWithoutPlaybackSwitches(config)
+        #expect(decoded.playlistAutoAdvance == false)
     }
 
     @Test("Legacy JSON without wallpaperMode (no schedule) → defaults to .playlist")

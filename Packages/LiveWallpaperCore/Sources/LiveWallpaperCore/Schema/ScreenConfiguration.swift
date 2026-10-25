@@ -33,7 +33,12 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var shufflePlaylist: Bool
     /// Independent of the curated playlist interval; live library membership is never persisted here.
     public var libraryShuffleRotationMinutes: Int = 15
+    public static let defaultPlaylistRotationMinutes = 15
+    /// nil = use `defaultPlaylistRotationMinutes`.
     public var playlistRotationMinutes: Int?
+    public var playlistAutoAdvance = true
+    /// Only automatic advances stop at the last entry when off; Next and Previous always wrap.
+    public var playlistLoops = true
     public var playlistCursorIndex: Int?
     /// Starred primary index in the visible list; nil = legacy pin at 0.
     public var playlistPrimaryIndex: Int?
@@ -76,6 +81,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case shufflePlaylist
         case libraryShuffleRotationMinutes
         case playlistRotationMinutes
+        case playlistAutoAdvance
+        case playlistLoops
         case playlistCursorIndex
         case playlistPrimaryIndex
         case setAsLockScreen
@@ -104,6 +111,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playlistBookmarks: [Data]? = nil,
         shufflePlaylist: Bool = false,
         playlistRotationMinutes: Int? = nil,
+        playlistAutoAdvance: Bool = true,
+        playlistLoops: Bool = true,
         playlistCursorIndex: Int? = nil,
         setAsLockScreen: Bool = false,
         savedVideoBookmarkData: Data? = nil,
@@ -128,6 +137,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         self.playlistBookmarks = playlistBookmarks
         self.shufflePlaylist = shufflePlaylist
         self.playlistRotationMinutes = playlistRotationMinutes
+        self.playlistAutoAdvance = playlistAutoAdvance
+        self.playlistLoops = playlistLoops
         self.playlistCursorIndex = playlistCursorIndex
         self.setAsLockScreen = setAsLockScreen
     }
@@ -144,6 +155,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playlistBookmarks: [Data]? = nil,
         shufflePlaylist: Bool = false,
         playlistRotationMinutes: Int? = nil,
+        playlistAutoAdvance: Bool = true,
+        playlistLoops: Bool = true,
         playlistCursorIndex: Int? = nil,
         setAsLockScreen: Bool = false
     ) {
@@ -159,6 +172,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
             playlistBookmarks: playlistBookmarks,
             shufflePlaylist: shufflePlaylist,
             playlistRotationMinutes: playlistRotationMinutes,
+            playlistAutoAdvance: playlistAutoAdvance,
+            playlistLoops: playlistLoops,
             playlistCursorIndex: playlistCursorIndex,
             setAsLockScreen: setAsLockScreen,
             savedVideoBookmarkData: videoBookmarkData
@@ -167,6 +182,11 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
 
     public var wallpaperType: WallpaperType {
         activeWallpaper.wallpaperType
+    }
+
+    /// 0 = the playlist does not advance on its own.
+    public var effectivePlaylistRotationMinutes: Int {
+        playlistAutoAdvance ? (playlistRotationMinutes ?? Self.defaultPlaylistRotationMinutes) : 0
     }
 
     public var videoBookmarkData: Data? {
@@ -272,6 +292,10 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         if savedSceneDescriptor == nil, case let .scene(descriptor) = decodedWallpaper {
             savedSceneDescriptor = descriptor
         }
+        playlistLoops = try c.decodeIfPresent(Bool.self, forKey: .playlistLoops) ?? true
+        // Without the key, a list of two or more with no interval was manual. Runs last: older video lists exist only in the bookmark fields.
+        playlistAutoAdvance = try c.decodeIfPresent(Bool.self, forKey: .playlistAutoAdvance)
+            ?? ((playlistRotationMinutes ?? 0) > 0 || effectiveWallpaperQueue.count < 2)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -303,6 +327,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encodeIfPresent(scheduleSettledUntil, forKey: .scheduleSettledUntil)
         try c.encode(shufflePlaylist, forKey: .shufflePlaylist)
         try c.encodeIfPresent(playlistRotationMinutes, forKey: .playlistRotationMinutes)
+        try c.encode(playlistAutoAdvance, forKey: .playlistAutoAdvance)
+        try c.encode(playlistLoops, forKey: .playlistLoops)
         try c.encodeIfPresent(playlistCursorIndex, forKey: .playlistCursorIndex)
         try c.encodeIfPresent(playlistPrimaryIndex, forKey: .playlistPrimaryIndex)
         try c.encode(setAsLockScreen, forKey: .setAsLockScreen)

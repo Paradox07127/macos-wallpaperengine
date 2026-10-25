@@ -35,7 +35,7 @@ final class WallpaperAutomationCoordinator {
     static func hasDemand(_ configuration: ScreenConfiguration) -> Bool {
         switch configuration.wallpaperMode {
         case .playlist:
-            (configuration.playlistRotationMinutes ?? 0) > 0
+            configuration.effectivePlaylistRotationMinutes > 0
                 && configuration.effectiveWallpaperQueue.filter { configuration.automationFailures[$0.id]?.entry.content != $0.content }.count > 1
         case .libraryShuffle:
             // Keep polling even with an empty library, so later imports participate.
@@ -102,7 +102,7 @@ final class WallpaperAutomationCoordinator {
                 for screen in screens {
                     guard let config = configurationProvider(screen.id) else { continue }
                     let minutes = config.wallpaperMode == .libraryShuffle
-                        ? config.libraryShuffleRotationMinutes : (config.playlistRotationMinutes ?? 0)
+                        ? config.libraryShuffleRotationMinutes : config.effectivePlaylistRotationMinutes
                     let setting = (mode: config.wallpaperMode, minutes: minutes)
                     lastRotation[screen.id] = clockBase(for: screen.id, at: startTime, setting)
                     rotationSettings[screen.id] = setting
@@ -145,7 +145,7 @@ final class WallpaperAutomationCoordinator {
                     }
 
                     let rotationMinutes = configuration.wallpaperMode == .libraryShuffle
-                        ? configuration.libraryShuffleRotationMinutes : (configuration.playlistRotationMinutes ?? 0)
+                        ? configuration.libraryShuffleRotationMinutes : configuration.effectivePlaylistRotationMinutes
                     guard rotationMinutes > 0 else {
                         lastRotation[screen.id] = nil
                         rotationSettings[screen.id] = nil

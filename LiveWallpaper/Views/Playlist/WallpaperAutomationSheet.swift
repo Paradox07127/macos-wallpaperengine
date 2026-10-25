@@ -66,7 +66,9 @@ struct WallpaperAutomationSheet: View {
     @State private var slots: [ScheduleSlot] = []
     @State private var mode: WallpaperMode = .playlist
     @State private var savedMode: WallpaperMode = .playlist
-    @State private var rotation = 0
+    @State private var autoAdvance = true
+    @State private var rotation = ScreenConfiguration.defaultPlaylistRotationMinutes
+    @State private var loops = true
     @State private var libraryRotation = 15
     @State private var shuffle = false
     @State private var fallback: WallpaperQueueEntry?
@@ -122,7 +124,9 @@ struct WallpaperAutomationSheet: View {
         let queue: [WallpaperQueueEntry]
         let slots: [ScheduleSlot]
         let fallback: WallpaperQueueEntry?
+        let autoAdvance: Bool
         let rotation: Int
+        let loops: Bool
         let libraryRotation: Int
         let shuffle: Bool
     }
@@ -130,7 +134,7 @@ struct WallpaperAutomationSheet: View {
     private var draft: Draft {
         Draft(
             mode: mode, queue: queue, slots: slots, fallback: fallback,
-            rotation: rotation, libraryRotation: libraryRotation, shuffle: shuffle
+            autoAdvance: autoAdvance, rotation: rotation, loops: loops, libraryRotation: libraryRotation, shuffle: shuffle
         )
     }
 
@@ -512,16 +516,21 @@ struct WallpaperAutomationSheet: View {
     private var queuePage: some View {
         VStack(spacing: DesignTokens.Spacing.lg) {
             HStack {
-                Label(shuffle ? "Shuffle" : "Plays in order, then repeats", systemImage: shuffle ? "shuffle" : "repeat")
+                let stopsAtEnd = !shuffle && autoAdvance && !loops
+                Label(
+                    shuffle ? "Shuffle" : stopsAtEnd ? "Plays in order, then stops" : "Plays in order, then repeats",
+                    systemImage: shuffle ? "shuffle" : stopsAtEnd ? "arrow.right" : "repeat"
+                )
                     .font(DesignTokens.Typography.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Toggle("Shuffle", isOn: $shuffle).toggleStyle(.switch).controlSize(.small)
+                Toggle("Auto-Advance", isOn: $autoAdvance).toggleStyle(.switch).controlSize(.small)
                 Picker("Rotate", selection: $rotation) {
-                    Text("Manual").tag(0)
                     ForEach([1, 5, 15, 30, 60, 120], id: \.self) { value in
                         Text("Every \(value) min").tag(value)
                     }
-                }.frame(width: 180)
+                }.frame(width: 180).disabled(!autoAdvance)
+                Toggle("Loop", isOn: $loops).toggleStyle(.switch).controlSize(.small).disabled(!autoAdvance || shuffle)
                 addButton("Add Wallpaper") { pickTarget = .queue; added = [:]; pickerAnchor = .queueToolbar }
                     .appLanguagePopover(isPresented: pickerShown(from: .queueToolbar), arrowEdge: .bottom) { wallpaperPicker }
             }
@@ -1007,7 +1016,9 @@ struct WallpaperAutomationSheet: View {
         }
         failures = config.automationFailures
         selectedSlotID = slots.first { $0.containsHour(Calendar.current.component(.hour, from: openedAt)) }?.id ?? slots.first?.id
-        rotation = config.playlistRotationMinutes ?? 0
+        autoAdvance = config.playlistAutoAdvance
+        rotation = config.playlistRotationMinutes ?? ScreenConfiguration.defaultPlaylistRotationMinutes
+        loops = config.playlistLoops
         libraryRotation = max(1, config.libraryShuffleRotationMinutes)
         shuffle = config.shufflePlaylist
         fallback = config.scheduleFallback
@@ -1017,7 +1028,7 @@ struct WallpaperAutomationSheet: View {
     private func save() {
         manager.updateWallpaperAutomation(
             queue: queue, slots: slots, fallback: fallback ?? (mode == .schedule ? derivedFallback : nil), mode: mode,
-            rotationMinutes: rotation > 0 ? rotation : nil, shuffle: shuffle,
+            rotationMinutes: rotation, autoAdvance: autoAdvance, loops: loops, shuffle: shuffle,
             libraryShuffleRotationMinutes: libraryRotation, previewedEntryID: preview?.entryID, for: screen
         )
     }

@@ -128,6 +128,19 @@ struct SchemeDetailRowsTests {
         #expect(Self.keys(sections, .automation) == [.mode, .playlist, .shuffle, .rotation])
     }
 
+    @Test("The rotation row follows auto-advance and shows the default interval when none is set")
+    func rotationFollowsAutoAdvance() {
+        var configuration = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([1]))
+        configuration.wallpaperQueue = (1 ... 3).map { WallpaperQueueEntry(title: "Clip \($0)", content: .video(bookmarkData: Data([UInt8($0)]))) }
+
+        let timed = Rows.make(for: Self.scheme(configuration), locale: Self.locale)
+        #expect(Self.value(timed, .rotation) == String(localized: "Every \(15) min", bundle: .appLanguage, locale: Self.locale))
+
+        configuration.playlistAutoAdvance = false
+        let manual = Rows.make(for: Self.scheme(configuration), locale: Self.locale)
+        #expect(Self.keys(manual, .automation) == [.mode, .playlist, .shuffle])
+    }
+
     @Test("Sections with nothing to say are left out")
     func emptySectionsAreLeftOut() {
         let configuration = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([1]))

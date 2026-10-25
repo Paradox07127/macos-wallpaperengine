@@ -378,7 +378,8 @@ enum SchemeDetailRows {
             ),
             Row(key: .shuffle, label: String(localized: "Shuffle", bundle: .appLanguage), value: onOff(configuration.shufflePlaylist)),
         ]
-        if let minutes = configuration.playlistRotationMinutes, minutes > 0 {
+        if configuration.playlistAutoAdvance {
+            let minutes = configuration.effectivePlaylistRotationMinutes
             rows.append(Row(
                 key: .rotation, label: String(localized: "Rotation interval", bundle: .appLanguage),
                 value: String(localized: "Every \(minutes) min", bundle: .appLanguage, locale: locale)

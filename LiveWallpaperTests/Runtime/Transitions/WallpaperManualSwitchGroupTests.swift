@@ -225,6 +225,71 @@ struct WallpaperManualSwitchGroupTests {
         #expect(arrivals.finished.contains(a.id), "A waited for B, which never dispatched")
         #expect(arrivals.starts[a.id] == nil)
     }
+
+    // MARK: - Looping
+
+    private static let loopEntries = (0 ..< 3).map {
+        WallpaperQueueEntry(id: "loop-\($0)", title: "Entry \($0)", content: .html(source: .inline("loop-\($0)"), config: .default))
+    }
+
+    /// The display sits on the last entry; `landed` collects the content each switch puts on screen.
+    private func makeOrchestratorOnLastEntry(
+        _ screen: Screen, loops: Bool, landed: Landed
+    ) -> WallpaperAutomationOrchestrator {
+        let entries = Self.loopEntries
+        var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: entries[2].content)
+        configuration.wallpaperQueue = entries
+        configuration.playlistCursorIndex = 2
+        configuration.playlistLoops = loops
+        let store = WallpaperConfigurationStore(persistence: ManualSwitchGroupTestPersistence([configuration]))
+        return WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
+            restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                landed.contents.append(proposed.activeWallpaper)
+                store.save(proposed)
+                return .ready
+            }, libraryEntryAvailable: { _ in true }
+        )
+    }
+
+    @Test("With looping off, an automatic advance from the last entry stays put", .timeLimit(.minutes(1)))
+    func automaticAdvanceStopsAtEndWithoutLooping() async {
+        let screen = makeScreen(id: 71)
+        let landed = Landed()
+        let orchestrator = makeOrchestratorOnLastEntry(screen, loops: false, landed: landed)
+        orchestrator.advancePlaylist(for: screen, automatic: true)
+        await settle()
+        #expect(landed.contents.isEmpty, "the automatic advance wrapped past the end with looping off")
+    }
+
+    @Test("With looping off, a manual Next from the last entry still wraps to the first", .timeLimit(.minutes(1)))
+    func manualNextWrapsWithoutLooping() async {
+        let screen = makeScreen(id: 72)
+        let landed = Landed()
+        let orchestrator = makeOrchestratorOnLastEntry(screen, loops: false, landed: landed)
+        orchestrator.advancePlaylist(for: screen)
+        await settle()
+        #expect(landed.contents == [Self.loopEntries[0].content])
+    }
+
+    @Test("With looping on, an automatic advance from the last entry wraps to the first", .timeLimit(.minutes(1)))
+    func automaticAdvanceWrapsWithLooping() async {
+        let screen = makeScreen(id: 73)
+        let landed = Landed()
+        let orchestrator = makeOrchestratorOnLastEntry(screen, loops: true, landed: landed)
+        orchestrator.advancePlaylist(for: screen, automatic: true)
+        await settle()
+        #expect(landed.contents == [Self.loopEntries[0].content])
+    }
+}
+
+@MainActor
+private final class Landed {
+    var contents: [WallpaperContent] = []
 }
 
 @MainActor

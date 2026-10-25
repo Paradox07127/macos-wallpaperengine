@@ -103,11 +103,17 @@ final class WallpaperAutomationOrchestrator {
         automaticSelections[screenID] = nil
     }
 
-    func advancePlaylist(for screen: Screen) {
+    /// `automatic` is true only for the rotation clock; with looping off it never wraps past the last entry.
+    func advancePlaylist(for screen: Screen, automatic: Bool = false) {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.canNavigatePlaylist else { return }
         let queue = config.effectiveWallpaperQueue
-        startAutomaticSelection(Self.forwardOrder(in: config).dropLast().map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
+        var order = Self.forwardOrder(in: config).dropLast()
+        if automatic, !config.playlistLoops, !config.shufflePlaylist {
+            let current = max(0, min(config.playlistCursorIndex ?? 0, queue.count - 1))
+            order = order.filter { $0 > current }
+        }
+        startAutomaticSelection(order.map { (queue[$0], Optional($0)) }, source: .playlist, for: screen)
     }
 
     /// Queue indices in the order the playlist moves forward from the cursor, ending with the cursor itself.
@@ -168,7 +174,8 @@ final class WallpaperAutomationOrchestrator {
 
     func updateAutomation(
         queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
-        rotationMinutes: Int?, shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil,
+        rotationMinutes: Int?, autoAdvance: Bool = true, loops: Bool = true,
+        shuffle: Bool, libraryShuffleRotationMinutes: Int? = nil,
         previewedEntryID: WallpaperQueueEntry.ID? = nil, for screen: Screen
     ) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
@@ -195,6 +202,8 @@ final class WallpaperAutomationOrchestrator {
         config.scheduleSlots = slots.isEmpty ? nil : slots
         config.wallpaperMode = mode
         config.playlistRotationMinutes = rotationMinutes.flatMap { $0 > 0 ? $0 : nil }
+        config.playlistAutoAdvance = autoAdvance
+        config.playlistLoops = loops
         config.shufflePlaylist = shuffle
         if let libraryShuffleRotationMinutes {
             config.libraryShuffleRotationMinutes = max(1, libraryShuffleRotationMinutes)
@@ -456,7 +465,7 @@ final class WallpaperAutomationOrchestrator {
             },
             playlistHandler: { [weak self] screen in
                 guard self?.automaticSelections[screen.id] == nil else { return }
-                self?.advancePlaylist(for: screen)
+                self?.advancePlaylist(for: screen, automatic: true)
             },
             libraryShuffleHandler: { [weak self] screen in
                 guard self?.automaticSelections[screen.id] == nil else { return }

@@ -850,8 +850,12 @@ struct WallpaperAutomationCoordinatorTests {
                 return .ready
             }, libraryEntryAvailable: { _ in true }
         )
-        for step in [orchestrator.advancePlaylist, orchestrator.advancePlaylist, orchestrator.advancePlaylist, orchestrator.regressPlaylist] {
-            step(screen)
+        for forward in [true, true, true, false] {
+            if forward {
+                orchestrator.advancePlaylist(for: screen)
+            } else {
+                orchestrator.regressPlaylist(for: screen)
+            }
             for _ in 0 ..< 50 {
                 await Task.yield()
             }
@@ -1370,6 +1374,44 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(WallpaperAutomationCoordinator.hasDemand(configuration))
     }
 
+    @Test("A new two-entry playlist without an interval advances every 15 minutes", .timeLimit(.minutes(1)))
+    func newPlaylistAdvancesOnDefaultInterval() async {
+        guard let nsScreen = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for test")
+            return
+        }
+
+        let screen = Screen(nsScreen: nsScreen)
+        let ticks = AsyncStream<Date>.makeStream()
+        let coordinator = WallpaperAutomationCoordinator(tickStreamFactory: { ticks.stream })
+        var rotations = 0
+        let configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([0x01]), playlistBookmarks: [Data([0x02])])
+        #expect(configuration.playlistRotationMinutes == nil)
+        #expect(WallpaperAutomationCoordinator.hasDemand(configuration))
+
+        coordinator.start(
+            screenProvider: { [screen] },
+            configurationProvider: { _ in configuration },
+            scheduleHandler: { _ in },
+            playlistHandler: { _ in rotations += 1 },
+            runInitialScheduleCheck: false
+        )
+        defer { coordinator.stop() }
+        #expect(coordinator.hasActiveTaskForTesting)
+
+        let baseline = Date(timeIntervalSince1970: 1000)
+        var rotationsByMinute: [Double: Int] = [:]
+        for minute in [0.0, 14, 15] {
+            let now = baseline.addingTimeInterval(minute * 60)
+            ticks.continuation.yield(now)
+            while coordinator.currentTime != now {
+                await Task.yield()
+            }
+            rotationsByMinute[minute] = rotations
+        }
+        #expect(rotationsByMinute == [0: 0, 14: 0, 15: 1])
+    }
+
     @Test("Active reconciliation preserves the existing task and rotation deadline")
     func activeReconciliationDoesNotRestartTask() async {
         guard let nsScreen = NSScreen.screens.first else {
@@ -1419,7 +1461,7 @@ struct WallpaperAutomationCoordinatorTests {
         for _ in 0..<20 where rotations == 0 { await Task.yield() }
         #expect(rotations == 1)
 
-        configuration.playlistRotationMinutes = nil
+        configuration.playlistAutoAdvance = false
         reconcile()
         #expect(!coordinator.hasActiveTaskForTesting)
     }
