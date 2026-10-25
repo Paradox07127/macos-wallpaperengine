@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
+import Observation
 
 /// The latest schedule or playlist switch on a display; `serial` counts them.
 struct AutomaticSwitchMark: Equatable {
@@ -12,8 +13,34 @@ struct AutomaticSwitchMark: Equatable {
     let source: Source
 }
 
+struct LibraryShuffleDeck: Equatable {
+    /// Wallpapers shown before the current one, oldest first.
+    var played: [WallpaperQueueEntry] = []
+    /// Wallpapers stepped back past; the next advance tries the last one before drawing at random.
+    var returned: [WallpaperQueueEntry] = []
+}
+
+/// Library shuffle history per display, kept in memory only.
+@MainActor @Observable
+final class LibraryShuffleDecks {
+    private var decks: [CGDirectDisplayID: LibraryShuffleDeck] = [:]
+
+    fileprivate(set) subscript(screenID: CGDirectDisplayID) -> LibraryShuffleDeck {
+        get { decks[screenID] ?? LibraryShuffleDeck() }
+        set {
+            let stored = newValue == LibraryShuffleDeck() ? nil : newValue
+            if decks[screenID] != stored {
+                decks[screenID] = stored
+            }
+        }
+    }
+}
+
 @MainActor
 final class WallpaperAutomationOrchestrator {
+    let shuffleDecks = LibraryShuffleDecks()
+    /// The entry the latest library shuffle landed on per display; stale once the showing content differs from it.
+    private var landedLibraryEntries: [CGDirectDisplayID: WallpaperQueueEntry] = [:]
     private let configurationStore: WallpaperConfigurationStore
     private let automationCoordinator: WallpaperAutomationCoordinator
     private let screensProvider: @MainActor () -> [Screen]
@@ -217,6 +244,9 @@ final class WallpaperAutomationOrchestrator {
         }
         cancelAutomaticSelection(for: screen.id)
         saveConfiguration(config)
+        if mode != .libraryShuffle {
+            shuffleDecks[screen.id] = LibraryShuffleDeck()
+        }
         if mode == .libraryShuffle {
             if previousMode != .libraryShuffle {
                 advanceLibraryShuffle(for: screen)
@@ -275,22 +305,99 @@ final class WallpaperAutomationOrchestrator {
             in: libraryEntries(), excluding: config.activeWallpaper, origin: config.wpeOrigin,
             excludedIDs: Set(config.libraryShuffleExcludedIDs)
         )
-        startAutomaticSelection(candidates.shuffled().map { ($0, nil) }, source: .libraryShuffle, for: screen)
+        let screenID = screen.id
+        var deck = shuffleDecks[screenID]
+        while let top = deck.returned.last,
+              top.content == config.activeWallpaper || config.libraryShuffleExcludedIDs.contains(top.id)
+              || config.automationFailures[top.id]?.entry.content == top.content {
+            deck.returned.removeLast()
+        }
+        shuffleDecks[screenID] = deck
+        let returnedTop = deck.returned.last
+        let drawn = candidates.filter { $0.id != returnedTop?.id }.shuffled()
+        let outgoing = showingLibraryEntry(config, on: screenID)
+        startAutomaticSelection(
+            ((returnedTop.map { [LibraryShuffleCandidate($0)] } ?? []) + drawn).map { ($0, nil) }, source: .libraryShuffle, for: screen,
+            onLanded: { [weak self] landed in
+                guard let self else { return }
+                landedLibraryEntries[screenID] = landed
+                var deck = shuffleDecks[screenID]
+                deck.played.append(outgoing)
+                deck.played.removeFirst(max(0, deck.played.count - Self.playedHistoryLimit))
+                if deck.returned.last == landed {
+                    deck.returned.removeLast()
+                }
+                shuffleDecks[screenID] = deck
+            }
+        )
+    }
+
+    func regressLibraryShuffle(for screen: Screen) {
+        guard !isSuspendedForUserAbsence,
+              let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+              config.wallpaperMode == .libraryShuffle else { return }
+        let screenID = screen.id
+        var deck = shuffleDecks[screenID]
+        while let top = deck.played.last, top.content == config.activeWallpaper || config.libraryShuffleExcludedIDs.contains(top.id) {
+            deck.played.removeLast()
+        }
+        shuffleDecks[screenID] = deck
+        guard let target = deck.played.last else { return }
+        let outgoing = showingLibraryEntry(config, on: screenID)
+        let dropTarget: @MainActor (inout LibraryShuffleDeck) -> Void = { deck in
+            if let index = deck.played.lastIndex(of: target) {
+                deck.played.remove(at: index)
+            }
+        }
+        startAutomaticSelection(
+            [(target, nil)], source: .libraryShuffle, for: screen,
+            onExhausted: { [weak self] in
+                guard let self else { return }
+                dropTarget(&shuffleDecks[screenID])
+            },
+            onLanded: { [weak self] landed in
+                guard let self else { return }
+                landedLibraryEntries[screenID] = landed
+                var deck = shuffleDecks[screenID]
+                dropTarget(&deck)
+                deck.returned.append(outgoing)
+                shuffleDecks[screenID] = deck
+            }
+        )
+    }
+
+    func reshuffleLibrary(for screen: Screen) {
+        guard !isSuspendedForUserAbsence,
+              configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)?.wallpaperMode == .libraryShuffle
+        else { return }
+        shuffleDecks[screen.id] = LibraryShuffleDeck()
+    }
+
+    /// Bounds the history of a display left rotating for days; it would otherwise grow without limit.
+    private static let playedHistoryLimit = 50
+
+    /// Must be read before dispatch: once a selection lands, the configuration already holds the new wallpaper.
+    private func showingLibraryEntry(_ config: ScreenConfiguration, on screenID: CGDirectDisplayID) -> WallpaperQueueEntry {
+        if let landed = landedLibraryEntries[screenID], landed.content == config.activeWallpaper {
+            return landed
+        }
+        return WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
     }
 
     private func startAutomaticSelection(
         _ entries: [(entry: WallpaperQueueEntry, cursor: Int?)], source: AutomaticSwitchMark.Source?, for screen: Screen,
-        onExhausted: (@MainActor () -> Void)? = nil
+        onExhausted: (@MainActor () -> Void)? = nil, onLanded: (@MainActor (WallpaperQueueEntry) -> Void)? = nil
     ) {
         startAutomaticSelection(
-            entries.map { (LibraryShuffleCandidate($0.entry), $0.cursor) }, source: source, for: screen, onExhausted: onExhausted
+            entries.map { (LibraryShuffleCandidate($0.entry), $0.cursor) }, source: source, for: screen,
+            onExhausted: onExhausted, onLanded: onLanded
         )
     }
 
     /// One cancellable worker per display; retries are sequential and never own periodic clocks.
     private func startAutomaticSelection(
         _ candidates: [(entry: LibraryShuffleCandidate, cursor: Int?)], source: AutomaticSwitchMark.Source?, for screen: Screen,
-        onExhausted: (@MainActor () -> Void)? = nil
+        onExhausted: (@MainActor () -> Void)? = nil, onLanded: (@MainActor (WallpaperQueueEntry) -> Void)? = nil
     ) {
         guard !isSuspendedForUserAbsence, let initial = configurationStore.get(for: screen.id) else { return }
         let expectedMode = initial.wallpaperMode
@@ -370,6 +477,7 @@ final class WallpaperAutomationOrchestrator {
                         if var committed = configurationStore.get(for: screenID), committed.automationFailures.removeValue(forKey: entry.id) != nil {
                             saveConfiguration(committed)
                         }
+                        onLanded?(entry)
                         return
                     }
                 }

@@ -1027,6 +1027,86 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored.count == 2)
     }
 
+    @Test("Library shuffle rewinds through its in-memory history and draws the returned card first")
+    func libraryShuffleRewindsThroughHistory() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let library = ["a", "b", "c", "d"].map {
+            WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default))
+        }
+        let initialContent = library[0].content
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: initialContent, fitMode: .aspectFit)
+        initial.wallpaperMode = .libraryShuffle
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var restored: [WallpaperContent] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
+            restoreProposedConfiguration: { _, _ in },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                restored.append(proposed.activeWallpaper)
+                store.save(proposed)
+                return .ready
+            },
+            libraryEntries: { library.map(LibraryShuffleCandidate.init) }, libraryEntryAvailable: { _ in true }
+        )
+        func land(_ step: () -> Void) async throws -> WallpaperContent {
+            let count = restored.count
+            step()
+            for _ in 0 ..< 50 where restored.count == count {
+                await Task.yield()
+            }
+            return try #require(restored.count == count + 1 ? restored.last : nil)
+        }
+        func played() -> [WallpaperContent] {
+            orchestrator.shuffleDecks[screen.id].played.map(\.content)
+        }
+        func returned() -> [WallpaperContent] {
+            orchestrator.shuffleDecks[screen.id].returned.map(\.content)
+        }
+
+        let first = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+        let second = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+        #expect(played() == [initialContent, first])
+
+        #expect(try await land { orchestrator.regressLibraryShuffle(for: screen) } == first)
+        #expect(played() == [initialContent])
+        #expect(returned() == [second])
+
+        #expect(try await land { orchestrator.regressLibraryShuffle(for: screen) } == initialContent)
+        #expect(played().isEmpty)
+        #expect(returned() == [second, first])
+
+        orchestrator.regressLibraryShuffle(for: screen)
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        #expect(restored.count == 4)
+        #expect(store.get(for: screen.id)?.activeWallpaper == initialContent)
+
+        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == first)
+        #expect(played() == [initialContent])
+        #expect(returned() == [second])
+
+        func pick(_ content: WallpaperContent) throws {
+            var config = try #require(store.get(for: screen.id))
+            config.activeWallpaper = content
+            store.save(config)
+        }
+        try pick(initialContent)
+        orchestrator.regressLibraryShuffle(for: screen)
+        #expect(played().isEmpty)
+        try pick(second)
+        let drawn = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+        #expect(drawn != second)
+        #expect(returned().isEmpty)
+
+        orchestrator.reshuffleLibrary(for: screen)
+        #expect(orchestrator.shuffleDecks[screen.id] == LibraryShuffleDeck())
+        #expect(store.get(for: screen.id)?.activeWallpaper == drawn)
+    }
+
     @Test("Library shuffle has its own timer without needing a playlist")
     func libraryShuffleTimer() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))

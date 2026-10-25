@@ -233,6 +233,20 @@ extension ScreenManager {
         automationOrchestrator.advanceLibraryShuffle(for: screen)
     }
 
+    func regressLibraryShuffle(for screen: Screen) {
+        guard !isTerminating else { return }
+        automationOrchestrator.regressLibraryShuffle(for: screen)
+    }
+
+    func reshuffleLibrary(for screen: Screen) {
+        guard !isTerminating else { return }
+        automationOrchestrator.reshuffleLibrary(for: screen)
+    }
+
+    func libraryShuffleDeck(for screen: Screen) -> LibraryShuffleDeck {
+        automationOrchestrator.shuffleDecks[screen.id]
+    }
+
     func regressPlaylist(for screen: Screen) {
         guard !isTerminating else { return }
         automationOrchestrator.regressPlaylist(for: screen)
