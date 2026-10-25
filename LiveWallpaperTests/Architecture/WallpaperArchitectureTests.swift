@@ -1931,27 +1931,40 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored == [Self.fallbackVideo.content])
     }
 
-    @Test("Picking a library item again takes back only the entry that pick added")
-    func pickerTogglesOnlyItsOwnAdditions() {
-        func item(_ label: String) -> LiveWallpaper.LibraryItem {
+    @Test("Picks number in tap order; taking one back closes the gap and picking it again puts it last")
+    func pickOrderNumbersInTapOrder() {
+        var order = AutomationPickOrder()
+
+        for id in ["a", "b", "c"] {
+            order.toggle(id)
+        }
+        #expect(["a", "b", "c"].map(order.number(of:)) == [1, 2, 3])
+
+        order.toggle("b")
+        #expect(order.number(of: "a") == 1)
+        #expect(order.number(of: "c") == 2)
+        #expect(order.number(of: "b") == nil)
+
+        order.toggle("b")
+        #expect(order.number(of: "b") == 3)
+    }
+
+    @Test("Picked library items become entries in tap order, not library order; an unsupported pick is counted, not added")
+    func pickedItemsBecomeEntriesInTapOrder() {
+        func item(_ label: String, supported: Bool = true) -> LiveWallpaper.LibraryItem {
             let bookmark = WallpaperBookmark(label: label, content: .html(source: .inline(label), config: .default))
             return LiveWallpaper.LibraryItem(
                 id: "bookmark:\(bookmark.id)", title: label, kind: .web, source: .bookmark(bookmark),
                 isSteam: false, createdAt: bookmark.createdAt, lastUsedAt: nil, onDisplays: [],
-                thumbnail: nil, metadata: nil, isVariant: false, parentID: nil, isSupported: true
+                thumbnail: nil, metadata: nil, isVariant: false, parentID: nil, isSupported: supported
             )
         }
-        let (first, second) = (item("A"), item("B"))
-        var queue = [WallpaperQueueEntry(title: "X", content: .video(bookmarkData: Data([1])))]
-        var added: [LiveWallpaper.LibraryItem.ID: WallpaperQueueEntry.ID] = [:]
+        let (first, second, unsupported) = (item("A"), item("B"), item("C", supported: false))
 
-        for picked in [first, second, first] {
-            #expect(WallpaperAutomationSheet.togglePick(picked, queue: &queue, added: &added))
-        }
+        let picked = AutomationPickOrder.entries(for: [second.id, unsupported.id, first.id], in: [first, second, unsupported])
 
-        #expect(queue.map(\.title) == ["X", "B"])
-        #expect(Array(added.keys) == [second.id])
-        #expect(added[second.id] == queue.last?.id)
+        #expect(picked.entries.map(\.title) == ["B", "A"])
+        #expect(picked.unavailable == 1)
     }
 
     @Test("Chosen video files become entries in panel order; a file without a bookmark is counted, not added")

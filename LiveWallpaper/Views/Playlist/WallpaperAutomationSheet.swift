@@ -74,14 +74,11 @@ struct WallpaperAutomationSheet: View {
     @State private var fallback: WallpaperQueueEntry?
     @State private var derivedFallback: WallpaperQueueEntry?
     @State private var shownBeforeTrial: ScreenConfiguration?
-    @State private var search = ""
-    /// The button the wallpaper picker popover is anchored to; nil while the picker is closed.
-    @State private var pickerAnchor: PickerAnchor?
+    /// What the library picker page is choosing for; nil while the panel shows.
+    @State private var picking: PickTarget?
     @State private var openedAt = Date()
     @State private var selectedSlotID: UUID?
     @State private var failures: [String: WallpaperAutomationFailure] = [:]
-    @State private var pickTarget: PickTarget = .queue
-    @State private var added: [LibraryItem.ID: WallpaperQueueEntry.ID] = [:]
     @State private var error: String?
     @State private var playingEntryID: WallpaperQueueEntry.ID?
     @State private var insertedCurrentID: WallpaperQueueEntry.ID?
@@ -112,10 +109,6 @@ struct WallpaperAutomationSheet: View {
 
     private enum PickTarget: Equatable {
         case queue, slot(UUID), fallback
-    }
-
-    private enum PickerAnchor {
-        case queueToolbar, emptyQueue, slot, fallback
     }
 
     /// The edits Save would commit.
@@ -176,20 +169,6 @@ struct WallpaperAutomationSheet: View {
         case .schedule: "Daily Schedule"
         case .libraryShuffle: "Library Shuffle"
         }
-    }
-
-    static func togglePick(
-        _ item: LibraryItem, queue: inout [WallpaperQueueEntry], added: inout [LibraryItem.ID: WallpaperQueueEntry.ID]
-    ) -> Bool {
-        if let id = added[item.id], let index = queue.firstIndex(where: { $0.id == id }) {
-            queue.remove(at: index)
-            added[item.id] = nil
-            return true
-        }
-        guard let entry = WallpaperQueueEntry.libraryItem(item) else { return false }
-        queue.append(entry)
-        added[item.id] = entry.id
-        return true
     }
 
     static func startTrial(
@@ -276,6 +255,51 @@ struct WallpaperAutomationSheet: View {
     }
 
     var body: some View {
+        ZStack {
+            if let picking {
+                libraryPicker(for: picking)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else {
+                panel
+            }
+        }
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: picking)
+        .environment(guide)
+        .frame(width: size.width, height: size.height)
+        .overlayPreferenceValue(PageGuideAnchorKey.self) { PageGuideHost(session: guide, anchors: $0) }
+        // On the container, not `panel`: the panel reappears after each pick, and reloading then would drop the draft.
+        .onAppear(perform: load)
+        .onChange(of: screen.configurationRevision) {
+            Self.endTrialIfSwitched(
+                &preview, shownBeforeTrial: &shownBeforeTrial,
+                currentSerial: manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial
+            )
+            failures = manager.getConfiguration(for: screen)?.automationFailures ?? [:]
+            playingEntryID = Self.nowPlayingEntryID(
+                in: manager.getConfiguration(for: screen), insertedCurrent: insertedCurrentID, previewing: preview?.entryID
+            )
+        }
+        .onChange(of: mode) { _, mode in
+            guard mode == .schedule, slots.isEmpty else { return }
+            let fallback = currentEntry
+            slots = ScheduleSlot.defaultSlots.map {
+                var slot = $0
+                slot.wallpaper = fallback
+                return slot
+            }
+        }
+        .onChange(of: dismissRequests) { requestClose() }
+        .alert("Discard changes to wallpaper automation?", isPresented: $confirmingDiscard) {
+            if canSave {
+                Button("Save", action: saveAndClose).keyboardShortcut(.defaultAction)
+            }
+            Button("Discard Changes", role: .destructive, action: discardAndClose)
+            Button("Keep Editing", role: .cancel) {}
+                .keyboardShortcut(canSave ? nil : .defaultAction)
+        }
+    }
+
+    private var panel: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 SteamSheetHeader(
@@ -342,38 +366,6 @@ struct WallpaperAutomationSheet: View {
             // The guide panel's Return / Escape shortcuts would otherwise compete with Save / Cancel.
             .disabled(guide.context != nil)
         }
-        .environment(guide)
-        .frame(width: size.width, height: size.height)
-        .overlayPreferenceValue(PageGuideAnchorKey.self) { PageGuideHost(session: guide, anchors: $0) }
-        .onAppear(perform: load)
-        .onChange(of: screen.configurationRevision) {
-            Self.endTrialIfSwitched(
-                &preview, shownBeforeTrial: &shownBeforeTrial,
-                currentSerial: manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial
-            )
-            failures = manager.getConfiguration(for: screen)?.automationFailures ?? [:]
-            playingEntryID = Self.nowPlayingEntryID(
-                in: manager.getConfiguration(for: screen), insertedCurrent: insertedCurrentID, previewing: preview?.entryID
-            )
-        }
-        .onChange(of: mode) { _, mode in
-            guard mode == .schedule, slots.isEmpty else { return }
-            let fallback = currentEntry
-            slots = ScheduleSlot.defaultSlots.map {
-                var slot = $0
-                slot.wallpaper = fallback
-                return slot
-            }
-        }
-        .onChange(of: dismissRequests) { requestClose() }
-        .alert("Discard changes to wallpaper automation?", isPresented: $confirmingDiscard) {
-            if canSave {
-                Button("Save", action: saveAndClose).keyboardShortcut(.defaultAction)
-            }
-            Button("Discard Changes", role: .destructive, action: discardAndClose)
-            Button("Keep Editing", role: .cancel) {}
-                .keyboardShortcut(canSave ? nil : .defaultAction)
-        }
     }
 
     private func saveAndClose() {
@@ -381,20 +373,11 @@ struct WallpaperAutomationSheet: View {
         close()
     }
 
-    private func pickerShown(from anchor: PickerAnchor) -> Binding<Bool> {
-        Binding(
-            get: { pickerAnchor == anchor },
-            set: { shown in
-                if !shown, pickerAnchor == anchor {
-                    pickerAnchor = nil
-                }
-            }
-        )
-    }
-
     private func requestClose() {
-        // The host's scrim and Escape stay live while the guide is open; they belong to the guide then.
-        if guide.context != nil {
+        if picking != nil {
+            picking = nil
+        } else if guide.context != nil {
+            // The host's scrim and Escape stay live while the guide is open; they belong to the guide then.
             guide.close()
         } else if draft == loadedDraft {
             discardAndClose()
@@ -531,21 +514,15 @@ struct WallpaperAutomationSheet: View {
                     }
                 }.frame(width: 180).disabled(!autoAdvance)
                 Toggle("Loop", isOn: $loops).toggleStyle(.switch).controlSize(.small).disabled(!autoAdvance || shuffle)
-                addButton("Add Wallpaper") { pickTarget = .queue; added = [:]; pickerAnchor = .queueToolbar }
-                    .appLanguagePopover(isPresented: pickerShown(from: .queueToolbar), arrowEdge: .bottom) { wallpaperPicker }
+                addButton("Add Wallpaper") { picking = .queue }
             }
             if queue.isEmpty {
                 IllustratedEmptyState(
                     symbol: "list.bullet",
                     title: "Your playlist is empty",
-                    message: "Add wallpapers from your library to play them in sequence."
-                ) {
-                    // Built here rather than passed as `primary:` so the picker popover can anchor to this button.
-                    Button("Add Wallpaper") { pickTarget = .queue; added = [:]; pickerAnchor = .emptyQueue }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.top, DesignTokens.Spacing.xs)
-                        .appLanguagePopover(isPresented: pickerShown(from: .emptyQueue), arrowEdge: .bottom) { wallpaperPicker }
-                }
+                    message: "Add wallpapers from your library to play them in sequence.",
+                    primary: EmptyStateButtonAction("Add Wallpaper") { picking = .queue }
+                )
             } else {
                 List {
                     ForEach(Array(queue.enumerated()), id: \.element.id) { index, entry in
@@ -570,7 +547,7 @@ struct WallpaperAutomationSheet: View {
                                 preview = (entry.id, manager.automaticSwitchMark(for: screen.displayFingerprint)?.serial)
                                 Self.startTrial(entry, shownBeforeTrial: &shownBeforeTrial, manager: manager, screen: screen)
                             }
-                            icon("minus", "Remove") { queue.remove(at: index) }
+                            icon("trash", "Remove", tint: DesignTokens.Colors.Status.danger) { queue.remove(at: index) }
                         }
                         .padding(DesignTokens.Spacing.md)
                         .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.lg))
@@ -656,8 +633,7 @@ struct WallpaperAutomationSheet: View {
                         hourPicker("End", hour: Self.endHourBinding($slots[index].endHour), hours: 1 ..< 25)
                     }
                     Button {
-                        pickTarget = .slot(slot.id)
-                        pickerAnchor = .slot
+                        picking = .slot(slot.id)
                     } label: {
                         if let entry = slot.wallpaper {
                             QueueEntryLabel(entry: entry, title: Self.rowTitle(for: entry, in: library), isPlaying: false, thumbnails: thumbnails) {
@@ -669,7 +645,6 @@ struct WallpaperAutomationSheet: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .appLanguagePopover(isPresented: pickerShown(from: .slot), arrowEdge: .bottom) { wallpaperPicker }
                     if let entry = slot.wallpaper {
                         failureBadge(entry)
                     }
@@ -699,13 +674,11 @@ struct WallpaperAutomationSheet: View {
         GroupBox("Unscheduled Hours") {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                 Button {
-                    pickTarget = .fallback
-                    pickerAnchor = .fallback
+                    picking = .fallback
                 } label: {
                     entryLabel(entry)
                 }
                 .buttonStyle(.plain)
-                .appLanguagePopover(isPresented: pickerShown(from: .fallback), arrowEdge: .bottom) { wallpaperPicker }
                 failureBadge(entry)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -796,65 +769,52 @@ struct WallpaperAutomationSheet: View {
 
     private static let slotPalette = ScheduleDialStyle.palette
 
-    private var wallpaperPicker: some View {
-        VStack(spacing: DesignTokens.Spacing.md) {
-            LibrarySearchField(text: $search, prompt: "Search wallpapers")
-            ScrollView {
-                LazyVStack(spacing: DesignTokens.Spacing.xs) {
-                    ForEach(library.items.filter {
-                        $0.isSupported && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)
-                            || $0.title.translatedWallpaperName.localizedCaseInsensitiveContains(search))
-                    }) { item in
-                        Button {
-                            if pickTarget == .queue, Self.togglePick(item, queue: &queue, added: &added) {
-                                error = nil
-                                return
-                            }
-                            guard pickTarget != .queue, let entry = WallpaperQueueEntry.libraryItem(item) else {
-                                error = String(localized: "This wallpaper is unavailable. Reimport it from the library.", bundle: .appLanguage)
-                                pickerAnchor = nil
-                                return
-                            }
-                            if case let .slot(id) = pickTarget {
-                                assign(entry, toSlot: id)
-                            } else {
-                                fallback = entry
-                            }
-                            error = nil; pickerAnchor = nil
-                        } label: {
-                            HStack {
-                                Image(systemName: item.kind == .scene ? "cube.transparent" : item.kind == .web ? "globe" : "film")
-                                    .frame(width: 24).foregroundStyle(.tint)
-                                Text(verbatim: item.title.translatedWallpaperName).lineLimit(2).multilineTextAlignment(.leading)
-                                Spacer()
-                                if isPicked(item) {
-                                    Image(systemName: "checkmark").foregroundStyle(.tint)
-                                } else {
-                                    Image(systemName: "plus").foregroundStyle(.secondary)
-                                }
-                            }.padding(DesignTokens.Spacing.md).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(isPicked(item) ? .isSelected : [])
-                    }
-                }
+    private func libraryPicker(for target: PickTarget) -> some View {
+        AutomationLibraryPicker(
+            library: library, thumbnails: thumbnails, purpose: pickPurpose(for: target), width: size.width,
+            commit: { commitPick($0, to: target) },
+            chooseVideos: { picked in
+                commitPick(picked, to: target)
+                chooseVideoFiles(for: target)
+            },
+            cancel: { picking = nil }
+        )
+    }
+
+    private func pickPurpose(for target: PickTarget) -> AutomationLibraryPicker.Purpose {
+        func itemID(_ entry: WallpaperQueueEntry?) -> LibraryItem.ID? {
+            entry.flatMap { Self.matchingItem($0, in: library)?.id }
+        }
+        switch target {
+        case .queue:
+            return .playlist(inPlaylist: Set(queue.compactMap(itemID)))
+        case let .slot(id):
+            return .single(
+                title: "Choose Wallpaper for \(rangeText(for: id))", current: itemID(slots.first { $0.id == id }?.wallpaper)
+            )
+        case .fallback:
+            return .single(title: "Choose Fallback Wallpaper", current: itemID(fallback ?? derivedFallback))
+        }
+    }
+
+    private func commitPick(_ ids: [LibraryItem.ID], to target: PickTarget) {
+        let picked = AutomationPickOrder.entries(for: ids, in: library.items)
+        switch target {
+        case .queue:
+            queue.append(contentsOf: picked.entries)
+        case let .slot(id):
+            if let entry = picked.entries.first {
+                assign(entry, toSlot: id)
             }
-            HStack {
-                if pickTarget == .queue {
-                    Button("Choose Videos", action: chooseVideoFiles)
-                    Spacer()
-                    Text("\(added.values.count(where: { id in queue.contains { $0.id == id } })) selected")
-                        .font(DesignTokens.Typography.subheadline)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    Button("Done") { pickerAnchor = nil }.buttonStyle(.borderedProminent)
-                } else {
-                    Button("Choose Video", action: chooseVideoFiles)
-                    Spacer()
-                }
+        case .fallback:
+            if let entry = picked.entries.first {
+                fallback = entry
             }
         }
-        .padding(DesignTokens.Spacing.lg).frame(width: 440, height: 400)
+        error = picked.unavailable > 0
+            ? String(localized: "This wallpaper is unavailable. Reimport it from the library.", bundle: .appLanguage)
+            : nil
+        picking = nil
     }
 
     private func entryLabel(_ entry: WallpaperQueueEntry) -> some View {
@@ -872,11 +832,19 @@ struct WallpaperAutomationSheet: View {
         }.labelsHidden().frame(width: 80).help(Text(label))
     }
 
-    private func icon(_ symbol: String, _ label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+    private func icon(
+        _ symbol: String, _ label: LocalizedStringKey, tint: Color? = nil, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+            Group {
+                if let tint {
+                    Image(systemName: symbol).foregroundStyle(tint)
+                } else {
+                    Image(systemName: symbol)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .help(Text(label))
@@ -907,19 +875,11 @@ struct WallpaperAutomationSheet: View {
         slots[index].label = entry.title
     }
 
-    private func isPicked(_ item: LibraryItem) -> Bool {
-        guard pickTarget == .queue, let id = added[item.id] else { return false }
-        return queue.contains { $0.id == id }
-    }
-
     private func rangeText(for id: UUID) -> String {
         slots.first { $0.id == id }.map { String(format: "%02d:00–%02d:00", $0.startHour, $0.endHour) } ?? ""
     }
 
-    private func chooseVideoFiles() {
-        let target = pickTarget
-        pickerAnchor = nil
-        // App-modal: even on the next turn the closing popover can still be the key window, and a sheet on it would be cancelled with it.
+    private func chooseVideoFiles(for target: PickTarget) {
         Task { @MainActor in
             let panel = NSOpenPanel()
             panel.allowsMultipleSelection = target == .queue
@@ -927,12 +887,13 @@ struct WallpaperAutomationSheet: View {
             panel.prompt = target == .queue ? L10n.Panel.addVideos : L10n.Panel.setVideo
             if panel.runModal() == .OK {
                 let chosen = WallpaperQueueEntry.videoFiles(panel.urls)
-                error = chosen.failed > 0
-                    ? String(
+                // Only set, never cleared here: an unavailable library pick reported just before must stay visible.
+                if chosen.failed > 0 {
+                    error = String(
                         localized: "Couldn't add \(chosen.failed) of the selected videos.", bundle: .appLanguage,
                         comment: "Playlist and schedule panel: some chosen video files could not be bookmarked. Placeholder is how many."
                     )
-                    : nil
+                }
                 switch target {
                 case .queue:
                     queue.append(contentsOf: chosen.entries)
