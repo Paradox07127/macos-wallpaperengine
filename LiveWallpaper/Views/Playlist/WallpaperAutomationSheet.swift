@@ -90,6 +90,7 @@ struct WallpaperAutomationSheet: View {
     @State private var selectedQueueID: WallpaperQueueEntry.ID?
     @State private var hoveredQueueID: WallpaperQueueEntry.ID?
     @State private var hoveredSlotID: UUID?
+    @State private var fallbackHovered = false
     /// Crate records and deck cards, keyed by `LibraryItem.id`; by entry id for an entry the library has no item for.
     @State private var artwork: [String: CGImage] = [:]
     @State private var deck = DeckSnapshot()
@@ -422,10 +423,44 @@ struct WallpaperAutomationSheet: View {
         }
     }
 
-    private func rowHighlight(selected: Bool, hovered: Bool) -> some View {
-        RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-            .fill(DesignTokens.Colors.accent.opacity(selected ? DesignTokens.Opacity.selectedFill : DesignTokens.Opacity.hoverFill))
-            .opacity(selected || hovered ? 1 : 0)
+    private func rowHighlight(selected: Bool, hovered: Bool, tint: Color = DesignTokens.Colors.accent) -> some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                .fill(tint.opacity(selected ? DesignTokens.Opacity.selectedFill : DesignTokens.Opacity.hoverFill))
+            if selected {
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 3)
+            }
+        }
+        .opacity(selected || hovered ? 1 : 0)
+    }
+
+    private func sectionHeader(
+        _ title: LocalizedStringKey,
+        count: Int? = nil,
+        actionTitle: LocalizedStringKey? = nil,
+        actionIcon: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            Text(title)
+            if let count {
+                StatusChip(text: Text(count, format: .number), tint: .secondary)
+            }
+            if let actionTitle, let action {
+                Spacer(minLength: DesignTokens.Spacing.sm)
+                Button(action: action) {
+                    if let actionIcon {
+                        Label(actionTitle, systemImage: actionIcon)
+                    } else {
+                        Text(actionTitle)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
     }
 
     /// The modes sit centred between two equal halves; the library picker brings its own footer, so it hides them and Save.
@@ -597,7 +632,7 @@ struct WallpaperAutomationSheet: View {
         } column: {
             columnScroll {
                 GroupBox {
-                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                         SettingRow(icon: "arrow.triangle.2.circlepath", iconColor: DesignTokens.Colors.accent, title: "Rotate") {
                             Picker("Rotate", selection: $libraryRotation) {
                                 ForEach(Array(Set([1, 5, 15, 30, 60, 120, libraryRotation])).sorted(), id: \.self) { value in
@@ -608,11 +643,13 @@ struct WallpaperAutomationSheet: View {
                             .fixedSize()
                         }
                         Text("Automatically picks a random wallpaper from your entire library. New imports join automatically; unavailable wallpapers are skipped. The same wallpaper never plays twice in a row.")
-                            .font(DesignTokens.Typography.body)
+                            .font(DesignTokens.Typography.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                } label: {
+                    Text("Playback")
                 }
                 .groupBoxStyle(ContainerGroupBoxStyle())
                 excludedWallpapers
@@ -672,13 +709,13 @@ struct WallpaperAutomationSheet: View {
 
     private var excludedWallpapers: some View {
         let items = Self.excludedItems(excludedIDs, in: library.items)
-        let rows = VStack(spacing: DesignTokens.Spacing.md) {
+        let rows = VStack(spacing: DesignTokens.Spacing.xs) {
             ForEach(items, content: excludedRow)
         }
         return GroupBox {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                 Text("Library shuffle never picks these wallpapers.")
-                    .font(DesignTokens.Typography.body)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if items.count > 6 {
@@ -686,48 +723,49 @@ struct WallpaperAutomationSheet: View {
                 } else if !items.isEmpty {
                     rows
                 }
-                Button("Choose from Library") { picking = .exclusions }
-                    .buttonStyle(.bordered)
+                Button {
+                    picking = .exclusions
+                } label: {
+                    Label("Choose from Library", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
-            countedTitle("Excluded wallpapers", count: items.count)
+            sectionHeader("Excluded wallpapers", count: items.count)
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    private func countedTitle(_ title: LocalizedStringKey, count: Int) -> some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            Text(title)
-            Spacer(minLength: DesignTokens.Spacing.sm)
-            Text(count, format: .number)
-                .font(DesignTokens.Typography.metric)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private func excludedRow(for item: LibraryItem) -> some View {
-        HStack(spacing: DesignTokens.Spacing.md) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             // No queue entry here: building one per redraw gives it a new ID and resolves Workshop bookmarks again.
             ScheduleSlotThumbnail(entry: nil, thumbnails: thumbnails) { item.thumbnail }
-                .frame(width: 80, height: 45)
+                .frame(width: 48, height: 27)
                 .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
                 .accessibilityHidden(true)
-            Text(verbatim: item.title.translatedWallpaperName).lineLimit(2)
-            Spacer(minLength: DesignTokens.Spacing.sm)
+            Text(verbatim: item.title.translatedWallpaperName)
+                .font(DesignTokens.Typography.body)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: DesignTokens.Spacing.xs)
             Button("Include Again") { excludedIDs.remove(item.id) }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
         }
+        .padding(DesignTokens.Spacing.xs)
+        .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
     }
 
     @ViewBuilder
     private var skippedSources: some View {
         if !failures.isEmpty {
-            let rows = VStack(spacing: DesignTokens.Spacing.md) {
+            let rows = VStack(spacing: DesignTokens.Spacing.xs) {
                 ForEach(failures.values.sorted { $0.failedAt > $1.failedAt }, id: \.entry.id, content: skippedRow)
             }
             GroupBox {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                     if failures.count > 6 {
                         ScrollView { rows }.frame(maxHeight: 280)
                     } else {
@@ -736,29 +774,41 @@ struct WallpaperAutomationSheet: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                Text("Skipped wallpapers")
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    Text("Skipped wallpapers")
+                    StatusChip(
+                        text: Text(failures.count, format: .number),
+                        tint: DesignTokens.Colors.Status.warning, systemImage: "exclamationmark.triangle.fill"
+                    )
+                }
             }
             .groupBoxStyle(ContainerGroupBoxStyle())
         }
     }
 
     private func skippedRow(for failure: WallpaperAutomationFailure) -> some View {
-        HStack(spacing: DesignTokens.Spacing.md) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             Image(systemName: Self.skipSymbol(failure.reason))
+                .font(DesignTokens.Typography.body)
                 .foregroundStyle(DesignTokens.Colors.Status.warning)
                 .frame(width: DesignTokens.iconButtonDiameter(.regular))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                Text(verbatim: Self.rowTitle(for: failure.entry, in: library)).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: Self.rowTitle(for: failure.entry, in: library))
+                    .font(DesignTokens.Typography.body)
+                    .lineLimit(1)
                 if let reason = failure.reason {
                     Text(Self.skipReason(reason)).font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
-            Spacer(minLength: DesignTokens.Spacing.sm)
+            Spacer(minLength: DesignTokens.Spacing.xs)
             Button("Enable Again") { manager.clearAutomationFailure(failure.entry.id, for: screen) }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
         }
+        .padding(DesignTokens.Spacing.xs)
+        .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
     }
 
     private static func skipSymbol(_ reason: WallpaperAutomationFailure.Reason?) -> String {
@@ -829,23 +879,46 @@ struct WallpaperAutomationSheet: View {
 
     private var playlistSettings: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 let stopsAtEnd = !shuffle && autoAdvance && !loops
-                Label(
-                    shuffle ? "Shuffle" : stopsAtEnd ? "Plays in order, then stops" : "Plays in order, then repeats",
-                    systemImage: shuffle ? "shuffle" : stopsAtEnd ? "arrow.right" : "repeat"
-                )
-                    .font(DesignTokens.Typography.subheadline).foregroundStyle(.secondary)
-                Toggle("Shuffle", isOn: $shuffle).toggleStyle(.switch).controlSize(.small)
-                Toggle("Auto-Advance", isOn: $autoAdvance).toggleStyle(.switch).controlSize(.small)
-                Picker("Rotate", selection: $rotation) {
-                    ForEach([1, 5, 15, 30, 60, 120], id: \.self) { value in
-                        Text("Every \(value) min").tag(value)
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Image(systemName: shuffle ? "shuffle" : stopsAtEnd ? "arrow.right" : "repeat")
+                        .font(DesignTokens.Typography.caption)
+                    Text(shuffle ? "Shuffle" : stopsAtEnd ? "Plays in order, then stops" : "Plays in order, then repeats")
+                        .font(DesignTokens.Typography.caption)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.bottom, DesignTokens.Spacing.xxs)
+
+                SettingRow(icon: "arrow.triangle.2.circlepath", iconColor: DesignTokens.Colors.accent, title: "Rotate") {
+                    Picker("Rotate", selection: $rotation) {
+                        ForEach([1, 5, 15, 30, 60, 120], id: \.self) { value in
+                            Text("Every \(value) min").tag(value)
+                        }
                     }
-                }.frame(width: 180).disabled(!autoAdvance)
-                Toggle("Loop", isOn: $loops).toggleStyle(.switch).controlSize(.small).disabled(!autoAdvance || shuffle)
-                Button("Add Wallpaper") { picking = .queue }
-                    .buttonStyle(.bordered)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                .disabled(!autoAdvance)
+
+                SettingRow(icon: "forward.fill", iconColor: DesignTokens.Colors.accent, title: "Auto-Advance") {
+                    Toggle("Auto-Advance", isOn: $autoAdvance)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingRow(icon: "repeat", iconColor: DesignTokens.Colors.accent, title: "Loop") {
+                    Toggle("Loop", isOn: $loops)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+                .disabled(!autoAdvance || shuffle)
+
+                SettingRow(icon: "shuffle", iconColor: DesignTokens.Colors.accent, title: "Shuffle") {
+                    Toggle("Shuffle", isOn: $shuffle)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
@@ -860,14 +933,9 @@ struct WallpaperAutomationSheet: View {
             List {
                 ForEach(Array(queue.enumerated()), id: \.element.id) { index, entry in
                     HStack(spacing: DesignTokens.Spacing.sm) {
-                        if entry.id == playingEntryID {
-                            Image(systemName: "waveform")
-                                .foregroundStyle(DesignTokens.EditDesk.Colors.nowPlayingGlyph)
-                                .frame(width: 22)
-                                .accessibilityHidden(true)
-                        } else {
-                            Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 22)
-                        }
+                        Text(String(format: "%02d", index + 1))
+                            .font(DesignTokens.Typography.metric)
+                            .foregroundStyle(entry.id == selectedQueueID ? DesignTokens.Colors.accent : .secondary)
                         QueueEntryLabel(
                             entry: entry, title: Self.rowTitle(for: entry, in: library), isPlaying: entry.id == playingEntryID,
                             thumbnails: thumbnails, thumbnailSize: Self.queueThumbnailSize
@@ -882,7 +950,8 @@ struct WallpaperAutomationSheet: View {
                         }
                         icon("trash", "Remove", tint: DesignTokens.Colors.Status.danger) { queue.remove(at: index) }
                     }
-                    .padding(DesignTokens.Spacing.xs)
+                    .padding(.horizontal, DesignTokens.Spacing.xs)
+                    .padding(.vertical, DesignTokens.Spacing.xxs)
                     .background(rowHighlight(selected: entry.id == selectedQueueID, hovered: entry.id == hoveredQueueID))
                     .contentShape(Rectangle())
                     .onTapGesture { selectedQueueID = entry.id }
@@ -917,9 +986,12 @@ struct WallpaperAutomationSheet: View {
                 }
                 .onMove { from, to in queue.move(fromOffsets: from, toOffset: to) }
             }
-            .listStyle(.plain).scrollContentBackground(.hidden)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         } label: {
-            countedTitle("Queue", count: queue.count)
+            sectionHeader("Queue", count: queue.count, actionTitle: "Add Wallpaper", actionIcon: "plus") {
+                picking = .queue
+            }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
@@ -964,64 +1036,84 @@ struct WallpaperAutomationSheet: View {
         } column: {
             columnScroll {
                 slotList
-                if SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) != nil, let entry = fallback ?? derivedFallback {
-                    unscheduledHoursSection(entry: entry)
-                }
-                NativeMenuButton { presetMenu } label: {
-                    Image(systemName: "plus")
-                        .font(DesignTokens.Typography.body)
-                        .frame(width: DesignTokens.iconButtonDiameter(.regular), height: DesignTokens.iconButtonDiameter(.regular))
-                        .adaptiveGlassSurface(.capsule, interactive: true)
-                }
-                .help(Text("Add schedule slot"))
-                .accessibilityLabel(Text("Add schedule slot"))
-                .disabled(SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) == nil)
                 slotEditor
                 validationSection
             }
         }
     }
 
-    @ViewBuilder
     private var slotList: some View {
-        if !slots.isEmpty {
-            GroupBox {
-                VStack(spacing: DesignTokens.Spacing.xxs) {
-                    ForEach(Self.slotListOrder(slots), content: slotRow)
+        GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                ForEach(Self.slotListOrder(slots), content: slotRow)
+                if SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) != nil, let entry = fallback ?? derivedFallback {
+                    fallbackRow(entry: entry)
                 }
-            } label: {
-                Text("Time Slots")
+                addSlotButton
             }
-            .groupBoxStyle(ContainerGroupBoxStyle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Text("Time Slots")
         }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
+    private var addSlotButton: some View {
+        Menu {
+            presetMenu
+        } label: {
+            Label("Add schedule slot", systemImage: "plus")
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize()
+        .disabled(SchedulePolicy.findFreeRange(in: slots, minMinutes: 60) == nil)
+    }
+
+    private func slotColor(_ slot: ScheduleSlot) -> Color {
+        let palette = Self.slotPalette
+        return palette.isEmpty ? DesignTokens.Colors.accent : palette[(ScheduleDialStyle.number(slot, in: slots) - 1) % palette.count]
     }
 
     private func slotRow(_ slot: ScheduleSlot) -> some View {
-        let palette = Self.slotPalette
-        let color = palette.isEmpty ? DesignTokens.Colors.accent : palette[(ScheduleDialStyle.number(slot, in: slots) - 1) % palette.count]
+        let color = slotColor(slot)
         let selected = slot.id == selectedSlotID
         return Button {
             selectedSlotID = slot.id
         } label: {
             HStack(spacing: DesignTokens.Spacing.sm) {
-                Circle()
+                Capsule()
                     .fill(color)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 3, height: 24)
                     .accessibilityHidden(true)
+
                 Text(verbatim: slot.rangeText())
                     .font(DesignTokens.Typography.metric)
+                    .frame(width: 72, alignment: .leading)
+
+                ScheduleSlotThumbnail(entry: slot.wallpaper, thumbnails: thumbnails) {
+                    slot.wallpaper.map(thumbnailRequest)
+                }
+                .frame(width: Self.queueThumbnailSize.width, height: Self.queueThumbnailSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
+                .accessibilityHidden(true)
+
                 Text(verbatim: slot.wallpaper.map { Self.rowTitle(for: $0, in: library) } ?? slot.localizedLabel)
+                    .font(DesignTokens.Typography.body)
                     .lineLimit(1)
                     .truncationMode(.tail)
+
                 Spacer(minLength: DesignTokens.Spacing.xs)
+
                 if Self.crossesMidnight(slot) {
-                    Text("Overnight")
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
+                    StatusChip("Overnight", tint: .secondary)
                 }
             }
-            .padding(DesignTokens.Spacing.xs)
-            .background(rowHighlight(selected: selected, hovered: slot.id == hoveredSlotID))
+            .padding(.horizontal, DesignTokens.Spacing.xs)
+            .padding(.vertical, DesignTokens.Spacing.xs)
+            .background(rowHighlight(selected: selected, hovered: slot.id == hoveredSlotID, tint: color))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1029,6 +1121,56 @@ struct WallpaperAutomationSheet: View {
             hoveredSlotID = inside ? slot.id : (hoveredSlotID == slot.id ? nil : hoveredSlotID)
         }
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func fallbackRow(entry: WallpaperQueueEntry) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            fallbackButton(entry: entry)
+            failureBadge(entry)
+        }
+    }
+
+    private func fallbackButton(entry: WallpaperQueueEntry) -> some View {
+        Button {
+            picking = .fallback
+        } label: {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Capsule()
+                    .fill(.secondary.opacity(DesignTokens.Opacity.quietStroke))
+                    .frame(width: 3, height: 24)
+                    .accessibilityHidden(true)
+
+                Text("Unscheduled Hours")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 72, alignment: .leading)
+
+                ScheduleSlotThumbnail(entry: entry, thumbnails: thumbnails) {
+                    thumbnailRequest(for: entry)
+                }
+                .frame(width: Self.queueThumbnailSize.width, height: Self.queueThumbnailSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
+                .accessibilityHidden(true)
+
+                Text(verbatim: Self.rowTitle(for: entry, in: library))
+                    .font(DesignTokens.Typography.body)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: DesignTokens.Spacing.xs)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.xs)
+            .padding(.vertical, DesignTokens.Spacing.xs)
+            .background(rowHighlight(selected: false, hovered: fallbackHovered, tint: .secondary))
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(DesignTokens.Opacity.quietStroke), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .settledHover { fallbackHovered = $0 }
+        .help(Text("Choose Fallback Wallpaper"))
     }
 
     private func dialNowPlayingTitle(now: Date) -> String? {
@@ -1048,67 +1190,101 @@ struct WallpaperAutomationSheet: View {
     private var slotEditor: some View {
         if let index = slots.firstIndex(where: { $0.id == selectedSlotID }) {
             let slot = slots[index]
-            GroupBox("Time Slot") {
+            GroupBox {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                    HStack {
+                    HStack(spacing: DesignTokens.Spacing.sm) {
+                        Text("Start")
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
                         DatePicker("Start", selection: Self.timeBinding($slots[index].startMinute, isEnd: false), displayedComponents: .hourAndMinute)
-                            .datePickerStyle(.stepperField).labelsHidden().help(Text("Start"))
-                        Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                            .datePickerStyle(.stepperField)
+                            .labelsHidden()
+                            .help(Text("Start"))
+
+                        Image(systemName: "arrow.right")
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
+
+                        Text("End")
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
                         DatePicker("End", selection: Self.timeBinding($slots[index].endMinute, isEnd: true), displayedComponents: .hourAndMinute)
-                            .datePickerStyle(.stepperField).labelsHidden().help(Text("End"))
+                            .datePickerStyle(.stepperField)
+                            .labelsHidden()
+                            .help(Text("End"))
                     }
-                    Button {
-                        picking = .slot(slot.id)
-                    } label: {
-                        if let entry = slot.wallpaper {
-                            QueueEntryLabel(entry: entry, title: Self.rowTitle(for: entry, in: library), isPlaying: false, thumbnails: thumbnails) {
-                                thumbnailRequest(for: entry)
-                            }
-                            .id(entry.id)
-                        } else {
-                            Label("Choose Wallpaper", systemImage: "plus")
+
+                    HStack(spacing: DesignTokens.Spacing.md) {
+                        ScheduleSlotThumbnail(entry: slot.wallpaper, thumbnails: thumbnails) {
+                            slot.wallpaper.map(thumbnailRequest)
                         }
+                        .frame(width: 80, height: 45)
+                        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
+                        .accessibilityHidden(true)
+
+                        if let entry = slot.wallpaper {
+                            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                                Text(verbatim: Self.rowTitle(for: entry, in: library))
+                                    .font(DesignTokens.Typography.bodyEmphasized)
+                                    .lineLimit(2)
+                                failureBadge(entry)
+                            }
+                        }
+                        Spacer(minLength: DesignTokens.Spacing.xs)
+
+                        Button("Choose Wallpaper") {
+                            picking = .slot(slot.id)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.plain)
-                    if let entry = slot.wallpaper {
-                        failureBadge(entry)
+                    .padding(DesignTokens.Spacing.xs)
+                    .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
+
+                    HStack {
+                        Spacer()
+                        Button(role: .destructive) {
+                            slots.removeAll { $0.id == slot.id }
+                            selectedSlotID = slots.first?.id
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    Button(role: .destructive) {
-                        slots.removeAll { $0.id == slot.id }
-                        selectedSlotID = slots.first?.id
-                    } label: {
-                        Label("Remove", systemImage: "trash")
-                    }
-                    .buttonStyle(.borderless)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    Circle()
+                        .fill(slotColor(slot))
+                        .frame(width: 8, height: 8)
+                    Text("Time Slot")
+                    Spacer()
+                    Text(slotDurationText(slot))
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                }
             }
             .groupBoxStyle(ContainerGroupBoxStyle())
         } else {
-            GroupBox("Select a time slot") {
+            GroupBox {
                 Text("Choose a wallpaper around the clock to edit its hours.")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, DesignTokens.Spacing.xs)
+            } label: {
+                Text("Select a time slot")
             }
             .groupBoxStyle(ContainerGroupBoxStyle())
         }
     }
 
-    private func unscheduledHoursSection(entry: WallpaperQueueEntry) -> some View {
-        GroupBox("Unscheduled Hours") {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-                Button {
-                    picking = .fallback
-                } label: {
-                    entryLabel(entry)
-                }
-                .buttonStyle(.plain)
-                failureBadge(entry)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .groupBoxStyle(ContainerGroupBoxStyle())
+    private func slotDurationText(_ slot: ScheduleSlot) -> String {
+        let end = slot.endMinute > slot.startMinute ? slot.endMinute : slot.endMinute + 1440
+        return Duration.seconds((end - slot.startMinute) * 60)
+            .formatted(.units(allowed: [.hours, .minutes], width: .narrow).locale(AppLanguagePreference.current.locale))
     }
 
     @ViewBuilder
@@ -1251,15 +1427,6 @@ struct WallpaperAutomationSheet: View {
             ? String(localized: "This wallpaper is unavailable. Reimport it from the library.", bundle: .appLanguage)
             : nil
         picking = nil
-    }
-
-    private func entryLabel(_ entry: WallpaperQueueEntry) -> some View {
-        HStack(spacing: DesignTokens.Spacing.md) {
-            Image(systemName: entry.symbol).font(DesignTokens.Typography.sectionTitle)
-                .frame(width: 42, height: 36)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
-            Text(verbatim: Self.rowTitle(for: entry, in: library)).lineLimit(2).multilineTextAlignment(.leading)
-        }
     }
 
     private func icon(
@@ -1450,10 +1617,15 @@ private struct QueueEntryLabel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title).lineLimit(2).multilineTextAlignment(.leading)
                 if isPlaying {
-                    Text("Now playing")
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                        .lineLimit(1)
+                    HStack(spacing: DesignTokens.Spacing.xxs) {
+                        Circle()
+                            .fill(DesignTokens.EditDesk.Colors.nowPlayingGlyph)
+                            .frame(width: 6, height: 6)
+                        Text("Now playing")
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(DesignTokens.EditDesk.Colors.nowPlayingGlyph)
+                    }
+                    .lineLimit(1)
                 } else if !subtitle.isEmpty {
                     Text(verbatim: subtitle).font(DesignTokens.Typography.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
