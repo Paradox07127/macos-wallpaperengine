@@ -155,7 +155,8 @@ struct WorkshopSettingsView: View {
                 key: "steamSignIn",
                 anchor: .workshopConnection,
                 title: "Steam sign-in check",
-                state: doctorService.steamLibraryAndAccountState
+                state: doctorService.steamLibraryAndAccountState,
+                statusNote: doctorService.steamSignInStatusNote
             ),
             WorkshopSetupFacet(
                 key: "assets",

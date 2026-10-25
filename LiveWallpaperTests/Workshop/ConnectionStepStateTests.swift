@@ -1,7 +1,8 @@
 #if !LITE_BUILD
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import SwiftUI
+import Testing
 
 @Suite("Workshop connection step state", .serialized)
 @MainActor
@@ -41,6 +42,18 @@ struct ConnectionStepStateTests {
 
         #expect(service.accountStepState == .notStarted)
         #expect(service.steamLibraryAndAccountState != .attention)
+    }
+
+    @Test("A saved account no check has verified says so instead of reading as not set")
+    func savedUnverifiedAccountExplainsItself() throws {
+        let (service, _) = try makeService()
+        service.username = "someone"
+
+        #expect(service.steamLibraryAndAccountState == .notStarted)
+        #expect(service.steamSignInStatusNote == LocalizedStringKey("Account saved, not verified yet · Run all checks in Diagnostics"))
+
+        service.setProbe(.cachedLogin, status: .running)
+        #expect(service.steamSignInStatusNote == nil)
     }
 
     @Test("Configuring the library notifies observers of the step state")

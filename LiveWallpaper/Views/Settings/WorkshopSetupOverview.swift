@@ -8,6 +8,8 @@ struct WorkshopSetupFacet: Identifiable {
     let anchor: SettingsSearchAnchor
     let title: LocalizedStringKey
     let state: WorkshopStepState
+    /// nil = the state's own status text describes the step.
+    var statusNote: LocalizedStringKey?
     /// Optional steps are excluded from the readiness total.
     var isOptional = false
 
@@ -35,8 +37,16 @@ struct WorkshopSetupOverview: View {
                         .foregroundStyle(.secondary)
                 }
 
-                track
-                legend
+                HStack(alignment: .lastTextBaseline, spacing: DesignTokens.Spacing.md) {
+                    VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                        track
+                        requiredLegend
+                    }
+                    ForEach(facets.filter(\.isOptional)) { facet in
+                        legendItem(facet)
+                            .fixedSize()
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -45,8 +55,10 @@ struct WorkshopSetupOverview: View {
         .accessibilityElement(children: .contain)
     }
 
+    private static let segmentGap: CGFloat = 2
+
     private var track: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Self.segmentGap) {
             ForEach(facets.filter { !$0.isOptional }) { facet in
                 RoundedRectangle(cornerRadius: DesignTokens.StatusBar.corner, style: .continuous)
                     .fill(segmentTint(facet))
@@ -58,33 +70,43 @@ struct WorkshopSetupOverview: View {
         .accessibilityHidden(true)
     }
 
-    private var legend: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
-            ForEach(facets) { facet in
-                Button {
-                    onSelect(facet.anchor)
-                } label: {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        Circle()
-                            .fill(segmentTint(facet))
-                            .frame(width: 6, height: 6)
-                            .accessibilityHidden(true)
-
-                        Text(facet.title)
-                            .font(DesignTokens.Typography.caption)
-                            .foregroundStyle(.secondary)
-                            .marqueeOnHover(truncationMode: .tail)
-                    }
+    private var requiredLegend: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Self.segmentGap) {
+            ForEach(facets.filter { !$0.isOptional }) { facet in
+                legendItem(facet)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(Text(facet.state.statusText))
-                .accessibilityLabel(Text(facet.title))
-                .accessibilityValue(Text(facet.state.statusText))
-                .accessibilityHint(Text("Scroll to this section"))
             }
         }
+    }
+
+    private func legendItem(_ facet: WorkshopSetupFacet) -> some View {
+        Button {
+            onSelect(facet.anchor)
+        } label: {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Circle()
+                    .fill(segmentTint(facet))
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+
+                Text(facet.title)
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .marqueeOnHover(truncationMode: .tail)
+
+                if facet.isOptional {
+                    Text("Optional")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(DesignTokens.Colors.textTertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(Text(facet.statusNote ?? facet.state.statusText))
+        .accessibilityLabel(Text(facet.title))
+        .accessibilityValue(Text(facet.statusNote ?? facet.state.statusText))
+        .accessibilityHint(Text("Scroll to this section"))
     }
 
     /// Unstarted steps remain visible in the track.
@@ -95,21 +117,15 @@ struct WorkshopSetupOverview: View {
     private var summary: String {
         let required = facets.filter { !$0.isOptional }
         let ready = required.filter { $0.state == .ready }.count
-        let base = if ready == required.count {
-            String(
+        if ready == required.count {
+            return String(
                 localized: "All set",
                 bundle: .appLanguage, comment: "Workshop setup status bar summary when every required setup step is done."
             )
-        } else {
-            String(
-                localized: "\(ready) of \(required.count) ready",
-                bundle: .appLanguage, comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
-            )
         }
-        guard facets.contains(where: { $0.isOptional && $0.state != .ready }) else { return base }
         return String(
-            localized: "\(base) · API key optional",
-            bundle: .appLanguage, comment: "Workshop setup status bar summary suffix; %@ is the required-steps summary."
+            localized: "\(ready) of \(required.count) ready",
+            bundle: .appLanguage, comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
         )
     }
 }

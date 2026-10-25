@@ -83,7 +83,7 @@ struct BrowsePagination: View {
             .disabled(controlsDisabled)
             .help(Text("Page"))
             .accessibilityLabel(Text("Page"))
-            .appLanguagePopover(isPresented: $showsPageJump, arrowEdge: .bottom) {
+            .appLanguagePopover(isPresented: $showsPageJump, arrowEdge: .top) {
                 jumpControls
                     .padding(DesignTokens.Spacing.md)
             }

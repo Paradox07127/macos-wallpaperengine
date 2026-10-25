@@ -64,6 +64,12 @@ final class WorkshopPasteQueueModel {
 
     // MARK: - Public API
 
+    /// Whether closing would lose typed text or rows the download queue never took; invalid rows have nothing to download.
+    func hasUnsavedWork(isHandedOff: (UInt64) -> Bool) -> Bool {
+        !rawInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || rows.contains { row in row.publishedFileID.map { !isHandedOff($0) } ?? false }
+    }
+
     func updateRawInput(_ value: String) {
         rawInput = value
     }

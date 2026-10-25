@@ -324,6 +324,31 @@ struct WorkshopMetadataBatchTests {
         #expect(model.rows.first?.error == .itemPrivate)
     }
 
+    // MARK: - Closing the paste sheet
+
+    @Test("Rows the download queue never took are work that closing would lose")
+    @MainActor
+    func rowsNotHandedOffAreUnsavedWork() {
+        let model = WorkshopPasteQueueModel(fetchMetadata: { _ in [:] })
+        model.updateRawInput("111 222")
+        model.ingestFromRawInput()
+
+        #expect(model.rawInput.isEmpty)
+        #expect(model.hasUnsavedWork(isHandedOff: { $0 == 111 }))
+    }
+
+    @Test("Closing loses nothing once every row is handed off and the input is empty")
+    @MainActor
+    func handedOffRowsWithEmptyInputAreNotUnsavedWork() {
+        let model = WorkshopPasteQueueModel(fetchMetadata: { _ in [:] })
+        model.updateRawInput("111 222 not-a-workshop-link")
+        model.ingestFromRawInput()
+
+        #expect(!model.hasUnsavedWork(isHandedOff: { _ in true }))
+        model.updateRawInput("333")
+        #expect(model.hasUnsavedWork(isHandedOff: { _ in true }))
+    }
+
     // MARK: - Fixtures
 
     private enum FixtureItem {

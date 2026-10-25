@@ -319,6 +319,12 @@ extension SteamCMDDoctorService {
         }
     }
 
+    /// Replaces "Not set" while the account row already names an account no check has verified.
+    var steamSignInStatusNote: LocalizedStringKey? {
+        guard username != nil, accountStepState == .notStarted, steamLibraryAndAccountState == .notStarted else { return nil }
+        return "Account saved, not verified yet · Run all checks in Diagnostics"
+    }
+
     var steamLibraryAndAccountState: WorkshopStepState {
         let steps = [libraryStepState, accountStepState]
         if steps.contains(.attention) { return .attention }

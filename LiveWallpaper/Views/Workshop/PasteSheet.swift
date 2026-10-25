@@ -11,6 +11,7 @@ struct PasteSheet: View {
     @State private var toastVisible = false
     @State private var pendingDestructive: PendingDestructive?
     @State private var confirmsClearQueue = false
+    @State private var confirmsDiscard = false
     @FocusState private var textFieldIsFocused: Bool
 
     var body: some View {
@@ -34,11 +35,11 @@ struct PasteSheet: View {
             // Queue actions commit immediately; Done closes without discarding them.
             SheetFooterBar(
                 primaryTitle: "Done",
-                primaryAction: { dismiss() }
+                primaryAction: { requestClose() }
             )
         }
         .background {
-            Button("Close") { dismiss() }
+            Button("Close") { requestClose() }
                 .keyboardShortcut(.cancelAction)
                 .opacity(0)
                 .frame(width: 0, height: 0)
@@ -57,8 +58,32 @@ struct PasteSheet: View {
                 .allowsHitTesting(false)
         }
         .confirmDestructive($pendingDestructive)
+        .alert(
+            Text("Discard this list?", comment: "Title of the alert before closing the Add from Steam Workshop sheet would drop its unsent input."),
+            isPresented: $confirmsDiscard
+        ) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(
+                "The pasted text and the items you haven't downloaded will be removed.",
+                comment: "Message of the alert before closing the Add from Steam Workshop sheet would drop its unsent input."
+            )
+        }
         .onAppear { textFieldIsFocused = true }
         .onDisappear { model.removeAll() }
+    }
+
+    private func requestClose() {
+        let losesWork = model.hasUnsavedWork { id in
+            downloads.phase(for: id) != .idle || queue.isQueued(id)
+        }
+        if losesWork {
+            confirmsDiscard = true
+        } else {
+            dismiss()
+        }
     }
 
     // MARK: - Queue header
@@ -175,7 +200,7 @@ struct PasteSheet: View {
                 Button {
                     model.ingestFromRawInput()
                 } label: {
-                    Label("Add to queue", systemImage: "plus.circle.fill")
+                    Label("Add to List", systemImage: "plus.circle.fill")
                         .font(DesignTokens.Typography.bodyEmphasized)
                 }
                 .buttonStyle(.borderedProminent)
