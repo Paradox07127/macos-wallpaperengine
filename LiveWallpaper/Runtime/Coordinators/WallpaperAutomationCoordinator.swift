@@ -34,6 +34,8 @@ final class WallpaperAutomationCoordinator {
 
     static func hasDemand(_ configuration: ScreenConfiguration) -> Bool {
         switch configuration.wallpaperMode {
+        case .single:
+            false
         case .playlist:
             configuration.effectivePlaylistRotationMinutes > 0
                 && configuration.effectiveWallpaperQueue.filter { configuration.automationFailures[$0.id]?.entry.content != $0.content }.count > 1

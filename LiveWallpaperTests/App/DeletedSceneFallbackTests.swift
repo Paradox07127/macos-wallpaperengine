@@ -120,6 +120,24 @@ struct DeletedSceneFallbackTests {
         }
     }
 
+    @Test("A single-wallpaper display moves to its next queue entry and stays single")
+    func singleWallpaperMovesToNextEntry() async throws {
+        let (a, b, c) = (Self.makeItem("A"), Self.makeItem("B"), Self.makeItem("C"))
+        let queue = [a.entry, b.entry, c.entry]
+        var seeded = Self.showing(a)
+        seeded.wallpaperQueue = queue
+        seeded.playlistCursorIndex = 0
+        seeded.wallpaperMode = .single
+        try await Self.withManager(seeding: seeded, deleting: a) { manager, screen in
+            await Self.settle { manager.getConfiguration(for: screen)?.wpeOrigin == b.entry.origin }
+
+            let stored = try #require(manager.getConfiguration(for: screen), "the row was deleted instead of moving on")
+            #expect(stored.wpeOrigin == b.entry.origin)
+            #expect(stored.wallpaperMode == .single)
+            #expect(stored.wallpaperQueue == queue)
+        }
+    }
+
     @Test("A playlist whose only entry is the deleted scene loses its row")
     func playlistWithOnlyDeletedEntryClears() async throws {
         let a = Self.makeItem("A")

@@ -5,11 +5,11 @@ public enum WallpaperMode: String, Codable, CaseIterable, Identifiable, Sendable
     case playlist
     case schedule
     case libraryShuffle
+    case single
 
     public var id: String { rawValue }
 
-    /// Tolerant decoder: a persisted `single` mode decodes to `.playlist`, a one-entry
-    /// playlist.
+    /// Tolerant decoder: an unknown persisted mode decodes to `.playlist`.
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)

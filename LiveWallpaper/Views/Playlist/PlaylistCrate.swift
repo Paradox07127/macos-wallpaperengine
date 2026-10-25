@@ -279,6 +279,14 @@ extension PlaylistCrate {
         } ?? 0
     }
 
+    /// One record drawn at `cardSize` the way the crate holds its playing centre record, without a queue tab.
+    static func nowPlayingRecord(_ record: Record) -> some View {
+        CrateRecordCard(
+            record: record, tab: nil, isPlaying: true, showsNowPlaying: true, isSelected: false, isDimmed: false,
+            elevation: .centered, tabScale: 1
+        )
+    }
+
     /// `List.onMove`'s destination for moving the record at `from` to final index `to`.
     nonisolated static func moveDestination(from: Int, to: Int) -> Int {
         to > from ? to + 1 : to

@@ -162,7 +162,7 @@ final class WallpaperAutomationOrchestrator {
         let candidates: [(entry: WallpaperQueueEntry, cursor: Int?)]
         let source: AutomaticSwitchMark.Source
         switch config.wallpaperMode {
-        case .playlist:
+        case .playlist, .single:
             let queue = config.effectiveWallpaperQueue
             candidates = Self.forwardOrder(in: config).filter { !isDeleted(queue[$0]) }.map { (queue[$0], $0) }
             source = .playlist
@@ -253,7 +253,7 @@ final class WallpaperAutomationOrchestrator {
             }
         } else if mode == .schedule {
             checkAndApplySchedule(for: screen, force: true)
-        } else if previousMode != .playlist || (previewedCursor == nil && currentID != nil && keptCursor == nil),
+        } else if mode == .playlist, previousMode != .playlist || (previewedCursor == nil && currentID != nil && keptCursor == nil),
                   let entries = config.wallpaperQueue, !entries.isEmpty {
             let index = config.playlistCursorIndex ?? 0
             applyEntry(entries[index], cursor: index, for: screen)

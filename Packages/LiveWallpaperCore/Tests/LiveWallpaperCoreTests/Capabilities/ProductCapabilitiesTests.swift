@@ -54,11 +54,12 @@ struct ProductCapabilitiesTests {
         #expect(WallpaperType.html.titleKey == LocalizedStringKey("Web"))
     }
 
-    @Test("Legacy `single` raw value decodes to .playlist")
-    func legacySingleDecodesToPlaylist() throws {
-        let data = try JSONEncoder().encode("single")
-        let decoded = try JSONDecoder().decode(WallpaperMode.self, from: data)
-        #expect(decoded == .playlist)
+    @Test("A persisted `single` mode decodes to single wallpaper; an unknown one to .playlist")
+    func singleDecodesAndUnknownFallsBackToPlaylist() throws {
+        let single = try JSONDecoder().decode(WallpaperMode.self, from: JSONEncoder().encode("single"))
+        #expect(single.rawValue == "single", "a saved single-wallpaper display would reopen as a playlist")
+        let unknown = try JSONDecoder().decode(WallpaperMode.self, from: JSONEncoder().encode("bogus"))
+        #expect(unknown == .playlist)
     }
 
     @Test("Known WallpaperMode raw values round-trip")

@@ -172,6 +172,7 @@ struct WallpaperAutomationSheet: View {
         case .playlist: return "Save and Use Playlist"
         case .schedule: return "Save and Use Daily Schedule"
         case .libraryShuffle: return "Save and Use Library Shuffle"
+        case .single: return "Save and Use Single Wallpaper"
         }
     }
 
@@ -340,8 +341,8 @@ struct WallpaperAutomationSheet: View {
         .onChange(of: manager.libraryShuffleDeck(for: screen)) { refreshDeck() }
         .task(id: missingArtwork.map(\.key)) {
             var loaded: [String: CGImage] = [:]
-            // The crate's centred record at full size is the largest picture either view draws; the deck stops growing there.
-            let largest = PlaylistCrate.centeredRecordSize
+            // The largest picture this mode draws: the single record at full scale, else the crate's centre record (the deck stops there).
+            let largest = mode == .single ? Self.singleRecordLargestSize : PlaylistCrate.centeredRecordSize
             let pixelSize = CGSize(width: largest.width * displayScale, height: largest.height * displayScale)
             for wanted in missingArtwork {
                 if let image = await thumbnails.image(wanted.request, pixelSize: pixelSize, scale: displayScale) {
@@ -375,6 +376,7 @@ struct WallpaperAutomationSheet: View {
             case .playlist: queuePage
             case .schedule: schedulePage
             case .libraryShuffle: libraryShufflePage
+            case .single: singlePage
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -572,6 +574,7 @@ struct WallpaperAutomationSheet: View {
         case .playlist: "Playlist"
         case .schedule: "Daily Schedule"
         case .libraryShuffle: "Library Shuffle"
+        case .single: "Single Wallpaper"
         }
     }
 
@@ -598,6 +601,53 @@ struct WallpaperAutomationSheet: View {
         preview = nil
         Self.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
         presentation.close()
+    }
+
+    private static let singleRecordMaximumScale: CGFloat = 2.5
+    /// Largest size, in points, the single wallpaper's record is drawn at.
+    private static let singleRecordLargestSize = CGSize(
+        width: PlaylistCrate.cardSize.width * singleRecordMaximumScale,
+        height: PlaylistCrate.cardSize.height * singleRecordMaximumScale
+    )
+
+    /// Kept apart from the crate's keys so the single record loads at its own size; keyed by content when the
+    /// library has no match, because `currentEntry` gets a fresh id on every read.
+    private func singleArtworkKey(for entry: WallpaperQueueEntry) -> String {
+        "single:" + (Self.matchingItem(entry, in: library)?.id ?? Self.contentID(entry.content))
+    }
+
+    private var singlePage: some View {
+        let current = currentEntry
+        let title = current.map { Self.rowTitle(for: $0, in: library) } ?? ""
+        return pageLayout {
+            artArea(
+                title: "Single Wallpaper", caption: Text(verbatim: title),
+                hint: "To change it, pick another wallpaper from the library."
+            ) {
+                if let current {
+                    ScaleToFit(maximumScale: Self.singleRecordMaximumScale) {
+                        PlaylistCrate.nowPlayingRecord(PlaylistCrate.Record(
+                            id: singleArtworkKey(for: current), title: title, image: artwork[singleArtworkKey(for: current)]
+                        ))
+                    }
+                } else {
+                    IllustratedEmptyState(symbol: "photo", title: "No wallpaper configured")
+                }
+            }
+        } column: {
+            columnScroll {
+                GroupBox {
+                    Text("Keeps this wallpaper on the display. It changes only when you pick another one.")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } label: {
+                    Text("Playback")
+                }
+                .groupBoxStyle(ContainerGroupBoxStyle())
+            }
+        }
     }
 
     private var libraryShufflePage: some View {
@@ -1016,6 +1066,8 @@ struct WallpaperAutomationSheet: View {
         let wanted: [ArtworkRequest] = switch mode {
         case .playlist:
             queue.map { ArtworkRequest(key: artworkKey(for: $0), request: thumbnailRequest(for: $0)) }
+        case .single:
+            currentEntry.map { [ArtworkRequest(key: singleArtworkKey(for: $0), request: thumbnailRequest(for: $0))] } ?? []
         case .libraryShuffle:
             deckArtwork
         case .schedule:

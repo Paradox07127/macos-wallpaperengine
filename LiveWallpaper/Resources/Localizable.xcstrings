@@ -25179,6 +25179,41 @@
         }
       }
     },
+    "Edit each mode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit each mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edita cada modo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各モードを編集"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑每种方式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯每種方式"
+          }
+        }
+      }
+    },
     "Edit application exceptions" : {
       "localizations" : {
         "es" : {
@@ -25203,41 +25238,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "編輯應用程式例外"
-          }
-        }
-      }
-    },
-    "Edit the list or the dial" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit the list or the dial"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edita la lista o el reloj"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リストまたは時計を編集"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑列表或圆盘"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "編輯列表或圓盤"
           }
         }
       }
@@ -31550,41 +31550,6 @@
         }
       }
     },
-    "In Playlist, drag rows to reorder them and use Preview on This Display to try one. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In Playlist, drag rows to reorder them and use Preview on This Display to try one. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En Playlist, arrastra las filas para reordenarlas y usa Previsualizar en esta pantalla para probar una. En Programación diaria, selecciona un tramo para elegir su fondo y horas, arrastra los extremos del arco o haz doble clic en una hora libre para añadir un tramo. Horas sin programar cubre el resto del día."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「プレイリスト」では行をドラッグして並べ替え、「このディスプレイでプレビュー」で試せます。「1日のスケジュール」では時間帯を選択して壁紙と時間を設定し、円弧の両端をドラッグするか、空いている時間をダブルクリックして時間帯を追加します。「未設定の時間帯」は残りの時間に適用されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在“播放列表”中，拖动各行可调整顺序，使用“在此显示器上试播”可试播某张壁纸。在“每日计划”中，选择时段可设置其壁纸和时间，也可拖动圆弧端点调整，或双击空闲时段添加新时段。“未安排的时段”涵盖一天中的其余时间。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在「播放列表」中，拖移各列可調整順序，使用「在此顯示器上試播」可試播某張桌布。在「每日排程」中，選擇時段可設定其桌布和時間，也可拖移圓弧端點調整，或按兩下空閒時段新增時段。「未排程的時段」涵蓋一天中的其餘時間。"
-          }
-        }
-      }
-    },
     "In Steam connection, choose or authorize your Steam library folder. This grants Loomscreen access to local Workshop files; it does not sign you in. Follow the folder picker's instructions, then check the library status." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -32813,6 +32778,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "繼續編輯"
+          }
+        }
+      }
+    },
+    "Keeps this wallpaper on the display. It changes only when you pick another one." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps this wallpaper on the display. It changes only when you pick another one."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantiene este fondo de pantalla en la pantalla. Solo cambia cuando eliges otro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイにこの壁紙を表示し続けます。別の壁紙を選んだときだけ変わります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此显示器上一直显示这张壁纸，只有在你选择其他壁纸时才会更换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此顯示器上一直顯示這張桌布，只有在你選擇其他桌布時才會更換。"
           }
         }
       }
@@ -47313,37 +47312,37 @@
         }
       }
     },
-    "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval." : {
+    "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval. Single Wallpaper keeps the current wallpaper and never switches." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval."
+            "value" : "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval. Single Wallpaper keeps the current wallpaper and never switches."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Playlist reproduce los fondos que añadas en orden o en modo aleatorio, a mano o con un temporizador. Programación diaria asigna fondos a las horas del día. Aleatorio de toda la biblioteca elige un fondo al azar de toda tu biblioteca en cada intervalo."
+            "value" : "Playlist reproduce los fondos que añadas en orden o en modo aleatorio, a mano o con un temporizador. Programación diaria asigna fondos a las horas del día. Aleatorio de toda la biblioteca elige un fondo al azar de toda tu biblioteca en cada intervalo. Un solo fondo de pantalla conserva el fondo actual y nunca lo cambia."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「プレイリスト」は追加した壁紙を順番またはシャッフルで、手動またはタイマーで切り替えます。「1日のスケジュール」は時間帯ごとに壁紙を割り当てます。「ライブラリ全体をランダム再生」は一定間隔でライブラリ全体から壁紙をランダムに選びます。"
+            "value" : "「プレイリスト」は追加した壁紙を順番またはシャッフルで、手動またはタイマーで切り替えます。「1日のスケジュール」は時間帯ごとに壁紙を割り当てます。「ライブラリ全体をランダム再生」は一定間隔でライブラリ全体から壁紙をランダムに選びます。「単一の壁紙」は現在の壁紙を表示し続け、切り替えません。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“播放列表”按顺序或随机播放你添加的壁纸，可手动或按间隔切换。“每日计划”为一天中的各个时段指定壁纸。“壁纸库随机”在每个间隔从整个壁纸库中随机选择一张壁纸。"
+            "value" : "“播放列表”按顺序或随机播放你添加的壁纸，可手动或按间隔切换。“每日计划”为一天中的各个时段指定壁纸。“壁纸库随机”在每个间隔从整个壁纸库中随机选择一张壁纸。“单张壁纸”保留当前壁纸，从不切换。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「播放列表」依順序或隨機播放你加入的桌布，可手動或依間隔切換。「每日排程」為一天中的各個時段指定桌布。「桌布庫隨機」在每個間隔從整個桌布庫中隨機選擇一張桌布。"
+            "value" : "「播放列表」依順序或隨機播放你加入的桌布，可手動或依間隔切換。「每日排程」為一天中的各個時段指定桌布。「桌布庫隨機」在每個間隔從整個桌布庫中隨機選擇一張桌布。「單張桌布」保留目前的桌布，從不切換。"
           }
         }
       }
@@ -56216,6 +56215,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "儲存並使用播放列表"
+          }
+        }
+      }
+    },
+    "Save and Use Single Wallpaper" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save and Use Single Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar y usar un solo fondo de pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存して単一の壁紙を使用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存并使用单张壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存並使用單張桌布"
           }
         }
       }
@@ -73414,6 +73447,40 @@
         }
       }
     },
+    "To change it, pick another wallpaper from the library." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To change it, pick another wallpaper from the library."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para cambiarlo, elige otro fondo de pantalla de la biblioteca."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更するには、ライブラリから別の壁紙を選んでください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如需更换，请从壁纸库中选择其他壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如需更換，請從桌布庫中選擇其他桌布。"
+          }
+        }
+      }
+    },
     "Today" : {
       "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Today).",
       "localizations" : {
@@ -86495,6 +86562,41 @@
         }
       }
     },
+    "In Playlist, drag records or rows to reorder them and use Preview on This Display to try one; Auto-Advance, Loop and Shuffle set how it moves on. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day. In Library Shuffle, click the deck to draw the next wallpaper; excluded wallpapers are never drawn." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Playlist, drag records or rows to reorder them and use Preview on This Display to try one; Auto-Advance, Loop and Shuffle set how it moves on. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day. In Library Shuffle, click the deck to draw the next wallpaper; excluded wallpapers are never drawn."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Playlist, arrastra los discos o las filas para reordenarlos y usa Previsualizar en esta pantalla para probar uno; Avance automático, Repetir y Aleatorio definen cómo avanza. En Programación diaria, selecciona un tramo para elegir su fondo y horas, arrastra los extremos del arco o haz doble clic en una hora libre para añadir un tramo. Horas sin programar cubre el resto del día. En Aleatorio de toda la biblioteca, haz clic en la baraja para sacar el siguiente fondo de pantalla; los fondos de la lista Fondos excluidos nunca salen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「プレイリスト」ではレコードまたは行をドラッグして並べ替え、「このディスプレイでプレビュー」で試せます。「自動再生」「ループ」「シャッフル」で次への進み方を設定します。「1日のスケジュール」では時間帯を選択して壁紙と時間を設定し、円弧の両端をドラッグするか、空いている時間をダブルクリックして時間帯を追加します。「未設定の時間帯」は残りの時間に適用されます。「ライブラリ全体をランダム再生」では山札をクリックすると次の壁紙を引きます。「除外した壁紙」が引かれることはありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“播放列表”中，拖动唱片或各行可调整顺序，使用“在此显示器上试播”可试播某张壁纸；“自动播放”“循环”和“随机播放”决定如何切换到下一张。在“每日计划”中，选择时段可设置其壁纸和时间，也可拖动圆弧端点调整，或双击空闲时段添加新时段。“未安排的时段”涵盖一天中的其余时间。在“壁纸库随机”中，点按牌堆可抽出下一张壁纸；“不播放的壁纸”永远不会被抽到。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「播放列表」中，拖移唱片或各列可調整順序，使用「在此顯示器上試播」可試播某張桌布；「自動播放」、「循環」和「隨機播放」決定如何切換到下一張。在「每日排程」中，選擇時段可設定其桌布和時間，也可拖移圓弧端點調整，或按兩下空閒時段新增時段。「未排程的時段」涵蓋一天中的其餘時間。在「桌布庫隨機」中，點按牌堆可抽出下一張桌布；「不播放的桌布」永遠不會被抽到。"
+          }
+        }
+      }
+    },
     "Current" : {
       "localizations" : {
         "en" : {
@@ -86763,74 +86865,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新加入"
-          }
-        }
-      }
-    },
-    "Start of queue" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start of queue"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inicio de la playlist"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレイリストの先頭"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表开头"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表開頭"
-          }
-        }
-      }
-    },
-    "End of queue" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End of queue"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Final de la playlist"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プレイリストの末尾"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表末尾"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放列表末尾"
           }
         }
       }

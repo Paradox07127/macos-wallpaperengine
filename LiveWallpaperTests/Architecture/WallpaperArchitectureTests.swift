@@ -964,6 +964,46 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored.last == entries[1].content, "the next rotation stepped on from the unshown preview")
     }
 
+    @Test(
+        "Switching to single wallpaper keeps what the display shows and saves the draft queue",
+        .timeLimit(.minutes(1)), arguments: [WallpaperMode.schedule, .libraryShuffle]
+    )
+    func switchingToSingleKeepsShownWallpaper(previousMode: WallpaperMode) async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let entries = (0 ..< 3).map {
+            WallpaperQueueEntry(id: "row\($0)", title: "Row \($0)", content: .html(source: .inline("row\($0)"), config: .default))
+        }
+        let shown = WallpaperContent.html(source: .inline("shown"), config: .default)
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: shown)
+        initial.wallpaperMode = previousMode
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+        var restored: [WallpaperContent] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) },
+            restoreProposedConfiguration: { _, proposed in
+                restored.append(proposed.activeWallpaper)
+                store.save(proposed)
+            },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+            prepareAutomation: { _, proposed, _, intended in
+                guard intended() else { return .cancelled }
+                restored.append(proposed.activeWallpaper)
+                store.save(proposed)
+                return .ready
+            }, libraryEntries: { entries.map(LibraryShuffleCandidate.init) }, libraryEntryAvailable: { _ in true }
+        )
+        orchestrator.updateAutomation(queue: entries, slots: [], mode: .single, rotationMinutes: 5, shuffle: false, for: screen)
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        let stored = try #require(store.get(for: screen.id))
+        #expect(restored.isEmpty, "saving single wallpaper put another wallpaper on the display")
+        #expect(stored.activeWallpaper == shown)
+        #expect(stored.wallpaperMode == .single)
+        #expect(stored.wallpaperQueue == entries)
+    }
+
     @Test("Library shuffle follows live membership, skips missing sources and preserves the curated queue")
     func libraryShuffleUsesLiveMembership() async throws {
         let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
@@ -1453,6 +1493,18 @@ struct WallpaperAutomationCoordinatorTests {
 
         configuration.scheduleSlots?[0].videoBookmarkData = Data([0x03])
         #expect(WallpaperAutomationCoordinator.hasDemand(configuration))
+    }
+
+    @Test("A single-wallpaper display never asks for automatic switching, even with an advancing queue")
+    func singleWallpaperHasNoDemand() {
+        var configuration = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([0x01]))
+        configuration.wallpaperQueue = (0 ..< 3).map {
+            WallpaperQueueEntry(id: "row\($0)", title: "Row \($0)", content: .html(source: .inline("row\($0)"), config: .default))
+        }
+        configuration.playlistAutoAdvance = true
+        configuration.playlistRotationMinutes = 5
+        configuration.wallpaperMode = .single
+        #expect(!WallpaperAutomationCoordinator.hasDemand(configuration), "a single-wallpaper display would rotate its saved queue")
     }
 
     @Test("A new two-entry playlist without an interval advances every 15 minutes", .timeLimit(.minutes(1)))

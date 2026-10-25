@@ -57,7 +57,7 @@ struct OnboardingUITests {
         }
     }
 
-    @Test("Guides name Wallpaper Automation and its three modes")
+    @Test("Guides name Wallpaper Automation and its four modes")
     func guidesNameWallpaperAutomation() {
         func text(_ context: PageGuideContext) -> String {
             context.steps.flatMap { [$0.title.probeKey, $0.message.probeKey] }.joined(separator: " ")
@@ -66,7 +66,7 @@ struct OnboardingUITests {
         #expect(configuration.contains("Wallpaper Automation"))
         #expect(!configuration.contains("Playlist & Schedule"))
         let automation = text(.automation)
-        for term in ["Playlist", "Daily Schedule", "Library Shuffle", "Enable Again"] {
+        for term in ["Playlist", "Daily Schedule", "Library Shuffle", "Single Wallpaper", "Enable Again"] {
             #expect(automation.contains(term), Comment(rawValue: term))
         }
         #expect(text(.settings).contains("opening animation"))

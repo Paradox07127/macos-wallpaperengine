@@ -236,8 +236,8 @@ enum PageGuideContext: CaseIterable {
             ]
         case .automation:
             [
-                .init(.automationModes, "Choose an automation mode", "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval."),
-                .init(.page, "Edit the list or the dial", "In Playlist, drag rows to reorder them and use Preview on This Display to try one. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day."),
+                .init(.automationModes, "Choose an automation mode", "Playlist plays the wallpapers you add in order or shuffled, by hand or on a timer. Daily Schedule assigns wallpapers to hours of the day. Library Shuffle picks a random wallpaper from your whole library at each interval. Single Wallpaper keeps the current wallpaper and never switches."),
+                .init(.page, "Edit each mode", "In Playlist, drag records or rows to reorder them and use Preview on This Display to try one; Auto-Advance, Loop and Shuffle set how it moves on. In Daily Schedule, select a slot to choose its wallpaper and hours, drag the ends of its arc, or double-click an empty hour to add a slot. Unscheduled Hours covers the rest of the day. In Library Shuffle, click the deck to draw the next wallpaper; excluded wallpapers are never drawn."),
                 .init(.page, "Skipped wallpapers", "A wallpaper that fails to load is retried once, then marked Skipped. Choose Enable Again to include it again. Automation pauses while the screen is locked or the display sleeps, and does not replay changes it missed."),
                 .init(.automationFooter, "Save to apply", "Changes here stay a draft until you save. The Save button switches this display to the selected mode; Cancel discards the draft and restores the wallpaper shown before any preview."),
             ]
