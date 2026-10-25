@@ -55,7 +55,6 @@ struct DisplayDetailHost: View {
     @State private var schemeNameDraft = ""
     @State private var showSchemeCapture = false
     @State private var showAutomation = false
-    @State private var automationDismissRequests = 0
     /// Any `infoOverlay` under the page, the workspace's included: Escape is its to take then.
     @State private var infoOverlayPresented = false
     @State private var overlayCopy: OverlayCopyRequest?
@@ -132,7 +131,7 @@ struct DisplayDetailHost: View {
         ZStack {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
                 presentations(refreshes(detail(for: screen, id: id), for: screen), for: screen)
-                if !modalPresented, !infoOverlayPresented, pageGuide?.context == nil {
+                if !modalPresented, !infoOverlayPresented, !showAutomation, pageGuide?.context == nil {
                     Button(action: requestBack) { EmptyView() }
                         .keyboardShortcut(.cancelAction)
                         .opacity(0)
@@ -183,7 +182,8 @@ struct DisplayDetailHost: View {
             screen: screen, webTransform: webTransform(for: screen),
             switchEdge: switchEdge,
             inspectorVisible: sectionInspectorVisible,
-            inspectorWidth: shownInspectorWidth, liveInspectorWidth: $liveInspectorWidth
+            inspectorWidth: shownInspectorWidth, liveInspectorWidth: $liveInspectorWidth,
+            automation: automation(for: screen)
         )
         .dropDestination(for: URL.self) { urls, _ in
             section == .wallpaper && dropFiles(urls, screen)
@@ -199,20 +199,19 @@ struct DisplayDetailHost: View {
             .onChange(of: screen.configurationRevision) { reloadDraft(for: screen) }
     }
 
+    private func automation(for screen: Screen) -> DetailAutomation? {
+        guard showAutomation, let library else { return nil }
+        return DetailAutomation(page: { presentation in
+            AnyView(WallpaperAutomationSheet(
+                screen: screen, library: library,
+                initialConfiguration: screenManager.getConfiguration(for: screen),
+                presentation: presentation
+            ))
+        }, dismiss: { showAutomation = false })
+    }
+
     private func presentations(_ content: some View, for screen: Screen) -> some View {
         content
-            .infoOverlay(isPresented: $showAutomation, onDismissRequest: { automationDismissRequests += 1 }, content: { dismiss in
-                if let library {
-                    AppLanguageScope(defaults: .appScoped()) {
-                        WallpaperAutomationSheet(
-                            screen: screen, library: library, size: ModalGeometry.panelFrame(in: stage.stageSize).size,
-                            initialConfiguration: screenManager.getConfiguration(for: screen),
-                            dismissRequests: automationDismissRequests, close: dismiss
-                        )
-                        .environment(screenManager)
-                    }
-                }
-            })
             .confirmDestructive($pendingDestructive)
             .confirmationDialog(
                 "Copy overlays to other displays?",
@@ -280,6 +279,7 @@ struct DisplayDetailHost: View {
             overlaySession?.detach()
             overlayCopy = nil
             webTransformArmed = false
+            showAutomation = false
             closeShownFailure()
         } else if let session = overlaySession, section == .overlay, !session.isActive {
             session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
@@ -714,7 +714,7 @@ struct DisplayDetailHost: View {
 
     /// Ignored while the hero is not up, so a swipe during a flight cannot start another.
     private func swipe(_ step: DetailSwipeStep) {
-        guard !modalPresented, coordinator?.heroVisible == true, let current = router.detailDisplayID else { return }
+        guard !modalPresented, !showAutomation, coordinator?.heroVisible == true, let current = router.detailDisplayID else { return }
         switch Self.swipeTarget(step, from: current, in: Self.displayOrder(stage.displays).map(\.id)) {
         case .home?:
             requestBack()

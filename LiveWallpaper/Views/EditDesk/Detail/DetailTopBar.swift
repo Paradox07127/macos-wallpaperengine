@@ -14,6 +14,9 @@ struct DetailTopBar: View {
     /// True while the column shows a load attempt's page, which carries this display's only Clear; the
     /// actions reading the applied wallpaper (queue, scheme, apply to all) stay dimmed under it too.
     var attemptShown = false
+    let segments: Namespace.ID
+    /// False while the automation page's mode control holds the shared segment geometry.
+    var segmentsAreSource = true
     @Environment(ScreenManager.self) private var screenManager: ScreenManager?
     @State private var bookmarkPresented = false
     @State private var schemeStore = SchemeStore.shared
@@ -172,6 +175,7 @@ struct DetailTopBar: View {
         }
         .accessibilityElement(children: .contain)
         .fixedSize()
+        .detailSegmentsMorph(in: segments, isSource: segmentsAreSource)
     }
 
     @ViewBuilder
@@ -234,5 +238,12 @@ struct DetailTopBar: View {
             .help(help ?? Text(label))
             .accessibilityLabel(Text(label))
             .accessibilityIdentifier("detail.\(symbol)")
+    }
+}
+
+extension View {
+    /// The detail's section control and the automation page's mode control: the source sets the frame both share.
+    func detailSegmentsMorph(in namespace: Namespace.ID, isSource: Bool) -> some View {
+        matchedGeometryEffect(id: "detailSegments", in: namespace, isSource: isSource)
     }
 }

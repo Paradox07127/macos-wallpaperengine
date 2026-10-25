@@ -50,6 +50,22 @@ struct DetailActions {
     var backLabel: LocalizedStringKey = "Overview"
 }
 
+/// What the detail hands the automation page it shows in place of its own workspace.
+struct DetailAutomationPresentation {
+    /// False while the page slides in or out.
+    let entered: Bool
+    /// Shared by the detail's section control and the page's mode control, so one morphs into the other.
+    let segments: Namespace.ID
+    /// Plays the exit, then dismisses the page.
+    let close: () -> Void
+}
+
+struct DetailAutomation {
+    let page: (DetailAutomationPresentation) -> AnyView
+    /// Unmounts the page once its exit has played.
+    let dismiss: () -> Void
+}
+
 /// One toolbar and one background shared by the wallpaper and overlay workspaces.
 @MainActor
 struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: View {
@@ -76,25 +92,43 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
     @Binding var inspectorVisible: Bool
     @Binding var inspectorWidth: Double
     @Binding var liveInspectorWidth: Double?
+    /// The page shown over the workspace, top bar included; nil while none is.
+    var automation: DetailAutomation?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var chromeVisible = false
+    @State private var automationEntered = false
+    @Namespace private var segments
 
     var body: some View {
-        VStack(spacing: 0) {
-            DetailTopBar(tags: tags, section: $section, actions: actions,
-                         inspectorVisible: $inspectorVisible,
-                         hasWallpaper: !isEmpty, screen: screen,
-                         attemptShown: section == .wallpaper && preview.showsAttempt)
-                .opacity(chromeVisible ? 1 : 0)
-                .offset(y: chromeVisible || reduceMotion ? 0 : -8)
-                .allowsHitTesting(heroVisible && chromeVisible)
-                // Above the workspace, whose content can reach up into this strip and take its clicks.
-                .zIndex(1)
-            workspace
-                // Scroll views draw up into the top bar's strip, which has no fill to hide them.
-                .clipped()
-                .allowsHitTesting(heroVisible)
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                DetailTopBar(tags: tags, section: $section, actions: actions,
+                             inspectorVisible: $inspectorVisible,
+                             hasWallpaper: !isEmpty, screen: screen,
+                             attemptShown: section == .wallpaper && preview.showsAttempt,
+                             segments: segments, segmentsAreSource: !automationEntered)
+                    .opacity(chromeVisible && !automationEntered ? 1 : 0)
+                    .offset(y: chromeVisible || reduceMotion ? 0 : -8)
+                    .allowsHitTesting(heroVisible && chromeVisible && automation == nil)
+                    .accessibilityHidden(automation != nil)
+                    // Above the workspace, whose content can reach up into this strip and take its clicks.
+                    .zIndex(1)
+                workspace
+                    // Scroll views draw up into the top bar's strip, which has no fill to hide them.
+                    .clipped()
+                    .opacity(automationEntered ? 0 : 1)
+                    .allowsHitTesting(heroVisible && automation == nil)
+                    .accessibilityHidden(automation != nil)
+            }
+            if let automation {
+                automation.page(DetailAutomationPresentation(entered: automationEntered, segments: segments, close: closeAutomation))
+                    .onAppear {
+                        withAnimation(DesignTokens.Motion.modalPresentation(reduceMotion: reduceMotion)) { automationEntered = true }
+                    }
+                    .onDisappear { automationEntered = false }
+                    .zIndex(2)
+            }
         }
         // No fill, so the window's canvas shows; the clear shape still takes the clicks that would
         // otherwise fall through to the hidden overview under the page.
@@ -129,7 +163,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
                         .overlay(alignment: .leading) { Divider() }
                         .contentColumnBackground()
                         .opacity(chromeVisible ? 1 : 0)
-                        .offset(x: chromeVisible || reduceMotion ? 0 : 16)
+                        .offset(x: reduceMotion ? 0 : (automationEntered ? width : (chromeVisible ? 0 : 16)))
                 }
             )
         }
@@ -181,7 +215,7 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
             .animation(.detailSwitch(reduceMotion: reduceMotion), value: currentDisplayID)
         }
         // Outside the per-display identity: rebuilt mid-swipe, it would count the rest of the gesture as a second step.
-        .background(DetailSwipeNavigator(enabled: heroVisible, navigate: actions.swipe))
+        .background(DetailSwipeNavigator(enabled: heroVisible && automation == nil, navigate: actions.swipe))
     }
 
     private var currentDisplayID: CGDirectDisplayID? {
@@ -199,6 +233,14 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
 
     private func setChromeVisible(_ visible: Bool) {
         withAnimation(DesignTokens.Motion.detailChrome(reduceMotion: reduceMotion)) { chromeVisible = visible }
+    }
+
+    private func closeAutomation() {
+        withAnimation(DesignTokens.Motion.modalDismissal(reduceMotion: reduceMotion), completionCriteria: .logicallyComplete) {
+            automationEntered = false
+        } completion: {
+            automation?.dismiss()
+        }
     }
 }
 

@@ -55,11 +55,8 @@ extension WallpaperQueueEntry {
 struct WallpaperAutomationSheet: View {
     let screen: Screen
     let library: SavedLibraryModel
-    let size: CGSize
     private let initialConfiguration: ScreenConfiguration?
-    /// Bumped by the host each time its scrim or Escape asks to close.
-    let dismissRequests: Int
-    let close: () -> Void
+    let presentation: DetailAutomationPresentation
     @Environment(ScreenManager.self) private var manager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var queue: [WallpaperQueueEntry] = []
@@ -92,15 +89,13 @@ struct WallpaperAutomationSheet: View {
     @State private var confirmingDiscard = false
 
     init(
-        screen: Screen, library: SavedLibraryModel, size: CGSize, initialConfiguration: ScreenConfiguration? = nil,
-        dismissRequests: Int, close: @escaping () -> Void
+        screen: Screen, library: SavedLibraryModel, initialConfiguration: ScreenConfiguration? = nil,
+        presentation: DetailAutomationPresentation
     ) {
         self.screen = screen
         self.library = library
-        self.size = size
         self.initialConfiguration = initialConfiguration
-        self.dismissRequests = dismissRequests
-        self.close = close
+        self.presentation = presentation
         _mode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
         _savedMode = State(initialValue: initialConfiguration?.wallpaperMode ?? .playlist)
         _queue = State(initialValue: initialConfiguration?.effectiveWallpaperQueue ?? [])
@@ -154,23 +149,6 @@ struct WallpaperAutomationSheet: View {
         case .playlist: return "Save and Use Playlist"
         case .schedule: return "Save and Use Daily Schedule"
         case .libraryShuffle: return "Save and Use Library Shuffle"
-        }
-    }
-
-    private var headerSubtitle: LocalizedStringKey {
-        guard let config = manager.getConfiguration(for: screen) ?? initialConfiguration else {
-            return LocalizedStringKey(screen.name)
-        }
-        return "\(screen.name) · Currently: \(Text(Self.modeName(config)))"
-    }
-
-    /// A playlist-mode display with nothing to step through is not running a playlist.
-    private static func modeName(_ config: ScreenConfiguration) -> LocalizedStringKey {
-        switch config.wallpaperMode {
-        case .playlist where !config.canNavigatePlaylist: "Single Wallpaper"
-        case .playlist: "Playlist"
-        case .schedule: "Daily Schedule"
-        case .libraryShuffle: "Library Shuffle"
         }
     }
 
@@ -276,17 +254,29 @@ struct WallpaperAutomationSheet: View {
     }
 
     var body: some View {
-        ZStack {
-            if let picking {
-                libraryPicker(for: picking)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else {
-                panel
+        VStack(spacing: 0) {
+            topBar
+                .opacity(presentation.entered ? 1 : 0)
+                // Above the page, whose content can reach up into the title bar strip and take the bar's clicks.
+                .zIndex(1)
+            GeometryReader { proxy in
+                ZStack {
+                    if let picking {
+                        libraryPicker(for: picking, width: proxy.size.width)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    } else {
+                        panel
+                    }
+                }
+                .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: picking)
+                .offset(x: presentation.entered || reduceMotion ? 0 : proxy.size.width)
+                .opacity(presentation.entered ? 1 : 0)
             }
+            .clipped()
         }
-        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: picking)
+        .allowsHitTesting(presentation.entered)
         .environment(guide)
-        .frame(width: size.width, height: size.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlayPreferenceValue(PageGuideAnchorKey.self) { PageGuideHost(session: guide, anchors: $0) }
         // On the container, not `panel`: the panel reappears after each pick, and reloading then would drop the draft.
         .onAppear(perform: load)
@@ -309,7 +299,6 @@ struct WallpaperAutomationSheet: View {
                 return slot
             }
         }
-        .onChange(of: dismissRequests) { requestClose() }
         .alert("Discard changes to wallpaper automation?", isPresented: $confirmingDiscard) {
             if canSave {
                 Button("Save", action: saveAndClose).keyboardShortcut(.defaultAction)
@@ -321,84 +310,127 @@ struct WallpaperAutomationSheet: View {
     }
 
     private var panel: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                SteamSheetHeader(
-                    icon: "clock.arrow.circlepath",
-                    title: "Wallpaper Automation",
-                    iconTint: DesignTokens.Colors.accent,
-                    subtitle: headerSubtitle
-                )
+        Group {
+            switch mode {
+            case .playlist: queuePage
+            case .schedule: schedulePage
+            case .libraryShuffle: libraryShufflePage
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: mode)
+    }
+
+    /// The modes sit centred between two equal halves; the library picker brings its own footer, so it hides them and Save.
+    private var topBar: some View {
+        HStack(spacing: DesignTokens.Spacing.md) {
+            HStack(spacing: DesignTokens.Spacing.md) {
+                // Clears the window's traffic lights, as the detail's own bar does.
+                Color.clear.frame(width: 68)
+                GlassToolbarGroup {
+                    GlassToolbarItem("chevron.left", action: requestClose)
+                        .help(backLabel)
+                        .accessibilityLabel(backLabel)
+                }
+                breadcrumb
+                Spacer(minLength: DesignTokens.Spacing.sm).background(WindowDragRegion())
+            }
+            .frame(maxWidth: .infinity)
+            if picking == nil {
+                modePicker
+            }
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Spacer(minLength: DesignTokens.Spacing.sm).background(WindowDragRegion())
                 PageGuideButton(context: .automation)
-            }
-            .padding(.horizontal, DesignTokens.Spacing.xl)
-            .padding(.top, DesignTokens.Spacing.xl)
-            .padding(.bottom, DesignTokens.Spacing.lg)
-
-            GlassSegmentedPicker(
-                selection: $mode,
-                values: WallpaperMode.allCases,
-                shell: .flat
-            ) { mode, _ in
-                switch mode {
-                case .playlist:
-                    Label("Playlist", systemImage: "play.rectangle.on.rectangle")
-                        .font(DesignTokens.Typography.body)
-                case .schedule:
-                    Label("Daily Schedule", systemImage: "clock")
-                        .font(DesignTokens.Typography.body)
-                case .libraryShuffle:
-                    Label("Library Shuffle", systemImage: "shuffle")
-                        .font(DesignTokens.Typography.body)
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(Text("Playback Mode"))
-            .pageGuideTarget(.automationModes)
-            .padding(.horizontal, DesignTokens.Spacing.xl)
-            .padding(.bottom, DesignTokens.Spacing.lg)
-
-            Group {
-                switch mode {
-                case .playlist: queuePage
-                case .schedule: schedulePage
-                case .libraryShuffle: libraryShufflePage
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.disclosure), value: mode)
-
-            SheetFooterBar(
-                primaryTitle: saveTitle,
-                primaryAction: saveAndClose,
-                primaryDisabled: !canSave,
-                cancelTitle: "Cancel",
-                cancelAction: requestClose,
-                leading: {
+                if picking == nil {
                     if let error {
                         Text(verbatim: error)
                             .font(DesignTokens.Typography.caption)
                             .foregroundStyle(DesignTokens.Colors.Status.danger)
-                            .lineLimit(2)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
+                    HStack(spacing: DesignTokens.Spacing.sm) {
+                        Button("Cancel", action: requestClose)
+                            .buttonStyle(.bordered)
+                            .keyboardShortcut(.cancelAction)
+                        Button(action: saveAndClose) { Text(saveTitle) }
+                            .buttonStyle(.borderedProminent)
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(!canSave)
+                    }
+                    .fixedSize()
+                    .pageGuideTarget(.automationFooter)
+                    // The guide panel's Return / Escape shortcuts would otherwise compete with Save / Cancel.
+                    .disabled(guide.context != nil)
                 }
-            )
-            .pageGuideTarget(.automationFooter)
-            // The guide panel's Return / Escape shortcuts would otherwise compete with Save / Cancel.
-            .disabled(guide.context != nil)
+            }
+            .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, DesignTokens.Spacing.lg)
+        .frame(height: DetailGeometry.topBarHeight)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var backLabel: Text {
+        picking == nil ? Text("Back to \(screen.name)") : Text("Back")
+    }
+
+    private var breadcrumb: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            Button(action: requestClose) {
+                Text(verbatim: screen.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help(backLabel)
+            Image(systemName: "chevron.right")
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("Wallpaper Automation")
+                .font(DesignTokens.Typography.bodyEmphasized)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+        }
+        .font(DesignTokens.Typography.body)
+    }
+
+    private var modePicker: some View {
+        GlassSegmentedPicker(selection: $mode, values: WallpaperMode.allCases, shell: .detail) { mode, _ in
+            switch mode {
+            case .playlist: modeIcon("Playlist", "play.rectangle.on.rectangle")
+            case .schedule: modeIcon("Daily Schedule", "clock")
+            case .libraryShuffle: modeIcon("Library Shuffle", "shuffle")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Playback Mode"))
+        .fixedSize()
+        .pageGuideTarget(.automationModes)
+        .detailSegmentsMorph(in: presentation.segments, isSource: presentation.entered)
+    }
+
+    /// The detail shell's segments are icon-wide, so a mode's name lives in its tooltip and VoiceOver label.
+    private func modeIcon(_ title: LocalizedStringKey, _ symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .labelStyle(.iconOnly)
+            .imageScale(.large)
+            .help(Text(title))
     }
 
     private func saveAndClose() {
         save()
-        close()
+        presentation.close()
     }
 
     private func requestClose() {
         if picking != nil {
             picking = nil
         } else if guide.context != nil {
-            // The host's scrim and Escape stay live while the guide is open; they belong to the guide then.
+            // Back and the breadcrumb stay live while the guide is open; they belong to the guide then.
             guide.close()
         } else if draft == loadedDraft {
             discardAndClose()
@@ -411,7 +443,7 @@ struct WallpaperAutomationSheet: View {
     private func discardAndClose() {
         preview = nil
         Self.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
-        close()
+        presentation.close()
     }
 
     private var libraryShufflePage: some View {
@@ -833,9 +865,9 @@ struct WallpaperAutomationSheet: View {
 
     private static let slotPalette = ScheduleDialStyle.palette
 
-    private func libraryPicker(for target: PickTarget) -> some View {
+    private func libraryPicker(for target: PickTarget, width: CGFloat) -> some View {
         AutomationLibraryPicker(
-            library: library, thumbnails: thumbnails, purpose: pickPurpose(for: target), width: size.width,
+            library: library, thumbnails: thumbnails, purpose: pickPurpose(for: target), width: width,
             commit: { commitPick($0, to: target) },
             chooseVideos: { picked in
                 commitPick(picked, to: target)
