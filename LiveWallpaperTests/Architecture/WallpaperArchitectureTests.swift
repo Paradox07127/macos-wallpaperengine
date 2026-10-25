@@ -2239,6 +2239,45 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored == [Self.dayPage.content])
     }
 
+    @Test("A new library shuffle switch skips its first revision change; the same serial again, other sources and no mark refresh")
+    func shuffleDeckWaitsForTheDeckAfterANewShuffleSwitch() {
+        let first = WallpaperAutomationSheet.revisionRefresh(after: AutomaticSwitchMark(serial: 3, source: .libraryShuffle), handledSerial: 2)
+        #expect(!first.refreshes, "the deck refreshed on the commit, before the draw reached the shuffle history")
+        #expect(first.handledSerial == 3, "the new shuffle serial was not recorded")
+
+        let again = WallpaperAutomationSheet.revisionRefresh(after: AutomaticSwitchMark(serial: 3, source: .libraryShuffle), handledSerial: first.handledSerial)
+        #expect(again.refreshes, "a later revision change of the same shuffle switch was ignored")
+        #expect(again.handledSerial == 3)
+
+        for source in [AutomaticSwitchMark.Source.playlist, .schedule] {
+            let other = WallpaperAutomationSheet.revisionRefresh(after: AutomaticSwitchMark(serial: 4, source: source), handledSerial: 3)
+            #expect(other.refreshes, "a \(source) switch held the deck back")
+        }
+        #expect(WallpaperAutomationSheet.revisionRefresh(after: nil, handledSerial: nil).refreshes, "a revision change with no switch held the deck back")
+    }
+
+    @Test("The deck's remaining count leaves out excluded, current and played wallpapers, and never drops below zero")
+    func shuffleDeckRemainingCountsUnplayedWallpapers() {
+        let remaining = WallpaperAutomationSheet.deckRemaining(
+            libraryIDs: ["a", "b", "c", "d", "e"], excludedIDs: ["b"], currentID: "a", playedIDs: ["c"]
+        )
+        #expect(remaining == 2)
+
+        let none = WallpaperAutomationSheet.deckRemaining(libraryIDs: ["a"], excludedIDs: ["a"], currentID: "a", playedIDs: ["a", "gone"])
+        #expect(none == 0, "the deck counted a negative or phantom remainder")
+    }
+
+    @Test("Slot rows run by start time; a slot past midnight is overnight, one ending at midnight is not")
+    func slotRowsSortByStartAndMarkOvernight() {
+        let night = ScheduleSlot(startHour: 22, endHour: 6, label: "Night")
+        let morning = ScheduleSlot(startHour: 8, endHour: 12, label: "Morning")
+        let evening = ScheduleSlot(startMinute: 1080, endMinute: 1440, label: "Evening")
+
+        #expect(WallpaperAutomationSheet.slotListOrder([night, morning, evening]).map(\.id) == [morning.id, evening.id, night.id])
+        #expect(WallpaperAutomationSheet.crossesMidnight(night), "22:00–06:00 was not marked overnight")
+        #expect(!WallpaperAutomationSheet.crossesMidnight(morning), "08:00–12:00 was marked overnight")
+        #expect(!WallpaperAutomationSheet.crossesMidnight(evening), "a slot ending at midnight was marked overnight")
+    }
 }
 
 @Suite("Wallpaper automation absence")

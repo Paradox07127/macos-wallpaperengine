@@ -38,6 +38,14 @@ struct AutomationLibraryPicker: View {
         case single(title: LocalizedStringKey, current: LibraryItem.ID?)
         /// Unordered multi-pick; `excluded` holds the items library shuffle skips now.
         case exclude(excluded: Set<LibraryItem.ID>)
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .playlist: "Add to Playlist"
+            case let .single(title, _): title
+            case .exclude: "Exclude from Library Shuffle"
+            }
+        }
     }
 
     let library: SavedLibraryModel
@@ -91,14 +99,6 @@ struct AutomationLibraryPicker: View {
         return false
     }
 
-    private var title: LocalizedStringKey {
-        switch purpose {
-        case .playlist: "Add to Playlist"
-        case let .single(title, _): title
-        case .exclude: "Exclude from Library Shuffle"
-        }
-    }
-
     private func mark(for item: LibraryItem) -> AutomationPickerTile.Mark {
         switch purpose {
         case .playlist: .order(order.number(of: item.id))
@@ -121,11 +121,6 @@ struct AutomationLibraryPicker: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SteamSheetHeader(icon: "photo.on.rectangle.angled", title: title, iconTint: DesignTokens.Colors.accent)
-                .padding(.horizontal, DesignTokens.Spacing.xl)
-                .padding(.top, DesignTokens.Spacing.xl)
-                .padding(.bottom, DesignTokens.Spacing.lg)
-
             LibraryToolbarRow {
                 FilterChip(title: Text("All"), isSelected: kindName == nil) {
                     kindName = nil
@@ -148,10 +143,24 @@ struct AutomationLibraryPicker: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            LibraryStatusBar(summary: Text("\(shownItems.count) wallpapers"))
+            Divider()
 
             footer
+                .overlay {
+                    countSummary
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .allowsHitTesting(false)
+                }
         }
+    }
+
+    private var countSummary: Text {
+        if case .single = purpose {
+            return Text("\(shownItems.count) wallpapers")
+        }
+        return Text("\(order.ids.count) selected · \(shownItems.count) wallpapers")
     }
 
     @ViewBuilder
@@ -205,13 +214,6 @@ struct AutomationLibraryPicker: View {
         }
     }
 
-    private var selectedCount: some View {
-        Text("\(order.ids.count) selected")
-            .font(DesignTokens.Typography.subheadline)
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-    }
-
     @ViewBuilder
     private var footer: some View {
         if isExcluding {
@@ -220,8 +222,7 @@ struct AutomationLibraryPicker: View {
                 primaryTitle: "Done",
                 primaryAction: { commit(order.ids) },
                 cancelTitle: "Cancel",
-                cancelAction: cancel,
-                leading: { selectedCount }
+                cancelAction: cancel
             )
         } else if isOrdered {
             SheetFooterBar(
@@ -232,7 +233,6 @@ struct AutomationLibraryPicker: View {
                 cancelAction: cancel,
                 leading: {
                     Button("Choose Videos") { chooseVideos(order.ids) }
-                    selectedCount
                 }
             )
         } else {
