@@ -23,6 +23,7 @@ private struct CardHoverEffect: ViewModifier {
                 DesignTokens.motion(reduceMotion, .spring(response: 0.28, dampingFraction: 0.85)),
                 value: isActive
             )
+            .atlasRole("cardHoverEffect")
     }
 }
 

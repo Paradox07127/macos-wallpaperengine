@@ -11,6 +11,7 @@ struct StorageInfoButton<Content: View>: View {
             Image(systemName: "info.circle")
         }
         .buttonStyle(.borderless)
+        .atlasRole("StorageInfoButton")
         .foregroundStyle(.secondary)
         .help(Text("Details"))
         .accessibilityLabel(Text("Details"))

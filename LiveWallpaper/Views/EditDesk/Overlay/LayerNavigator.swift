@@ -68,6 +68,7 @@ private struct OverlayLayerRowView: View {
         .padding(.leading, indent)
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
         .frame(height: OverlayWorkspaceLayout.rowHeight)
+        .atlasRole("OverlayLayerRow", label: "\(row.kind)")
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.shelfCard, style: .continuous)
                 .fill(fill)

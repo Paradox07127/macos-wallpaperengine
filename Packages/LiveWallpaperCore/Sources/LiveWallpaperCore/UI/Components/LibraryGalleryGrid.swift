@@ -38,5 +38,6 @@ public struct LibraryGalleryGrid<Content: View>: View {
         // which would otherwise stop the window shrinking below the current column count.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { availableWidth = $0 }
+        .atlasRole("LibraryGalleryGrid")
     }
 }

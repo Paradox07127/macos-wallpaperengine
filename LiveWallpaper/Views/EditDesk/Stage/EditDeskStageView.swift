@@ -2127,6 +2127,14 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             && flights.values.allSatisfy(\.isSettled)
             && (Array(cardLayers.values) + reserve).allSatisfy { $0.lift.isSettled && $0.hover.isSettled && $0.gridProgress.isSettled }
     }
+
+    /// Displays and shelf cards as drawn, in window points (bottom-left origin); label is the display or card id.
+    var debugAtlasItems: [(role: String, label: String, frame: CGRect)] {
+        guard !detailCovering else { return [] }
+        return displayLayers.filter { !$0.value.layer.isHidden }.map { id, entry in
+            ("StageDisplay", "\(id)", convert(entry.layer.convert(entry.layer.bounds, to: layer), to: nil))
+        } + cardLayers.filter { !$0.value.layer.isHidden }.map { id, card in ("StageCard", id, convert(card.hitRect, to: nil)) }
+    }
     #endif
 
     private func withoutActions(_ body: () -> Void) {

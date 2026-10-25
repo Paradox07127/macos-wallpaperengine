@@ -62,6 +62,7 @@ struct WallpaperDetailLayout<Preview: View, Sidebar: View, Status: View, Buttons
             .padding(.horizontal, ModalGeometry.horizontalPadding)
             .padding(.bottom, ModalGeometry.bottomPadding)
         }
+        .atlasRole("WallpaperDetailLayout")
     }
 
     private var leadingColumn: some View {

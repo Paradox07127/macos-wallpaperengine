@@ -497,6 +497,7 @@ extension WPECacheManagementView {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .atlasRole("StorageLocationMenu")
         .disabled(isLoading || (inventory?.projectsRootURL == nil && linkedSources.isEmpty && !storageMeasurements.contains { $0.location.kind == .legacyScenes && $0.bytes > 0 }))
         .help(Text("Show Wallpaper Files"))
         .accessibilityLabel(Text("Show Wallpaper Files"))

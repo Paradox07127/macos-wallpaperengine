@@ -221,6 +221,14 @@ struct EditDeskRoot: View {
             isWorkshopAvailable: { [featureCatalog] in featureCatalog.isEnabled(.wpeImport) }
         )
         self.router = router
+        #if DEBUG
+        QAControlPlane.shared.router = router
+        QAControlPlane.shared.pageGuide = pageGuide
+        QAControlPlane.shared.startTour = { [weak router, weak progress, pageGuide] page in
+            guard let router, let progress else { return }
+            pageGuide.startTour(progress: progress, router: router, from: page)
+        }
+        #endif
         if progress.handled.isEmpty, !progress.hasPresentedTour {
             router.onboardingRequested = true
         }

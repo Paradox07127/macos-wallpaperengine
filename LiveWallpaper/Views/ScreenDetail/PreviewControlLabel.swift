@@ -31,6 +31,7 @@ struct PreviewControlLabel: View {
         .foregroundStyle(resolvedTint)
         .frame(width: compact ? 32 : Self.width, height: 32)
         .contentShape(Rectangle())
+        .atlasRole("PreviewControl", label: systemImage)
     }
 
     private var resolvedTint: AnyShapeStyle {

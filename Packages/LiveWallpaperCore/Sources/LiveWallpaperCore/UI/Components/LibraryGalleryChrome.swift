@@ -24,6 +24,7 @@ public struct LibraryStatusBar<Trailing: View>: View {
         .padding(.vertical, DesignTokens.LibraryStatusBar.verticalPadding)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
+        .atlasRole("LibraryStatusBar")
     }
 }
 

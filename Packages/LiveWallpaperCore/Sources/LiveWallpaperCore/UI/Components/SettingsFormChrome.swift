@@ -24,6 +24,7 @@ private struct SettingsFormChrome: ViewModifier {
             .frame(maxWidth: DesignTokens.Settings.maxContentWidth)
             .frame(maxWidth: .infinity)
             .contentColumnBackground()
+            .atlasRole("settingsFormChrome")
     }
 }
 
@@ -39,6 +40,7 @@ public struct SettingsPopoverChrome: ViewModifier {
             .padding(DesignTokens.Spacing.lg)
             .frame(width: width)
             .presentationCompactAdaptation(.popover)
+            .atlasRole("settingsPopoverChrome")
     }
 }
 

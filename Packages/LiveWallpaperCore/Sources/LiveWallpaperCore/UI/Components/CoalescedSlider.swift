@@ -136,6 +136,7 @@ public struct CoalescedSlider<Readout: View>: View {
             lastWrittenValue = nil
         }
         .onDisappear { cancelPendingCommit() }
+        .atlasRole("CoalescedSlider")
     }
 
     @ViewBuilder

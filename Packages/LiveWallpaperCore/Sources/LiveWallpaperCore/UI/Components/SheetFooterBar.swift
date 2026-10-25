@@ -75,6 +75,7 @@ public struct SheetFooterBar<Leading: View>: View {
         }
         .padding(.horizontal, DesignTokens.Spacing.lg)
         .padding(.vertical, DesignTokens.Spacing.lg)
+        .atlasRole("SheetFooterBar")
     }
 
     @ViewBuilder

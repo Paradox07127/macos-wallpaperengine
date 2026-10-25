@@ -59,6 +59,7 @@ struct GalleryTileChrome: ViewModifier {
             // reads as settling twice.
             .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: isHovering)
             .animation(DesignTokens.motion(reduceMotion, DesignTokens.Motion.feedback), value: isSelected)
+            .atlasRole("GalleryTileChrome")
     }
 }
 

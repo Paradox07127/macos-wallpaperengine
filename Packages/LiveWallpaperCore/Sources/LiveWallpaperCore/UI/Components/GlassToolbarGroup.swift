@@ -43,6 +43,7 @@ public struct GlassToolbarGroup<Content: View>: View {
         .environment(\.glassToolbarSize, size)
         .adaptiveGlassSurface(.capsule)
         .accessibilityElement(children: .contain)
+        .atlasRole("GlassToolbarGroup")
     }
 }
 
@@ -70,6 +71,7 @@ public struct GlassToolbarItem: View {
                 .imageScale(size == .compact ? .medium : .large)
         }
         .buttonStyle(GlassToolbarItemStyle(destructive: role == .destructive, tint: tint, size: size))
+        .atlasRole("GlassToolbarItem", label: systemImage)
     }
 }
 

@@ -22,5 +22,6 @@ public struct ContainerGroupBoxStyle: GroupBoxStyle {
                     lineWidth: DesignTokens.Card.strokeWidth
                 )
         )
+        .atlasRole("ContainerGroupBoxStyle")
     }
 }

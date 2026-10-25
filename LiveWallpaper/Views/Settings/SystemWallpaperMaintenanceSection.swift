@@ -25,6 +25,7 @@ struct SystemWallpaperMaintenanceSection: View {
                 Button("Manage") { showingRegistrations = true }
                     .disabled(!maintenance.helperAvailable)
                     .fixedSize()
+                    .atlasRole("ManageRegistrations")
             }
 
             SettingRow(

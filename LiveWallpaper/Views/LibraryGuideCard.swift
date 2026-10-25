@@ -79,6 +79,7 @@ struct LibraryGuideCard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(DesignTokens.GuidedLibrary.outerPadding)
+        .atlasRole("LibraryGuideCard")
     }
 
     private var hero: some View {

@@ -122,6 +122,7 @@ struct ScenePresetBar: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .atlasRole("ScenePresetActions")
         .help(Text("Preset Actions"))
         .accessibilityLabel(Text("Preset Actions"))
         .appLanguagePopover(isPresented: isNaming, arrowEdge: .bottom) {
@@ -168,6 +169,7 @@ struct ScenePresetBar: View {
         .truncationMode(.tail)
         // Without matching the title's priority the row hands the menu only its minimum width.
         .layoutPriority(1)
+        .atlasRole("ScenePresetMenu")
         .accessibilityLabel(Text("Preset"))
     }
 

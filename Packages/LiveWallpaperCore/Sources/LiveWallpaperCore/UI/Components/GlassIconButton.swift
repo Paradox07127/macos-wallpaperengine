@@ -33,6 +33,7 @@ public struct GlassIconButton: View {
         }
         .adaptiveGlassButton(prominence, shape: .circle, size: size)
         .frame(width: diameter, height: diameter)
+        .atlasRole("GlassIconButton", label: systemImage)
         if let tint {
             button.tint(tint)
         } else {

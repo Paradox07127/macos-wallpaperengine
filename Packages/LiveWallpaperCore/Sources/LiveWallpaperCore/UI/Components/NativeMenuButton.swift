@@ -18,6 +18,7 @@ public struct NativeMenuButton<Content: View, Label: View>: View {
     public var body: some View {
         styledMenu
             .opacity(isEnabled ? 1 : DesignTokens.Opacity.disabledContent)
+            .atlasRole("NativeMenuButton")
     }
 
     @ViewBuilder

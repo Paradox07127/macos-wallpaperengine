@@ -120,6 +120,7 @@ private struct InfoOverlayHost<Content: View>: View {
                 // own or it reads as a flat sticker over the content. A real sheet has no
                 // border, so the shadow alone separates the edge.
                 .shadow(color: .black.opacity(0.28), radius: 20, y: 10)
+                .atlasRole("InfoOverlay")
                 // Zero-sized rather than `.hidden()`: a hidden view stops taking key
                 // equivalents, and Escape is the half of the contract the scrim can't cover.
                 .background {

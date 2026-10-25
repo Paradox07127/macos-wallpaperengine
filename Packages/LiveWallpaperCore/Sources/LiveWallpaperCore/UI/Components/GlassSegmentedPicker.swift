@@ -47,6 +47,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
             }
         }
         .padding(shell == .detail ? Self.detailInset : (shell == .editDesk ? 3 : 2))
+        .atlasRole("GlassSegmentedPicker")
 
         switch shell {
         case .glass:

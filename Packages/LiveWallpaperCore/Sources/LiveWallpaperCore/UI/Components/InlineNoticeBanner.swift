@@ -75,6 +75,7 @@ public struct InlineNoticeBanner<Actions: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(NoticeBannerBackground(surface: surface, tint: tint))
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
+        .atlasRole("InlineNoticeBanner")
     }
 
     private var glyph: some View {
@@ -168,6 +169,7 @@ public struct ErrorCodeChip: View {
         .help(Text("Copy the error code", bundle: .appLanguage, comment: "Tooltip on a copyable error-code chip."))
         .accessibilityLabel(Text("Error code \(code)", bundle: .appLanguage, comment: "A11y label for the error-code chip. The placeholder is a stable error code such as WPE_SCENE_PARSE."))
         .accessibilityHint(Text("Copies the error code to the clipboard", bundle: .appLanguage, comment: "A11y hint for the error-code chip."))
+        .atlasRole("ErrorCodeChip", label: code)
     }
 }
 

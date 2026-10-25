@@ -167,6 +167,7 @@ public struct SettingRow<Content: View>: View {
         .padding(.vertical, DesignTokens.Spacing.xs)
         .settingsSearchRow(titleKey)
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
+        .atlasRole("SettingRow")
     }
 }
 
@@ -188,6 +189,7 @@ public struct InfoTooltipButton: View {
                 .foregroundStyle(.tertiary)
         }
         .buttonStyle(.borderless)
+        .atlasRole("InfoTooltipButton")
         .help(localizedText)
         .accessibilityLabel(Text("More information"))
         .accessibilityHint(Text(verbatim: localizedText))

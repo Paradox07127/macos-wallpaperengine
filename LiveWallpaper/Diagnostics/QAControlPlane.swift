@@ -19,6 +19,13 @@ final class QAControlPlane {
     var libraryApply: (@MainActor (ApplyIntent, Screen) async -> ApplyReport)?
     let applyOperations = QAApplyOperations()
     var screenCheckpoints: [String: QAScreenCheckpoint] = [:]
+    /// The main window's router; nil while the main window is closed.
+    weak var router: EditDeskRouter?
+    weak var pageGuide: PageGuideSession?
+    /// Starts the onboarding tour at a page; nil while the main window is closed.
+    var startTour: ((OnboardingProgress.Page) -> Void)?
+    weak var trackedMenu: NSMenu?
+    var menuObservers: [NSObjectProtocol] = []
     private var listenerFD: Int32 = -1
     /// The socket we bound, so shutdown never unlinks a path another instance took over.
     private var boundInode: ino_t?
@@ -71,6 +78,7 @@ final class QAControlPlane {
         }
         listenerFD = fd
         boundInode = Self.inode(of: path)
+        installMenuTracking()
         Logger.notice(
             "[QA] control plane listening at \(path) (pid \(ProcessInfo.processInfo.processIdentifier))",
             category: .lifecycle
@@ -299,6 +307,20 @@ final class QAControlPlane {
         case "screen.patch": return try screenPatch(arguments)
         case "runtime.state": return try runtimeState(arguments)
         case "ui.hitTest": return try uiHitTest(arguments)
+        case "ui.navigate": return try uiNavigate(arguments)
+        case "ui.route": return try uiRoute()
+        case "ui.windows": return uiWindows()
+        case "ui.activate": return uiActivate()
+        case "ui.windowSize": return try uiWindowSize(arguments)
+        case "ui.appearance": return try uiAppearance(arguments)
+        case "ui.controls": return try uiControls(arguments)
+        case "ui.guide": return try uiGuide(arguments)
+        case "ui.click": return try uiClick(arguments)
+        case "ui.menu": return try uiMenu(arguments)
+        case "ui.key": return try uiKey(arguments)
+        case "ui.scroll": return try uiScroll(arguments)
+        case "ui.statusItem": return try uiStatusItem()
+        case "ui.menuBarPanel": return try uiMenuBarPanel(arguments)
         default: throw QAError.message("Unknown tool: \(tool)")
         }
     }
@@ -349,7 +371,7 @@ final class QAControlPlane {
                  "description": "What the live session reports (playback, frame production, renderer errors) — as opposed to what the store holds. Volume, frame-rate and fit mode are push-only and absent here."],
                 ["name": "screen.patch", "arguments": ["screenID": "Int", "<field>": "any key listed in screenWritableKeys"],
                  "description": "Write per-screen playback settings through ScreenManager's named setters, so each change also reaches the live session."],
-            ] + libraryToolDescriptions + checkpointToolDescriptions,
+            ] + libraryToolDescriptions + checkpointToolDescriptions + atlasToolDescriptions,
             "writableKeys": [
                 "general": Array(generalKeys).sorted(),
                 "workshop": Array(workshopKeys).sorted(),

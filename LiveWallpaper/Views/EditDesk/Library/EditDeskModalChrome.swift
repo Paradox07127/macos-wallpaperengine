@@ -49,6 +49,7 @@ struct EditDeskModalChrome<Panel: View>: View {
                 .onTapGesture(perform: onDismiss)
                 .padding(.top, titlebarInset)
             panelBox(frame)
+                .atlasRole("EditDeskModalChrome")
                 .offset(x: frame.minX, y: frame.minY)
                 .transition(panelTransition)
             shortcuts

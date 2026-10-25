@@ -72,6 +72,7 @@ struct ModalDisplayButtons: View {
                 .layoutPriority(1)
             }
         }
+        .atlasRole("ModalDisplayButtons")
     }
 
     private var caption: Text {

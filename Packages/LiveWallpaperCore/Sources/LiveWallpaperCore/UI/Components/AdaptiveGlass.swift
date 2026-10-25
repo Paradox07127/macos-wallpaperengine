@@ -93,6 +93,7 @@ public extension View {
         in shape: AdaptiveGlassShape = .capsule
     ) -> some View {
         modifier(ThumbnailBadgeGlassModifier(tint: tint, opacity: opacity, shape: shape))
+            .atlasRole("thumbnailBadgeGlass")
     }
 
     func adaptiveGlassOverMedia(
@@ -116,6 +117,7 @@ public extension View {
         opacity: Double? = nil
     ) -> some View {
         modifier(FloatingGlyphGlassModifier(hovered: hovered, tint: tint, opacity: opacity))
+            .atlasRole("floatingGlyphGlass")
     }
 }
 

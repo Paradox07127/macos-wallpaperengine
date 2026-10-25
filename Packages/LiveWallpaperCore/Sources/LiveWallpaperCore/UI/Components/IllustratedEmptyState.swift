@@ -133,6 +133,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
             }
         }
         .accessibilityElement(children: accessibilityChildren)
+        .atlasRole("IllustratedEmptyState", label: symbol)
     }
 
     private var iconSize: CGFloat {

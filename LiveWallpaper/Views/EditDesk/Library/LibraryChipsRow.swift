@@ -199,6 +199,7 @@ struct LibraryToolbarRow<Filters: View, Search: View, Sort: View, Actions: View>
                     actions
                 }
             }
+            .atlasRole("LibraryToolbarRow")
         } else {
             HStack(spacing: DesignTokens.Spacing.sm) {
                 search
@@ -207,6 +208,7 @@ struct LibraryToolbarRow<Filters: View, Search: View, Sort: View, Actions: View>
                 sort
                 actions
             }
+            .atlasRole("LibraryToolbarRow")
         }
     }
 }

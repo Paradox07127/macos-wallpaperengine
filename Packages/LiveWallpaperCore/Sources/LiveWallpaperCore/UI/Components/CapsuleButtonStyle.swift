@@ -41,6 +41,7 @@ public struct CapsuleButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         StyledLabel(configuration: configuration, tint: tint, preset: preset)
+            .atlasRole("CapsuleButtonStyle")
     }
 
     /// Inner view so we can read `\.isEnabled` (ButtonStyle.Configuration doesn't expose it).

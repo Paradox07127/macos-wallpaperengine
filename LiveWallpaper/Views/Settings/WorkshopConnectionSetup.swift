@@ -216,6 +216,7 @@ struct WorkshopConnectionSetup: View {
                 }
                 .menuStyle(.button)
                 .fixedSize()
+                .atlasRole("SteamAccountMenu")
 
                 Button {
                     Task { await controller.loadAccounts() }

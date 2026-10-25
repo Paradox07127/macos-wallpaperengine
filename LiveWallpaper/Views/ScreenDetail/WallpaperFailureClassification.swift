@@ -142,6 +142,7 @@ struct WallpaperFailureRecoveryActions: View {
             // Only the first action can be prominent (DESIGN.md rule 8).
             control(for: action, isPrimary: index == 0)
         }
+        .atlasRole("WallpaperFailureRecoveryActions")
     }
 
     @ViewBuilder

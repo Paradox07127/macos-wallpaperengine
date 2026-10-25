@@ -99,6 +99,7 @@ public struct LibrarySearchField: View {
             }
         }
         .opacity(isDisabled ? DesignTokens.Opacity.disabledContent : 1)
+        .atlasRole("LibrarySearchField")
     }
 
     private var hasFocus: Bool {

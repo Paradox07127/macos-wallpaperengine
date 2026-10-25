@@ -78,5 +78,6 @@ struct EmptyDisplaySetup: View {
         }
         Button { showsWebSetup = true } label: { Label("Web", systemImage: "globe") }
             .adaptiveGlassButton(size: .large)
+            .atlasRole("EmptyDisplayWeb")
     }
 }
