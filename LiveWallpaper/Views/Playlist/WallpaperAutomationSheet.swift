@@ -73,7 +73,8 @@ struct WallpaperAutomationSheet: View {
     @State private var derivedFallback: WallpaperQueueEntry?
     @State private var shownBeforeTrial: ScreenConfiguration?
     @State private var search = ""
-    @State private var picking = false
+    /// The button the wallpaper picker popover is anchored to; nil while the picker is closed.
+    @State private var pickerAnchor: PickerAnchor?
     @State private var openedAt = Date()
     @State private var selectedSlotID: UUID?
     @State private var failures: [String: WallpaperAutomationFailure] = [:]
@@ -111,6 +112,10 @@ struct WallpaperAutomationSheet: View {
         case queue, slot(UUID), fallback
     }
 
+    private enum PickerAnchor {
+        case queueToolbar, emptyQueue, slot, fallback
+    }
+
     /// The edits Save would commit.
     private struct Draft: Equatable {
         let mode: WallpaperMode
@@ -135,6 +140,10 @@ struct WallpaperAutomationSheet: View {
 
     private var slotWithoutWallpaper: UUID? {
         slots.first { $0.wallpaper == nil && $0.videoBookmarkData == nil }?.id
+    }
+
+    private var canSave: Bool {
+        !(mode == .schedule && (problem != nil || slotWithoutWallpaper != nil))
     }
 
     private var saveTitle: LocalizedStringKey {
@@ -312,8 +321,8 @@ struct WallpaperAutomationSheet: View {
 
             SheetFooterBar(
                 primaryTitle: saveTitle,
-                primaryAction: { save(); close() },
-                primaryDisabled: mode == .schedule && (problem != nil || slotWithoutWallpaper != nil),
+                primaryAction: saveAndClose,
+                primaryDisabled: !canSave,
                 cancelTitle: "Cancel",
                 cancelAction: requestClose,
                 leading: {
@@ -352,12 +361,31 @@ struct WallpaperAutomationSheet: View {
                 return slot
             }
         }
-        .appLanguagePopover(isPresented: $picking, arrowEdge: .bottom) { wallpaperPicker }
         .onChange(of: dismissRequests) { requestClose() }
         .alert("Discard changes to wallpaper automation?", isPresented: $confirmingDiscard) {
-            Button("Discard Changes", action: discardAndClose)
+            if canSave {
+                Button("Save", action: saveAndClose).keyboardShortcut(.defaultAction)
+            }
+            Button("Discard Changes", role: .destructive, action: discardAndClose)
             Button("Keep Editing", role: .cancel) {}
+                .keyboardShortcut(canSave ? nil : .defaultAction)
         }
+    }
+
+    private func saveAndClose() {
+        save()
+        close()
+    }
+
+    private func pickerShown(from anchor: PickerAnchor) -> Binding<Bool> {
+        Binding(
+            get: { pickerAnchor == anchor },
+            set: { shown in
+                if !shown, pickerAnchor == anchor {
+                    pickerAnchor = nil
+                }
+            }
+        )
     }
 
     private func requestClose() {
@@ -494,15 +522,21 @@ struct WallpaperAutomationSheet: View {
                         Text("Every \(value) min").tag(value)
                     }
                 }.frame(width: 180)
-                addButton("Add Wallpaper") { pickTarget = .queue; added = [:]; picking = true }
+                addButton("Add Wallpaper") { pickTarget = .queue; added = [:]; pickerAnchor = .queueToolbar }
+                    .appLanguagePopover(isPresented: pickerShown(from: .queueToolbar), arrowEdge: .bottom) { wallpaperPicker }
             }
             if queue.isEmpty {
                 IllustratedEmptyState(
                     symbol: "list.bullet",
                     title: "Your playlist is empty",
-                    message: "Add wallpapers from your library to play them in sequence.",
-                    primary: EmptyStateButtonAction("Add Wallpaper") { pickTarget = .queue; added = [:]; picking = true }
-                )
+                    message: "Add wallpapers from your library to play them in sequence."
+                ) {
+                    // Built here rather than passed as `primary:` so the picker popover can anchor to this button.
+                    Button("Add Wallpaper") { pickTarget = .queue; added = [:]; pickerAnchor = .emptyQueue }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, DesignTokens.Spacing.xs)
+                        .appLanguagePopover(isPresented: pickerShown(from: .emptyQueue), arrowEdge: .bottom) { wallpaperPicker }
+                }
             } else {
                 List {
                     ForEach(Array(queue.enumerated()), id: \.element.id) { index, entry in
@@ -614,7 +648,7 @@ struct WallpaperAutomationSheet: View {
                     }
                     Button {
                         pickTarget = .slot(slot.id)
-                        picking = true
+                        pickerAnchor = .slot
                     } label: {
                         if let entry = slot.wallpaper {
                             QueueEntryLabel(entry: entry, title: Self.rowTitle(for: entry, in: library), isPlaying: false, thumbnails: thumbnails) {
@@ -626,6 +660,7 @@ struct WallpaperAutomationSheet: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .appLanguagePopover(isPresented: pickerShown(from: .slot), arrowEdge: .bottom) { wallpaperPicker }
                     if let entry = slot.wallpaper {
                         failureBadge(entry)
                     }
@@ -656,11 +691,12 @@ struct WallpaperAutomationSheet: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                 Button {
                     pickTarget = .fallback
-                    picking = true
+                    pickerAnchor = .fallback
                 } label: {
                     entryLabel(entry)
                 }
                 .buttonStyle(.plain)
+                .appLanguagePopover(isPresented: pickerShown(from: .fallback), arrowEdge: .bottom) { wallpaperPicker }
                 failureBadge(entry)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -767,7 +803,7 @@ struct WallpaperAutomationSheet: View {
                             }
                             guard pickTarget != .queue, let entry = WallpaperQueueEntry.libraryItem(item) else {
                                 error = String(localized: "This wallpaper is unavailable. Reimport it from the library.", bundle: .appLanguage)
-                                picking = false
+                                pickerAnchor = nil
                                 return
                             }
                             if case let .slot(id) = pickTarget {
@@ -775,7 +811,7 @@ struct WallpaperAutomationSheet: View {
                             } else {
                                 fallback = entry
                             }
-                            error = nil; picking = false
+                            error = nil; pickerAnchor = nil
                         } label: {
                             HStack {
                                 Image(systemName: item.kind == .scene ? "cube.transparent" : item.kind == .web ? "globe" : "film")
@@ -802,7 +838,7 @@ struct WallpaperAutomationSheet: View {
                         .font(DesignTokens.Typography.subheadline)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
-                    Button("Done") { picking = false }.buttonStyle(.borderedProminent)
+                    Button("Done") { pickerAnchor = nil }.buttonStyle(.borderedProminent)
                 } else {
                     Button("Choose Video", action: chooseVideoFiles)
                     Spacer()
@@ -873,7 +909,7 @@ struct WallpaperAutomationSheet: View {
 
     private func chooseVideoFiles() {
         let target = pickTarget
-        picking = false
+        pickerAnchor = nil
         // App-modal: even on the next turn the closing popover can still be the key window, and a sheet on it would be cancelled with it.
         Task { @MainActor in
             let panel = NSOpenPanel()
@@ -906,8 +942,14 @@ struct WallpaperAutomationSheet: View {
 
     private var currentEntry: WallpaperQueueEntry? {
         guard let config = manager.getConfiguration(for: screen) else { return nil }
+        return Self.currentEntry(for: config, in: library, displayName: manager.wallpaperDisplayName(for: screen))
+    }
+
+    static func currentEntry(
+        for config: ScreenConfiguration, in library: SavedLibraryModel, displayName: String?
+    ) -> WallpaperQueueEntry {
         var entry = WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
-        entry.title = Self.matchingItem(entry, in: library)?.title ?? manager.wallpaperDisplayName(for: screen) ?? ""
+        entry.title = matchingItem(entry, in: library)?.title ?? config.wpeOrigin?.title ?? displayName ?? ""
         return entry
     }
 
@@ -1007,7 +1049,7 @@ private struct QueueEntryLabel: View {
                 if isPlaying {
                     Text("Now playing")
                         .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(DesignTokens.EditDesk.Colors.nowPlayingGlyph)
+                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
                         .lineLimit(1)
                 } else if !subtitle.isEmpty {
                     Text(verbatim: subtitle).font(DesignTokens.Typography.caption).foregroundStyle(.secondary).lineLimit(1)

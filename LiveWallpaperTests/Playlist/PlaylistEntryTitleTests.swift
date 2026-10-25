@@ -46,6 +46,22 @@ struct PlaylistEntryTitleTests {
         #expect(title == "Lantern Festival (Blue)".translatedWallpaperName)
     }
 
+    @Test("The current scene's row uses its Workshop title, not the generic scene name")
+    func currentSceneUsesWorkshopTitle() {
+        let origin = WPEOrigin(
+            workshopID: "42", title: "Lantern Festival", originalType: .scene,
+            sourceFolderBookmark: Data([5]), cacheRelativePath: nil, previewFileName: nil
+        )
+        var config = ScreenConfiguration(screenID: 1, wallpaper: .scene(SceneDescriptor(
+            workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "scene.json", capabilityTier: .imageOnly
+        )))
+        config.wpeOrigin = origin
+        let library = SavedLibraryModel(inputs: SavedLibraryModel.Inputs())
+
+        let entry = WallpaperAutomationSheet.currentEntry(for: config, in: library, displayName: "Scene 42")
+        #expect(WallpaperAutomationSheet.rowTitle(for: entry, in: library) == "Lantern Festival")
+    }
+
     @Test("A video row names its folder unless the folder is a Workshop item's numeric ID")
     func subtitleOmitsOnlyTheWorkshopFolder() {
         let metadata = RowMetadata(resolution: nil, duration: 30, folder: "Wallpapers")
