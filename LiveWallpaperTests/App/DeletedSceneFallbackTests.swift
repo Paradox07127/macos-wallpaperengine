@@ -87,8 +87,9 @@ struct DeletedSceneFallbackTests {
     }
 
     private static func settle(until done: () -> Bool) async {
-        for _ in 0 ..< 500 where !done() {
-            await Task.yield()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !done(), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
         }
     }
 
