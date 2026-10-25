@@ -7,33 +7,31 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.9.1</title>
-      <pubDate>Sat, 24 Oct 2026 03:18:36 +0000</pubDate>
-      <sparkle:version>0.9.1</sparkle:version>
-      <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
+      <title>Version 0.9.2</title>
+      <pubDate>Sun, 25 Oct 2026 20:15:02 +0000</pubDate>
+      <sparkle:version>0.9.2</sparkle:version>
+      <sparkle:shortVersionString>0.9.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
+<p><strong>What's New</strong></p>
+<ul>
+<li>Wallpaper Automation is a full page with a playlist crate, day ring and shuffle deck, plus Single Wallpaper mode.</li>
+<li>Playlists gain Auto-Advance and Loop; schedules support exact minutes and dragging across midnight.</li>
+<li>Library shuffle gains exclusions, previous-wallpaper history and reshuffling. The clock gains a Split-Flap style.</li>
+</ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Pro: scenes with dynamic text and scripts use less CPU.</li>
-<li>The video texture cache stays under its 2 GiB cap during long sessions.</li>
-<li>Each display shows its panel's native resolution.</li>
-<li>The Shortcuts page shows shortcuts that macOS refused, and names keys by your keyboard layout.</li>
-<li>The library import toast lists each item that failed and why.</li>
+<li>Wallpaper picking uses the in-page library with search and filters. Display controls, menus, contrast and translations are clearer.</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Pro: out-of-range sizes, ids, particle counts and script numbers make a scene fail to load instead of crashing the app.</li>
-<li>Pro: a scene that fails while playing keeps showing its error, and a slow teardown no longer delays the next scene.</li>
-<li>macOS 26 and later: scenes waiting to load in System Settings › Wallpaper are no longer stopped as stalled.</li>
-<li>A display cleared on the System Wallpaper page stays empty after a restart.</li>
-<li>Playlists and schedules recheck their next pick after queue edits and time zone changes.</li>
-<li>Settings reset and saves that fail to reach the disk now show as failed.</li>
-<li>Monitor CPU and network readings no longer jump when a counter wraps.</li>
+<li>Scene preset updates stay ordered; clearing a wallpaper preserves scene settings and reliably clears System Wallpaper.</li>
+<li>Fixed display transitions, time-zone switching, shortcut labels and network readings; hardened file saves, invalid schedules and Pro scene data.</li>
+<li>Fixed short schedule sections, shuffle counts and history, and keyboard interaction beneath information overlays.</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.1">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.2">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.2">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.1/Loomscreen-Pro-0.9.1.dmg" type="application/octet-stream" sparkle:edSignature="EGd7aZxyBVrGlqOYwb6vY4kV83g/CzbA+5V/vxX8conA6yGcKfTMCs+FIAKQqZZn4hKdVV4Rp0ynxGTCjOB2AQ==" length="31305636" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.2/Loomscreen-Pro-0.9.2.dmg" type="application/octet-stream" sparkle:edSignature="gfETwB2DeMOYBPYtG5uGhL4g8nwPfNNkuPDeo9KXrzAon8jrJKpgGp/mJxlHDXRnwK1VksUtKOoD9LnnpNL2Dw==" length="35264029" />
     </item>
   </channel>
 </rss>
