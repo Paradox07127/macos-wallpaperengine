@@ -103,18 +103,37 @@ struct BrowsePane: View {
     }
 
     private var gridColumn: some View {
-        VStack(spacing: 0) {
-            filterBand
-            switch listing.wrappedValue {
-            case .results:
-                keyRejectedBanner
+        let showsResults = listing.wrappedValue == .results
+        let liked = showsResults ? [] : WorkshopBookmarkActions.likedItems(browseItems: viewModel.items)
+        return ZStack {
+            if showsResults {
                 content
-                    .overlay(alignment: .top) {
-                        ZStack { rateLimitBanner }
-                            .animation(phaseAnimation, value: viewModel.isRateLimited)
+            } else {
+                likesContent(liked)
+            }
+        }
+        .libraryScrollBars {
+            VStack(spacing: 0) {
+                filterBand
+                if showsResults {
+                    keyRejectedBanner
+                }
+            }
+            // Hung off the bars, not the content: on macOS 26 the content's top is masked and would fade the banner.
+            .overlay(alignment: .bottom) {
+                ZStack {
+                    if showsResults {
+                        rateLimitBanner
                     }
-            case .likes:
-                likesContent
+                }
+                .animation(phaseAnimation, value: viewModel.isRateLimited)
+                .alignmentGuide(.bottom) { $0[.top] }
+            }
+            // Before macOS 26 the bars stack above the content, which would otherwise draw over the banner.
+            .zIndex(1)
+        } bottom: {
+            if !showsResults {
+                LibraryStatusBar(summary: Text("\(liked.count) wallpapers"))
             }
         }
     }
@@ -145,23 +164,20 @@ struct BrowsePane: View {
         )
     }
 
-    private var likesContent: some View {
-        let liked = WorkshopBookmarkActions.likedItems(browseItems: viewModel.items)
-        return VStack(spacing: 0) {
-            if liked.isEmpty {
-                LibraryGuideCard(
-                    icon: "heart",
-                    tint: DesignTokens.Colors.like,
-                    title: "No liked wallpapers yet",
-                    message: "Click the heart on a Workshop wallpaper to keep it here.",
-                    actionTitle: "Back to Browse",
-                    actionSystemImage: "chevron.left",
-                    action: { listing.wrappedValue = .results }
-                )
-            } else {
-                ScrollView { cardGrid(liked) }
-            }
-            LibraryStatusBar(summary: Text("\(liked.count) wallpapers"))
+    @ViewBuilder
+    private func likesContent(_ liked: [WorkshopQueryItem]) -> some View {
+        if liked.isEmpty {
+            LibraryGuideCard(
+                icon: "heart",
+                tint: DesignTokens.Colors.like,
+                title: "No liked wallpapers yet",
+                message: "Click the heart on a Workshop wallpaper to keep it here.",
+                actionTitle: "Back to Browse",
+                actionSystemImage: "chevron.left",
+                action: { listing.wrappedValue = .results }
+            )
+        } else {
+            ScrollView { cardGrid(liked) }
         }
     }
 
@@ -469,9 +485,15 @@ struct BrowsePane: View {
         IllustratedEmptyState(
             symbol: "magnifyingglass",
             verbatimTitle: emptyMessage,
-            primary: hasActiveFilters
-                ? EmptyStateButtonAction("Clear filters") { clearFilters() }
-                : nil
+            primary: .clearing(search: isSearchActive, filters: isFilterActive) {
+                if isSearchActive {
+                    viewModel.searchInput = ""
+                }
+                if isFilterActive {
+                    viewModel.resetFilters()
+                }
+                Task { await viewModel.submitSearch() }
+            }
         )
     }
 
@@ -587,14 +609,19 @@ struct BrowsePane: View {
 
     // MARK: - Helpers
 
-    private var hasActiveFilters: Bool {
+    private var isSearchActive: Bool {
+        viewModel.creatorFilter == nil && viewModel.pinnedTag == nil && !viewModel.searchInput.isEmpty
+    }
+
+    private var isFilterActive: Bool {
         guard viewModel.creatorFilter == nil, viewModel.pinnedTag == nil else { return false }
-        return !viewModel.searchInput.isEmpty
-            || WorkshopFilterMath.isNarrowing(viewModel.selectedTypes, total: WorkshopContentTypeFilter.selectableCases.count)
-            || WorkshopFilterMath.isNarrowing(viewModel.selectedAgeRatings, total: WorkshopAgeRatingFilter.allCases.count)
-            || WorkshopFilterMath.isNarrowing(viewModel.selectedResolutions, total: WorkshopResolutionFilter.selectableCases.count)
-            || WorkshopFilterMath.isNarrowing(viewModel.selectedGenres, total: WorkshopGenre.allTags.count)
-            || !viewModel.selectedMiscellaneous.isEmpty
+        return WorkshopFilterMath.activeFilterCount(
+            types: viewModel.selectedTypes,
+            ageRatings: viewModel.selectedAgeRatings,
+            resolutions: viewModel.selectedResolutions,
+            genres: viewModel.selectedGenres,
+            miscellaneous: viewModel.selectedMiscellaneous
+        ) > 0
     }
 
     private var currentRateLimitRemaining: TimeInterval {
@@ -612,18 +639,12 @@ struct BrowsePane: View {
             return String(localized: "No results tagged “\(WorkshopTagLocalization.displayName(tag))”.", bundle: .appLanguage, comment: "Empty tag-scoped Workshop browse. Placeholder is the tag.")
         }
         if !viewModel.searchInput.isEmpty {
-            return String(localized: "No results for \"\(viewModel.searchInput)\".", bundle: .appLanguage, comment: "Empty Workshop search result. Placeholder is the query.")
+            return String(localized: "No results for “\(viewModel.searchInput)” in Workshop", bundle: .appLanguage, comment: "Empty Workshop search result. Placeholder is the query.")
         }
-        if hasActiveFilters {
+        if isFilterActive {
             return String(localized: "No results for these filters.", bundle: .appLanguage, comment: "Empty Workshop result when type/age filters exclude everything.")
         }
         return String(localized: "No results yet.", bundle: .appLanguage, comment: "Initial empty Workshop browse state.")
-    }
-
-    private func clearFilters() {
-        viewModel.searchInput = ""
-        viewModel.resetFilters()
-        Task { await viewModel.submitSearch() }
     }
 
     private func reloadInstalledIDs() {
