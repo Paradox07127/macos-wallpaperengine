@@ -94,5 +94,22 @@ enum WorkshopFilterMath {
     static func isNarrowing<T>(_ selected: Set<T>, total: Int) -> Bool {
         !selected.isEmpty && selected.count < total
     }
+
+    static func activeFilterCount(
+        types: Set<WorkshopContentTypeFilter>,
+        ageRatings: Set<WorkshopAgeRatingFilter>,
+        resolutions: Set<WorkshopResolutionFilter>,
+        genres: Set<String>,
+        miscellaneous: Set<String>
+    ) -> Int {
+        [
+            !miscellaneous.isEmpty,
+            isNarrowing(types, total: WorkshopContentTypeFilter.selectableCases.count),
+            // Turning on Questionable or Mature only adds items; dropping Everyone hides them.
+            !ageRatings.contains(.everyone),
+            isNarrowing(resolutions, total: WorkshopResolutionFilter.selectableCases.count),
+            isNarrowing(genres, total: WorkshopGenre.allTags.count),
+        ].filter(\.self).count
+    }
 }
 #endif

@@ -183,7 +183,7 @@ final class BrowseViewModel {
     var searchTextTarget: WorkshopSearchTextTarget = .all {
         didSet {
             guard searchTextTarget != oldValue else { return }
-            defaults.set(searchTextTarget.rawValue, forKey: FilterKey.searchTextTarget)
+            defaults.set(searchTextTarget.rawValue, forKey: Self.searchTextTargetKey)
             scheduleAutoApply()
         }
     }
@@ -379,11 +379,20 @@ final class BrowseViewModel {
     /// `BrowsePane`'s key-path and presets observers fire only while it is mounted; what changed off screen is caught here.
     func onAppear() {
         let defaultsChanged = applySettingsDefaults()
+        let searchScopeChanged = applyPersistedSearchTextTarget() && hasPendingChanges
         if let fetchedKeyless, fetchedKeyless != usesKeylessSearch {
             appearRefresh = Task { await browsePathChanged() }
-        } else if defaultsChanged || presetVisibilityChanged || (!hasLoadedPage && !isLoading && lastError == nil) {
+        } else if defaultsChanged || searchScopeChanged || presetVisibilityChanged || (!hasLoadedPage && !isLoading && lastError == nil) {
             appearRefresh = Task { await reload() }
         }
+    }
+
+    /// The didSet's debounced auto-apply is cancelled by the `reload()` that `onAppear` starts.
+    private func applyPersistedSearchTextTarget() -> Bool {
+        guard let target = WorkshopSearchTextTarget(rawValue: defaults.integer(forKey: Self.searchTextTargetKey)),
+              target != searchTextTarget else { return false }
+        searchTextTarget = target
+        return true
     }
 
     /// The last request excluded presets while Settings now shows them, or the reverse.
@@ -665,8 +674,10 @@ final class BrowseViewModel {
         static let retiredResolutionsV1 = "loomscreen.workshop.filter.resolutions.v1"
         static let genres = "loomscreen.workshop.filter.genres.v1"
         static let miscellaneous = "loomscreen.workshop.filter.miscellaneous.v1"
-        static let searchTextTarget = "loomscreen.workshop.filter.searchTextTarget.v1"
     }
+
+    /// Shared with Settings › Workshop, which writes the scope this model rereads on appear.
+    nonisolated static let searchTextTargetKey = "loomscreen.workshop.filter.searchTextTarget.v1"
 
     private func persistFilters() {
         defaults.set(selectedTypes.map(\.rawValue), forKey: FilterKey.types)
@@ -725,7 +736,7 @@ final class BrowseViewModel {
         if let raw = defaults.array(forKey: FilterKey.miscellaneous) as? [String] {
             selectedMiscellaneous = Set(raw).intersection(WorkshopMiscellaneousFilter.allTags)
         }
-        if let target = WorkshopSearchTextTarget(rawValue: defaults.integer(forKey: FilterKey.searchTextTarget)) {
+        if let target = WorkshopSearchTextTarget(rawValue: defaults.integer(forKey: Self.searchTextTargetKey)) {
             searchTextTarget = target
         }
     }

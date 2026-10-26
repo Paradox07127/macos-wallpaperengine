@@ -443,6 +443,28 @@ struct BrowseFilterTests {
         #expect(WorkshopAgeRatingFilter.allCases.allSatisfy { !$0.displayName.isEmpty })
         #expect(Set(WorkshopContentTypeFilter.allCases.map(\.id)).count == WorkshopContentTypeFilter.allCases.count)
     }
+
+    private static func filterCount(
+        types: Set<WorkshopContentTypeFilter> = Set(WorkshopContentTypeFilter.selectableCases),
+        ageRatings: Set<WorkshopAgeRatingFilter>
+    ) -> Int {
+        WorkshopFilterMath.activeFilterCount(
+            types: types,
+            ageRatings: ageRatings,
+            resolutions: Set(WorkshopResolutionFilter.selectableCases),
+            genres: Set(WorkshopGenre.allTags),
+            miscellaneous: []
+        )
+    }
+
+    @Test("The Filters badge counts maturity only once Everyone is turned off")
+    func maturityCountsOnlyWithoutEveryone() throws {
+        let firstType = try #require(WorkshopContentTypeFilter.selectableCases.first)
+
+        #expect(Self.filterCount(ageRatings: [.everyone, .questionable]) == 0)
+        #expect(Self.filterCount(ageRatings: [.questionable]) == 1)
+        #expect(Self.filterCount(types: [firstType], ageRatings: [.everyone, .mature]) == 1)
+    }
 }
 
 @Suite("Workshop browse request shape")
@@ -981,9 +1003,9 @@ struct BrowseRequestShapeTests {
         #expect(ribbon.activeFilterCount == 0)
 
         model.toggleAgeRating(.mature)
-        #expect(ribbon.activeFilterCount == 1)
-        model.toggleAgeRating(.mature)
         #expect(ribbon.activeFilterCount == 0)
+        model.toggleAgeRating(.everyone)
+        #expect(ribbon.activeFilterCount == 1)
     }
 
     @Test("Miscellaneous persists, drops unknown tags, and is cleared by resetFilters")
@@ -1240,6 +1262,26 @@ struct BrowseRequestShapeTests {
         await model.appearRefresh?.value
     }
 
+    @Test("Returning to Browse picks up a search scope changed in Settings", .timeLimit(.minutes(1)))
+    func onAppearRereadsSearchScope() async throws {
+        let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearSearchScope")
+        defer { suite.discard() }
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
+        services.hasWebAPIKey = true
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() })
+        model.searchInput = "cat"
+        await model.reload()
+        try #require(model.hasLoadedPage && model.currentRequest.searchTextTarget == .all)
+
+        suite.defaults.set(WorkshopSearchTextTarget.titleOnly.rawValue, forKey: BrowseViewModel.searchTextTargetKey)
+        model.onAppear()
+
+        #expect(model.searchTextTarget == .titleOnly)
+        await model.appearRefresh?.value
+        #expect(model.currentRequest.searchTextTarget == .titleOnly, "the page was not refetched with the new scope")
+    }
+
     // MARK: - W4-B: a rejected key browses keyless (D11 / D23)
 
     private static let stubbedKey = String(repeating: "a1b2c3d4", count: 4)
@@ -1475,9 +1517,6 @@ struct WorkshopSortCopyTests {
         "Title & Description": ("Title & Description", "标题与描述"),
         "Title Only": ("Title Only", "仅限标题"),
         "Description Only": ("Description Only", "仅限描述"),
-        "Specify what text fields of the item you want to search:": (
-            "Specify what text fields of the item you want to search:", "指定您希望搜索的项目文本字段："
-        ),
     ]
 
     /// The Miscellaneous chips with a rendering in `WorkshopTagLocalization`

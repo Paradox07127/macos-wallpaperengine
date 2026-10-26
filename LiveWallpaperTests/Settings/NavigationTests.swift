@@ -231,6 +231,17 @@ struct NavigationTests {
         #expect(results.first { $0.destination == .workshopSetup }?.anchor == .workshopConnection)
     }
 
+    @Test("Searching for the search scope lands on Workshop Content")
+    func searchScopeLandsOnWorkshopContent() {
+        let results = SettingsNavigation.filteredResults(
+            matching: "search scope",
+            capabilities: .pro,
+            includeWorkshopOnline: true
+        )
+
+        #expect(results.first { $0.destination == .workshopSetup }?.anchor == .workshopContent)
+    }
+
     @Test("Search result identity includes anchor")
     func searchResultIdentityIncludesAnchor() {
         let result = SettingsNavigationSearchResult(

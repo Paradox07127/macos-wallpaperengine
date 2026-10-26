@@ -9,6 +9,7 @@ struct WorkshopSettingsView: View {
 
     @AppStorage("loomscreen.workshop.blurMatureThumbnails.v1", store: .appScoped()) private var blurMatureThumbnails = true
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedInBrowse = false
+    @AppStorage(BrowseViewModel.searchTextTargetKey, store: .appScoped()) private var searchTextTarget = WorkshopSearchTextTarget.all
     @State private var showsPresetsInBrowse: Bool
     @State private var defaultSort: WorkshopSortMode
     @State private var defaultTimeFrame: WorkshopTimeFrame
@@ -113,6 +114,21 @@ struct WorkshopSettingsView: View {
                         persistBrowsePreferences()
                     }
                     .accessibilityLabel(Text("Default time frame"))
+                }
+                SettingRow(
+                    icon: "text.magnifyingglass",
+                    iconColor: .purple,
+                    title: "Search scope"
+                ) {
+                    Picker("", selection: $searchTextTarget) {
+                        ForEach(WorkshopSearchTextTarget.allCases) { target in
+                            Text(verbatim: target.title).tag(target)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel(Text("Search scope"))
                 }
             } header: {
                 SettingsSearchSectionHeader("Content", anchor: .workshopContent)

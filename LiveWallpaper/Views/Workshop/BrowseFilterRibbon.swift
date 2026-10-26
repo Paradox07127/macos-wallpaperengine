@@ -44,7 +44,6 @@ struct BrowseFilterRibbon: View {
             WorkshopLikedToggle(isOn: $showsLikes)
         } search: {
             searchField
-            searchTargetMenu
         } sort: {
             sortMenu
             timeFrameMenu
@@ -78,40 +77,6 @@ struct BrowseFilterRibbon: View {
             Text(verbatim: "▾")
         }
         .font(DesignTokens.EditDesk.Typography.body)
-    }
-
-    /// Search text scope belongs beside the field, as a compact icon action.
-    private var searchTargetMenu: some View {
-        Menu {
-            Section {
-                Picker(selection: Binding(
-                    get: { viewModel.searchTextTarget },
-                    set: { viewModel.searchTextTarget = $0 }
-                )) {
-                    ForEach(WorkshopSearchTextTarget.allCases) { target in
-                        Text(verbatim: target.title).tag(target)
-                    }
-                } label: {
-                    EmptyView()
-                }
-                .pickerStyle(.inline)
-            } header: {
-                Text(verbatim: WorkshopSearchTextTarget.menuTitle)
-            }
-        } label: {
-            Image(systemName: viewModel.searchTextTarget == .all ? "text.magnifyingglass" : "doc.text.magnifyingglass")
-                .font(DesignTokens.EditDesk.Typography.chip)
-        }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .controlSize(.small)
-        .adaptiveGlassButton(.regular, shape: .capsule, size: .regular)
-        .fixedSize()
-        .atlasRole("WorkshopSearchTargetMenu")
-        .disabled(controlsDisabled)
-        .help(Text(verbatim: WorkshopSearchTextTarget.menuTitle))
-        .accessibilityLabel(Text(verbatim: WorkshopSearchTextTarget.menuTitle))
-        .accessibilityValue(Text(verbatim: viewModel.searchTextTarget.title))
     }
 
     private var timeFrameMenu: some View {
@@ -266,27 +231,15 @@ struct BrowseFilterRibbon: View {
         !hasWebAPIKey || viewModel.isRateLimited
     }
 
-    /// Counts categories moved away from their default — selecting everything is no
-    /// filter, Miscellaneous starts empty, and maturity starts at Everyone, so a
-    /// fresh browse reads as zero.
+    /// Counts the categories that hide items the default view would show.
     var activeFilterCount: Int {
-        var count = 0
-        if !viewModel.selectedMiscellaneous.isEmpty {
-            count += 1
-        }
-        if WorkshopFilterMath.isNarrowing(viewModel.selectedTypes, total: WorkshopContentTypeFilter.selectableCases.count) {
-            count += 1
-        }
-        if viewModel.selectedAgeRatings != WorkshopAgeRatingFilter.defaultSelection {
-            count += 1
-        }
-        if WorkshopFilterMath.isNarrowing(viewModel.selectedResolutions, total: WorkshopResolutionFilter.selectableCases.count) {
-            count += 1
-        }
-        if WorkshopFilterMath.isNarrowing(viewModel.selectedGenres, total: WorkshopGenre.allTags.count) {
-            count += 1
-        }
-        return count
+        WorkshopFilterMath.activeFilterCount(
+            types: viewModel.selectedTypes,
+            ageRatings: viewModel.selectedAgeRatings,
+            resolutions: viewModel.selectedResolutions,
+            genres: viewModel.selectedGenres,
+            miscellaneous: viewModel.selectedMiscellaneous
+        )
     }
 
     private var timeFrameApplies: Bool {
@@ -335,10 +288,6 @@ extension WorkshopSortMode {
 }
 
 extension WorkshopSearchTextTarget {
-    static var menuTitle: String {
-        String(localized: "Specify what text fields of the item you want to search:", bundle: .appLanguage, comment: "Workshop search-target menu header (Steam's Workshop_SearchTarget_MenuTitle).")
-    }
-
     var title: String {
         switch self {
         case .all: String(localized: "Title & Description", bundle: .appLanguage, comment: "Workshop search target: full text (Steam's Workshop_SearchTarget_All).")

@@ -62943,6 +62943,42 @@
         }
       }
     },
+    "Search scope" : {
+      "comment" : "Settings → Workshop: which text fields the Browse search matches.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search scope"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ámbito de búsqueda"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索範囲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索范围"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜尋範圍"
+          }
+        }
+      }
+    },
     "Search sessions" : {
       "comment" : "Agent session activity monitor.",
       "extractionState" : "manual",
@@ -67142,42 +67178,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "橫跨多個顯示器"
-          }
-        }
-      }
-    },
-    "Specify what text fields of the item you want to search:" : {
-      "comment" : "Workshop search-target menu header (Steam's Workshop_SearchTarget_MenuTitle).",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Specify what text fields of the item you want to search:"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Especifica qué campos de texto del artículo quieres buscar:"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "検索したいアイテムのテキストフィールドを指定してください："
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指定您希望搜索的项目文本字段："
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指定您想搜尋的項目文字欄位："
           }
         }
       }

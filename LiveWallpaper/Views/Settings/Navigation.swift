@@ -591,9 +591,9 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     anchor: .workshopContent,
                     rows: [
                         "Blur mature thumbnails", "Hide items already in my library", "Show presets as wallpapers",
-                        "Default sort", "Default time frame",
+                        "Default sort", "Default time frame", "Search scope",
                     ],
-                    keywords: ["mature", "blur mature thumbnails", "hide downloaded", "library"]
+                    keywords: ["mature", "blur mature thumbnails", "hide downloaded", "library", "search scope", "title", "description"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Thumbnail badges",
