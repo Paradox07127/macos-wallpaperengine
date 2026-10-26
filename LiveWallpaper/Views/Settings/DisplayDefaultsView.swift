@@ -13,6 +13,7 @@ struct DisplayDefaultsView: View {
     @Environment(ScreenManager.self) private var screenManager
     @State private var displayFrameRate = NSScreen.main?.configuredFramesPerSecond ?? 60
     @State private var displayDefaults = SettingsManager.shared.loadDisplayDefaults()
+    @State private var renamingScreen: Screen?
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
 
     init(pendingSearchAnchor: Binding<SettingsSearchAnchor?> = .constant(nil)) {
@@ -58,14 +59,32 @@ struct DisplayDefaultsView: View {
                 SettingsSearchSectionHeader("Displays", anchor: .displayDefaultsArrangement)
             } footer: {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                    Text("Right-click a display to rename it.")
+                    renameDisplayControl
                     Text("The defaults below apply when a display gets its first wallpaper. A display that already has one keeps its own settings; when they differ from these defaults, its playback controls show Reset playback (↺).")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private var renameDisplayControl: some View {
+        Group {
+            if screenManager.screens.count == 1, let screen = screenManager.screens.first {
+                Button("Rename Display") { renamingScreen = screen }
+                    .buttonStyle(.bordered)
+            } else {
+                Menu("Rename Display") {
+                    ForEach(screenManager.screens) { screen in
+                        Button { renamingScreen = screen } label: { Text(verbatim: screen.name) }
+                    }
+                }
+            }
+        }
+        .controlSize(.small)
+        .fixedSize()
+        .screenRenameAlert(renaming: $renamingScreen)
     }
 
     private func arrangementTile(_ screen: Screen, size: CGSize) -> some View {

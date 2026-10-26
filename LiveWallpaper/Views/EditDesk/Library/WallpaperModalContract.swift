@@ -277,7 +277,8 @@ extension WallpaperModalActions {
         return actions
     }
 
-    /// The status line's button: Update while a newer version waits on Steam, Cancel while it downloads.
+    /// The status line's button: Update while a newer version waits on Steam, Cancel while it downloads,
+    /// Download Again otherwise.
     func statusButton(for state: InstalledItemExtras.UpdateState?) -> ModalExtraButton? {
         switch state {
         case .available:
@@ -285,7 +286,9 @@ extension WallpaperModalActions {
         case .checking:
             cancelUpdate.map { ModalExtraButton(title: String(localized: "Cancel", bundle: .appLanguage), action: $0) }
         case .unknown, .upToDate, .failed, nil:
-            nil
+            checkForUpdate.map {
+                ModalExtraButton(title: String(localized: "Download Again", bundle: .appLanguage), action: $0)
+            }
         }
     }
 }

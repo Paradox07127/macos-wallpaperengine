@@ -59846,42 +59846,6 @@
         }
       }
     },
-    "Right-click a display to rename it." : {
-      "comment" : "Instruction for display arrangement map with context-menu-only rename.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Right-click a display to rename it."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz clic derecho en una pantalla para cambiarle el nombre."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイを右クリックすると名前を変更できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "右键点按显示器可重命名。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以右鍵點按顯示器可重新命名。"
-          }
-        }
-      }
-    },
     "Ripple" : {
       "comment" : "Wallpaper transition option: a ring of water waves spreads from a point, refracting the picture at its crest.",
       "localizations" : {

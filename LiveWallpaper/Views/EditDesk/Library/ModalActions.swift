@@ -281,8 +281,8 @@ final class ModalActions {
     }
 
     #if !LITE_BUILD
-    /// An installed Workshop item's transfer, or its pending update while nothing moves; nil when there is
-    /// nothing to say. Read in the host's body, so the modal follows every published byte count.
+    /// An installed Workshop item's transfer, its pending update while nothing moves, or Installed when it can be
+    /// downloaded again; nil for an item with no Steam page. Read in the host's body, so the modal follows every byte count.
     func downloadStatus(for item: LibraryItem) -> WorkshopDownloadPresentation? {
         guard case let .workshop(entry) = item.source, let id = UInt64(entry.origin.workshopID) else { return nil }
         let bytes = inputs.progressBytes(id)
@@ -294,6 +294,9 @@ final class ModalActions {
         )
         if status.status.isEmpty, status.progress == .none, updateState(for: entry) == .available {
             status.status = WorkshopDownloadPresentation.updateAvailableText
+        }
+        if status.status.isEmpty, status.progress == .none, steamID(for: item) != nil {
+            status.status = String(localized: "Installed", bundle: .appLanguage)
         }
         return status.status.isEmpty && status.progress == .none ? nil : status
     }

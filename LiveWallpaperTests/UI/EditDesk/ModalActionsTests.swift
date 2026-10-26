@@ -806,7 +806,7 @@ struct ModalActionsTests {
         #expect(local.deleteInstalled != nil)
     }
 
-    @Test("The status line offers Update while a newer version waits and Cancel while it downloads, nothing otherwise")
+    @Test("The status line offers Update while a newer version waits, Cancel while it downloads, Download Again otherwise")
     func statusLineButtonFollowsTheUpdateState() throws {
         let fixture = Fixture()
         let item = workshop("123")
@@ -827,10 +827,28 @@ struct ModalActionsTests {
         cancel.action()
         #expect(cancelled == [123])
         for state: InstalledItemExtras.UpdateState? in [.upToDate, .unknown, .failed(message: "Offline"), nil] {
-            #expect(actions.statusButton(for: state) == nil, Comment(rawValue: "\(String(describing: state))"))
+            let again = try #require(actions.statusButton(for: state), Comment(rawValue: "\(String(describing: state))"))
+            #expect(again.title == String(localized: "Download Again", bundle: .appLanguage))
+            again.action()
         }
+        #expect(updated == 5)
         // Control: an item with no Steam page has nothing to update from.
-        #expect(fixture.modal(inputs: inputs).actions(for: workshop("local-folder")).statusButton(for: .available) == nil)
+        let local = fixture.modal(inputs: inputs).actions(for: workshop("local-folder"))
+        for state: InstalledItemExtras.UpdateState? in [.available, .upToDate, .unknown, .failed(message: "Offline"), nil] {
+            #expect(local.statusButton(for: state) == nil, Comment(rawValue: "\(String(describing: state))"))
+        }
+    }
+
+    @Test("An installed Workshop item with nothing moving and no newer version says it is installed; one with no Steam page says nothing")
+    func idleInstalledItemSaysInstalled() throws {
+        let fixture = Fixture()
+        let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
+        let modal = fixture.modal(inputs: fixture.inputs())
+        let status = try #require(modal.downloadStatus(for: item))
+        #expect(status.status == String(localized: "Installed", bundle: .appLanguage))
+        #expect(status.progress == .none && status.detail.isEmpty && !status.isFailure)
+        // Control: a local folder has no Steam page to download from again.
+        #expect(modal.downloadStatus(for: workshop("local-folder")) == nil)
     }
 
     @Test func installedUpdateFlagsDistinguishAvailableFromUpToDate() async {
@@ -946,7 +964,7 @@ struct ModalActionsTests {
         #expect(modal.actions(for: self.item(saved)).openInSteam != nil)
     }
 
-    @Test("An installed item's update shows its transfer in the status line; an idle current one shows none")
+    @Test("An installed item's update shows its transfer in the status line; an idle current one says it is installed")
     func updateTransferShowsInTheStatusLine() throws {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
@@ -962,7 +980,8 @@ struct ModalActionsTests {
         let failed = try #require(modal.downloadStatus(for: item))
         #expect(failed.status == "Offline" && failed.isFailure)
         fixture.phase = .idle
-        #expect(modal.downloadStatus(for: item) == nil, "an idle, current item has nothing to report")
+        let idle = modal.downloadStatus(for: item)
+        #expect(idle?.status == String(localized: "Installed", bundle: .appLanguage) && idle?.progress == WorkshopDownloadPresentation.Progress.none)
         // Control: a saved video has no Workshop transfer at all.
         fixture.phase = .downloading
         #expect(modal.downloadStatus(for: self.item(video())) == nil)
@@ -987,7 +1006,7 @@ struct ModalActionsTests {
         inputs.phase = { _ in .succeeded }
         let modal = fixture.modal(inputs: inputs)
         model.onAppear()
-        #expect(modal.downloadStatus(for: item) == nil)
+        #expect(modal.downloadStatus(for: item)?.status == String(localized: "Installed", bundle: .appLanguage))
         fixture.remoteEpochs = ["123": 20]
         model.onAppear()
         #expect(modal.downloadStatus(for: item)?.status == String(localized: "Update available", bundle: .appLanguage))
