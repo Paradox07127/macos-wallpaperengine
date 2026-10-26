@@ -18,7 +18,7 @@ public struct LibraryStatusBar<Trailing: View>: View {
             }
         }
         .font(DesignTokens.Typography.metric)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DesignTokens.Colors.textPrimary)
         .lineLimit(1)
         .padding(.horizontal, DesignTokens.LibraryStatusBar.horizontalPadding)
         .padding(.vertical, DesignTokens.LibraryStatusBar.verticalPadding)

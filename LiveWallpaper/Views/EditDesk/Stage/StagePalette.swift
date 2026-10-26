@@ -67,7 +67,7 @@ struct StagePalette {
         textPrimary = resolve(colors.textPrimary)
         textSecondary = resolve(colors.textSecondary)
         textTertiary = resolve(colors.textTertiary)
-        status = increasedContrast ? textCapsule : textSecondary
+        status = increasedContrast ? textCapsule : textPrimary
         gradientStageBottom = resolve(colors.gradientStageBottom)
         gradientCardBottom = resolve(colors.gradientCardBottom)
         dropHighlight = resolve(colors.dropHighlight)
