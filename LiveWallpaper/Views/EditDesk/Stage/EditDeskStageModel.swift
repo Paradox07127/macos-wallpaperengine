@@ -206,9 +206,23 @@ struct StageMenuItem {
     let title: String
     let isEnabled: Bool
     var isDestructive = false
-    /// A submenu's rows; `action` runs only on a row without any.
-    var submenu: [StageMenuItem] = []
+    /// A submenu's sections, a separator between each; `action` runs only on a row without any.
+    var submenu: [[StageMenuItem]] = []
     let action: @MainActor () -> Void
+
+    /// What a menu shows of `sections`: disabled rows, rows whose submenu shows nothing, and empty sections left out.
+    static func visible(_ sections: [[StageMenuItem]]) -> [[StageMenuItem]] {
+        sections.map { section in
+            section.compactMap { item -> StageMenuItem? in
+                guard item.isEnabled else { return nil }
+                guard !item.submenu.isEmpty else { return item }
+                var shown = item
+                shown.submenu = visible(item.submenu)
+                return shown.submenu.isEmpty ? nil : shown
+            }
+        }
+        .filter { !$0.isEmpty }
+    }
 }
 
 enum StagePlaybackAction: Equatable, Sendable {

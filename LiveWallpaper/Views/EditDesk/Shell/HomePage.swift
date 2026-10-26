@@ -595,39 +595,50 @@ struct HomePage: View {
 
     private func displayMenuSections(for id: CGDirectDisplayID) -> [[StageMenuItem]] {
         guard let screen = screenManager.screens.first(where: { $0.id == id }) else { return [] }
-        var naming = [StageMenuItem(
-            title: String(localized: "Rename", bundle: .appLanguage, comment: "Context menu item that opens a rename alert, for a display on the Edit Desk stage or for a wallpaper."),
-            isEnabled: true
-        ) {
-            renameDraft = screen.name
-            renameTarget = id
-        }]
-        if screen.customName != nil {
-            naming.append(StageMenuItem(title: String(localized: "Use System Name", bundle: .appLanguage), isEnabled: true) {
-                screenManager.setCustomName(nil, for: screen)
-                syncDisplays()
-            })
-        }
         let configured = screenManager.getConfiguration(for: screen) != nil
+        let others = screenManager.screens.filter { $0.id != screen.id }.sorted { $0.frame.minX < $1.frame.minX }
         let wallpaper = [
             StageMenuItem(title: String(localized: "Reload", bundle: .appLanguage), isEnabled: configured) {
                 screenManager.reloadWallpaperForScreen(screen)
             },
             StageMenuItem(
-                title: String(localized: "Apply to All Displays", bundle: .appLanguage),
-                isEnabled: configured && screenManager.screens.count > 1
+                title: String(localized: "Apply to", bundle: .appLanguage), isEnabled: configured && !others.isEmpty,
+                submenu: [
+                    others.map { target in
+                        StageMenuItem(title: target.name, isEnabled: true) { applyConfiguration(from: screen, to: target) }
+                    },
+                    [StageMenuItem(title: String(localized: "All Displays", bundle: .appLanguage), isEnabled: others.count > 1) {
+                        pendingDestructive = PendingDestructive(
+                            .applyConfigurationToAllDisplays(otherCount: others.count)
+                        ) {
+                            applyConfigurationToAllDisplays(from: screen)
+                        }
+                    }],
+                ]
+            ) {},
+        ]
+        let naming = [
+            StageMenuItem(
+                title: String(
+                    localized: "Rename Display", bundle: .appLanguage,
+                    comment: "Context menu item on a display on the home page stage that opens the rename alert, and that alert's title."
+                ),
+                isEnabled: true
             ) {
-                pendingDestructive = PendingDestructive(
-                    .applyConfigurationToAllDisplays(otherCount: screenManager.screens.count - 1)
-                ) {
-                    applyConfigurationToAllDisplays(from: screen)
-                }
+                renameDraft = screen.name
+                renameTarget = id
             },
+            StageMenuItem(title: String(localized: "Use System Name", bundle: .appLanguage), isEnabled: screen.customName != nil) {
+                screenManager.setCustomName(nil, for: screen)
+                syncDisplays()
+            },
+        ]
+        let clear = [
             StageMenuItem(title: String(localized: "Clear Wallpaper", bundle: .appLanguage), isEnabled: configured, isDestructive: true) {
                 requestClearWallpaper(on: screen)
             },
         ]
-        return [naming, wallpaper]
+        return [wallpaper, naming, clear]
     }
 
     /// Neither the stage's name row nor the shelf's now-playing capsules watch the name, so both are redrawn here.
@@ -663,6 +674,15 @@ struct HomePage: View {
         screenManager.applyConfigurationToAllDisplays(from: screen)
         recording?.announce(
             ApplyOutcome.appliedToAllText(wallpapersOn: screenManager.wallpapersGloballyEnabled), showing: content, to: toasts
+        )
+    }
+
+    private func applyConfiguration(from source: Screen, to target: Screen) {
+        let recording = undo?.begin(.applyWallpaper, displays: [target])
+        let content = screenManager.getConfiguration(for: source)?.activeWallpaper
+        screenManager.applyConfiguration(from: source, to: target)
+        recording?.announce(
+            ApplyOutcome.appliedText(on: target.name, wallpapersOn: screenManager.wallpapersGloballyEnabled), showing: content, to: toasts
         )
     }
 

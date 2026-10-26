@@ -542,20 +542,35 @@ extension ScreenManager {
 
         WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
             for target in screens where target.id != source.id {
-                // Shared with `applyScheme`: one rebind implementation, so the two
-                // paths cannot drift on which identity fields have to move.
-                let copy = template.reboundToDisplay(
-                    target.id,
-                    fingerprint: target.displayFingerprint
-                )
-                restoreProposedWallpaperSession(for: target, configuration: copy) { [weak self] in
-                    // Copying is an explicit wallpaper pick. Clear the target's
-                    // old intent only after this replacement has committed.
-                    self?.persistUserPause(false, for: target)
-                }
-                Logger.info("Apply to All: copied configuration from screen \(source.id) → \(target.id)", category: .screenManager)
+                copyConfiguration(template, from: source, to: target, logPrefix: "Apply to All")
             }
         }
+    }
+
+    func applyConfiguration(from source: Screen, to target: Screen) {
+        guard !isTerminating,
+              target.id != source.id,
+              let template = configurationStore.get(for: source.id, fingerprint: source.displayFingerprint) else { return }
+
+        WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
+            copyConfiguration(template, from: source, to: target, logPrefix: "Apply to")
+        }
+    }
+
+    /// Runs inside the caller's switch group.
+    private func copyConfiguration(_ template: ScreenConfiguration, from source: Screen, to target: Screen, logPrefix: String) {
+        // Shared with `applyScheme`: one rebind implementation, so the two
+        // paths cannot drift on which identity fields have to move.
+        let copy = template.reboundToDisplay(
+            target.id,
+            fingerprint: target.displayFingerprint
+        )
+        restoreProposedWallpaperSession(for: target, configuration: copy) { [weak self] in
+            // Copying is an explicit wallpaper pick. Clear the target's
+            // old intent only after this replacement has committed.
+            self?.persistUserPause(false, for: target)
+        }
+        Logger.info("\(logPrefix): copied configuration from screen \(source.id) → \(target.id)", category: .screenManager)
     }
     
     func reloadAllScreens() {

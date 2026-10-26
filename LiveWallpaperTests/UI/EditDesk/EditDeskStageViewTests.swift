@@ -1050,6 +1050,51 @@ struct EditDeskStageViewTests {
         #expect(await events.next() == .displayTapped(1), "Esc must leave the name as it was")
     }
 
+    @Test("A click outside the rename field ends the rename and keeps the typed name", .timeLimit(.minutes(1)))
+    func clickingOutsideTheRenameFieldCommits() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        let size = StageGeometry.designWindow
+        // The strip right of the stage stands in for the SwiftUI chrome around it, which takes no first responder.
+        let window = ParkedTestWindow(
+            contentRect: CGRect(x: 0, y: 0, width: size.width + 200, height: size.height), styleMask: [.titled],
+            backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer {
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+        let container = NSView(frame: CGRect(x: 0, y: 0, width: size.width + 200, height: size.height))
+        window.contentView = container
+        view.frame = CGRect(origin: .zero, size: size)
+        container.addSubview(view)
+        window.parkOffScreen()
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[1])
+        let nameRect = shell.layer.convert(shell.nameFrame, to: root)
+
+        var events = model.events.makeAsyncIterator()
+        view.tap(at: CGPoint(x: nameRect.midX, y: nameRect.midY))
+        let field = try #require(view.subviews.compactMap { $0 as? NSTextField }.first)
+        let editor = try #require(field.currentEditor() as? NSTextView, "the rename field never took the keyboard")
+        editor.insertText("Desk", replacementRange: NSRange(location: 0, length: (editor.string as NSString).length))
+
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let click = try #require(NSEvent.mouseEvent(
+                with: type, location: NSPoint(x: size.width + 100, y: size.height / 2), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+            NSApp.sendEvent(click)
+        }
+        try #require(field.superview == nil, "a click outside the field left the rename open")
+        #expect(await events.next() == .displayRenamed(1, "Desk"))
+    }
+
     @Test("A covered stage passes clicks, hover and scroll through to the display editor")
     func blockedStageDoesNotSwallowEditorInput() {
         let model = makeModel()
@@ -1475,9 +1520,9 @@ struct EditDeskStageViewTests {
             [[
                 StageMenuItem(
                     title: "Apply to", isEnabled: true,
-                    submenu: [StageMenuItem(title: "External", isEnabled: true) { picked.append("apply \(id)") }]
+                    submenu: [[StageMenuItem(title: "External", isEnabled: true) { picked.append("apply \(id)") }]]
                 ) {},
-                StageMenuItem(title: "Remove", isEnabled: false, isDestructive: true) { picked.append("remove") },
+                StageMenuItem(title: "Remove", isEnabled: true, isDestructive: true) { picked.append("remove") },
             ]]
         }
         let view = EditDeskStageView(model: model)
@@ -1494,7 +1539,6 @@ struct EditDeskStageViewTests {
 
         let menu = try #require(view.menu(for: mouse(.rightMouseDown, at: point, in: view)))
         #expect(menu.items.map(\.title) == ["Apply to", "Remove"])
-        #expect(menu.items.map(\.isEnabled) == [true, false])
         let submenu = try #require(menu.items.first?.submenu)
         #expect(submenu.items.map(\.title) == ["External"])
         submenu.performActionForItem(at: 0)
@@ -1508,7 +1552,7 @@ struct EditDeskStageViewTests {
         model.displayMenu = { id in
             [
                 [StageMenuItem(title: "Rename \(id)", isEnabled: true) { picked.append("rename \(id)") }],
-                [StageMenuItem(title: "Clear", isEnabled: false) { picked.append("clear") }],
+                [StageMenuItem(title: "Clear", isEnabled: true) { picked.append("clear") }],
             ]
         }
         let view = EditDeskStageView(model: model)
@@ -1521,13 +1565,75 @@ struct EditDeskStageViewTests {
         let menu = try #require(view.menu(for: mouse(.rightMouseDown, at: point, in: view)))
         #expect(menu.items.map(\.title) == ["Rename 1", "", "Clear"])
         #expect(menu.items.map(\.isSeparatorItem) == [false, true, false])
-        #expect(menu.items.first?.isEnabled == true)
-        #expect(menu.items.last?.isEnabled == false)
         menu.performActionForItem(at: 0)
-        #expect(picked == ["rename 1"])
+        menu.performActionForItem(at: 2)
+        #expect(picked == ["rename 1", "clear"])
         #expect(try view.menu(for: mouse(.rightMouseDown, at: CGPoint(x: 4, y: 4), in: view)) == nil, "off the displays there is no menu")
         model.interactionBlocked = true
         #expect(try view.menu(for: mouse(.rightMouseDown, at: point, in: view)) == nil, "a covered stage must not open a menu under the detail page")
+    }
+
+    private static func row(_ title: String, _ isEnabled: Bool, submenu: [[StageMenuItem]] = []) -> StageMenuItem {
+        StageMenuItem(title: title, isEnabled: isEnabled, submenu: submenu) {}
+    }
+
+    private static func titles(_ sections: [[StageMenuItem]]) -> [[String]] {
+        sections.map { $0.map(\.title) }
+    }
+
+    @Test("A menu leaves out unavailable rows, the sections they empty, and submenus with nothing left to offer")
+    func visibleMenuDropsUnavailableRows() throws {
+        let shown = StageMenuItem.visible([
+            [Self.row("Reload", true), Self.row("Off", false)],
+            [Self.row("Gone", false), Self.row("Also gone", false)],
+            [
+                Self.row("Empty", true, submenu: [[Self.row("X", false)], [Self.row("Y", false)]]),
+                Self.row("Apply to", true, submenu: [[Self.row("Left", true), Self.row("Right", false)], [Self.row("Z", false)]]),
+            ],
+            [Self.row("Disabled parent", false, submenu: [[Self.row("Q", true)]])],
+        ])
+        #expect(Self.titles(shown) == [["Reload"], ["Apply to"]])
+        let apply = try #require(shown.last?.first)
+        #expect(Self.titles(apply.submenu) == [["Left"]])
+    }
+
+    @Test("The stage's context menu holds no unavailable row and separates a submenu's sections")
+    func contextMenuShowsOnlyAvailableRows() throws {
+        let model = makeModel()
+        var available = true
+        model.displayMenu = { _ in
+            [
+                [
+                    Self.row("Reload", false),
+                    Self.row("Apply to", available, submenu: [
+                        [Self.row("Left", true), Self.row("Right", false)], [Self.row("All Displays", true)],
+                    ]),
+                ],
+                [Self.row("Rename", available), Self.row("Use System Name", false)],
+                [Self.row("Clear", false)],
+            ]
+        }
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[1])
+        let point = shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root)
+
+        let menu = try #require(view.menu(for: mouse(.rightMouseDown, at: point, in: view)))
+        #expect(menu.items.map(\.title) == ["Apply to", "", "Rename"])
+        #expect(menu.items.map(\.isSeparatorItem) == [false, true, false])
+        // A separator item is never enabled.
+        let enabled = { (menu: NSMenu) in menu.items.filter { !$0.isSeparatorItem }.map(\.isEnabled) }
+        #expect(!enabled(menu).contains(false), "an unavailable row is shown greyed out instead of left out")
+        let submenu = try #require(menu.items.first?.submenu)
+        #expect(submenu.items.map(\.title) == ["Left", "", "All Displays"])
+        #expect(submenu.items.map(\.isSeparatorItem) == [false, true, false])
+        #expect(!enabled(submenu).contains(false))
+
+        available = false
+        #expect(try view.menu(for: mouse(.rightMouseDown, at: point, in: view)) == nil, "a menu with nothing to offer still opens")
     }
 
     @Test("Esc cancels a drag first, then returns the shelf and the library to the overview", .timeLimit(.minutes(1)))

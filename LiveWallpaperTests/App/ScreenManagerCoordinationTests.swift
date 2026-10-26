@@ -1748,6 +1748,63 @@ struct ScreenManagerCoordinationTests {
         #expect(group.barrier.start(for: targets[1].id) == start)
     }
 
+    @Test("Copying a display's wallpaper to one display leaves every other display alone", .timeLimit(.minutes(1)))
+    func applyConfigurationCopiesToOneDisplay() async throws {
+        guard let display = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for ScreenManager coordination test")
+            return
+        }
+        let source = UndoTestManager.makeScreen("Single Source", x: 0)
+        let target = UndoTestManager.makeScreen("Single Target", x: 800)
+        let bystander = UndoTestManager.makeScreen("Single Bystander", x: 1600)
+        let screens = [source, target, bystander]
+        let originalConfigurations = SettingsManager.shared.loadConfigurations()
+        defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
+        let wallpaper = WallpaperContent.html(source: .inline("<p>one</p>"), config: .default)
+        SettingsManager.shared.replaceAllConfigurations([ScreenConfiguration(screenID: source.id, wallpaper: wallpaper)])
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            // A real NSScreen for refresh-rate lookups: the stand-ins trap on `maximumFramesPerSecond`.
+            displayRegistry: FakeDisplayRegistry(
+                screens: screens, nsScreensByID: Dictionary(uniqueKeysWithValues: screens.map { ($0.id, display) })
+            ),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer {
+            manager.tearDownForTermination()
+            for screen in screens {
+                screen.resetRuntimeSession()
+            }
+        }
+        @MainActor final class CommitGroups { var byScreen: [CGDirectDisplayID: WallpaperSwitchGroup?] = [:] }
+        let commits = CommitGroups()
+        let notificationScope = UUID()
+        // Queue nil: the commit's save posts from a task it spawned, which inherits the commit's task-locals.
+        let observer = NotificationCenter.default.addObserver(
+            forName: .wallpaperConfigurationDidChange, object: nil, queue: nil
+        ) { notification in
+            guard CoordinationNotificationScope.current == notificationScope,
+                  let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
+            MainActor.assumeIsolated { commits.byScreen[id] = WallpaperSwitchGroup.current }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        CoordinationNotificationScope.$current.withValue(notificationScope) {
+            manager.applyConfiguration(from: source, to: target)
+        }
+        try await Self.waitUntil(timeout: .seconds(20)) { commits.byScreen[target.id] != nil }
+
+        #expect(manager.getConfiguration(for: target)?.activeWallpaper == wallpaper)
+        let group = try #require(commits.byScreen[target.id] ?? nil, "the copy committed outside any switch group")
+        #expect(group.pace == .manual)
+        #expect(commits.byScreen[bystander.id] == nil, "a third display took the copy too")
+        #expect(manager.getConfiguration(for: bystander) == nil, "a third display took the copy too")
+    }
+
     // MARK: - Helpers
 
     @Test("Background automation failures preserve the desktop and never take over its inspector")

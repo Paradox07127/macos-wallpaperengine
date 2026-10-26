@@ -349,28 +349,27 @@ struct WallpaperMenuRows: View {
     let sections: [[StageMenuItem]]
 
     var body: some View {
+        WallpaperMenuSections(sections: StageMenuItem.visible(sections))
+    }
+}
+
+/// `sections` as `StageMenuItem.visible` leaves them.
+private struct WallpaperMenuSections: View {
+    let sections: [[StageMenuItem]]
+
+    var body: some View {
         ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
             if index > 0 {
                 Divider()
             }
-            WallpaperMenuSection(items: section)
-        }
-    }
-}
-
-private struct WallpaperMenuSection: View {
-    let items: [StageMenuItem]
-
-    var body: some View {
-        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-            if item.submenu.isEmpty {
-                Button(item.title, role: item.isDestructive ? .destructive : nil, action: item.action)
-                    .disabled(!item.isEnabled)
-            } else {
-                Menu(item.title) {
-                    WallpaperMenuSection(items: item.submenu)
+            ForEach(Array(section.enumerated()), id: \.offset) { _, item in
+                if item.submenu.isEmpty {
+                    Button(item.title, role: item.isDestructive ? .destructive : nil, action: item.action)
+                } else {
+                    Menu(item.title) {
+                        WallpaperMenuSections(sections: item.submenu)
+                    }
                 }
-                .disabled(!item.isEnabled)
             }
         }
     }

@@ -297,17 +297,18 @@ extension WallpaperModalActions {
         targets: [ModalDisplayTarget], canApply: Bool, isUpdating: Bool,
         requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
     ) -> [[StageMenuItem]] {
+        var applyTargets = [targets.map { target in
+            StageMenuItem(title: target.name, isEnabled: true) { applyTo(target.id) }
+        }]
+        if targets.count > 1 {
+            applyTargets.append([StageMenuItem(
+                title: String(localized: "All Displays", bundle: .appLanguage), isEnabled: true, action: applyToAllDisplays
+            )])
+        }
         let apply = [
             StageMenuItem(
-                title: String(localized: "Apply to", bundle: .appLanguage), isEnabled: canApply,
-                submenu: targets.map { target in
-                    StageMenuItem(title: target.name, isEnabled: true) { applyTo(target.id) }
-                }
+                title: String(localized: "Apply to", bundle: .appLanguage), isEnabled: canApply, submenu: applyTargets
             ) {},
-            StageMenuItem(
-                title: String(localized: "All Displays", bundle: .appLanguage), isEnabled: canApply,
-                action: applyToAllDisplays
-            ),
         ]
         var organize: [StageMenuItem] = []
         if let toggleBookmark {

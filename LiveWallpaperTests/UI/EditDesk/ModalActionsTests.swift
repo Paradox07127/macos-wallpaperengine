@@ -176,8 +176,8 @@ struct ModalActionsTests {
         ])
         rows[1].perform()
         #expect(requested == ["rename"])
-        // Control: the context menus keep Apply to and All Displays; only the title row drops them.
-        #expect(modal.menuItems(for: current, requestRename: {}, requestDelete: {}).flatMap(\.self).count == rows.count + 2)
+        // Control: the context menus keep Apply to; only the title row drops it.
+        #expect(modal.menuItems(for: current, requestRename: {}, requestDelete: {}).flatMap(\.self).count == rows.count + 1)
 
         let asset = AerialAsset(
             id: "sky", url: URL(fileURLWithPath: "/sky.mov"), displayName: "Sky",
@@ -419,33 +419,39 @@ struct ModalActionsTests {
 
         #expect(rows.map(\.title) == [
             String(localized: "Apply to", bundle: .appLanguage),
-            String(localized: "All Displays", bundle: .appLanguage),
             String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Rename", bundle: .appLanguage),
             String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Remove from Wallpaper Library", bundle: .appLanguage),
         ])
-        try #require(rows.count == 6)
-        #expect(rows.map(\.isEnabled) == [true, true, true, true, true, true])
-        #expect(rows.map(\.isDestructive) == [false, false, false, false, false, true])
-        #expect(rows[0].submenu.map(\.title) == ["Left", "Center", "Right"])
-        try #require(rows[0].submenu.count == 3)
-        rows[0].submenu[1].action()
+        try #require(rows.count == 5)
+        #expect(rows.map(\.isEnabled) == [true, true, true, true, true])
+        #expect(rows.map(\.isDestructive) == [false, false, false, false, true])
+        #expect(rows[0].submenu.map { $0.map(\.title) } == [
+            ["Left", "Center", "Right"], [String(localized: "All Displays", bundle: .appLanguage)],
+        ])
+        try #require(rows[0].submenu.count == 2 && rows[0].submenu[0].count == 3 && rows[0].submenu[1].count == 1)
+        rows[0].submenu[0][1].action()
         #expect(fixture.applied.map(\.1) == [2])
-        rows[3].action()
+        rows[0].submenu[1][0].action()
+        #expect(fixture.appliedToAll.count == 1)
+        rows[2].action()
         #expect(requested == ["rename"])
 
         current.isSupported = false
         fixture.items = [current]
-        let blocked = modal.menuItems(for: current, requestRename: {}, requestDelete: {}).flatMap(\.self)
-        #expect(blocked.prefix(2).map(\.isEnabled) == [false, false], "an item this Mac can't run still offers to apply it")
+        let blocked = modal.menuItems(for: current, requestRename: {}, requestDelete: {})
+        #expect(blocked.first?.first?.isEnabled == false, "an item this Mac can't run still offers to apply it")
+        #expect(
+            !StageMenuItem.visible(blocked).flatMap(\.self).map(\.title).contains(String(localized: "Apply to", bundle: .appLanguage)),
+            "an item this Mac can't run still shows Apply to"
+        )
         #if !LITE_BUILD
         let installed = modal.menuItems(
             for: workshop("123"), requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
         ).flatMap(\.self)
         #expect(installed.map(\.title) == [
             String(localized: "Apply to", bundle: .appLanguage),
-            String(localized: "All Displays", bundle: .appLanguage),
             String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Open in Steam", bundle: .appLanguage),
@@ -468,7 +474,7 @@ struct ModalActionsTests {
         )
         let title = { (key: String.LocalizationValue) in String(localized: key, bundle: .appLanguage) }
         #expect(sections.map { $0.map(\.title) } == [
-            [title("Apply to"), title("All Displays")],
+            [title("Apply to")],
             [title("Add Bookmark"), title("Rename"), title("Add to System Wallpaper")],
             [title("Show in Finder"), title("Open in Steam")],
             [title("Download Again")],

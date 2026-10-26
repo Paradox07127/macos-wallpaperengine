@@ -56845,8 +56845,14 @@
       }
     },
     "Rename Display" : {
-      "comment" : "Title of the alert that renames a display.",
+      "comment" : "Context menu item on a display on the home page stage that opens the rename alert, and that alert's title.",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Display"
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",

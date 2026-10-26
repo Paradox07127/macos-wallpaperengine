@@ -84,6 +84,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var pressedCard: StageCard.ID?
     /// The display whose name is being edited in place, and the field doing it.
     private var renaming: (id: StageDisplay.ID, field: StageRenameField)?
+    /// Set while `renaming` is; a click that falls through the stage never moves the first responder off the field.
+    private var renameClickMonitor: Any?
     private var dragging = false
     /// `draggingSequenceNumber` of the Finder drag that raised a hidden shelf, so its end lowers the
     /// shelf again; nil once the drop lands on the shelf, or a scroll, ↑↓ or a covering page takes over.
@@ -1194,6 +1196,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             startDisplayLinkIfNeeded()
         } else {
+            finishRename(commit: true)
             withoutActions {
                 for (id, flight) in flights {
                     displayLayers[id]?.restoreContent()
@@ -1570,6 +1573,18 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         placeRenameField()
         // A text field selects all of its text when it takes focus.
         window?.makeFirstResponder(field)
+        renameClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            MainActor.assumeIsolated { self?.finishRenameIfClickedOutside(event) }
+            return event
+        }
+    }
+
+    private func finishRenameIfClickedOutside(_ event: NSEvent) {
+        guard let renaming, let window, event.window === window,
+              !renaming.field.frame.contains(convert(event.locationInWindow, from: nil)) else { return }
+        finishRename(commit: true)
     }
 
     /// Follows the name through every frame: the arrangement scales and slides as the shelf rises.
@@ -1589,6 +1604,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func finishRename(commit: Bool) {
         guard let renaming else { return }
         self.renaming = nil
+        renameClickMonitor.map(NSEvent.removeMonitor)
+        renameClickMonitor = nil
         // Return and Esc leave the field focused, so the stage takes the keyboard back; a click elsewhere keeps its new focus.
         let focused = window?.firstResponder
         if focused === renaming.field || focused === renaming.field.currentEditor() {
@@ -1771,8 +1788,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         } else {
             displayID(at: point).flatMap { model.displayMenu?($0) }
         }
-        guard let sections, !sections.isEmpty else { return nil }
-        return StageContextMenu(sections: sections)
+        guard let sections else { return nil }
+        let shown = StageMenuItem.visible(sections)
+        guard !shown.isEmpty else { return nil }
+        return StageContextMenu(sections: shown)
     }
 
     // MARK: Finder drops
@@ -2195,34 +2214,35 @@ private final class StageAccessibilityElement: NSAccessibilityElement {
 private final class StageContextMenu: NSMenu {
     private var actions: [@MainActor () -> Void] = []
 
+    /// `sections` as `StageMenuItem.visible` leaves them.
     init(sections: [[StageMenuItem]]) {
         super.init(title: "")
         autoenablesItems = false
-        for (index, section) in sections.enumerated() {
-            if index > 0 {
-                addItem(.separator())
-            }
-            add(section, to: self)
-        }
+        add(sections, to: self)
     }
 
     /// A submenu's rows target this menu too, which holds every closure.
-    private func add(_ entries: [StageMenuItem], to menu: NSMenu) {
-        for entry in entries {
-            let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
-            item.isEnabled = entry.isEnabled
-            if entry.submenu.isEmpty {
-                item.action = #selector(runAction(_:))
-                item.target = self
-                item.tag = actions.count
-                actions.append(entry.action)
-            } else {
-                let submenu = NSMenu(title: entry.title)
-                submenu.autoenablesItems = false
-                add(entry.submenu, to: submenu)
-                item.submenu = submenu
+    private func add(_ sections: [[StageMenuItem]], to menu: NSMenu) {
+        for (index, section) in sections.enumerated() {
+            if index > 0 {
+                menu.addItem(.separator())
             }
-            menu.addItem(item)
+            for entry in section {
+                let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
+                item.isEnabled = entry.isEnabled
+                if entry.submenu.isEmpty {
+                    item.action = #selector(runAction(_:))
+                    item.target = self
+                    item.tag = actions.count
+                    actions.append(entry.action)
+                } else {
+                    let submenu = NSMenu(title: entry.title)
+                    submenu.autoenablesItems = false
+                    add(entry.submenu, to: submenu)
+                    item.submenu = submenu
+                }
+                menu.addItem(item)
+            }
         }
     }
 
