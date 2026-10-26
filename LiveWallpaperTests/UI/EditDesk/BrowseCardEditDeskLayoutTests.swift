@@ -330,5 +330,55 @@ struct BrowseCardEditDeskLayoutTests {
             #expect(share > 0.02, "\(drawing.testDescription): a resolution badge beside the update reads as absent (\(share))")
         }
     }
+
+    // MARK: Context menu
+
+    private static let oneDisplay = [BrowseCard.MenuDisplay(id: 1, name: "Built-in Retina Display")]
+    private static let twoDisplays = oneDisplay + [BrowseCard.MenuDisplay(id: 2, name: "PD3205U")]
+
+    private static func menu(
+        isInLibrary: Bool = false, canRunLibraryCopy: Bool = true, canDownload: Bool = true, isBanned: Bool = false,
+        isBookmarked: Bool = false, displays: [BrowseCard.MenuDisplay] = twoDisplays
+    ) -> [[BrowseCard.ContextMenuRow]] {
+        BrowseCard.contextMenuSections(
+            isInLibrary: isInLibrary, canRunLibraryCopy: canRunLibraryCopy, canDownload: canDownload, isBanned: isBanned,
+            offersLike: true, isBookmarked: isBookmarked, applyDisplays: displays
+        )
+    }
+
+    @Test("Not in the library, the menu leads with download-and-apply per display, then Download, Like, Open in Steam")
+    func menuForAnItemNotInTheLibrary() {
+        let downloadAndApply = String(localized: "Download and apply to", bundle: .appLanguage)
+        #expect(Self.menu() == [
+            [.applyTo(title: downloadAndApply, displays: Self.twoDisplays), .download],
+            [.like(isLiked: false)],
+            [.openInSteam],
+        ])
+        #expect(Self.menu(displays: Self.oneDisplay).first == [.applyTo(title: downloadAndApply, displays: Self.oneDisplay), .download])
+    }
+
+    @Test("In the library, the submenu applies the library copy, and is left out when that copy cannot run here")
+    func menuForAnItemInTheLibrary() {
+        let applyTo = String(localized: "Apply to", bundle: .appLanguage)
+        #expect(Self.menu(isInLibrary: true) == [
+            [.applyTo(title: applyTo, displays: Self.twoDisplays), .download],
+            [.like(isLiked: false)],
+            [.openInSteam],
+        ])
+        #expect(Self.menu(isInLibrary: true, canRunLibraryCopy: false) == [[.download], [.like(isLiked: false)], [.openInSteam]])
+    }
+
+    @Test("Without SteamCMD ready neither download row is offered, while a library copy still applies")
+    func menuWithoutDownloads() {
+        #expect(Self.menu(canDownload: false) == [[.like(isLiked: false)], [.openInSteam]])
+        let applyTo = String(localized: "Apply to", bundle: .appLanguage)
+        #expect(Self.menu(isInLibrary: true, canDownload: false).first == [.applyTo(title: applyTo, displays: Self.twoDisplays)])
+    }
+
+    @Test("A banned item offers only Unlike, and only once liked; with nothing to offer there is no menu")
+    func menuForABannedItem() {
+        #expect(Self.menu(isBanned: true).isEmpty)
+        #expect(Self.menu(isBanned: true, isBookmarked: true) == [[.like(isLiked: true)]])
+    }
 }
 #endif

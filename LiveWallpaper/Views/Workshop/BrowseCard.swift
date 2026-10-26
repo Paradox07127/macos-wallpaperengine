@@ -18,6 +18,23 @@ struct BrowseCard: View, Equatable {
             && lhs.canDownload == rhs.canDownload
             && lhs.isRevealed == rhs.isRevealed
             && lhs.isBookmarked == rhs.isBookmarked
+            && lhs.applyDisplays == rhs.applyDisplays
+            && lhs.canRunLibraryCopy == rhs.canRunLibraryCopy
+            && (lhs.onApply == nil) == (rhs.onApply == nil)
+    }
+
+    /// A display as the apply submenu lists it.
+    struct MenuDisplay: Hashable {
+        let id: CGDirectDisplayID
+        let name: String
+    }
+
+    enum ContextMenuRow: Hashable {
+        /// A submenu with one row per display.
+        case applyTo(title: String, displays: [MenuDisplay])
+        case download
+        case like(isLiked: Bool)
+        case openInSteam
     }
 
     let item: WorkshopQueryItem
@@ -44,6 +61,12 @@ struct BrowseCard: View, Equatable {
     var isBookmarked: Bool = false
     /// nil hides every like affordance.
     var onBookmark: (() -> Void)?
+    /// In the Workshop modal's display-button order.
+    var applyDisplays: [MenuDisplay] = []
+    /// False when the library copy's project cannot run on this Mac.
+    var canRunLibraryCopy: Bool = true
+    /// nil hides the apply submenu.
+    var onApply: ((CGDirectDisplayID) -> Void)?
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}
 
@@ -257,29 +280,73 @@ struct BrowseCard: View, Equatable {
 
     // MARK: - Context menu
 
-    @ViewBuilder
-    private var contextMenuItems: some View {
-        if let onBookmark {
-            Button(action: onBookmark) {
-                Label(isBookmarked ? "Unlike" : "Like",
-                      systemImage: isBookmarked ? "heart.fill" : "heart")
+    /// The menu's sections in order, empty ones left out.
+    nonisolated static func contextMenuSections(
+        isInLibrary: Bool, canRunLibraryCopy: Bool, canDownload: Bool, isBanned: Bool,
+        offersLike: Bool, isBookmarked: Bool, applyDisplays: [MenuDisplay]
+    ) -> [[ContextMenuRow]] {
+        let downloadable = canDownload && !isBanned
+        var apply: [ContextMenuRow] = []
+        if !applyDisplays.isEmpty {
+            if !isInLibrary, downloadable {
+                apply.append(.applyTo(
+                    title: String(localized: "Download and apply to", bundle: .appLanguage), displays: applyDisplays
+                ))
+            } else if isInLibrary, canRunLibraryCopy {
+                apply.append(.applyTo(title: String(localized: "Apply to", bundle: .appLanguage), displays: applyDisplays))
             }
-            .disabled(item.isBanned && !isBookmarked)
-
         }
-
-        Button(action: onDownload) {
-            Label("Download", systemImage: "arrow.down.circle")
+        if downloadable {
+            apply.append(.download)
         }
-        .disabled(!canDownload || item.isBanned)
+        let like: [ContextMenuRow] = offersLike && (isBookmarked || !isBanned) ? [.like(isLiked: isBookmarked)] : []
+        let steam: [ContextMenuRow] = isBanned ? [] : [.openInSteam]
+        return [apply, like, steam].filter { !$0.isEmpty }
+    }
 
+    private var contextMenuSections: [[ContextMenuRow]] {
+        Self.contextMenuSections(
+            isInLibrary: isInLibrary, canRunLibraryCopy: canRunLibraryCopy, canDownload: canDownload,
+            isBanned: item.isBanned, offersLike: onBookmark != nil, isBookmarked: isBookmarked,
+            applyDisplays: onApply == nil ? [] : applyDisplays
+        )
+    }
 
-        Button {
-            openURL(item.steamCommunityURL)
-        } label: {
-            Label("Open in Steam", systemImage: "arrow.up.forward.app")
+    private var contextMenuItems: some View {
+        ForEach(Array(contextMenuSections.enumerated()), id: \.offset) { index, section in
+            if index > 0 {
+                Divider()
+            }
+            ForEach(section, id: \.self) { row in
+                contextMenuRow(row)
+            }
         }
-        .disabled(item.isBanned)
+    }
+
+    @ViewBuilder
+    private func contextMenuRow(_ row: ContextMenuRow) -> some View {
+        switch row {
+        case let .applyTo(title, displays):
+            Menu(title) {
+                ForEach(displays, id: \.id) { display in
+                    Button(display.name) { onApply?(display.id) }
+                }
+            }
+        case .download:
+            Button(action: onDownload) {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+        case let .like(isLiked):
+            Button { onBookmark?() } label: {
+                Label(isLiked ? "Unlike" : "Like", systemImage: isLiked ? "heart.fill" : "heart")
+            }
+        case .openInSteam:
+            Button {
+                openURL(item.steamCommunityURL)
+            } label: {
+                Label("Open in Steam", systemImage: "arrow.up.forward.app")
+            }
+        }
     }
 
     // MARK: - Derived values

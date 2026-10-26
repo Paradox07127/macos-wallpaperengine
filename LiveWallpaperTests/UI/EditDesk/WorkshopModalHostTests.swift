@@ -188,6 +188,28 @@ struct WorkshopModalHostTests {
         #expect(appliedIDs.isEmpty, "the finished download still went to the display it was queued for")
     }
 
+    @Test(
+        "A display pressed from a card for an item not in the library queues an apply there after its download",
+        .timeLimit(.minutes(1))
+    )
+    func cardPressForAnItemNotInTheLibraryQueuesAnApplyAfterItsDownload() {
+        var lookedUp: [UInt64] = []
+        var wiring = wiring()
+        wiring.libraryEntry = { itemID in
+            lookedUp.append(itemID)
+            return nil
+        }
+
+        wiring.press(manager.second.id, itemID: 77)
+        let ticket = wiring.ticket(for: 77)
+        let state = ticket?.state
+        let screenID = ticket?.target.screenID
+        #expect(lookedUp == [77], "the press did not read the library for the item it was given")
+        #expect(downloads.startCount == 1)
+        #expect(state == .waiting, "no apply was queued behind the download")
+        #expect(screenID == manager.second.id)
+    }
+
     private func waitUntil(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + .seconds(1)
         while !condition(), ContinuousClock.now < deadline {

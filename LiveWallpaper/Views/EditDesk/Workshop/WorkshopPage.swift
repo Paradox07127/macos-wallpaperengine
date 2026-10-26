@@ -15,6 +15,8 @@ struct WorkshopPage: View {
     @Environment(WorkshopSetupController.self) private var setupController
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(PageGuideSession.self) private var pageGuide: PageGuideSession?
+    @Environment(ScreenManager.self) private var screenManager
+    @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
 
     /// Kept under its original key so a dismissal recorded by earlier builds still counts.
     @AppStorage("loomscreen.workshop.privateSessionNotice.shown.v1", store: .appScoped())
@@ -28,6 +30,8 @@ struct WorkshopPage: View {
     @State private var isShowingSignIn = false
     @State private var isShowingSubscriptionSync = false
     @State private var presentedItemID: UInt64?
+    /// A card's apply asking to replace a local copy.
+    @State private var pendingReplacement: PendingDestructive?
     /// The window's own content size, which the modal's geometry is measured against.
     @State private var stageSize: CGSize = .zero
 
@@ -39,10 +43,18 @@ struct WorkshopPage: View {
                 onRequestKeyEntry: { isShowingKeyEntry = true },
                 onDownloadByLink: { presentPasteFlow() },
                 onOpenItem: { presentedItemID = $0.id },
+                onApply: { item, screenID in
+                    WorkshopModalWiring.live(
+                        session: session, doctor: doctor, screenManager: screenManager,
+                        sceneCapable: featureCatalog.isEnabled(.scene), undo: undo, toasts: toasts,
+                        item: { _ in item }, confirm: { pendingReplacement = $0 }
+                    ).press(screenID, itemID: item.id)
+                },
                 matureReveal: session.matureReveal,
                 listing: Bindable(session).listing
             )
             .padding(.top, DesignTokens.EditDesk.Spacing.topBar)
+            .confirmDestructive($pendingReplacement)
             TopBar(
                 page: pageBinding,
                 workshopAvailable: featureCatalog.isEnabled(.wpeImport),

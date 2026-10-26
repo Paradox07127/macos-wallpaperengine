@@ -26,14 +26,57 @@ struct WorkshopModalWiring {
         var cancel: @MainActor (UInt64) -> Void
         /// The closure answers whether a display still waits to apply the attempt.
         var deferSuccessToast: @MainActor (WorkshopDownloadAttempt, @escaping @MainActor () -> Bool) -> Void = { _, _ in }
+        /// The local copy a download would take the place of; nil downloads without asking.
+        var localCopyToReplace: @MainActor (UInt64) -> WPEHistoryEntry? = { _ in nil }
+        var isBusy: @MainActor (UInt64) -> Bool = { _ in false }
+        var isFetchingDependencies: @MainActor (UInt64) -> Bool = { _ in false }
     }
 
     let downloads: Downloads
     let deferredApply: DeferredApplyCoordinator
     let screens: any WorkshopApplyTargetSelecting
+    /// The item's library entry, read at press time; nil when the library has none.
+    var libraryEntry: @MainActor (UInt64) -> WPEHistoryEntry? = { _ in nil }
+    /// Shows the replace-local-copy question; its `perform` starts the download.
+    var confirm: @MainActor (PendingDestructive) -> Void = { _ in }
+    var applyInstalled: @MainActor (WPEHistoryEntry, CGDirectDisplayID) -> Void = { _, _ in }
 
     func ticket(for itemID: UInt64) -> DeferredApplyCoordinator.Ticket? {
         deferredApply.ticket(for: itemID)
+    }
+
+    /// A display pressed for an item, from the modal's buttons or a card's menu: applies the library copy,
+    /// moves a queued apply, or downloads first.
+    func press(_ screenID: CGDirectDisplayID, itemID: UInt64) {
+        let entry = libraryEntry(itemID)
+        let isInstalled = WorkshopModalContent.isInstalled(
+            hasLibraryEntry: entry != nil, isDownloading: downloads.isBusy(itemID),
+            isFetchingDependencies: downloads.isFetchingDependencies(itemID)
+        )
+        switch WorkshopModalPress.action(isInstalled: isInstalled, ticketState: ticket(for: itemID)?.state) {
+        case .applyNow:
+            if let entry {
+                prepareDirectApply(itemID: itemID)
+                applyInstalled(entry, screenID)
+            }
+        case .retarget:
+            retarget(itemID: itemID, to: screenID)
+        case .applyWhenDownloaded:
+            confirmingReplacement(for: itemID) { [self] in
+                applyWhenDownloaded(itemID: itemID, to: screenID, replacing: $0)
+            }
+        case .ignore:
+            break
+        }
+    }
+
+    /// Asks first when the download would take a local copy's place; a download already running is not asked about again.
+    func confirmingReplacement(for itemID: UInt64, download: @escaping @MainActor (WPEHistoryEntry?) -> Void) {
+        guard downloads.active(itemID) == nil, let local = downloads.localCopyToReplace(itemID) else {
+            download(nil)
+            return
+        }
+        confirm(PendingDestructive(.replaceLocalCopy(title: local.origin.title)) { download(local) })
     }
 
     /// Downloads the item if it is not already coming, and queues the apply against the generation
@@ -86,6 +129,73 @@ struct WorkshopModalWiring {
         // Not `!isSettled`: an apply already running no longer waits on this download, and cancelling it would drop its result.
         guard let ticket = deferredApply.ticket(for: itemID), ticket.state == .waiting else { return }
         deferredApply.cancel(ticket)
+    }
+}
+
+extension WorkshopModalWiring {
+    /// `item` names the download; `confirm` shows the replace-local-copy question.
+    static func live(
+        session: WorkshopSession, doctor: SteamCMDDoctorService, screenManager: ScreenManager, sceneCapable: Bool,
+        undo: EditDeskUndoStack?, toasts: EditDeskToastCenter,
+        item: @escaping @MainActor (UInt64) -> WorkshopQueryItem?,
+        confirm: @escaping @MainActor (PendingDestructive) -> Void
+    ) -> WorkshopModalWiring {
+        WorkshopModalWiring(
+            downloads: .init(
+                start: { itemID, replacing in
+                    let item = item(itemID)
+                    let title = item?.title ?? String(itemID)
+                    WorkshopDownloadCoordinator.shared.retainListedSize(item?.fileSizeBytes, for: itemID)
+                    return WorkshopDownloadCoordinator.shared.download(
+                        itemID: itemID, title: title, using: doctor, replacing: replacing
+                    )
+                },
+                active: { WorkshopDownloadCoordinator.shared.activeAttempt(for: $0) },
+                cancel: { WorkshopDownloadCoordinator.shared.cancel($0) },
+                deferSuccessToast: { WorkshopDownloadCoordinator.shared.deferSuccessToast(of: $0, while: $1) },
+                localCopyToReplace: { WorkshopDownloadCoordinator.shared.localCopyToReplace(for: $0) },
+                isBusy: { WorkshopDownloadCoordinator.shared.isBusy($0) },
+                isFetchingDependencies: { WorkshopDownloadCoordinator.shared.fetchingDependencies.contains($0) }
+            ),
+            deferredApply: session.deferredApply,
+            screens: screenManager,
+            libraryEntry: { loadLibraryEntry(for: $0) },
+            confirm: confirm,
+            applyInstalled: { entry, screenID in
+                applyInstalled(
+                    entry, to: screenID, screenManager: screenManager, sceneCapable: sceneCapable, undo: undo, toasts: toasts
+                )
+            }
+        )
+    }
+
+    static func loadLibraryEntry(for itemID: UInt64) -> WPEHistoryEntry? {
+        let workshopID = String(itemID)
+        return SettingsManager.shared.loadGlobalSettings().recentWPEImports.first { $0.origin.matchesWorkshopItem(workshopID) }
+    }
+
+    /// Already in the library: the same route the library modal takes, with no download in between.
+    static func applyInstalled(
+        _ entry: WPEHistoryEntry, to screenID: CGDirectDisplayID, screenManager: ScreenManager, sceneCapable: Bool,
+        undo: EditDeskUndoStack?, toasts: EditDeskToastCenter
+    ) {
+        guard let screen = screenManager.screens.first(where: { $0.id == screenID }) else { return }
+        let router = ApplyRouter(manager: screenManager, bookmarks: BookmarkStore.shared, sceneCapable: sceneCapable)
+        let recording = undo?.begin(.applyWallpaper, displays: [screen])
+        Task { @MainActor in
+            var report = await router.apply(.installedWorkshop(entry), to: screen)
+            report.undoStepID = recording?.settle(screen.id, applied: report.outcome == .applied)
+            let messages = DeferredApplyToasts.messages(
+                for: .finished(report), screenName: screen.name, screenID: screen.id,
+                wallpapersOn: screenManager.wallpapersGloballyEnabled, afterDownload: false
+            )
+            for message in messages ?? [] {
+                toasts.post(
+                    message.text, style: message.style, screenID: message.screenID, persistent: message.persists,
+                    undoStepID: message.undoStepID
+                )
+            }
+        }
     }
 }
 
@@ -196,9 +306,7 @@ struct WorkshopModalHost: View {
 
     private func refreshInstalledEntry() {
         guard let presentedItemID else { return }
-        let workshopID = String(presentedItemID)
-        installedEntry = SettingsManager.shared.loadGlobalSettings().recentWPEImports
-            .first { $0.origin.matchesWorkshopItem(workshopID) }
+        installedEntry = WorkshopModalWiring.loadLibraryEntry(for: presentedItemID)
     }
 
     // MARK: Content
@@ -295,34 +403,23 @@ struct WorkshopModalHost: View {
     // MARK: Actions
 
     private var wiring: WorkshopModalWiring {
-        WorkshopModalWiring(
-            downloads: .init(
-                start: { [doctor, items, detachedItem] itemID, replacing in
-                    let item = items.first { $0.id == itemID } ?? detachedItem
-                    let title = item?.title ?? String(itemID)
-                    WorkshopDownloadCoordinator.shared.retainListedSize(item?.fileSizeBytes, for: itemID)
-                    return WorkshopDownloadCoordinator.shared.download(
-                        itemID: itemID, title: title, using: doctor, replacing: replacing
-                    )
-                },
-                active: { WorkshopDownloadCoordinator.shared.activeAttempt(for: $0) },
-                cancel: { WorkshopDownloadCoordinator.shared.cancel($0) },
-                deferSuccessToast: { WorkshopDownloadCoordinator.shared.deferSuccessToast(of: $0, while: $1) }
-            ),
-            deferredApply: session.deferredApply,
-            screens: screenManager
+        .live(
+            session: session, doctor: doctor, screenManager: screenManager,
+            sceneCapable: featureCatalog.isEnabled(.scene), undo: undo, toasts: toasts,
+            item: { [items, detachedItem] itemID in items.first { $0.id == itemID } ?? detachedItem },
+            confirm: { pendingDestructive = $0 }
         )
     }
 
     private func actions(for item: WorkshopQueryItem) -> WorkshopModalActions {
         WorkshopModalActions(
-            press: { press($0, for: item) },
+            press: { wiring.press($0, itemID: item.id) },
             saveOnly: {
-                confirmingReplacement(for: item.id) { [wiring] in wiring.saveOnly(itemID: item.id, replacing: $0) }
+                wiring.confirmingReplacement(for: item.id) { [wiring] in wiring.saveOnly(itemID: item.id, replacing: $0) }
             },
             cancelDownload: { wiring.cancelDownload(itemID: item.id) },
             update: {
-                confirmingReplacement(for: item.id) { [wiring] in _ = wiring.downloads.start(item.id, $0) }
+                wiring.confirmingReplacement(for: item.id) { [wiring] in _ = wiring.downloads.start(item.id, $0) }
             },
             connectSteam: { onConnectSteam() },
             openInSteam: { openURL(item.steamCommunityURL) },
@@ -346,60 +443,6 @@ struct WorkshopModalHost: View {
                 showDisplay(id)
             }
         )
-    }
-
-    private func press(_ screenID: CGDirectDisplayID, for item: WorkshopQueryItem) {
-        let action = WorkshopModalPress.action(
-            isInstalled: installedExtras(for: item) != nil, ticketState: wiring.ticket(for: item.id)?.state
-        )
-        switch action {
-        case .applyNow:
-            if let entry = installedEntry {
-                wiring.prepareDirectApply(itemID: item.id)
-                applyNow(entry, to: screenID)
-            }
-        case .retarget:
-            wiring.retarget(itemID: item.id, to: screenID)
-        case .applyWhenDownloaded:
-            confirmingReplacement(for: item.id) { [wiring] in
-                wiring.applyWhenDownloaded(itemID: item.id, to: screenID, replacing: $0)
-            }
-        case .ignore:
-            break
-        }
-    }
-
-    /// Asks first when the download would take a local copy's place; a download already running is not asked about again.
-    private func confirmingReplacement(for itemID: UInt64, download: @escaping @MainActor (WPEHistoryEntry?) -> Void) {
-        guard downloads.activeAttempt(for: itemID) == nil, let local = downloads.localCopyToReplace(for: itemID) else {
-            download(nil)
-            return
-        }
-        pendingDestructive = PendingDestructive(.replaceLocalCopy(title: local.origin.title)) { download(local) }
-    }
-
-    /// Already in the library: the same route the library modal takes, with no download in between.
-    private func applyNow(_ entry: WPEHistoryEntry, to screenID: CGDirectDisplayID) {
-        guard let screen = screenManager.screens.first(where: { $0.id == screenID }) else { return }
-        let router = ApplyRouter(
-            manager: screenManager, bookmarks: BookmarkStore.shared,
-            sceneCapable: featureCatalog.isEnabled(.scene)
-        )
-        let recording = undo?.begin(.applyWallpaper, displays: [screen])
-        Task { @MainActor in
-            var report = await router.apply(.installedWorkshop(entry), to: screen)
-            report.undoStepID = recording?.settle(screen.id, applied: report.outcome == .applied)
-            let messages = DeferredApplyToasts.messages(
-                for: .finished(report), screenName: screen.name, screenID: screen.id,
-                wallpapersOn: screenManager.wallpapersGloballyEnabled, afterDownload: false
-            )
-            for message in messages ?? [] {
-                toasts.post(
-                    message.text, style: message.style, screenID: message.screenID, persistent: message.persists,
-                    undoStepID: message.undoStepID
-                )
-            }
-        }
     }
 }
 #endif

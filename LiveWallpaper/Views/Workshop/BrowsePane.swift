@@ -12,6 +12,8 @@ struct BrowsePane: View {
     var onDownloadByLink: (() -> Void)?
     /// Where a clicked card's item goes.
     var onOpenItem: ((WorkshopQueryItem) -> Void)?
+    /// A display picked in a card's apply submenu; nil hides that submenu.
+    var onApply: ((WorkshopQueryItem, CGDirectDisplayID) -> Void)?
     /// nil keeps each card's reveal in its own `@State`; a state makes reveals outlive the tiles.
     var matureReveal: MatureRevealState?
     /// Kept by the caller, so the page comes back to the listing it left.
@@ -25,6 +27,8 @@ struct BrowsePane: View {
     @Environment(\.galleryCardPreferences) private var cardPreferences
     @State private var installedWorkshopIDs: Set<String> = []
     @State private var importedAtByWorkshopID: [String: Date] = [:]
+    /// Workshop IDs whose library copy this Mac cannot run.
+    @State private var unrunnableWorkshopIDs: Set<String> = []
     /// Workshop ID → the displays that project is set on.
     @State private var inUseBadges: [String: NowPlayingBadge] = [:]
     @State private var pendingDestructive: PendingDestructive?
@@ -301,11 +305,12 @@ struct BrowsePane: View {
 
     private func cardGrid(_ items: [WorkshopQueryItem]) -> some View {
         let bookmarkedIDs = WorkshopBookmarkActions.bookmarkedIDs()
+        let displays = applyDisplays
         return LibraryGalleryGrid(
             size: tileSize, aspect: .square, columnWidth: DesignTokens.LibraryGrid.workshopBrowseColumnWidth
         ) {
             ForEach(items) { item in
-                browseCard(for: item, isBookmarked: bookmarkedIDs.contains(item.id))
+                browseCard(for: item, isBookmarked: bookmarkedIDs.contains(item.id), applyDisplays: displays)
                     .equatable()
                     .id(item.id)
             }
@@ -313,7 +318,15 @@ struct BrowsePane: View {
         .libraryGridPadding()
     }
 
-    private func browseCard(for item: WorkshopQueryItem, isBookmarked: Bool) -> BrowseCard {
+    /// In the Workshop modal's display-button order.
+    private var applyDisplays: [BrowseCard.MenuDisplay] {
+        let displays = screenManager.screens.map { ModalActions.Display(id: $0.id, name: $0.name, frame: $0.frame) }
+        return WorkshopModalTargets.make(displays: displays, activeOn: []).map { BrowseCard.MenuDisplay(id: $0.id, name: $0.name) }
+    }
+
+    private func browseCard(
+        for item: WorkshopQueryItem, isBookmarked: Bool, applyDisplays: [BrowseCard.MenuDisplay]
+    ) -> BrowseCard {
         BrowseCard(
             item: item,
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
@@ -326,6 +339,9 @@ struct BrowsePane: View {
             onReveal: matureReveal.map { state in { state.reveal(item.id) } },
             isBookmarked: isBookmarked,
             onBookmark: { WorkshopBookmarkActions.toggle(item) },
+            applyDisplays: applyDisplays,
+            canRunLibraryCopy: !unrunnableWorkshopIDs.contains(String(item.id)),
+            onApply: onApply.map { apply in { apply(item, $0) } },
             onSelect: { onOpenItem?(item) },
             onDownload: {
                 let downloads = WorkshopDownloadCoordinator.shared
@@ -613,11 +629,15 @@ struct BrowsePane: View {
     private func reloadInstalledIDs() {
         let imports = SettingsManager.shared.loadGlobalSettings().recentWPEImports
         // Same keys `WPEOrigin.matchesWorkshopItem` accepts, flattened so each card is one lookup.
-        let importedAtByID = imports.flatMap { entry in
-            [entry.origin.workshopID, entry.origin.steamFolderItemID].compactMap { $0 }.map { ($0, entry.importedAt) }
+        let entriesByID = imports.flatMap { entry in
+            [entry.origin.workshopID, entry.origin.steamFolderItemID].compactMap(\.self).map { ($0, entry) }
         }
-        installedWorkshopIDs = Set(importedAtByID.map(\.0))
-        importedAtByWorkshopID = Dictionary(importedAtByID) { newest, _ in newest }
+        installedWorkshopIDs = Set(entriesByID.map(\.0))
+        importedAtByWorkshopID = Dictionary(entriesByID.map { ($0.0, $0.1.importedAt) }) { newest, _ in newest }
+        // A press applies the first matching entry, so that entry's origin decides.
+        unrunnableWorkshopIDs = Set(
+            Dictionary(entriesByID) { first, _ in first }.filter { $0.value.origin.resourceLocation == .unsupported }.keys
+        )
         viewModel.installedWorkshopIDs = installedWorkshopIDs
     }
 
