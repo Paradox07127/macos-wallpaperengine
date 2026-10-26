@@ -770,7 +770,7 @@ struct HomePage: View {
         ZStack {
             if isLibraryOpen {
                 wallpaperGrid
-                    .padding(.top, StageGeometry.gridTop)
+                    .padding(.top, StageGeometry.topBarHeight)
                     // Hidden rather than unmounted while the stage carries the cards off: unmounting here would
                     // lose the scroll position, and a swipe pushed back would rebuild the grid at its top.
                     .opacity(stage.leavingLibrary ? 0 : libraryGridOpacity)
@@ -1008,95 +1008,107 @@ struct HomePage: View {
     }
 
     private var wallpaperGrid: some View {
-        VStack(spacing: 0) {
-            GeometryReader { geometry in
-                ScrollView {
-                    // Spaced explicitly: `gridContentInset` has to know how far down the first row starts.
-                    VStack(spacing: Self.libraryStackSpacing) {
-                        if let screen = libraryTargetScreen {
-                            libraryTargetBanner(for: screen)
-                                .transition(.opacity)
-                        }
-                        if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
-                            AerialsSourceStatusCard()
-                                .transition(.opacity)
-                        } else if let library, library.visibleItems.isEmpty {
-                            if library.items.isEmpty {
-                                LibraryGuideCard(
-                                    icon: "square.grid.2x2",
-                                    tint: DesignTokens.Colors.accent,
-                                    title: "No wallpapers yet",
-                                    message: "Adds the selected files to the Wallpaper Library without changing any display.",
-                                    actionTitle: "Add to Library",
-                                    actionSystemImage: "plus",
-                                    action: promptLibraryImport
-                                )
-                                .transition(.opacity)
-                            } else {
-                                IllustratedEmptyState(
-                                    symbol: "magnifyingglass",
-                                    title: "No Results",
-                                    primary: EmptyStateButtonAction("Clear filters") {
+        GeometryReader { geometry in
+            ScrollView {
+                // Spaced explicitly: `gridContentInset` has to know how far down the first row starts.
+                VStack(spacing: Self.libraryStackSpacing) {
+                    if let screen = libraryTargetScreen {
+                        libraryTargetBanner(for: screen)
+                            .transition(.opacity)
+                    }
+                    if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
+                        AerialsSourceStatusCard()
+                            .transition(.opacity)
+                    } else if let library, library.visibleItems.isEmpty {
+                        if library.items.isEmpty {
+                            LibraryGuideCard(
+                                icon: "square.grid.2x2",
+                                tint: DesignTokens.Colors.accent,
+                                title: "No wallpapers yet",
+                                message: "Adds the selected files to the Wallpaper Library without changing any display.",
+                                actionTitle: "Add to Library",
+                                actionSystemImage: "plus",
+                                action: promptLibraryImport
+                            )
+                            .transition(.opacity)
+                        } else {
+                            let clearsSearch = !library.query.isEmpty
+                            let clearsFilters = library.chip != .all || library.filter != nil
+                            IllustratedEmptyState(
+                                symbol: "magnifyingglass",
+                                title: library.query.isEmpty ? "No Results" : "No results for “\(library.query)” in Wallpaper Library",
+                                primary: .clearing(search: clearsSearch, filters: clearsFilters) {
+                                    if clearsSearch {
                                         library.query = ""
+                                    }
+                                    if clearsFilters {
                                         library.chip = .all
                                         library.filter = nil
                                     }
-                                )
-                                .transition(.opacity)
-                            }
-                        } else if let library {
-                            LibraryGalleryGrid(
-                                size: tileSize, aspect: .wide,
-                                initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
-                            ) {
-                                ForEach(library.visibleItems) { item in
-                                    let badges = item.cardBadges(
-                                        among: stage.displays, updatedWorkshopIDs: updatedWorkshopIDs, preferences: cardPreferences
-                                    )
-                                    Button {
-                                        // VoiceOver's VO key includes ⌥, so only a mouse click may count as an ⌥-click.
-                                        if NSApp.currentEvent?.type == .leftMouseUp, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
-                                            quickApply(item.id)
-                                        } else {
-                                            openLibraryItem(item.id)
-                                        }
-                                    } label: {
-                                        LibraryGridTile(
-                                            item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges,
-                                            preview: gridPreview
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
-                                    .contextMenu {
-                                        WallpaperMenuRows(sections: libraryMenu(for: item))
-                                    }
-                                    .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title.translatedWallpaperName, kind: item.kind)))
-                                    .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
-                                    .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
-                                    .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
                                 }
-                            }
-                            .libraryGridPadding()
+                            )
                             .transition(.opacity)
                         }
+                    } else if let library {
+                        LibraryGalleryGrid(
+                            size: tileSize, aspect: .wide,
+                            initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
+                        ) {
+                            ForEach(library.visibleItems) { item in
+                                let badges = item.cardBadges(
+                                    among: stage.displays, updatedWorkshopIDs: updatedWorkshopIDs, preferences: cardPreferences
+                                )
+                                Button {
+                                    // VoiceOver's VO key includes ⌥, so only a mouse click may count as an ⌥-click.
+                                    if NSApp.currentEvent?.type == .leftMouseUp, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+                                        quickApply(item.id)
+                                    } else {
+                                        openLibraryItem(item.id)
+                                    }
+                                } label: {
+                                    LibraryGridTile(
+                                        item: item, thumbnail: gridThumbnail(for: item), thumbnails: thumbnails, badges: badges,
+                                        preview: gridPreview
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .libraryDragSource(libraryDrag, enabled: item.isSupported) { dragPayload(for: item) }
+                                .contextMenu {
+                                    WallpaperMenuRows(sections: libraryMenu(for: item))
+                                }
+                                .accessibilityLabel(Text(verbatim: badges.accessibilityLabel(title: item.title.translatedWallpaperName, kind: item.kind)))
+                                .accessibilityValue(Text(verbatim: item.statusBadge ?? ""))
+                                .accessibilityAction(named: Text("Apply")) { quickApply(item.id) }
+                                .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
+                            }
+                        }
+                        .libraryGridPadding()
+                        .transition(.opacity)
                     }
-                    // Keyed on the branch, not the items: a filter change inside the grid must not animate its lazy layout.
-                    .animation(
-                        DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange),
-                        value: libraryGridContent
-                    )
-                    .animation(
-                        DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange),
-                        value: libraryTargetScreen != nil
-                    )
-                    .frame(minHeight: library?.visibleItems.isEmpty == true ? geometry.size.height : nil)
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .modifier(GridTopReporter(atTop: { stage.gridAtTop = $0 }, offset: { stage.gridScrollOffset = $0 }))
-                .onChange(of: interactionLock, initial: true) { gridPreview.obscured = $1 }
-                .onChange(of: reduceMotion, initial: true) { gridPreview.reduceMotion = $1 }
+                // Keyed on the branch, not the items: a filter change inside the grid must not animate its lazy layout.
+                .animation(
+                    DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange),
+                    value: libraryGridContent
+                )
+                .animation(
+                    DesignTokens.motion(reduceMotion, DesignTokens.Motion.stateChange),
+                    value: libraryTargetScreen != nil
+                )
+                // The reader sits inside the bars' safe-area insets, so this is the height left between them.
+                .frame(minHeight: library?.visibleItems.isEmpty == true ? geometry.size.height : nil)
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .modifier(GridTopReporter(atTop: { stage.gridAtTop = $0 }, offset: { stage.gridScrollOffset = $0 }))
+            .onChange(of: interactionLock, initial: true) { gridPreview.obscured = $1 }
+            .onChange(of: reduceMotion, initial: true) { gridPreview.reduceMotion = $1 }
+        }
+        .libraryScrollBars {
+            // Reserves the chips row's band; the row itself stays on `shelfChrome` so it can ride the stage in flight.
+            Color.clear
+                .frame(height: StageGeometry.gridTop - StageGeometry.topBarHeight)
+                .allowsHitTesting(false)
+        } bottom: {
             if let library, !library.items.isEmpty {
                 LibraryStatusBar(summary: statusSummary(library))
             }
@@ -2041,7 +2053,7 @@ private struct GridTopReporter: ViewModifier {
         if #available(macOS 15, *) {
             content
                 .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y <= geometry.contentInsets.top + 0.5
+                    geometry.contentOffset.y + geometry.contentInsets.top <= 0.5
                 } action: { _, isAtTop in
                     atTop(isAtTop)
                 }

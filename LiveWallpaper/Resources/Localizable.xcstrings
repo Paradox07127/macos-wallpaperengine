@@ -45000,6 +45000,41 @@
         }
       }
     },
+    "No results for “%@” in Wallpaper Library" : {
+      "comment" : "Empty wallpaper library search result. Placeholder is the query.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No results for “%@” in Wallpaper Library"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay resultados para «%@» en Biblioteca de fondos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙ライブラリに「%@」に一致する項目はありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸库中没有与“%@”匹配的结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布庫中沒有與「%@」相符的結果"
+          }
+        }
+      }
+    },
     "No results for “%@” in Workshop" : {
       "comment" : "Empty Workshop search result. Placeholder is the query.",
       "localizations" : {
