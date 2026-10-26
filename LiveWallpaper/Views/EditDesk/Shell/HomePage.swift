@@ -1782,6 +1782,10 @@ struct HomePage: View {
                 }
             case let .dropped(cardID, displayID):
                 applies.run(for: displayID) { await applyCard(cardID, to: displayID, cancellation: $0) }
+            case let .displayDropped(sourceID, targetID):
+                guard let source = screenManager.screens.first(where: { $0.id == sourceID }),
+                      let target = screenManager.screens.first(where: { $0.id == targetID }) else { continue }
+                applyConfiguration(from: source, to: target)
             case let .filesDropped(urls, displayID):
                 guard let screen = screenManager.screens.first(where: { $0.id == displayID }),
                       let intent = ApplyIntent.drop(urls) else { continue }

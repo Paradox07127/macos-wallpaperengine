@@ -265,6 +265,8 @@ enum StageEvent: Equatable, Sendable {
     case displayRenamed(StageDisplay.ID, String)
     case emptyActionTapped(StageDisplay.ID, EmptyScreenAction)
     case dropped(card: StageCard.ID, onto: StageDisplay.ID)
+    /// A wallpapered display dropped onto another one, which takes over its setup.
+    case displayDropped(from: StageDisplay.ID, onto: StageDisplay.ID)
     /// Files dragged in from Finder, in drop order; their type is judged only after the drop.
     case filesDropped([URL], onto: StageDisplay.ID)
     /// The same, dropped on the shelf: they join the library and no display changes.

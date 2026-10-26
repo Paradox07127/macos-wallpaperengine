@@ -1671,6 +1671,137 @@ struct EditDeskStageViewTests {
         #expect(seen == [.snapped(1), .dropCancelled(card: "card-5"), .snapped(0), .snapped(2), .snapped(0)])
     }
 
+    private func screenCentre(_ id: StageDisplay.ID, in view: EditDeskStageView) throws -> CGPoint {
+        let shell = try #require(view.displayLayers[id])
+        return try shell.content.convert(
+            CGPoint(x: shell.content.bounds.midX, y: shell.content.bounds.midY), to: #require(view.layer)
+        )
+    }
+
+    @Test("A wallpapered display dragged onto another display hands that display its setup", .timeLimit(.minutes(1)))
+    func displayDroppedOntoAnotherDisplay() async throws {
+        let model = makeModel()
+        model.displays[1].state = .ok
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        var iterator = model.events.makeAsyncIterator()
+        let source = try screenCentre(1, in: view)
+        let target = try screenCentre(2, in: view)
+
+        try view.mouseDown(with: mouse(.leftMouseDown, at: source, in: view))
+        try view.mouseDragged(with: mouse(.leftMouseDragged, at: CGPoint(x: source.x + 20, y: source.y), in: view))
+        #expect(view.debugDragging, "a press on a wallpapered display that moves past the threshold must lift it")
+        #expect(model.dropTarget == nil, "the display being dragged is not a place to drop it")
+        try view.mouseDragged(with: mouse(.leftMouseDragged, at: target, in: view))
+        #expect(model.dropTarget == 2)
+        try view.mouseUp(with: mouse(.leftMouseUp, at: target, in: view))
+        #expect(!view.debugDragging)
+        #expect(model.dropTarget == nil)
+        model.emit(.cardTapped("end"))
+        var seen: [StageEvent] = []
+        while let event = await iterator.next(), event != .cardTapped("end") {
+            seen.append(event)
+        }
+        #expect(seen == [.displayDropped(from: 1, onto: 2)])
+    }
+
+    @Test("A display released off the other displays, on itself, or cancelled with Esc goes back and copies nothing", .timeLimit(.minutes(1)))
+    func displayDragThatMissesCopiesNothing() async throws {
+        let model = makeModel()
+        model.displays[1].state = .ok
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        var iterator = model.events.makeAsyncIterator()
+        let source = try screenCentre(1, in: view)
+        let target = try screenCentre(2, in: view)
+        let blank = CGPoint(x: 8, y: view.bounds.maxY - 8)
+        try #require(!view.ownsPoint(blank, clicking: true), "control: the blank point is on a display")
+
+        for release in [blank, source] {
+            try view.mouseDown(with: mouse(.leftMouseDown, at: source, in: view))
+            try view.mouseDragged(with: mouse(.leftMouseDragged, at: target, in: view))
+            try #require(view.debugDragging)
+            try view.mouseDragged(with: mouse(.leftMouseDragged, at: release, in: view))
+            try view.mouseUp(with: mouse(.leftMouseUp, at: release, in: view))
+            #expect(!view.debugDragging)
+        }
+        try view.mouseDown(with: mouse(.leftMouseDown, at: source, in: view))
+        try view.mouseDragged(with: mouse(.leftMouseDragged, at: target, in: view))
+        try #require(view.debugDragging)
+        try view.keyDown(with: key(53))
+        #expect(!view.debugDragging)
+        try view.mouseUp(with: mouse(.leftMouseUp, at: target, in: view))
+        #expect(model.dropTarget == nil)
+        model.emit(.cardTapped("end"))
+        var seen: [StageEvent] = []
+        while let event = await iterator.next(), event != .cardTapped("end") {
+            seen.append(event)
+        }
+        #expect(seen == [])
+    }
+
+    @Test("An empty display, a covered stage, a lone display, a display being renamed and its chrome start no drag", .timeLimit(.minutes(1)))
+    func displayDragNeedsSomethingToCarry() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        var iterator = model.events.makeAsyncIterator()
+        let wallpapered = try screenCentre(1, in: view)
+        let empty = try screenCentre(2, in: view)
+        let blank = CGPoint(x: 8, y: view.bounds.maxY - 8)
+        try #require(!view.ownsPoint(blank, clicking: true), "control: the blank point is on a display")
+
+        // Released off everything, so a press that did not lift anything opens nothing either.
+        func pressAndDrag(_ point: CGPoint, to end: CGPoint) throws -> Bool {
+            try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
+            try view.mouseDragged(with: mouse(.leftMouseDragged, at: end, in: view))
+            let dragging = view.debugDragging
+            try view.mouseUp(with: mouse(.leftMouseUp, at: blank, in: view))
+            return dragging
+        }
+
+        #expect(try !pressAndDrag(empty, to: wallpapered), "an empty display has no wallpaper to hand over")
+
+        model.interactionBlocked = true
+        #expect(try !pressAndDrag(wallpapered, to: empty), "a covered stage must not take the press")
+        model.interactionBlocked = false
+
+        let shell = try #require(view.displayLayers[1])
+        let nameRect = try shell.layer.convert(shell.nameFrame, to: #require(view.layer))
+        view.tap(at: CGPoint(x: nameRect.midX, y: nameRect.midY))
+        let field = try #require(view.subviews.compactMap { $0 as? NSTextField }.first)
+        #expect(try !pressAndDrag(wallpapered, to: empty), "a display being renamed stays put")
+        #expect(view.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+
+        view.setPointerForTesting(wallpapered)
+        let chrome = try #require(model.hoveredPlayback, "control: the hovered display offers no chrome")
+        let clear = CGPoint(x: chrome.clearRect.midX, y: chrome.clearRect.midY)
+        #expect(try !pressAndDrag(clear, to: empty), "a press on the clear button is the button's")
+
+        // A press that never moves far enough is still a click on the display.
+        try view.mouseDown(with: mouse(.leftMouseDown, at: wallpapered, in: view))
+        try view.mouseUp(with: mouse(.leftMouseUp, at: wallpapered, in: view))
+        model.emit(.cardTapped("end"))
+        var seen: [StageEvent] = []
+        while let event = await iterator.next(), event != .cardTapped("end") {
+            seen.append(event)
+        }
+        #expect(seen == [.displayTapped(1)])
+
+        model.displays.removeLast()
+        await Task.yield()
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        try #require(view.displayLayers.count == 1)
+        #expect(try !pressAndDrag(wallpapered, to: CGPoint(x: wallpapered.x + 40, y: wallpapered.y)), "a lone display has nowhere to go")
+    }
+
     @Test("The name-row dot is green only while the wallpaper runs")
     func statusDotFollowsTheState() throws {
         let model = makeModel()

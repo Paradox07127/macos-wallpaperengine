@@ -82,6 +82,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var lastTimestamp: TimeInterval?
     private var tracking: NSTrackingArea?
     private var pressedCard: StageCard.ID?
+    /// A wallpapered display pressed where a drag may lift it; nil over its chrome or when there is nowhere to drop it.
+    private var pressedDisplay: StageDisplay.ID?
     /// The display whose name is being edited in place, and the field doing it.
     private var renaming: (id: StageDisplay.ID, field: StageRenameField)?
     private var dragging = false
@@ -373,6 +375,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             clearHover()
             raisedForFileDrag = nil
             pressedCard = nil
+            pressedDisplay = nil
             gesture.mouseUp()
             snapTask?.cancel()
             if dragging {
@@ -400,9 +403,14 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         } else if registeredDraggedTypes.isEmpty {
             registerForDraggedTypes([.fileURL])
         }
-        if let source = ghost.source, cardIndexByID[source] == nil {
-            if dragging {
-                model.emit(.dropCancelled(card: source))
+        let sourceGone = switch ghost.source {
+        case let .card(id): cardIndexByID[id] == nil
+        case let .display(id): displayLayers[id] == nil
+        case nil: false
+        }
+        if sourceGone {
+            if dragging, case let .card(id) = ghost.source {
+                model.emit(.dropCancelled(card: id))
             }
             dragging = false
             ghost.finish()
@@ -571,7 +579,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 placement.frame.origin.x += 6 * sin(elapsed / 0.3 * 6 * .pi)
             }
             let opacity = tile.layer.opacity
-            tile.place(placement, style: style, gridMix: mix, dragged: dragging && ghost.source == card.id, reduceMotion: model.reduceMotion)
+            tile.place(placement, style: style, gridMix: mix, dragged: dragging && ghost.source == .card(card.id), reduceMotion: model.reduceMotion)
             if model.reduceMotion, opacity != tile.layer.opacity {
                 StageLayerStyle.fadeOpacity(tile.layer, resumingFrom: opacity)
             }
@@ -1672,34 +1680,63 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         if let index = cardIndex(at: point) {
             focusCard(at: index, reveal: false)
             pressedCard = cards[index].id
+            pressedDisplay = nil
         } else {
             pressedCard = nil
+            pressedDisplay = draggableDisplay(at: point)
         }
+    }
+
+    private func draggableDisplay(at point: CGPoint) -> StageDisplay.ID? {
+        guard displays.count > 1, renaming == nil, let id = displayID(at: point),
+              displays.first(where: { $0.id == id })?.state != .empty else { return nil }
+        if let chrome = model.hoveredPlayback, chrome.displayID == id,
+           chrome.rect.contains(point) || chrome.clearRect.contains(point) {
+            return nil
+        }
+        return id
+    }
+
+    private var pressedDragSource: (source: DragGhostLayer.Source, picture: Any?)? {
+        if let card = card(for: pressedCard), card.isDraggable {
+            return (.card(card.id), card.thumbnail)
+        }
+        if let id = pressedDisplay, let shell = displayLayers[id] {
+            return (.display(id), shell.cover.contents)
+        }
+        return nil
+    }
+
+    /// A display being dragged is never its own drop target.
+    private func dropTargetID(at point: CGPoint) -> StageDisplay.ID? {
+        let id = displayID(at: point)
+        return id.map(DragGhostLayer.Source.display) == ghost.source ? nil : id
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard !model.interactionBlocked else { return }
         let point = convert(event.locationInWindow, from: nil)
         withoutActions {
-            if !dragging, gesture.shouldStartDrag(at: point), let card = card(for: pressedCard), card.isDraggable {
+            if !dragging, gesture.shouldStartDrag(at: point), let pressed = pressedDragSource {
                 // A snap still flying to the grid hands the page to SwiftUI when it lands, which
                 // would cover the drag; the press becomes a cancelled click instead.
                 guard progress.target != 2 || progress.isSettled else {
                     pressedCard = nil
+                    pressedDisplay = nil
                     return
                 }
                 dragging = true
                 ownsStageScroll = false
                 snapTask?.cancel()
                 clearHover()
-                ghost.begin(card: card, at: point, reduceMotion: model.reduceMotion)
+                ghost.begin(pressed.source, picture: pressed.picture, at: point, reduceMotion: model.reduceMotion)
                 NSCursor.closedHand.set()
                 render()
             }
             guard dragging else { return }
             ghost.x.target = point.x
             ghost.y.target = point.y
-            let target = displayID(at: point)
+            let target = dropTargetID(at: point)
             model.report(dropTarget: target)
             ghost.scale.target = target == nil ? 1 : 0.8
             if model.reduceMotion {
@@ -1718,16 +1755,19 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             // The pointer can leave the display after the last drag event, and the arrangement can
             // change mid-drag: the release point is the only thing that decides the target.
             let point = convert(event.locationInWindow, from: nil)
-            model.report(dropTarget: displayID(at: point))
+            model.report(dropTarget: dropTargetID(at: point))
             withoutActions { endDrag(cancelled: false) }
         } else {
             let point = convert(event.locationInWindow, from: nil)
-            if pressedCard == cardIndex(at: point).map({ cards[$0].id }) {
+            // A display drag cancelled with Esc must not turn into a click on whichever display it is released over.
+            if pressedCard == cardIndex(at: point).map({ cards[$0].id }),
+               pressedDisplay == nil || pressedDisplay == displayID(at: point) {
                 tap(at: point, applies: event.modifierFlags.contains(.option))
             }
         }
         gesture.mouseUp()
         pressedCard = nil
+        pressedDisplay = nil
         startDisplayLinkIfNeeded()
     }
 
@@ -1741,10 +1781,19 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         )
         if let target, let shell = displayLayers[target] {
             ghost.destination = shell.content.convert(shell.content.bounds, to: layer)
-            model.emit(.dropped(card: source, onto: target))
+            switch source {
+            case let .card(id): model.emit(.dropped(card: id, onto: target))
+            case let .display(id): model.emit(.displayDropped(from: id, onto: target))
+            }
         } else {
-            ghost.destination = cardLayers[source]?.frame ?? ghost.layer.frame
-            model.emit(.dropCancelled(card: source))
+            switch source {
+            case let .card(id):
+                ghost.destination = cardLayers[id]?.frame ?? ghost.layer.frame
+                model.emit(.dropCancelled(card: id))
+            case let .display(id):
+                let shell = displayLayers[id]
+                ghost.destination = shell.map { $0.content.convert($0.content.bounds, to: layer) } ?? ghost.layer.frame
+            }
         }
         ghost.flight.target = 1
         ghost.scale.target = 1

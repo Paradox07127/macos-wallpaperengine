@@ -4,6 +4,11 @@ import QuartzCore
 
 @MainActor
 final class DragGhostLayer {
+    enum Source: Equatable {
+        case card(StageCard.ID)
+        case display(StageDisplay.ID)
+    }
+
     static let size = CGSize(width: 140, height: 79)
     let layer = CALayer()
     private let image = CALayer()
@@ -11,7 +16,7 @@ final class DragGhostLayer {
     var y = StageSpring(value: 0, target: 0, parameters: StageSpring.ghost)
     var scale = StageSpring(value: 1, target: 1, parameters: StageSpring.ghost)
     var flight = StageSpring(value: 0, target: 0, parameters: StageSpring.drop)
-    var source: StageCard.ID?
+    var source: Source?
     var destination: CGRect?
     var flightOrigin = CGRect.zero
 
@@ -34,10 +39,11 @@ final class DragGhostLayer {
         layer.isHidden = true
     }
 
-    func begin(card: StageCard, at point: CGPoint, reduceMotion: Bool) {
+    /// `picture`: anything `CALayer.contents` takes, such as the cover a display shell is showing.
+    func begin(_ source: Source, picture: Any?, at point: CGPoint, reduceMotion: Bool) {
         layer.removeAnimation(forKey: "opacity")
-        source = card.id
-        image.contents = card.thumbnail
+        self.source = source
+        image.contents = picture
         x.jump(to: point.x)
         y.jump(to: point.y)
         scale.jump(to: 1)
