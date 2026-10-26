@@ -49294,6 +49294,40 @@
         }
       }
     },
+    "Overwrite with Current Setup from %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overwrite with Current Setup from %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sobrescribir con la configuración actual de %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」の現在の設定で上書き"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用“%@”的当前设置覆盖"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以「%@」的目前設定覆寫"
+          }
+        }
+      }
+    },
     "Overwrites the chosen scheme with this display's wallpaper, overlays, and all settings." : {
       "comment" : "Explanation shown when the save-scheme popover is set to overwrite an existing scheme.",
       "localizations" : {
@@ -57295,74 +57329,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取代這台顯示器的全部設定？"
-          }
-        }
-      }
-    },
-    "Replace with %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replace with %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reemplazar con %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ で置き換える"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用 %@ 替换"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用 %@ 取代"
-          }
-        }
-      }
-    },
-    "Replace with Current Setup" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replace with Current Setup"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reemplazar con la configuración actual"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在の設定で置き換える"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用当前设置替换"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用目前設定取代"
           }
         }
       }

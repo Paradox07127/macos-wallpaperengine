@@ -14,6 +14,46 @@ struct SchemeLibraryViewTests {
         #expect(LibraryChipsRow.sortTitle(.recentlyUsed) == LocalizedStringKey("Recently Used"))
     }
 
+    @Test("A scheme's menus apply to one display, then rename, reveal, and end with overwrite and delete")
+    func tileMenuSections() {
+        let studio = DeferredWallpaperApplying.makeScreen(id: 1)
+        studio.customName = "Studio"
+        let side = DeferredWallpaperApplying.makeScreen(id: 2)
+        side.customName = "Side"
+        func titles(
+            screens: [Screen], isAvailable: Bool, revealURL: URL? = URL(fileURLWithPath: "/tmp/scheme")
+        ) -> [[String]] {
+            StageMenuItem.visible(SchemeTile.menuSections(
+                screens: screens, isAvailable: isAvailable, revealURL: revealURL,
+                onApply: { _ in }, onStartRename: {}, onDelete: {}, onReplace: { _ in }
+            )).map { $0.map(\.title) }
+        }
+        let applyTo = String(localized: "Apply to", bundle: .appLanguage)
+        let rename = String(localized: "Rename", bundle: .appLanguage)
+        let reveal = String(localized: "Show in Finder", bundle: .appLanguage)
+        let delete = String(localized: "Delete", bundle: .appLanguage)
+        let overwriteStudio = String(localized: "Overwrite with Current Setup from \("Studio")", bundle: .appLanguage)
+        let overwriteSide = String(localized: "Overwrite with Current Setup from \("Side")", bundle: .appLanguage)
+
+        #expect(titles(screens: [studio, side], isAvailable: true) == [
+            [applyTo], [rename], [reveal], [overwriteStudio, overwriteSide, delete],
+        ])
+        let sections = StageMenuItem.visible(SchemeTile.menuSections(
+            screens: [studio, side], isAvailable: true, revealURL: nil,
+            onApply: { _ in }, onStartRename: {}, onDelete: {}, onReplace: { _ in }
+        ))
+        #expect(
+            sections.first?.first?.submenu.map { $0.map(\.title) } == [["Studio", "Side"]],
+            "the scheme offers a display it does not cover, or an All Displays row"
+        )
+        #expect(sections.count == 3, "Show in Finder appears with nothing to reveal")
+
+        #expect(titles(screens: [studio, side], isAvailable: false) == [
+            [rename], [reveal], [overwriteStudio, overwriteSide, delete],
+        ], "a scheme whose file is missing still offers Apply to")
+        #expect(titles(screens: [], isAvailable: true) == [[rename], [reveal], [delete]])
+    }
+
     @Test("Leaving the view lets go of what the detail modal's apply captured")
     func leavingReleasesTheApplyCapture() async {
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(

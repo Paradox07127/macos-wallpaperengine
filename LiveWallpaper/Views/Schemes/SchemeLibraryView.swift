@@ -239,7 +239,7 @@ private enum SchemeTypeFilter: Hashable {
 
 // MARK: - Tile
 
-private struct SchemeTile: View {
+struct SchemeTile: View {
     let scheme: ScreenScheme
     let screens: [Screen]
     let drag: LibraryDragController
@@ -429,56 +429,63 @@ private struct SchemeTile: View {
     // MARK: Overflow
 
     private var overflowButton: some View {
-        LibraryTileOverflowButton { dismiss in
-            Button("Rename") {
-                dismiss()
-                onStartRename()
-            }
-            if let revealURL = location.revealURL {
-                Divider()
-                Button("Show in Finder") {
-                    dismiss()
+        LibraryTileOverflowButton { _ in
+            WallpaperMenuRows(sections: menuSections)
+        }
+    }
+
+    private var contextMenu: some View {
+        WallpaperMenuRows(sections: menuSections)
+    }
+
+    private var menuSections: [[StageMenuItem]] {
+        Self.menuSections(
+            screens: screens,
+            isAvailable: location.isAvailable,
+            revealURL: location.revealURL,
+            onApply: onApply,
+            onStartRename: onStartRename,
+            onDelete: onDelete,
+            onReplace: onReplace
+        )
+    }
+
+    /// The tile's "…" and context menus, in order; `StageMenuItem.visible` leaves out what does not apply.
+    static func menuSections(
+        screens: [Screen],
+        isAvailable: Bool,
+        revealURL: URL?,
+        onApply: @escaping @MainActor (Screen) -> Void,
+        onStartRename: @escaping @MainActor () -> Void,
+        onDelete: @escaping @MainActor () -> Void,
+        onReplace: @escaping @MainActor (Screen) -> Void
+    ) -> [[StageMenuItem]] {
+        let applyTargets = screens.map { screen in
+            StageMenuItem(title: screen.name, isEnabled: true) { onApply(screen) }
+        }
+        let overwrites = screens.map { screen in
+            StageMenuItem(
+                title: String(localized: "Overwrite with Current Setup from \(screen.name)", bundle: .appLanguage),
+                isEnabled: true, isDestructive: true
+            ) { onReplace(screen) }
+        }
+        return [
+            [StageMenuItem(
+                title: String(localized: "Apply to", bundle: .appLanguage),
+                isEnabled: isAvailable, submenu: [applyTargets]
+            ) {}],
+            [StageMenuItem(title: String(localized: "Rename", bundle: .appLanguage), isEnabled: true, action: onStartRename)],
+            [StageMenuItem(
+                title: String(localized: "Show in Finder", bundle: .appLanguage), isEnabled: revealURL != nil
+            ) {
+                if let revealURL {
                     NSWorkspace.shared.activateFileViewerSelecting([revealURL])
                 }
-            }
-            Divider()
-            replaceActions(dismiss: dismiss)
-            Button("Delete", role: .destructive) {
-                dismiss()
-                onDelete()
-            }
-            .destructiveControlTint()
-        }
-    }
-
-    @ViewBuilder
-    private func replaceActions(dismiss: @escaping () -> Void) -> some View {
-        if !screens.isEmpty {
-            ForEach(screens, id: \.id) { screen in
-                Button(role: .destructive) {
-                    dismiss()
-                    onReplace(screen)
-                } label: {
-                    screens.count == 1
-                        ? Text("Replace with Current Setup")
-                        : Text("Replace with \(screen.name)")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var contextMenu: some View {
-        Button("Rename", action: onStartRename)
-        if let revealURL = location.revealURL {
-            Divider()
-            Button("Show in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([revealURL])
-            }
-        }
-        Divider()
-        replaceActions(dismiss: {})
-        Button("Delete", role: .destructive, action: onDelete)
+            }],
+            overwrites + [StageMenuItem(
+                title: String(localized: "Delete", bundle: .appLanguage), isEnabled: true, isDestructive: true, action: onDelete
+            )],
+        ]
     }
 
     // MARK: Presentation
