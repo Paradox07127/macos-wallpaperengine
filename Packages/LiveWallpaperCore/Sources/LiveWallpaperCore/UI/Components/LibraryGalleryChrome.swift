@@ -92,12 +92,15 @@ private struct LibraryScrollBars<Top: View, Bottom: View>: ViewModifier {
                 .padding(.bottom, -bottomHeight)
             }
             // Measured through a stack: the modifier on a bare EmptyView makes the inset take the whole height.
+            // The shape stops clicks in a bar's gaps; without it they reach the faded cards beneath.
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) { top }
+                    .contentShape(Rectangle())
                     .onGeometryChange(for: CGFloat.self, of: \.size.height) { topHeight = $0 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 0) { bottom }
+                    .contentShape(Rectangle())
                     .onGeometryChange(for: CGFloat.self, of: \.size.height) { bottomHeight = $0 }
             }
     }

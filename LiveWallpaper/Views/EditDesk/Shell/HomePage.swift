@@ -1107,7 +1107,6 @@ struct HomePage: View {
             // Reserves the chips row's band; the row itself stays on `shelfChrome` so it can ride the stage in flight.
             Color.clear
                 .frame(height: StageGeometry.gridTop - StageGeometry.topBarHeight)
-                .allowsHitTesting(false)
         } bottom: {
             if let library, !library.items.isEmpty {
                 LibraryStatusBar(summary: statusSummary(library))
