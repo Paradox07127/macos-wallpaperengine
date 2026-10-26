@@ -162,6 +162,18 @@ private struct HandoffHost {
         )
     }
 
+    /// The grid's unscrolled `contentView.bounds.minY`: its content starts below the bars it scrolls under.
+    func gridRest(_ scroll: NSScrollView) -> CGFloat {
+        -scroll.contentView.contentInsets.top
+    }
+
+    /// The part of `gridFrame(_:)` between the bars the grid scrolls under, in the same coordinates.
+    func gridViewport(_ scroll: NSScrollView) -> CGRect {
+        let insets = scroll.contentView.contentInsets
+        let frame = gridFrame(scroll)
+        return CGRect(x: frame.minX, y: frame.minY + insets.top, width: frame.width, height: frame.height - insets.top - insets.bottom)
+    }
+
     func settle(seconds: Double, until condition: () -> Bool = { false }) async {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline, !condition() {
@@ -217,7 +229,7 @@ private struct FoundTile {
     var rect: CGRect
     var row: Int
     var column: Int
-    /// Cut by the scroll view's top or bottom edge, so its rect is not the tile's.
+    /// Reaches the top or bottom of the visible area it was found in, so its rect is not the tile's.
     var clipped: Bool
 }
 
@@ -384,7 +396,7 @@ struct ShelfGridHandoffTests {
                 let columnWidth = StageGeometry.gridCellSize(windowWidth: size.width, size: model.gridTileSize).width
                 let found = try TileFinder.tiles(
                     in: host.renderWithoutStage("landing-\(Int(size.width))-\(onboarding)-\(target)"),
-                    scroll: host.gridFrame(scroll), columnWidth: columnWidth
+                    scroll: host.gridViewport(scroll), columnWidth: columnWidth
                 )
                 let columns = (found.map(\.column).max() ?? -1) + 1
                 try #require(found.count >= 4, Comment(rawValue: "\(label): found \(found.count) tiles"))
@@ -425,7 +437,7 @@ struct ShelfGridHandoffTests {
         let scroll = try #require(host.grid)
         let columnWidth = StageGeometry.gridCellSize(windowWidth: Self.designSize.width, size: stage.model.gridTileSize).width
         let atRest = try host.renderWithoutStage()
-        let tile = try #require(TileFinder.tiles(in: atRest, scroll: host.gridFrame(scroll), columnWidth: columnWidth).first)
+        let tile = try #require(TileFinder.tiles(in: atRest, scroll: host.gridViewport(scroll), columnWidth: columnWidth).first)
         let centre = CGPoint(x: tile.rect.midX, y: tile.rect.midY)
         let showsAtRest = TileFinder.isBlue(atRest, at: centre)
         try #require(showsAtRest, "control: the grid does not show its first tile at rest")
@@ -463,13 +475,13 @@ struct ShelfGridHandoffTests {
             let scroll = try #require(host.grid)
             let model = stage.model
             let scrolled: CGFloat = 500
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: scrolled))
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: host.gridRest(scroll) + scrolled))
             scroll.reflectScrolledClipView(scroll.contentView)
             await host.settle(seconds: 0.5)
             let cell = StageGeometry.gridCellSize(windowWidth: Self.designSize.width, size: model.gridTileSize)
             let pitch = cell.height + DesignTokens.LibraryGrid.spacing
             let firstRowTop = StageGeometry.gridTop + DesignTokens.LibraryGrid.verticalPadding - scrolled
-            let found = try TileFinder.tiles(in: host.renderWithoutStage(), scroll: host.gridFrame(scroll), columnWidth: cell.width)
+            let found = try TileFinder.tiles(in: host.renderWithoutStage(), scroll: host.gridViewport(scroll), columnWidth: cell.width)
                 .filter { !$0.clipped }
             let columns = StageGeometry.gridColumns(windowWidth: Self.designSize.width, size: model.gridTileSize)
             try #require(found.count >= columns, Comment(rawValue: "control: \(found.count) whole tiles on screen at \(scrolled)pt"))
@@ -532,7 +544,8 @@ struct ShelfGridHandoffTests {
         let scroll = try #require(host.grid)
         let model = stage.model
         let columnWidth = StageGeometry.gridCellSize(windowWidth: Self.designSize.width, size: model.gridTileSize).width
-        let tile = try #require(TileFinder.tiles(in: host.renderWithoutStage(), scroll: host.gridFrame(scroll), columnWidth: columnWidth).first)
+        let rest = host.gridRest(scroll)
+        let tile = try #require(TileFinder.tiles(in: host.renderWithoutStage(), scroll: host.gridViewport(scroll), columnWidth: columnWidth).first)
         let centre = CGPoint(x: tile.rect.midX, y: tile.rect.midY)
 
         /// One trackpad event a frame, so the release velocity is measured over real time.
@@ -568,7 +581,7 @@ struct ShelfGridHandoffTests {
         #expect(model.progress == 2 && model.snappedIndex == 2, Comment(rawValue: "the pushed-back swipe stopped at \(model.progress)"))
         await host.settle(seconds: 0.3)
         #expect(host.grid === scroll, "the grid was rebuilt by a swipe that never left it")
-        #expect(scroll.contentView.bounds.minY == 0, Comment(rawValue: "the grid moved to \(scroll.contentView.bounds.minY)"))
+        #expect(scroll.contentView.bounds.minY == rest, Comment(rawValue: "the grid moved to \(scroll.contentView.bounds.minY)"))
         let showsAfterPushBack = try TileFinder.isBlue(host.renderWithoutStage(), at: centre)
         #expect(showsAfterPushBack, "the grid never came back after the swipe was pushed back")
 
@@ -594,7 +607,8 @@ struct ShelfGridHandoffTests {
         let scroll = try #require(host.grid)
         let model = stage.model
         let scrolled: CGFloat = 500
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: scrolled))
+        let rest = host.gridRest(scroll)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: rest + scrolled))
         scroll.reflectScrolledClipView(scroll.contentView)
         await host.settle(seconds: 0.5)
         // Upper third of a tile on screen at that scroll, clear of its title gradient.
@@ -644,8 +658,8 @@ struct ShelfGridHandoffTests {
         let back = try #require(host.grid, "the grid never came back after the push back")
         #expect(back === scroll, "the grid was rebuilt by a return that never left the library")
         #expect(
-            abs(back.contentView.bounds.minY - scrolled) <= 0.5,
-            Comment(rawValue: "the grid came back scrolled to \(back.contentView.bounds.minY), not \(scrolled)")
+            abs(back.contentView.bounds.minY - (rest + scrolled)) <= 0.5,
+            Comment(rawValue: "the grid came back scrolled to \(back.contentView.bounds.minY), not \(rest + scrolled)")
         )
         let showsAgain = try TileFinder.isBlue(host.renderWithoutStage(), at: probe)
         #expect(showsAgain, "the grid never came back after the push back")
@@ -817,7 +831,7 @@ struct ShelfGridHandoffTests {
         let stage = try #require(host.stage)
         let scroll = try #require(host.grid)
         // The grid's left margin, where no tile sits.
-        let margin = try sample(host.renderWithoutStage(), at: CGPoint(x: 8, y: host.gridFrame(scroll).minY + 7))
+        let margin = try sample(host.renderWithoutStage(), at: CGPoint(x: 8, y: host.gridViewport(scroll).minY + 7))
         #expect(margin.isRed, Comment(rawValue: "the landed grid paints over the window's canvas: \(margin)"))
         // Hidden as a return swipe hides it, so what lies under the cards shows.
         stage.model.report(leavingLibrary: true)
@@ -866,7 +880,7 @@ struct ShelfGridHandoffTests {
         let stage = try #require(host.stage)
         let scroll = try #require(host.grid)
         let scrolled: CGFloat = 70
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: scrolled))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: host.gridRest(scroll) + scrolled))
         scroll.reflectScrolledClipView(scroll.contentView)
         await host.settle(seconds: 0.3)
         let tileSize = stage.model.gridTileSize
