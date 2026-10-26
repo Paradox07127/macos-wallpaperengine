@@ -84,8 +84,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var pressedCard: StageCard.ID?
     /// The display whose name is being edited in place, and the field doing it.
     private var renaming: (id: StageDisplay.ID, field: StageRenameField)?
-    /// Set while `renaming` is; a click that falls through the stage never moves the first responder off the field.
-    private var renameClickMonitor: Any?
     private var dragging = false
     /// `draggingSequenceNumber` of the Finder drag that raised a hidden shelf, so its end lowers the
     /// shelf again; nil once the drop lands on the shelf, or a scroll, ↑↓ or a covering page takes over.
@@ -1573,18 +1571,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         placeRenameField()
         // A text field selects all of its text when it takes focus.
         window?.makeFirstResponder(field)
-        renameClickMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        ) { [weak self] event in
-            MainActor.assumeIsolated { self?.finishRenameIfClickedOutside(event) }
-            return event
-        }
-    }
-
-    private func finishRenameIfClickedOutside(_ event: NSEvent) {
-        guard let renaming, let window, event.window === window,
-              !renaming.field.frame.contains(convert(event.locationInWindow, from: nil)) else { return }
-        finishRename(commit: true)
     }
 
     /// Follows the name through every frame: the arrangement scales and slides as the shelf rises.
@@ -1604,8 +1590,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func finishRename(commit: Bool) {
         guard let renaming else { return }
         self.renaming = nil
-        renameClickMonitor.map(NSEvent.removeMonitor)
-        renameClickMonitor = nil
         // Return and Esc leave the field focused, so the stage takes the keyboard back; a click elsewhere keeps its new focus.
         let focused = window?.firstResponder
         if focused === renaming.field || focused === renaming.field.currentEditor() {
