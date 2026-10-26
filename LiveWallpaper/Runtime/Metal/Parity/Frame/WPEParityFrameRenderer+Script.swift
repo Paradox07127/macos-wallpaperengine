@@ -280,7 +280,7 @@ extension WPEParityFrameRenderer {
     }
 
     /// One common-scene sweep shares the native scene RNG across particle and camera queue consumers.
-    func updateSceneObjects(camera: WPEParityCamera, timeOfDay: Float) {
+    func updateSceneObjects(camera: WPEParityCamera, timeOfDay: Float, particleCursor: SIMD2<Float>) {
         instance.particles.beginFrame()
         instance.particles.scene.applyScriptInstanceFields(state: instance.state)
         let viewProjection = camera.projection * camera.view
@@ -295,7 +295,7 @@ extension WPEParityFrameRenderer {
                 applyTransforms()
             } else if instance.particles.scene.liveCount(id) != nil {
                 let frame = instance.state.isVisible(id)
-                    ? WPEParityParticleFrameContext(time: instance.clock.timeUniform, cursor: instance.pointer.position,
+                    ? WPEParityParticleFrameContext(time: instance.clock.timeUniform, cursor: particleCursor,
                                                     viewProjection: viewProjection, objectMatrix: layers.world(id),
                                                     timeOfDay: timeOfDay, previousFrametime: instance.clock.previousFrametime,
                                                     frametime: instance.clock.frametime,

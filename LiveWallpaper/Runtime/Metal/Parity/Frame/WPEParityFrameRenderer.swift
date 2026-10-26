@@ -27,6 +27,8 @@ struct WPEParityFrameInput {
     var cursor: SIMD2<Float> = .zero
     /// The SceneScript cursor in the same pixels when it is not `cursor`; g_PointerPosition stays on `cursor`.
     var scriptCursor: SIMD2<Float>?
+    /// False while the cursor is on another display or a letterbox margin; `cursor` then holds a stand-in position.
+    var cursorOverPicture = true
     var buttonDown = false
     /// 64 linear bins per channel; nil is silence.
     var audio: (left: [Float], right: [Float])?
@@ -995,9 +997,11 @@ final class WPEParityFrameRenderer {
         instance.pointer.advance(cursor: input.cursor, screen: screen, buttonDown: input.buttonDown)
         let scriptPointer = (input.scriptCursor ?? input.cursor) / screen.size
         let scriptCursor = scriptPointer * logicalSize
+        // Far enough that cursor-following emitters spawn out of sight and attract/repel thresholds miss the picture.
+        let particleCursor = input.cursorOverPicture ? instance.pointer.position : SIMD2<Float>(-1000, -1000)
         applyTransforms()
         applyLayerFields()
-        updateSceneObjects(camera: objectCamera, timeOfDay: daytime)
+        updateSceneObjects(camera: objectCamera, timeOfDay: daytime, particleCursor: particleCursor)
         selectCamera(dt: instance.clock.frametime)
         // A cleared camerafade flag hides the fade each frame; setting it back cannot add a fade that never loaded.
         var fadeAlpha = instance.cameraPaths.fadeAlpha

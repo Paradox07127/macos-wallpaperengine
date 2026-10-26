@@ -328,6 +328,28 @@ final class WPEParityParticleSceneTests: XCTestCase {
         XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(34, 32))[0], 0)
     }
 
+    func testCursorControlPointLeavesThePictureWhileTheCursorIsOffIt() async throws {
+        var particle = Self.burstParticle(renderer: [["name": "sprite"]])
+        particle["controlpoint"] = [["id": 0, "flags": 1]]
+        particle["emitter"] = [["name": "sphererandom", "controlpoint": 0, "rate": 0, "instantaneous": 1, "distancemax": 0]]
+        particle["initializer"] = [["name": "lifetimerandom", "min": 10, "max": 10],
+                                   ["name": "sizerandom", "min": 3, "max": 3]]
+        for overPicture in [true, false] {
+            let (renderer, queue) = try await syntheticRenderer(["particles/root.json": particle])
+            XCTAssertTrue(renderer.skipped.isEmpty, "\(renderer.skipped)")
+            let input = WPEParityFrameInput(cursor: SIMD2(16, 16), cursorOverPicture: overPicture)
+            guard case let .committed(buffer) = try renderer.encodeFrame(elapsed: 0.0625, input: input) else {
+                return XCTFail("skipped")
+            }
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(16, 16))[0], overPicture ? 255 : 0,
+                           "over picture: \(overPicture)")
+            XCTAssertEqual(try pixel(renderer.backbuffer, queue: queue, at: SIMD2(32, 32))[0], 0,
+                           "a cursor off the picture must not park the particle at the centre")
+        }
+    }
+
     func testLocalFollowMovesItsStaticLeafThenFreezesItWhenTheParentSlotIsReused() async throws {
         var parent = Self.burstParticle(renderer: [])
         parent["emitter"] = [

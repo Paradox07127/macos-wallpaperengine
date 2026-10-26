@@ -320,6 +320,8 @@ final class WPEParitySceneDriver {
     private var edgeButtonDown = false
     /// Backbuffer UV of the script cursor when it differs from the shader pointer; nil = the shader pointer.
     private var scriptPointer: SIMD2<Double>?
+    /// Set by `pointerInput`; true when frames are rendered without it.
+    private var pointerOverPicture = true
     private var lastTimestamp: CFTimeInterval?
     private var didLogFrameFailure = false
     private var submittedSceneBuffer: MTLCommandBuffer?
@@ -780,13 +782,14 @@ final class WPEParitySceneDriver {
         return true
     }
 
-    /// The cursor follows only with mouse interaction on and over
-    /// the picture, else it rests at the centre. Queued left-button edges go to the renderer in order, so a press
-    /// and release between two frames both reach the scripts. The position is backbuffer UV with a top-left origin.
+    /// The cursor follows only with mouse interaction on and over the picture, else it rests at the centre; off the
+    /// picture, cursor-following particles leave it instead. Queued left-button edges go to the renderer in order, so a
+    /// press and release between two frames both reach the scripts. The position is backbuffer UV with a top-left origin.
     func pointerInput(_ mailbox: WPEPointerMailbox) -> (position: SIMD2<Double>, buttonDown: Bool) {
         let centre = SIMD2<Double>(0.5, 0.5)
         let offScene = SIMD2<Float>(-1000, -1000)
         scriptPointer = nil
+        pointerOverPicture = false
         let reading = mailbox.read()
         guard let renderer, let plannedTarget else { return (centre, false) }
         let batch = mailbox.takeButtonEvents(through: reading.buttonCursor)
@@ -811,6 +814,7 @@ final class WPEParitySceneDriver {
         guard reading.pointerSample.isInsideView,
               let inScene = present.scenePointer(fromDrawablePointer: reading.pointerSample.position)
         else { return (centre, edgeButtonDown) }
+        pointerOverPicture = true
         // With follow off, a clicked layer would otherwise see the cursor leave for the centre right after the click.
         scriptPointer = mouseInteractionEnabled || reading.clickCaptureEnabled ? inScene : centre
         return (mouseInteractionEnabled ? inScene : centre, edgeButtonDown)
@@ -1020,7 +1024,8 @@ final class WPEParitySceneDriver {
         let pixels = SIMD2(Double(backbuffer.width), Double(backbuffer.height))
         let input = WPEParityFrameInput(cursor: SIMD2<Float>(pointer * pixels),
                                         scriptCursor: scriptPointer.map { SIMD2<Float>($0 * pixels) },
-                                        buttonDown: buttonDown, audio: audio.map { ($0.left, $0.right) }, date: date)
+                                        cursorOverPicture: pointerOverPicture, buttonDown: buttonDown,
+                                        audio: audio.map { ($0.left, $0.right) }, date: date)
         do {
             let start = CACurrentMediaTime()
             let state = presentState
@@ -1324,6 +1329,7 @@ final class WPEParitySceneDriver {
         shaderErrorSummary = (0, [])
         edgeButtonDown = false
         scriptPointer = nil
+        pointerOverPicture = true
         soundRuntime?.stop()
         soundRuntime = nil
         executor.lastPresentPass = nil
