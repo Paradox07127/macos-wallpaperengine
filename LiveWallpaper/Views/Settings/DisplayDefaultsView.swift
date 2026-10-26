@@ -44,27 +44,28 @@ struct DisplayDefaultsView: View {
     private var arrangementSection: some View {
         if !screenManager.screens.isEmpty {
             Section {
-                DisplayArrangementMap(
-                    items: screenManager.screens.map {
-                        DisplayArrangementItem(id: $0.id, frame: $0.frame)
-                    },
-                    height: 150
-                ) { item, size in
-                    if let screen = screenManager.screens.first(where: { $0.id == item.id }) {
-                        arrangementTile(screen, size: size)
+                // The button takes its own row: side-by-side displays fill the map's width, so a floating one would cover a tile.
+                VStack(alignment: .trailing, spacing: DesignTokens.Spacing.xs) {
+                    renameDisplayControl
+                    DisplayArrangementMap(
+                        items: screenManager.screens.map {
+                            DisplayArrangementItem(id: $0.id, frame: $0.frame)
+                        },
+                        height: 150
+                    ) { item, size in
+                        if let screen = screenManager.screens.first(where: { $0.id == item.id }) {
+                            arrangementTile(screen, size: size)
+                        }
                     }
                 }
                 .padding(.vertical, DesignTokens.Spacing.xs)
             } header: {
                 SettingsSearchSectionHeader("Displays", anchor: .displayDefaultsArrangement)
             } footer: {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                    renameDisplayControl
-                    Text("The defaults below apply when a display gets its first wallpaper. A display that already has one keeps its own settings; when they differ from these defaults, its playback controls show Reset playback (↺).")
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("The defaults below apply when a display gets its first wallpaper. A display that already has one keeps its own settings; when they differ from these defaults, its playback controls show Reset playback (↺).")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
