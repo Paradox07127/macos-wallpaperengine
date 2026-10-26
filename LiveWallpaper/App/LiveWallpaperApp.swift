@@ -183,6 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Logger.notice("Application starting — \(SystemSnapshot.launchBanner)", category: .startup)
 
         AppAppearance.stored(in: .appScoped()).apply()
+        ClickOutsideEndsEditing.install()
         if let hint = LogFileSink.shared.tailCommandHint {
             Logger.info("Tail the runtime log → \(hint)", category: .startup)
         }

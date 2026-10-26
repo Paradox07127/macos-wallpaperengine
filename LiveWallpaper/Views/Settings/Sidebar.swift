@@ -111,6 +111,7 @@ struct SettingsSidebar: View {
 
 private struct SettingsSidebarSearchField: View {
     @Binding var text: String
+    @State private var refocus = 0
 
     var body: some View {
         HStack(spacing: SettingsSidebarMetrics.searchContentSpacing) {
@@ -119,11 +120,12 @@ private struct SettingsSidebarSearchField: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
-            Input(text: $text)
+            Input(text: $text, refocus: refocus)
 
             if !text.isEmpty {
                 Button {
                     text = ""
+                    refocus += 1
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(DesignTokens.Typography.captionEmphasized)
@@ -149,6 +151,8 @@ private struct SettingsSidebarSearchField: View {
 
     private struct Input: NSViewRepresentable {
         @Binding var text: String
+        /// Each new value puts the keyboard back in the field.
+        let refocus: Int
 
         func makeNSView(context: Context) -> NSTextField {
             let field = NSTextField(frame: .zero)
@@ -171,6 +175,10 @@ private struct SettingsSidebarSearchField: View {
             let prompt = String(localized: "Search Settings", bundle: .appLanguage)
             field.placeholderString = prompt
             field.setAccessibilityLabel(prompt)
+            if context.coordinator.refocus != refocus {
+                context.coordinator.refocus = refocus
+                field.window?.makeFirstResponder(field)
+            }
         }
 
         func makeCoordinator() -> Coordinator {
@@ -179,6 +187,7 @@ private struct SettingsSidebarSearchField: View {
 
         final class Coordinator: NSObject, NSTextFieldDelegate {
             var text: Binding<String>
+            var refocus = 0
 
             init(text: Binding<String>) {
                 self.text = text
