@@ -81,7 +81,7 @@ struct TopBarBudgetTests {
     }
 
     private static let sortOrders = SavedLibraryModel.Sort.allCases
-    /// No filter, then every filter whose name the sort button carries after the sort's.
+    /// No filter, then each filter: an active one adds the count badge to the Filters button.
     private static let filters: [SavedLibraryModel.Filter?] = [nil] + SavedLibraryModel.Filter.menuOrder
 
     /// The real filter row laid out in one language: the glass controls have no size to add up.
@@ -103,7 +103,7 @@ struct TopBarBudgetTests {
     }
 
     @MainActor
-    @Test("At 1040 the compact filter row fits its chips, search button, sort with any filter named, and add in all five languages")
+    @Test("At 1040 the compact filter row fits its chips, search button, filters, sort, and add in all five languages")
     func filterRowFitsAt1040() throws {
         let available = StageGeometry.minimumWindow.width - 2 * DesignTokens.EditDesk.Spacing.gutter
         #expect(
@@ -113,7 +113,7 @@ struct TopBarBudgetTests {
         #if !LITE_BUILD
         #expect(
             Self.filterRow(language: "en", sort: .name, filter: .cantRun).width > Self.filterRow(language: "en", sort: .name).width,
-            "control: the sort button did not carry the filter's name, so no row below measured one"
+            "control: an active filter did not widen the row, so no row below measured the Filters badge"
         )
         #endif
         for language in Self.languages {

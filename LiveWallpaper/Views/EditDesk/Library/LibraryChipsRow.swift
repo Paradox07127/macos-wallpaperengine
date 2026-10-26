@@ -45,8 +45,15 @@ struct LibraryChipsRow: View {
             AdaptiveLibrarySearch(text: $searchText, prompt: searchPrompt, shortPrompt: searchShortPrompt, stage: stage)
         } sort: {
             LibraryOnlyControl(stage: stage) {
-                LibrarySortControl(label: sortLabel) { sortMenu }
-                    .id(stage.snappedIndex)
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    #if !LITE_BUILD
+                    if showsFilterControl {
+                        filterControl
+                    }
+                    #endif
+                    LibrarySortControl(label: Text(Self.sortTitle(sort))) { sortMenu }
+                }
+                .id(stage.snappedIndex)
             }
         } actions: {
             if showsAerialsControls {
@@ -56,16 +63,6 @@ struct LibraryChipsRow: View {
         }
     }
 
-    private var sortLabel: Text {
-        #if !LITE_BUILD
-        if let filter {
-            return Text("\(Text(Self.sortTitle(sort))) · \(Self.filterTitle(filter))")
-        }
-        #endif
-        return Text(Self.sortTitle(sort))
-    }
-
-    @ViewBuilder
     private var sortMenu: some View {
         Picker("Sort", selection: $sort) {
             ForEach(SavedLibraryModel.Sort.allCases, id: \.self) { order in
@@ -74,8 +71,20 @@ struct LibraryChipsRow: View {
         }
         .labelsHidden()
         .pickerStyle(.inline)
-        #if !LITE_BUILD
-        Section("Filters") {
+    }
+
+    #if !LITE_BUILD
+    /// No filter ever matches an aerial, so that chip keeps the button only while a filter is on, to turn it off.
+    private var showsFilterControl: Bool {
+        selection != "\(SavedLibraryModel.Chip.aerials)" || filter != nil
+    }
+
+    private var filterControl: some View {
+        let activeCount = filter == nil ? 0 : 1
+        return LibrarySortControl(
+            name: Text("Filters"),
+            value: activeCount > 0 ? Text("\(activeCount) active") : Text("None active")
+        ) {
             ForEach(SavedLibraryModel.Filter.menuOrder, id: \.self) { option in
                 let count = filterCount(option)
                 Toggle(isOn: Binding(
@@ -85,9 +94,18 @@ struct LibraryChipsRow: View {
                     // The chosen filter stays clickable at zero, so it can still be turned off.
                     .disabled(count == 0 && filter != option)
             }
+        } label: {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Image(systemName: "line.3.horizontal.decrease")
+                Text("Filters")
+                if activeCount > 0 {
+                    ActiveFilterCountBadge(count: activeCount)
+                }
+            }
         }
-        #endif
+        .help(Text("Filter options"))
     }
+    #endif
 
     private var importButton: some View {
         GlassIconButton("plus", size: .large, action: onImport)
@@ -252,16 +270,18 @@ private struct CenteredLibraryToolbarLayout: Layout {
     }
 }
 
-struct LibrarySortControl<Content: View>: View {
-    let label: Text
+struct LibrarySortControl<Label: View, Content: View>: View {
+    let name: Text
+    let value: Text
     @ViewBuilder let content: () -> Content
+    @ViewBuilder let label: () -> Label
 
     var body: some View {
         NativeMenuButton {
             content()
         } label: {
             HStack(spacing: DesignTokens.Spacing.xxs) {
-                label
+                label()
                 Image(systemName: "chevron.down")
                     .imageScale(.small)
             }
@@ -273,8 +293,14 @@ struct LibrarySortControl<Content: View>: View {
             .adaptiveGlassSurface(.capsule, interactive: true)
         }
         .fixedSize()
-        .accessibilityLabel(Text("Sort"))
-        .accessibilityValue(label)
+        .accessibilityLabel(name)
+        .accessibilityValue(value)
+    }
+}
+
+extension LibrarySortControl where Label == Text {
+    init(label: Text, @ViewBuilder content: @escaping () -> Content) {
+        self.init(name: Text("Sort"), value: label, content: content) { label }
     }
 }
 

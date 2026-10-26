@@ -24,12 +24,7 @@ struct WorkshopFiltersToggle: View {
                 Image(systemName: "line.3.horizontal.decrease")
                 Text("Filters")
                 if activeFilterCount > 0 {
-                    Text(verbatim: "\(activeFilterCount)")
-                        .font(DesignTokens.Typography.badge)
-                        .foregroundStyle(DesignTokens.Colors.onAccentFill)
-                        // No vertical padding: any would stand the badge taller than the 13pt label and the button past `controlHeight`.
-                        .padding(.horizontal, 5)
-                        .background(Color.accentColor, in: Capsule())
+                    ActiveFilterCountBadge(count: activeFilterCount)
                 }
                 Image(systemName: "chevron.down")
                     .font(DesignTokens.Typography.badge)
@@ -48,6 +43,19 @@ struct WorkshopFiltersToggle: View {
         .accessibilityValue(activeFilterCount > 0
             ? Text("\(activeFilterCount) active")
             : Text("None active"))
+    }
+}
+
+struct ActiveFilterCountBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text(verbatim: "\(count)")
+            .font(DesignTokens.Typography.badge)
+            .foregroundStyle(DesignTokens.Colors.onAccentFill)
+            // No vertical padding: any would stand the badge taller than the 13pt label and the button past `controlHeight`.
+            .padding(.horizontal, 5)
+            .background(Color.accentColor, in: Capsule())
     }
 }
 
