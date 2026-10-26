@@ -39,4 +39,39 @@ public extension View {
         padding(.horizontal, DesignTokens.LibraryGrid.horizontalPadding)
             .padding(.vertical, DesignTokens.LibraryGrid.verticalPadding)
     }
+
+    /// macOS 26+: the content scrolls under the bars and fades at their soft edges; earlier: the bars stack above and below it.
+    @ViewBuilder
+    func libraryScrollBars(
+        @ViewBuilder top: () -> some View,
+        @ViewBuilder bottom: () -> some View
+    ) -> some View {
+        if #available(macOS 26.0, *) {
+            scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+                .safeAreaBar(edge: .top, spacing: 0, content: top)
+                .safeAreaBar(edge: .bottom, spacing: 0, content: bottom)
+                .clipped()
+        } else {
+            VStack(spacing: 0) {
+                top()
+                self
+                bottom()
+            }
+        }
+    }
+
+    /// The footer-only form of `libraryScrollBars(top:bottom:)`.
+    @ViewBuilder
+    func libraryScrollBars(@ViewBuilder bottom: () -> some View) -> some View {
+        if #available(macOS 26.0, *) {
+            scrollEdgeEffectStyle(.soft, for: .bottom)
+                .safeAreaBar(edge: .bottom, spacing: 0, content: bottom)
+                .clipped()
+        } else {
+            VStack(spacing: 0) {
+                self
+                bottom()
+            }
+        }
+    }
 }

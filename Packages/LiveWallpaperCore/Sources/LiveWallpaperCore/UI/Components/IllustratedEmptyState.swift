@@ -21,6 +21,18 @@ public struct EmptyStateButtonAction {
     }
 }
 
+public extension EmptyStateButtonAction {
+    /// nil when neither a search nor a filter is narrowing the results.
+    static func clearing(search: Bool, filters: Bool, action: @escaping () -> Void) -> EmptyStateButtonAction? {
+        switch (search, filters) {
+        case (true, true): EmptyStateButtonAction("Clear search and filters", action: action)
+        case (true, false): EmptyStateButtonAction("Clear search", action: action)
+        case (false, true): EmptyStateButtonAction("Clear filters", action: action)
+        case (false, false): nil
+        }
+    }
+}
+
 public struct IllustratedEmptyState<Extra: View>: View {
     let symbol: String
     let title: Text

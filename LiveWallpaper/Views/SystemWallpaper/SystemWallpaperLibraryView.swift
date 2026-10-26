@@ -61,7 +61,8 @@ struct SystemWallpaperLibraryView: View {
             SystemWallpaperAddMenu()
         }
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
-        .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+        .padding(.top, DesignTokens.EditDesk.Spacing.filterRowInset)
+        .padding(.bottom, DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.LibraryGrid.verticalPadding)
     }
 
     // MARK: - Content
@@ -87,8 +88,7 @@ struct SystemWallpaperLibraryView: View {
     }
 
     private var gallery: some View {
-        VStack(spacing: 0) {
-            galleryScroll
+        galleryScroll.libraryScrollBars {
             LibraryStatusBar(summary: statusSummary) {
                 if service.diskUsageBytes > 0 {
                     Text("Disk usage: \(service.diskUsageBytes, format: .byteCount(style: .file))")
@@ -97,8 +97,12 @@ struct SystemWallpaperLibraryView: View {
         }
     }
 
+    private var searchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var filteredItems: [SystemWallpaperManifest.Item] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = searchQuery
         return query.isEmpty ? service.items : service.items.filter { $0.title.localizedCaseInsensitiveContains(query) }
     }
 
@@ -113,8 +117,8 @@ struct SystemWallpaperLibraryView: View {
         if filteredItems.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
-                title: "No Results",
-                primary: EmptyStateButtonAction("Clear filters") { searchText = "" }
+                title: "No results for “\(searchQuery)” in System Wallpaper",
+                primary: .clearing(search: true, filters: false) { searchText = "" }
             )
         } else {
             ScrollView {

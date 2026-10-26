@@ -46,11 +46,12 @@ struct SchemeLibraryView: View {
         if store.schemes.isEmpty {
             emptyState
         } else {
-            VStack(spacing: 0) {
-                filterBar(availableTypes: availableTypes)
-                gallery(visible)
-                LibraryStatusBar(summary: statusSummary(shown: visible.count))
-            }
+            gallery(visible, availableTypes: availableTypes)
+                .libraryScrollBars {
+                    filterBar(availableTypes: availableTypes)
+                } bottom: {
+                    LibraryStatusBar(summary: statusSummary(shown: visible.count))
+                }
         }
     }
 
@@ -78,7 +79,8 @@ struct SchemeLibraryView: View {
             EmptyView()
         }
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
-        .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+        .padding(.top, DesignTokens.EditDesk.Spacing.filterRowInset)
+        .padding(.bottom, DesignTokens.EditDesk.Spacing.filterRowToCards - DesignTokens.LibraryGrid.verticalPadding)
     }
 
     /// Schemes sort by last capture and applying one records no use, so the date order is not "Recently Used".
@@ -127,12 +129,13 @@ struct SchemeLibraryView: View {
     }
 
     @ViewBuilder
-    private func gallery(_ visible: [ScreenScheme]) -> some View {
+    private func gallery(_ visible: [ScreenScheme], availableTypes: Set<WallpaperType>) -> some View {
         if visible.isEmpty {
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
-                title: "No Results",
-                primary: EmptyStateButtonAction("Clear filters") {
+                title: query.isEmpty ? "No Results" : "No results for “\(query)” in Schemes",
+                primary: .clearing(search: !query.isEmpty, filters: isTypeFilterActive(availableTypes: availableTypes)) {
                     searchText = ""
                     typeFilter = .all
                 }
@@ -187,9 +190,15 @@ struct SchemeLibraryView: View {
         Set(store.schemes.map(\.configuration.activeWallpaper.wallpaperType))
     }
 
+    /// A selection left over from a type no longer in the library filters nothing.
+    private func isTypeFilterActive(availableTypes: Set<WallpaperType>) -> Bool {
+        guard availableTypes.count > 1, case let .type(type) = typeFilter else { return false }
+        return availableTypes.contains(type)
+    }
+
     private func filteredSchemes(availableTypes: Set<WallpaperType>) -> [ScreenScheme] {
         var result = store.schemes
-        if availableTypes.count > 1, case let .type(type) = typeFilter, availableTypes.contains(type) {
+        if isTypeFilterActive(availableTypes: availableTypes), case let .type(type) = typeFilter {
             result = result.filter { $0.configuration.activeWallpaper.wallpaperType == type }
         }
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)

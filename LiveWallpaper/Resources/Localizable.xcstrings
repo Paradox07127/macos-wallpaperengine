@@ -15691,6 +15691,42 @@
         }
       }
     },
+    "Clear search and filters" : {
+      "comment" : "Button on an empty library result that clears both the search text and the type filter.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear search and filters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar búsqueda y filtros"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索とフィルタをクリア"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除搜索和筛选"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除搜尋和篩選"
+          }
+        }
+      }
+    },
     "Clear Sky" : {
       "comment" : "Weather condition.",
       "localizations" : {
@@ -44919,6 +44955,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這些篩選條件沒有結果。"
+          }
+        }
+      }
+    },
+    "No results for “%@” in Schemes" : {
+      "comment" : "Empty scheme library search result. Placeholder is the query.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No results for “%@” in Schemes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay resultados para «%@» en Esquemas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成に「%@」に一致する項目はありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案中没有与“%@”匹配的结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案中沒有與「%@」相符的結果"
+          }
+        }
+      }
+    },
+    "No results for “%@” in System Wallpaper" : {
+      "comment" : "Empty system wallpaper library search result. Placeholder is the query.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No results for “%@” in System Wallpaper"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay resultados para «%@» en Fondo del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙に「%@」に一致する項目はありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸中没有与“%@”匹配的结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布中沒有與「%@」相符的結果"
           }
         }
       }
