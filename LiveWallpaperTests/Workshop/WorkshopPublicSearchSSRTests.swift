@@ -70,18 +70,7 @@ struct WorkshopPublicSearchSSRTests {
         #expect(page.nextCursor == "2")
 
         let first = try #require(page.items.first)
-        #expect(first.title == "windows xp2（朋友的酒）")
-        #expect(first.creatorID == "76561190000000024")
-        #expect(first.creatorPersonaName == "创作者01号")
-        #expect(first.previewImageURL?.absoluteString
-            == "https://images.steamusercontent.com/ugc/12506494599842728983/02B16F0FC38B65438430F8CEAE44F9B38479522A/")
-        #expect(first.tags == ["Video", "Abstract", "Wallpaper", "3840 x 2160", "Everyone"])
-        #expect(first.shortDescription == "测试样例EF-Hijkl，析字P内 Stuvwxyz占位数据 染，析字段")
-        #expect(first.subscriptionCount == 10605)
-        #expect(first.viewCount == 2046)
-        #expect(first.favoriteCount == 392)
-        #expect(first.fileSizeBytes == 1_123_226_835)
-        #expect(first.timeUpdated == Date(timeIntervalSince1970: 1_788_435_379))
+        expectFirstItem(first)
 
         let second = page.items[1]
         #expect(second.title == "The Binding of Isaac - DOGMA")
@@ -106,6 +95,21 @@ struct WorkshopPublicSearchSSRTests {
             }
             return false
         })
+    }
+
+    private func expectFirstItem(_ first: WorkshopQueryItem) {
+        #expect(first.title == "windows xp2（朋友的酒）")
+        #expect(first.creatorID == "76561190000000024")
+        #expect(first.creatorPersonaName == "创作者01号")
+        #expect(first.previewImageURL?.absoluteString
+            == "https://images.steamusercontent.com/ugc/12506494599842728983/02B16F0FC38B65438430F8CEAE44F9B38479522A/")
+        #expect(first.tags == ["Video", "Abstract", "Wallpaper", "3840 x 2160", "Everyone"])
+        #expect(first.shortDescription == "测试样例EF-Hijkl，析字P内 Stuvwxyz占位数据 染，析字段")
+        #expect(first.subscriptionCount == 10605)
+        #expect(first.viewCount == 2046)
+        #expect(first.favoriteCount == 392)
+        #expect(first.fileSizeBytes == 1_123_226_835)
+        #expect(first.timeUpdated == Date(timeIntervalSince1970: 1_788_435_379))
     }
 
     @Test("Control: a page without the SSR payload falls back to id harvesting")

@@ -137,11 +137,20 @@ public struct AtomicFileStore<Value: Codable> {
         }
     }
 
-    /// Attempts every file even after a failure, then throws the first removal error.
+    /// Serialize with writers, retaining the lock inode for any processes already waiting on it.
+    /// Attempts every payload file even after a failure, then throws the first removal error.
     public func delete() throws {
+        guard fileExists(fileURL.deletingLastPathComponent()) else { return }
+        let lockFD: Int32
+        do {
+            lockFD = try acquireLock()
+        } catch {
+            throw StoreError.deleteFailed(underlying: error)
+        }
+        defer { releaseLock(lockFD) }
         var firstFailure: Error?
         var removedAny = false
-        for url in [fileURL, backupURL, tempURL, lockURL] where fileExists(url) {
+        for url in [fileURL, backupURL, tempURL] where fileExists(url) {
             do {
                 try fileManager.removeItem(at: url)
                 removedAny = true

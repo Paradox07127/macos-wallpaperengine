@@ -38,8 +38,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SKU" in
-  pro)  APPCAST="$ROOT/appcast-pro.xml";  TITLE="Loomscreen Pro" ;;
-  lite) APPCAST="$ROOT/appcast-lite.xml"; TITLE="Loomscreen" ;;
+  pro)  APPCAST="$ROOT/appcast-pro.xml";  TITLE="Loomscreen Pro"; APP_PLIST="$ROOT/LiveWallpaperInfo.plist" ;;
+  lite) APPCAST="$ROOT/appcast-lite.xml"; TITLE="Loomscreen"; APP_PLIST="$ROOT/LoomscreenInfo.plist" ;;
   *) echo "ERROR: --sku must be 'pro' or 'lite' (got: ${SKU:-<missing>})" >&2; exit 64 ;;
 esac
 
@@ -168,6 +168,10 @@ if [[ $SIGN_STATUS -ne 0 || "$SIG_ATTRS" != *edSignature=* ]]; then
   echo "ERROR: sign_update produced no signature: $SIG_ATTRS" >&2
   exit 1
 fi
+
+# Check the exact archive independently against the public key shipped by this SKU,
+# before writing an appcast. A successful signer alone does not establish key pairing.
+xcrun swift "$ROOT/scripts/verify-sparkle-signature.swift" "$DMG" "$APP_PLIST" "$SIGN_OUT"
 
 DMG_NAME="$(basename "$DMG")"
 NOTES_URL="https://github.com/$REPO_SLUG/releases/tag/$TAG_PREFIX$VERSION"

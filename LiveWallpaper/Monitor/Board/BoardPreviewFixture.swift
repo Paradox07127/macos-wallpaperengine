@@ -107,16 +107,16 @@ enum MonitorBoardPreviewFixture {
             "A deliberately long application name",
             "Xcode", "Safari", "kernel_task", "WindowServer",
             "Music", "Terminal", "Photos", "Mail", "Finder",
-        ]
+        ] + (11 ... 40).map { "Example process \($0)" }
         return names.enumerated().map { index, name in
             MonitorProcessSample(
                 name: name,
-                cpuPercent: index == 0 ? 327 : Double(48 - index * 4),
-                memBytes: UInt64(1_400_000_000 - index * 90_000_000),
+                cpuPercent: index == 0 ? 327 : max(0.1, Double(48 - index * 4)),
+                memBytes: UInt64(max(20_000_000, 1_400_000_000 - index * 90_000_000)),
                 pid: 400 + index,
                 kind: index < 4 ? "app" : "background",
-                ioReadBytesPerSec: Double(9_000_000 - index * 600_000),
-                ioWriteBytesPerSec: Double(3_000_000 - index * 200_000)
+                ioReadBytesPerSec: Double(max(0, 9_000_000 - index * 600_000)),
+                ioWriteBytesPerSec: Double(max(0, 3_000_000 - index * 200_000))
             )
         }
     }

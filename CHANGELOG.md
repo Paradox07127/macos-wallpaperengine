@@ -13,6 +13,33 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.9.3] — 2026-10-27
+
+### Added
+
+- The music layer can follow the system Now Playing source, including compatible
+  players beyond Spotify and Apple Music.
+- Drag one display onto another in Overview to copy its wallpaper setup.
+
+### Changed
+
+- Library, Workshop, Schemes and System Wallpaper content scroll beneath their
+  filter and count bars. Filters, empty results and context menus are clearer.
+- Rename displays from the arrangement or Settings; apply schemes and Workshop
+  items to a named display from their menus.
+- Simplify music visuals and process-widget sizing, and show wallpaper update
+  actions in the detail header.
+
+### Fixed
+
+- Cancelling a display drag keeps it cancelled until the mouse button is released.
+- Cover captures retry safely after transient failures, and overlay modals keep
+  covered display controls from handling input.
+- Persistence and export cleanup preserve file-operation ordering and report
+  failures; Pro handles excess variable-font coordinates safely.
+- Verify update archives against the app's existing Sparkle public key before
+  publishing their appcast entries.
+
 ## [0.9.2] — 2026-10-25
 
 ### Added

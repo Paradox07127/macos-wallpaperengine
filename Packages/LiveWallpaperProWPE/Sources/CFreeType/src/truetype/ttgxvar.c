@@ -3496,8 +3496,8 @@
         coords[i] = a->def;
     }
 
-    for ( ; i < num_coords; i++, a++ )
-      coords[i] = a->def;
+    for ( ; i < num_coords; i++ )
+      coords[i] = 0;
 
     return FT_Err_Ok;
   }

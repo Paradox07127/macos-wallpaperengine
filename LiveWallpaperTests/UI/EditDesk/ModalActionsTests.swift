@@ -455,7 +455,6 @@ struct ModalActionsTests {
             String(localized: "Add Bookmark", bundle: .appLanguage),
             String(localized: "Show in Finder", bundle: .appLanguage),
             String(localized: "Open in Steam", bundle: .appLanguage),
-            String(localized: "Download Again", bundle: .appLanguage),
             String(localized: "Delete", bundle: .appLanguage),
         ])
         installed.last?.action()
@@ -477,7 +476,7 @@ struct ModalActionsTests {
             [title("Apply to")],
             [title("Add Bookmark"), title("Rename"), title("Add to System Wallpaper")],
             [title("Show in Finder"), title("Open in Steam")],
-            [title("Download Again")],
+            [title("Update")],
             [title("Remove from Wallpaper Library"), title("Delete")],
         ])
     }
@@ -776,7 +775,7 @@ struct ModalActionsTests {
         #expect(actions.deleteInstalled != nil)
         #expect(actions.openInSteam != nil)
         #expect(actions.showInFinder != nil)
-        #expect(actions.checkForUpdate != nil)
+        #expect(actions.checkForUpdate == nil)
         #expect(actions.cancelUpdate != nil)
         let refreshed = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
         fixture.items = [refreshed]
@@ -790,7 +789,7 @@ struct ModalActionsTests {
             return
         }
         #expect(received == entry)
-        #expect(updated == [entry])
+        #expect(updated.isEmpty)
         #expect(deleted == [entry])
         #expect(cancelled == [123])
         fixture.items = []
@@ -799,14 +798,14 @@ struct ModalActionsTests {
         actions.cancelUpdate?()
         actions.deleteInstalled?()
         #expect(fixture.applied.count == 1)
-        #expect(updated.count == 1 && deleted.count == 1 && cancelled.count == 1)
+        #expect(updated.isEmpty && deleted.count == 1 && cancelled.count == 1)
         let local = modal.actions(for: workshop("local-folder"))
         #expect(local.openInSteam == nil)
         #expect(local.checkForUpdate == nil)
         #expect(local.deleteInstalled != nil)
     }
 
-    @Test("The status line offers Update while a newer version waits, Cancel while it downloads, Download Again otherwise")
+    @Test("Only an available update has a title-row button; the status line only offers cancellation")
     func statusLineButtonFollowsTheUpdateState() throws {
         let fixture = Fixture()
         let item = workshop("123")
@@ -816,9 +815,12 @@ struct ModalActionsTests {
         var inputs = fixture.inputs()
         inputs.update = { _ in updated += 1 }
         inputs.cancelUpdate = { cancelled.append($0) }
-        let actions = fixture.modal(inputs: inputs).actions(for: item)
+        let actions = WallpaperModalActions(
+            applyTo: { _ in }, applyToAllDisplays: {},
+            checkForUpdate: { updated += 1 }, cancelUpdate: { cancelled.append(123) }
+        )
 
-        let update = try #require(actions.statusButton(for: .available))
+        let update = try #require(actions.updateButton(for: .available))
         #expect(update.title == String(localized: "Update", bundle: .appLanguage))
         update.action()
         #expect(updated == 1)
@@ -827,11 +829,10 @@ struct ModalActionsTests {
         cancel.action()
         #expect(cancelled == [123])
         for state: InstalledItemExtras.UpdateState? in [.upToDate, .unknown, .failed(message: "Offline"), nil] {
-            let again = try #require(actions.statusButton(for: state), Comment(rawValue: "\(String(describing: state))"))
-            #expect(again.title == String(localized: "Download Again", bundle: .appLanguage))
-            again.action()
+            #expect(actions.statusButton(for: state) == nil)
+            #expect(actions.updateButton(for: state) == nil)
         }
-        #expect(updated == 5)
+        #expect(updated == 1)
         // Control: an item with no Steam page has nothing to update from.
         let local = fixture.modal(inputs: inputs).actions(for: workshop("local-folder"))
         for state: InstalledItemExtras.UpdateState? in [.available, .upToDate, .unknown, .failed(message: "Offline"), nil] {
@@ -851,9 +852,11 @@ struct ModalActionsTests {
         #expect(modal.downloadStatus(for: workshop("local-folder")) == nil)
     }
 
-    @Test func installedUpdateFlagsDistinguishAvailableFromUpToDate() async {
+    @Test func installedUpdateFlagsDistinguishAvailableFromUpToDate() async throws {
         let fixture = Fixture()
         let item = workshop("123", importedAt: Date(timeIntervalSince1970: 10))
+        fixture.items = [item]
+        var updates = 0
         guard case let .workshop(entry) = item.source else {
             Issue.record("Expected a Workshop fixture")
             return
@@ -866,12 +869,23 @@ struct ModalActionsTests {
         ))
         var inputs = fixture.inputs()
         inputs.installedLibrary = model
+        inputs.update = { _ in updates += 1 }
         let modal = fixture.modal(inputs: inputs)
         model.onAppear()
         #expect(await modal.content(for: item).installed?.updateState == .upToDate)
+        #expect(modal.actions(for: item).checkForUpdate == nil)
         fixture.remoteEpochs = ["123": 20]
         model.onAppear()
         #expect(await modal.content(for: item).installed?.updateState == .available)
+        let availableUpdate = modal.actions(for: item).checkForUpdate
+        let update = try #require(availableUpdate)
+        update()
+        #expect(updates == 1)
+        fixture.remoteEpochs = [:]
+        model.onAppear()
+        update()
+        #expect(updates == 1, "a stale Update button must not turn into re-download once the update is gone")
+        #expect(modal.actions(for: item).checkForUpdate == nil)
         model.onDisappear()
     }
 

@@ -39,7 +39,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         SystemMetricsSamplers.sampleTopProcesses(
             previous: previous,
             interval: interval,
-            limit: 12,
+            limit: Int.max,
             includeIO: includeIO
         )
     }

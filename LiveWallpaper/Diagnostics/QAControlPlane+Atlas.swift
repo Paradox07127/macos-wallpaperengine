@@ -28,7 +28,6 @@ extension QAControlPlane {
             guard let raw = try QALibraryCatalog.optionalString(arguments["page"], key: "page"), let page = Self.pages[raw] else {
                 throw QAError.message("Pass displayID, or page: \(Self.pages.keys.sorted().joined(separator: ", "))")
             }
-            router.closeDetail()
             if page == .settings {
                 let destination = try QALibraryCatalog.optionalString(arguments["settings"], key: "settings").map { raw in
                     guard let value = SettingsNavigation(rawValue: raw) else {
@@ -40,8 +39,10 @@ extension QAControlPlane {
                     guard let value = SettingsSearchAnchor(rawValue: raw) else { throw QAError.message("Unknown anchor \(raw)") }
                     return value
                 }
+                router.closeDetail()
                 router.openSettings(destination, anchor: anchor)
             } else {
+                router.closeDetail()
                 router.select(page)
             }
         }

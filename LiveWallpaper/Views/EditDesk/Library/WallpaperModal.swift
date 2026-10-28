@@ -47,6 +47,7 @@ struct WallpaperModal: View {
             title: content.title,
             pageID: content.itemID,
             actions: actions.headerActions(requestRename: requestRename, requestDelete: requestDelete),
+            primaryAction: actions.updateButton(for: content.installed?.updateState),
             onDismiss: onDismiss,
             onEscape: cancelDragForEscape,
             onTargetShortcut: applyToShortcut,

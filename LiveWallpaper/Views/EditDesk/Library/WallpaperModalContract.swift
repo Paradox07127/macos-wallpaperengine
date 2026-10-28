@@ -232,7 +232,7 @@ struct WallpaperModalActions {
     var showInFinder: (@MainActor () -> Void)?
     var openInSteam: (@MainActor () -> Void)?
     var removeFromSaved: (@MainActor () -> Void)?
-    /// Installed Workshop items only. Downloads the item again whether or not Steam has a newer version.
+    /// Installed Workshop items with an available update only.
     var checkForUpdate: (@MainActor () -> Void)?
     var cancelUpdate: (@MainActor () -> Void)?
     var deleteInstalled: (@MainActor () -> Void)?
@@ -250,7 +250,7 @@ struct WallpaperModalActions {
 
 extension WallpaperModalActions {
     /// The modal's title-row buttons: every context-menu row that is not an apply, System Wallpaper or an update, each
-    /// once. The bottom row applies and the status line updates. `requestRename` and `requestDelete` open the
+    /// once. The bottom row applies; the primary title-row button updates. `requestRename` and `requestDelete` open the
     /// presenter's own alert and confirmation.
     func headerActions(
         requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
@@ -277,19 +277,19 @@ extension WallpaperModalActions {
         return actions
     }
 
-    /// The status line's button: Update while a newer version waits on Steam, Cancel while it downloads,
-    /// Download Again otherwise.
+    /// Updates live in the title row. The status line only cancels an active transfer.
     func statusButton(for state: InstalledItemExtras.UpdateState?) -> ModalExtraButton? {
         switch state {
-        case .available:
-            checkForUpdate.map { ModalExtraButton(title: String(localized: "Update", bundle: .appLanguage), action: $0) }
         case .checking:
             cancelUpdate.map { ModalExtraButton(title: String(localized: "Cancel", bundle: .appLanguage), action: $0) }
-        case .unknown, .upToDate, .failed, nil:
-            checkForUpdate.map {
-                ModalExtraButton(title: String(localized: "Download Again", bundle: .appLanguage), action: $0)
-            }
+        default:
+            nil
         }
+    }
+
+    func updateButton(for state: InstalledItemExtras.UpdateState?) -> ModalExtraButton? {
+        guard state == .available else { return nil }
+        return checkForUpdate.map { ModalExtraButton(title: String(localized: "Update", bundle: .appLanguage), action: $0) }
     }
 }
 
@@ -357,10 +357,7 @@ extension WallpaperModalActions {
             ))
         } else if let checkForUpdate {
             download.append(StageMenuItem(
-                title: String(
-                    localized: "Download Again", bundle: .appLanguage,
-                    comment: "Context menu item on an installed Workshop wallpaper: downloads it from Steam again, replacing the copy in the library."
-                ),
+                title: String(localized: "Update", bundle: .appLanguage),
                 isEnabled: true, action: checkForUpdate
             ))
         }

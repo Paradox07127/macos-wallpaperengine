@@ -92,6 +92,50 @@ struct LocalizationCoverageTests {
         return chars.count
     }
 
+    /// Read the outer argument, so a nested call or a string mentioning `bundle:` cannot satisfy it.
+    private static func localizedBundleExpression(in call: String) -> String? {
+        guard let opening = call.firstIndex(of: "(") else { return nil }
+        var depth = 0
+        var quoted = false
+        var escaped = false
+        var argument = ""
+        func bundleValue(_ argument: String) -> String? {
+            let parts = argument.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, parts[0].trimmingCharacters(in: .whitespacesAndNewlines) == "bundle" else { return nil }
+            return parts[1].filter { !$0.isWhitespace }
+        }
+        for ch in call[call.index(after: opening)...] {
+            if quoted {
+                argument.append(ch)
+                if escaped {
+                    escaped = false
+                } else if ch == "\\" {
+                    escaped = true
+                } else if ch == "\"" {
+                    quoted = false
+                }
+                continue
+            }
+            if ch == "\"" {
+                quoted = true
+            } else if ch == "(" || ch == "[" || ch == "{" {
+                depth += 1
+            } else if ch == ")", depth == 0 {
+                return bundleValue(argument)
+            } else if ")]}".contains(ch) {
+                depth -= 1
+            } else if ch == ",", depth == 0 {
+                if let value = bundleValue(argument) {
+                    return value
+                }
+                argument = ""
+                continue
+            }
+            argument.append(ch)
+        }
+        return nil
+    }
+
     @Test("String catalogs include supported localizations for every entry")
     func catalogsIncludeSupportedTranslations() throws {
         for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
@@ -324,6 +368,16 @@ struct LocalizationCoverageTests {
         // link LiveWallpaperCore and ships no catalog of its own.
         let sharedWithAppExtension = ["LiveWallpaper/Models/SystemWallpaperManifest.swift"]
 
+        // These helpers deliberately select a supplied language or build the all-language search index.
+        let languageSelectors: [String: String] = [
+            "LiveWallpaper/Views/Settings/Navigation.swift": "bundle",
+            "LiveWallpaper/App/LiveWallpaperApp.swift": "language.localizationBundle()",
+            "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/SettingRow.swift": "preference.localizationBundle(in:.main)",
+        ]
+        #expect(Self.localizedBundleExpression(in: #"String(localized: "bundle: .appLanguage", bundle: .main)"#) == ".main")
+        #expect(Self.localizedBundleExpression(in: #"String(localized: nested(bundle: .appLanguage))"#) == nil)
+        #expect(Self.localizedBundleExpression(in: #"String(localized: nested("x"), bundle: .appLanguage, locale: .current)"#) == ".appLanguage")
+
         var offenders: [String] = []
         var checked = 0
         for file in try Self.projectSources.get() {
@@ -332,7 +386,10 @@ struct LocalizationCoverageTests {
             }
             for call in Self.stringLocalizedCalls(in: file.text) {
                 checked += 1
-                if !call.contains("bundle:") {
+                let expression = Self.localizedBundleExpression(in: call)
+                let selector = languageSelectors.first { file.path.hasSuffix($0.key) }?.value
+                if expression != ".appLanguage", expression != "Bundle.appLanguage",
+                   expression == nil || expression != selector {
                     let firstLine = call.split(separator: "\n").first.map(String.init) ?? call
                     offenders.append("\(file.path): \(firstLine.prefix(80))")
                 }
@@ -342,7 +399,7 @@ struct LocalizationCoverageTests {
         #expect(checked > 300, "Only \(checked) call sites matched — the scan stopped working")
         #expect(
             offenders.isEmpty,
-            "String(localized:) without a bundle: \(offenders.prefix(10).joined(separator: "; "))"
+            "String(localized:) without an in-app language bundle: \(offenders.prefix(10).joined(separator: "; "))"
         )
     }
 

@@ -325,9 +325,10 @@ private final class GridPreviewHost {
 
     func hue(at point: CGPoint) throws -> FrameHue {
         // Drawn from the host, the tiles come out blank while the nav pill's glass selection capsule is in the window.
+        let grid = try #require(grid, "the library grid is not mounted")
         let image = try render(
             CGRect(x: point.x.rounded(.down) - 2, y: point.y.rounded(.down) - 2, width: 4, height: 4),
-            from: #require(grid, "the library grid is not mounted")
+            from: grid
         )
         return FrameHue(image.rgb(px: image.width / 2, image.height / 2))
     }

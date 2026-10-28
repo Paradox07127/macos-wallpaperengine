@@ -30,9 +30,6 @@ struct StagePalette {
     let fillEmptyScreen: CGColor
     let emptyScreenPlaceholder: CGColor
     let surfaceRaised: CGColor
-    let cardRimRing: CGColor
-    let cardRimHighlight: CGColor
-    let cardRimShade: CGColor
     let spine: CGColor
     let folderTab: CGColor
     let gridStroke: CGColor
@@ -80,9 +77,6 @@ struct StagePalette {
         fillEmptyScreen = resolve(colors.fillEmptyScreen)
         emptyScreenPlaceholder = resolve(colors.emptyScreenPlaceholder)
         surfaceRaised = resolve(DesignTokens.Colors.surfaceRaised)
-        cardRimRing = resolve(increasedContrast ? colors.cardRimRingIncreased : colors.cardRimRing)
-        cardRimHighlight = resolve(colors.cardRimHighlight)
-        cardRimShade = resolve(colors.cardRimShade)
         spine = resolve(colors.strokeHotShell, alpha: 0.55)
         folderTab = resolve(colors.strokeHotShell, alpha: 0.2)
         gridStroke = resolve(Color.primary.opacity(DesignTokens.Card.strokeOpacity))

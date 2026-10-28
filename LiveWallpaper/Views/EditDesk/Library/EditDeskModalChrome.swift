@@ -17,6 +17,7 @@ struct EditDeskModalChrome<Panel: View>: View {
     var pageID: String?
     /// Icon buttons between the title and the close button, in order; `ModalHeaderAction.group` splits them into capsules.
     var actions: [ModalHeaderAction] = []
+    var primaryAction: ModalExtraButton?
     let onDismiss: () -> Void
     /// True when the panel consumed ESC itself, which keeps the modal open.
     var onEscape: () -> Bool = { false }
@@ -140,6 +141,13 @@ struct EditDeskModalChrome<Panel: View>: View {
                         }
                     }
                 }
+            }
+            if let primaryAction {
+                Button(action: primaryAction.action) { Text(verbatim: primaryAction.title) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(!primaryAction.isEnabled)
+                    .controlSize(.regular)
             }
             GlassIconButton("xmark", action: escape)
                 .accessibilityLabel(Text("Close"))

@@ -184,38 +184,38 @@
         }
       }
     },
-    "“%@” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched." : {
-      "comment" : "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title.",
+    "“%@” and its copy in Loomscreen's shared folder are deleted. Your original files are untouched." : {
+      "comment" : "Destructive confirm message for removing a published system wallpaper. Placeholder is the wallpaper title.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched."
+            "value" : "“%@” and its copy in Loomscreen's shared folder are deleted. Your original files are untouched."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” y su copia en la carpeta compartida de Loomscreen se eliminan. Tu vídeo original permanece intacto."
+            "value" : "Se eliminan “%@” y su copia en la carpeta compartida de Loomscreen. Tus archivos originales permanecen intactos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」と Loomscreen の共有フォルダ内のコピーを削除します。元の動画はそのままです。"
+            "value" : "「%@」と Loomscreen の共有フォルダ内のコピーを削除します。元のファイルはそのまま残ります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将删除“%@”以及它在 Loomscreen 共享目录中的副本。你的原始视频不受影响。"
+            "value" : "将删除“%@”以及它在 Loomscreen 共享目录中的副本。你的原始文件不受影响。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將刪除「%@」以及它在 Loomscreen 共用目錄中的副本。你的原始影片不受影響。"
+            "value" : "將刪除「%@」以及它在 Loomscreen 共用目錄中的副本。你的原始檔案不受影響。"
           }
         }
       }
@@ -3394,7 +3394,7 @@
         }
       }
     },
-    "%lld videos and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
+    "%lld wallpapers and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
       "comment" : "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk.",
       "extractionState" : "manual",
       "localizations" : {
@@ -3404,13 +3404,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld video and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+                  "value" : "%lld wallpaper and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld videos and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+                  "value" : "%lld wallpapers and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
                 }
               }
             }
@@ -3422,13 +3422,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Se eliminan %lld vídeo y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
+                  "value" : "Se eliminan %lld fondo de pantalla y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Se eliminan %lld vídeos y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
+                  "value" : "Se eliminan %lld fondos de pantalla y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
                 }
               }
             }
@@ -3437,19 +3437,19 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS が読み取るフォルダから %lld 本の動画（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
+            "value" : "macOS が読み取るフォルダから %lld 個の壁紙（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将从 macOS 读取的文件夹中删除 %lld 个视频（%@）。Loomscreen 里的原始文件不受影响。"
+            "value" : "将从 macOS 读取的文件夹中删除 %lld 张壁纸（%@）。Loomscreen 里的原始文件不受影响。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將從 macOS 讀取的資料夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
+            "value" : "將從 macOS 讀取的資料夾中刪除 %lld 張桌布（%@）。Loomscreen 裡的原始檔案不受影響。"
           }
         }
       }
@@ -24217,41 +24217,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載"
-          }
-        }
-      }
-    },
-    "Download Again" : {
-      "comment" : "Context menu item on an installed Workshop wallpaper: downloads it from Steam again, replacing the copy in the library.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download Again"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a descargar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再ダウンロード"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新下载"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新下載"
           }
         }
       }
@@ -56588,38 +56553,38 @@
         }
       }
     },
-    "Remove this video from System Wallpaper?" : {
+    "Remove this wallpaper from System Wallpaper?" : {
       "comment" : "Destructive confirm title for removing a published system wallpaper.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove this video from System Wallpaper?"
+            "value" : "Remove this wallpaper from System Wallpaper?"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Eliminar este vídeo del fondo de pantalla del sistema?"
+            "value" : "¿Eliminar este fondo de pantalla del fondo de pantalla del sistema?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この動画をシステム壁紙から削除しますか？"
+            "value" : "この壁紙をシステム壁紙から削除しますか？"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要把这个视频从系统壁纸中移除吗？"
+            "value" : "要将这张壁纸从系统壁纸中移除吗？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要將這部影片從系統桌布中移除嗎？"
+            "value" : "要將這張桌布從系統桌布中移除嗎？"
           }
         }
       }

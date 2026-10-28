@@ -22,6 +22,46 @@ final class FreeTypeHarfBuzzSmokeTests: XCTestCase {
         XCTAssertEqual(harfBuzzVersion, "14.2.0")
     }
 
+    func testVariableDesignCoordinatesZeroFillExcessValues() throws {
+        let fontPath = "/System/Library/Fonts/SFNS.ttf"
+        guard FileManager.default.fileExists(atPath: fontPath) else {
+            throw XCTSkip("The host's variable system font is unavailable")
+        }
+        var library: FT_Library?
+        XCTAssertEqual(FT_Init_FreeType(&library), 0)
+        let lib = try XCTUnwrap(library)
+        defer { FT_Done_FreeType(lib) }
+        var faceOut: FT_Face?
+        XCTAssertEqual(FT_New_Face(lib, fontPath, 0, &faceOut), 0)
+        let face = try XCTUnwrap(faceOut)
+        defer { FT_Done_Face(face) }
+        var variationOut: UnsafeMutablePointer<FT_MM_Var>?
+        XCTAssertEqual(FT_Get_MM_Var(face, &variationOut), 0)
+        let variation = try XCTUnwrap(variationOut)
+        defer { FT_Done_MM_Var(lib, variation) }
+        let axes = Int(variation.pointee.num_axis)
+        XCTAssertGreaterThan(axes, 0)
+        let axis = try XCTUnwrap(variation.pointee.axis)
+
+        for useMaximum in [false, true] {
+            var expected = (0 ..< axes).map { useMaximum ? axis[$0].maximum : axis[$0].def }
+            XCTAssertEqual(FT_Set_Var_Design_Coordinates(face, UInt32(axes), &expected), 0)
+            let sentinel: FT_Fixed = 0x1234_5678
+            var exact = [FT_Fixed](repeating: sentinel, count: axes + 1)
+            XCTAssertEqual(FT_Get_Var_Design_Coordinates(face, UInt32(axes), &exact), 0)
+            XCTAssertEqual(Array(exact.prefix(axes)), expected)
+            XCTAssertEqual(exact[axes], sentinel)
+
+            let requested = axes + 1024
+            var excess = [FT_Fixed](repeating: sentinel, count: requested + 1)
+            XCTAssertEqual(FT_Get_Var_Design_Coordinates(face, UInt32(requested), &excess), 0)
+            XCTAssertEqual(Array(excess.prefix(axes)), expected)
+            // FT_Get_Var_Design_Coordinates documents zero for every excess coordinate.
+            XCTAssertEqual(Array(excess[axes ..< requested]), [FT_Fixed](repeating: 0, count: requested - axes))
+            XCTAssertEqual(excess[requested], sentinel)
+        }
+    }
+
     func testColorGlyphCallbackKeepsItsOwnUserData() throws {
         var colorToken: UInt8 = 1
         var clipToken: UInt8 = 2

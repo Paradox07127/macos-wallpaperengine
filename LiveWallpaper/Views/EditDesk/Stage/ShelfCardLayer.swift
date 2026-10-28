@@ -12,9 +12,6 @@ final class ShelfCardLayer {
     let thumbnail = CALayer()
     private let gradient = CAGradientLayer()
     let spine = CAGradientLayer()
-    let sheen = CAGradientLayer()
-    let rimTop = CALayer()
-    let rimBottom = CALayer()
     let badge = CATextLayer()
     private let outline = CALayer()
     private let shade = CALayer()
@@ -65,8 +62,7 @@ final class ShelfCardLayer {
         face.addSublayer(thumbnail)
         thumbnail.masksToBounds = true
         thumbnail.contentsGravity = .resizeAspectFill
-        thumbnail.borderWidth = 1
-        for sublayer in [gradient, spine, sheen, rimTop, rimBottom, badge] {
+        for sublayer in [gradient, spine, badge] {
             thumbnail.addSublayer(sublayer)
         }
         face.addSublayer(shade)
@@ -81,11 +77,6 @@ final class ShelfCardLayer {
         tab.cornerRadius = DesignTokens.EditDesk.Corner.badge
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
         gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        // shelf-lab's `linear-gradient(112deg)` across its 2.6W-wide box, in that box's unit space (y down).
-        sheen.colors = [0, 0.13, 0].map { NSColor.white.withAlphaComponent($0).cgColor }
-        sheen.locations = [0.34, 0.47, 0.60]
-        sheen.startPoint = CGPoint(x: 0.033, y: -0.376)
-        sheen.endPoint = CGPoint(x: 0.967, y: 1.376)
         edgeShadow.shadowRadius = DesignTokens.EditDesk.Shadow.shelfCardEdge.radius
         StageLayerStyle.text(badge, size: 11, mono: true)
         badge.cornerRadius = DesignTokens.EditDesk.Corner.badge
@@ -110,9 +101,6 @@ final class ShelfCardLayer {
         badge.foregroundColor = StageLayerStyle.black
         badge.backgroundColor = palette.warning
         thumbnail.backgroundColor = palette.surfaceRaised
-        thumbnail.borderColor = palette.cardRimRing
-        rimTop.backgroundColor = palette.cardRimHighlight
-        rimBottom.backgroundColor = palette.cardRimShade
         outline.borderColor = StageLayerStyle.white
         spine.colors = [palette.spine, NSColor.black.withAlphaComponent(0.35).cgColor]
         tab.backgroundColor = palette.folderTab
@@ -169,12 +157,6 @@ final class ShelfCardLayer {
         tab.opacity = Float(tilted)
         thumbnail.frame = face.bounds
         thumbnail.cornerRadius = corner
-        // shelf-lab's slide: the band tracks the turn, clamped so the folders' 40° cannot push it off the card.
-        let slide = min(max(0.5 + 0.014 * posed.rotationYDegrees + 0.012 * posed.rotationZDegrees, 0.1), 0.9)
-        sheen.frame = CGRect(x: -1.6 * size.width * slide, y: 0, width: 2.6 * size.width, height: size.height)
-        sheen.opacity = Float(tilted)
-        rimTop.frame = CGRect(x: 0, y: 0, width: size.width, height: 1)
-        rimBottom.frame = CGRect(x: 0, y: size.height - 1, width: size.width, height: 1)
         face.cornerRadius = corner
         face.borderWidth = DesignTokens.Card.strokeWidth
         face.borderColor = gridStroke.flatMap { $0.copy(alpha: $0.alpha * gridMix) }

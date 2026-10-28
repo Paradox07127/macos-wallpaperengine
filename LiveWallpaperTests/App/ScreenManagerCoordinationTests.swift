@@ -12,8 +12,7 @@ struct ScreenManagerCoordinationTests {
     @Test("App-window policy pauses only the occupied display and resumes without changing user intent")
     func appWindowPauseIsPerDisplay() {
         let screens = [UInt32(0xEDFA_0101), UInt32(0xEDFA_0102)].map { id in
-            let display = AppWindowPauseTestScreen()
-            display.displayID = id
+            let display = AppWindowPauseTestScreen(displayID: id)
             return Screen(nsScreen: display, displayPixelSize: { _ in nil })
         }
         let detector = FakeFullScreenDetector()
@@ -936,7 +935,8 @@ struct ScreenManagerCoordinationTests {
         try await Self.runWithSeededConfiguration(videoVolume: 0.9) { manager, screen in
             @MainActor final class Changes { var count = 0 }
             let changes = Changes()
-            let current = try #require(manager.getConfiguration(for: screen)?.muted)
+            let configuration = try #require(manager.getConfiguration(for: screen))
+            let current = configuration.muted
             withObservationTracking {
                 _ = manager.getConfiguration(for: screen)?.muted
             } onChange: {
@@ -2252,7 +2252,12 @@ private final class TestRuntimeSession: WallpaperRuntimeSession, HTMLWallpaperCo
 
 @MainActor
 private final class AppWindowPauseTestScreen: NSScreen {
-    var displayID: UInt32 = 0
+    nonisolated let displayID: UInt32
+
+    init(displayID: UInt32) {
+        self.displayID = displayID
+        super.init()
+    }
 
     override var frame: NSRect {
         NSRect(x: 0, y: 0, width: 1000, height: 1000)

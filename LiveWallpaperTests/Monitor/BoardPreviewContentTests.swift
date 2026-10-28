@@ -43,6 +43,7 @@ struct BoardPreviewContentTests {
     func sampleDataCoversEveryCard() throws {
         let preview = MonitorBoardPreview.resolve(mode: .sample, latest: nil)
         let snapshot = try #require(preview.snapshot)
+        #expect((snapshot.system?.topProcesses?.count ?? 0) > 12, "Sample mode needs enough processes to fill a large card")
         var combinations = 0
         var covered: Set<MonitorWidgetKind> = []
         for kind in MonitorWidgetKind.allCases {

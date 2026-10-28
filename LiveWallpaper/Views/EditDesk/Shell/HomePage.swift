@@ -37,6 +37,7 @@ struct HomePage: View {
     @State private var coverGenerations: [CGDirectDisplayID: Int] = [:]
     /// The generation whose capture last became a display's cover; behind `coverGenerations` while a newer one is out.
     @State private var landedCoverGenerations: [CGDirectDisplayID: Int] = [:]
+    @State private var coverTasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
     /// `coverSignature` at each display's last configuration commit; a nil value is a removed configuration.
     @State private var coverSignatures: [CGDirectDisplayID: ScreenConfiguration?] = [:]
     #if !LITE_BUILD
@@ -494,6 +495,10 @@ struct HomePage: View {
         }
         // These closures capture this view, whose state owns the objects holding them: left set, the page is never freed.
         .onDisappear {
+            for task in coverTasks.values {
+                task.cancel()
+            }
+            coverTasks.removeAll()
             modalHandoffGeneration += 1
             modalReturnPending = false
             stage.displayMenu = nil
@@ -1290,6 +1295,11 @@ struct HomePage: View {
     }
 
     private func syncDisplays() {
+        let connected = Set(screenManager.screens.map(\.id))
+        for id in Array(coverTasks.keys) where !connected.contains(id) {
+            coverTasks.removeValue(forKey: id)?.cancel()
+            coverGenerations[id, default: 0] &+= 1
+        }
         stage.displays = screenManager.screens.map { screen in
             let presentation = ScreenPresentation.presentation(
                 for: screen, refreshRate: screenManager.getScreenRefreshRate(for: screen.id)
@@ -1354,8 +1364,10 @@ struct HomePage: View {
     private func refreshAllStates() {
         for display in stage.displays {
             refreshState(for: display.id)
-            // Startup can mount the page before a restored session has produced its first frame.
-            if display.cover == nil, display.state != .empty {
+            // An old cover can remain while the replacement warms up. Retry unfulfilled generations
+            // on runtime changes as well as on startup, without stacking concurrent requests.
+            if display.state != .empty, coverTasks[display.id] == nil,
+               display.cover == nil || coverGenerations[display.id] != landedCoverGenerations[display.id] {
                 refreshCover(for: display.id, crossfade: true)
             }
         }
@@ -1375,6 +1387,7 @@ struct HomePage: View {
         stage.displays[index].state = state(for: screen)
         describeWallpaper(for: screen, in: &stage.displays[index])
         if Self.reconcileCover(&stage.displays[index], hasConfiguration: screenManager.getConfiguration(for: screen) != nil) {
+            coverTasks.removeValue(forKey: id)?.cancel()
             coverGenerations[id, default: 0] &+= 1
         }
     }
@@ -1482,17 +1495,23 @@ struct HomePage: View {
               screenManager.getConfiguration(for: screen) != nil else { return }
         let generation = (coverGenerations[id] ?? 0) + 1
         coverGenerations[id] = generation
+        coverTasks[id]?.cancel()
         #if !LITE_BUILD
         let saveAt = Self.workshopCoverSaveTime(on: id, afterSwitch: crossfade, at: .now, notBefore: &workshopCoverNotBefore)
         #endif
-        Task { @MainActor in
+        coverTasks[id] = Task { @MainActor in
+            defer {
+                if coverGenerations[id] == generation {
+                    coverTasks[id] = nil
+                }
+            }
             if crossfade {
                 // A fresh session has no frame yet right after the change notification.
                 try? await Task.sleep(for: .milliseconds(600))
             }
             let captured = await Self.captureCover(
                 retryDelays: Self.coverRetryDelays,
-                isNewest: { coverGenerations[id] == generation },
+                isNewest: { !Task.isCancelled && coverGenerations[id] == generation },
                 sleep: { try? await Task.sleep(for: $0) },
                 capture: {
                     guard let screen = screenManager.screens.first(where: { $0.id == id }),
@@ -1502,7 +1521,7 @@ struct HomePage: View {
                 }
             )
             guard let image = captured,
-                  coverGenerations[id] == generation,
+                  !Task.isCancelled, coverGenerations[id] == generation,
                   let index = stage.displays.firstIndex(where: { $0.id == id }) else { return }
             if crossfade, stage.displays[index].cover != nil {
                 stage.crossfadeCover(display: id, to: image, duration: DesignTokens.Motion.wallpaperCrossfadeDuration)
@@ -1516,7 +1535,7 @@ struct HomePage: View {
     }
 
     /// A new session held through a transition, or one suspended, captures nil, so the card retries briefly.
-    private static let coverRetryDelays: [Duration] = Array(repeating: .milliseconds(400), count: 2)
+    static let coverRetryDelays: [Duration] = Array(repeating: .milliseconds(400), count: 30)
 
     /// `isNewest`: no newer capture was asked for since; once false, nothing more is captured and nil is returned.
     static func captureCover(
@@ -1525,14 +1544,15 @@ struct HomePage: View {
         sleep: (Duration) async -> Void,
         capture: () async -> CGImage?
     ) async -> CGImage? {
-        if let image = await capture() {
+        guard isNewest() else { return nil }
+        if let image = await capture(), isNewest() {
             return image
         }
         for delay in retryDelays {
             guard isNewest() else { return nil }
             await sleep(delay)
             guard isNewest() else { return nil }
-            if let image = await capture() {
+            if let image = await capture(), isNewest() {
                 return image
             }
         }
@@ -1564,7 +1584,7 @@ struct HomePage: View {
         }
         await Self.saveWorkshopCover(
             after: saveAt - ContinuousClock.now,
-            isNewest: { coverGenerations[id] == generation },
+            isNewest: { !Task.isCancelled && coverGenerations[id] == generation },
             target: {
                 running().flatMap {
                     Self.workshopCoverEntry(running: $0.configuration, in: SettingsManager.shared.loadGlobalSettings().recentWPEImports)
@@ -1771,9 +1791,7 @@ struct HomePage: View {
                 guard let screen = screenManager.screens.first(where: { $0.id == id }) else { continue }
                 switch action {
                 case .toggle:
-                    guard let controller = screen.playbackController else { continue }
-                    DisplayDetailHost.togglePlayback(controller)
-                    screenManager.markWallpaperSessionStateChanged()
+                    DisplayDetailHost.togglePlayback(on: screen, manager: screenManager)
                 case .next:
                     screenManager.advancePlaylist(for: screen)
                 case .previous:

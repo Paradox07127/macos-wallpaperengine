@@ -452,10 +452,10 @@ struct SchemeTile: View {
             screens: screens,
             isAvailable: location.isAvailable,
             revealURL: location.revealURL,
-            onApply: onApply,
-            onStartRename: onStartRename,
-            onDelete: onDelete,
-            onReplace: onReplace
+            onApply: { onApply($0) },
+            onStartRename: { onStartRename() },
+            onDelete: { onDelete() },
+            onReplace: { onReplace($0) }
         )
     }
 

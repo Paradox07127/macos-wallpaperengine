@@ -1,10 +1,21 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
 struct WPESoundRuntimeTests {
+
+    private static var hasOutputDevice: Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+        )
+        var device = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout.size(ofValue: device))
+        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr && device != kAudioObjectUnknown
+    }
 
     @Test("Single scheduler accepts one file, stops, then explicit reset can replay")
     func singleSchedulerStopsAfterOneFile() {
@@ -400,7 +411,7 @@ struct WPESoundRuntimeTests {
         #expect(snapshot.playerVolume == 0.5625)
     }
 
-    @Test("Mute stops the engine outright and unmute restarts it")
+    @Test("Mute stops the engine outright and unmute restarts it", .enabled(if: hasOutputDevice, "No default audio output device"))
     func muteStopsTheEngine() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPESoundRuntimeMuteRun-\(UUID().uuidString)", isDirectory: true)
@@ -426,9 +437,8 @@ struct WPESoundRuntimeTests {
         runtime.setMuted(true)
         #expect(!runtime.debugEngineIsRunning())
 
-        // AVAudioEngine.start() needs an output device; bail on headless hosts.
         runtime.setMuted(false)
-        guard runtime.play() else { return }
+        try #require(runtime.play(), "Audio output exists but the prepared engine did not start; playback assertions were not reached")
         #expect(runtime.debugEngineIsRunning())
 
         runtime.setMuted(true)
@@ -440,7 +450,7 @@ struct WPESoundRuntimeTests {
         #expect(runtime.debugEngineIsRunning(), "unmute must restart the engine")
     }
 
-    @Test("Unmuting stays paused while suspended; resume then restarts it")
+    @Test("Unmuting stays paused while suspended; resume then restarts it", .enabled(if: hasOutputDevice, "No default audio output device"))
     func muteAndSuspendAreIndependentPauseReasons() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPESoundRuntimeSuspend-\(UUID().uuidString)", isDirectory: true)
@@ -462,8 +472,7 @@ struct WPESoundRuntimeTests {
         )
 
         #expect(runtime.prepare(sounds: [sound]) == 1)
-        // AVAudioEngine.start() needs an output device; bail on headless hosts.
-        guard runtime.play() else { return }
+        try #require(runtime.play(), "Audio output exists but the prepared engine did not start; suspend assertions were not reached")
 
         runtime.setMuted(true)
         runtime.pause()
@@ -476,7 +485,7 @@ struct WPESoundRuntimeTests {
         #expect(snapshot.playerVolume > 0, "resume must restore the unmuted gain")
     }
 
-    @Test("Engine pauses when no track is enabled, muted or not")
+    @Test("Engine pauses when no track is enabled, muted or not", .enabled(if: hasOutputDevice, "No default audio output device"))
     func enginePausesWithoutEnabledTracks() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPESoundRuntimeIdle-\(UUID().uuidString)", isDirectory: true)
@@ -508,13 +517,12 @@ struct WPESoundRuntimeTests {
             startSilent: false
         )
         #expect(runtime.prepare(sounds: [audible]) == 1)
-        // AVAudioEngine.start() needs an output device; bail on headless hosts.
-        guard runtime.play() else { return }
+        try #require(runtime.play(), "Audio output exists but the prepared engine did not start; visibility assertions were not reached")
         runtime.setVisible(false, forSoundID: "idle")
         #expect(!runtime.debugEngineIsRunning(), "disabling the last track must pause the engine")
     }
 
-    @Test("A muted loop stops advancing and resumes where it stopped")
+    @Test("A muted loop stops advancing and resumes where it stopped", .enabled(if: hasOutputDevice, "No default audio output device"))
     func mutedLoopStopsAdvancing() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPESoundRuntimeMutedLoop-\(UUID().uuidString)", isDirectory: true)
@@ -537,8 +545,7 @@ struct WPESoundRuntimeTests {
         )
 
         #expect(runtime.prepare(sounds: [sound]) == 1)
-        // AVAudioEngine.start() needs an output device; bail on headless hosts.
-        guard runtime.play() else { return }
+        try #require(runtime.play(), "Audio output exists but the loop engine did not start")
         // Control group: prepare() only queues two segments, so three delivered
         // completions prove a refilled one rendered end-to-end.
         let runningDeadline = Date().addingTimeInterval(3)
@@ -546,9 +553,7 @@ struct WPESoundRuntimeTests {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         let controlCompletions = runtime.debugRenderedCompletionCount()
-        // Zero deliveries while engine.isRunning is true is a warm-host
-        // AVAudioPlayerNode race, not ours — bail like the headless guard above.
-        guard controlCompletions > 0 else { return }
+        try #require(controlCompletions > 0, "No control-loop callbacks in 3 seconds despite a running engine; audio behavior is unverified and the cause is unknown")
         #expect(controlCompletions >= 3, "control group: an unmuted loop must keep scheduling segments")
 
         runtime.setMuted(true)
@@ -562,7 +567,7 @@ struct WPESoundRuntimeTests {
         )
     }
 
-    @Test("A muted single-shot is held, not consumed, and completes after unmute")
+    @Test("A muted single-shot is held, not consumed, and completes after unmute", .enabled(if: hasOutputDevice, "No default audio output device"))
     func mutedSingleShotIsHeldThenCompletes() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPESoundRuntimeMutedSingle-\(UUID().uuidString)", isDirectory: true)
@@ -584,8 +589,7 @@ struct WPESoundRuntimeTests {
             startSilent: false
         )
 
-        // Warm-host deafness and the failure this test hunts both look like zero
-        // deliveries, so probe the host with a throwaway loop before muting.
+        // Establish observable output with a throwaway loop before testing the single shot.
         try Self.writeTinyWAV(to: root.appendingPathComponent("probe.wav"))
         let probe = WPESceneSoundObject(
             id: "probe",
@@ -596,18 +600,15 @@ struct WPESoundRuntimeTests {
             startSilent: false
         )
         #expect(runtime.prepare(sounds: [probe]) == 1)
-        // AVAudioEngine.start() needs an output device; bail on headless hosts.
-        guard runtime.play() else { return }
+        try #require(runtime.play(), "Audio output exists but the control-loop engine did not start")
         let probeDeadline = Date().addingTimeInterval(3)
         while runtime.debugRenderedCompletionCount() == 0, Date() < probeDeadline {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        // Zero delivered completions = warm-host deafness; bail like the
-        // headless guard above.
-        guard runtime.debugRenderedCompletionCount() > 0 else { return }
+        try #require(runtime.debugRenderedCompletionCount() > 0, "No control-loop callbacks in 3 seconds; the single-shot behavior is unverified and the cause is unknown")
 
         #expect(runtime.prepare(sounds: [sound]) == 1)
-        guard runtime.play() else { return }
+        try #require(runtime.play(), "The single-shot engine did not start after the control succeeded")
         runtime.setMuted(true)
 
         // Muted for several times the file's own duration: a paused engine must not

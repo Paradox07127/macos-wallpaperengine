@@ -100,7 +100,9 @@ struct EditDeskUndoStackTests {
     func coveredWorkspaceSuppressesHistoryCommands() async throws {
         let stack = stack()
         apply(Self.page("B"), on: [manager.left], in: stack)
-        let menu = menuUndo(.stack, over: stack, toasts: EditDeskToastCenter())
+        let toasts = EditDeskToastCenter()
+        let menu = menuUndo(.stack, over: stack, toasts: toasts)
+        defer { withExtendedLifetime(toasts) {} }
         stack.commandsSuppressed = true
         #expect(!menu.canUndo)
         #expect(await stack.undo() == nil)

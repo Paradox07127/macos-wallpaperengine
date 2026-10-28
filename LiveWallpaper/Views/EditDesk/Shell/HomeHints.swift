@@ -107,7 +107,7 @@ struct HomeHints: View {
 
     /// Sits one line above the card row's *current* top, so it rises with the shelf instead of
     /// waiting at the shelf's resting y for the cards to reach it.
-    static func shelfHintTop(progress: Double, windowSize: CGSize) -> CGFloat {
+    nonisolated static func shelfHintTop(progress: Double, windowSize: CGSize) -> CGFloat {
         max(
             StageGeometry.topBarHeight,
             StageGeometry.shelfRowTop(progress: progress, windowSize: windowSize)

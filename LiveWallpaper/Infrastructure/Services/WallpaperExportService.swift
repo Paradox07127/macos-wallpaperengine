@@ -143,7 +143,7 @@ final class WallpaperExportService {
     }
 
     func selectItem(_ itemID: String, for displayID: UInt32) throws {
-        let manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+        let cleanup = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
             var manifest = try loadManifestForMutation()
             guard manifest.items.contains(where: { $0.id == itemID }) else { throw ServiceError.unsupportedContent }
             manifest.selectedItemID = itemID
@@ -152,36 +152,42 @@ final class WallpaperExportService {
             try writeManifest(manifest)
             return try removeUnselectedCopies(from: manifest)
         }
-        items = manifest.items
+        items = cleanup.manifest.items
+        lastError = cleanup.failures.isEmpty ? nil : cleanup.failures.joined(separator: "\n")
         refreshDiskUsage()
         postLibraryChanged()
     }
 
     /// Persists the explicit clear so neither a heartbeat nor a relaunch brings the display's old copy back; `selectItem` replaces it.
     func clearSelection(for displayID: UInt32, generation: Int) throws {
-        let manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+        let cleanup = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
             var manifest = try loadManifestForMutation()
             manifest.displaySelections[String(displayID)] = nil
             manifest.clearedDisplays[String(displayID)] = generation
             try writeManifest(manifest)
             return try removeUnselectedCopies(from: manifest)
         }
-        items = manifest.items
+        items = cleanup.manifest.items
+        lastError = cleanup.failures.isEmpty ? nil : cleanup.failures.joined(separator: "\n")
         refreshDiskUsage()
         postLibraryChanged()
     }
 
     /// Caller holds the manifest lock.
-    private func removeUnselectedCopies(from manifest: SystemWallpaperManifest) throws -> SystemWallpaperManifest {
+    private func removeUnselectedCopies(from manifest: SystemWallpaperManifest) throws -> (manifest: SystemWallpaperManifest, failures: [String]) {
         var manifest = manifest
+        var failures: [String] = []
         // Displays without their own selection resolve through `selectedItemID`.
         let selected = Set(manifest.displaySelections.values).union([manifest.selectedItemID].compactMap(\.self))
         for item in manifest.items where item.id.hasPrefix(Self.selectionCopyIDPrefix) && !selected.contains(item.id) {
             manifest = try SystemWallpaperLibrary.remove(
-                id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) }
+                id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) },
+                onFileRemovalFailure: { name, error in
+                    failures.append("\(name): \(error.localizedDescription)")
+                }
             ) ?? manifest
         }
-        return manifest
+        return (manifest, failures)
     }
 
     @ObservationIgnored private(set) var preparationCancellationGeneration = 0
@@ -536,7 +542,7 @@ final class WallpaperExportService {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             let movie = directory.appendingPathComponent("wallpaper.mov")
-            let progress: (Double) -> Void = { [weak self] in self?.preparationProgress = $0 }
+            let progress: (Double) -> Void = { self.preparationProgress = $0 }
             let publicationSourceKey: String?
             let publicationOptions: SystemWallpaperPreparationOptions?
             if let repreparation {

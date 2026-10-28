@@ -166,8 +166,8 @@ struct WeatherReadingTests {
     }
 
     @Test("A wind reading too large for an integer still lands", .timeLimit(.minutes(1)))
-    func hugeWindReadingLands() async throws {
-        try await withManualLocation {
+    func hugeWindReadingLands() async {
+        await withManualLocation {
             let json = Data(#"{"current":{"weather_code":0,"wind_speed_10m":1e100,"wind_direction_10m":90}}"#.utf8)
             let provider = SwitchableLocationProvider(Self.place("Alpha", latitude: 10))
             let service = WeatherReactiveService(locationProvider: provider) { _ in json }

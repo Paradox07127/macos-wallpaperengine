@@ -54,10 +54,27 @@ struct ProcessesWidgetTests {
         #expect(ProcessesWidgetView.barFraction(0, maxCPU: 0) == 0)
     }
 
-    @Test("Readable Apple frames retain room for five medium rows and eight large rows")
+    @Test("Process rows fill the current height and ignore a legacy count limit")
+    @MainActor
     func rowCapacityAtAppleFrames() {
-        #expect(ProcessesWidgetView.rowCapacity(frameHeight: 170, scaleHeight: 85) >= 5)
-        #expect(ProcessesWidgetView.rowCapacity(frameHeight: 376, scaleHeight: 94) >= 8)
+        var system = MonitorSystemSnapshot()
+        system.topProcesses = (0 ..< 40).map { proc("process-\($0)", Double(40 - $0)) }
+        @MainActor func displayed(_ height: CGFloat, large: Bool) -> [MonitorProcessSample] {
+            let context = MonitorWidgetContext(
+                snapshot: MonitorSnapshot(timestamp: 0, system: system), history: MonitorHistorySnapshot(),
+                placement: .init(kind: .processes, size: large ? .large : .medium, options: ["count": .number(1)]),
+                isEditing: false, reduceMotion: true, now: Date()
+            )
+            return ProcessesWidgetView(context: context).displayedProcesses(
+                frameHeight: height, scaleHeight: height / (large ? 4 : 2)
+            )
+        }
+        let medium = displayed(170, large: false)
+        let large = displayed(376, large: true)
+        #expect(medium.count > 5)
+        #expect(large.count > 12, "A tall widget must use the rows below the old sampler/count ceiling")
+        #expect(displayed(220, large: true).count < large.count)
+        #expect(large.map(\.name) == system.topProcesses?.prefix(large.count).map(\.name))
     }
 
     @Test("degenerate height yields zero capacity (the view floors displayed rows at 1)")

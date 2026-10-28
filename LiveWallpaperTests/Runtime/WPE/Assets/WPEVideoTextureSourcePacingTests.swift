@@ -159,6 +159,7 @@ struct WPEVideoTextureSourcePacingTests {
         }
         try await Task.sleep(for: .milliseconds(200))
         #expect(player != nil, "The player was released while a served chunk was still held")
+        #expect(heldChunk?.count == 256)
 
         heldChunk = nil
         let deadline = Date().addingTimeInterval(5)

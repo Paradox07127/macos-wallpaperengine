@@ -221,7 +221,8 @@ private final class GridDragHost {
     /// The tiles as the grid draws them, over the host's whole bounds.
     func renderGrid() throws -> ProbeImage {
         // Drawn from the host, the tiles come out blank while the nav pill's glass selection capsule is in the window.
-        try render(from: #require(grid, "the library grid is not mounted"))
+        let grid = try #require(grid, "the library grid is not mounted")
+        return try render(from: grid)
     }
 
     /// Thumbnail-wide runs of each display's cover along the row through the strip's middle.

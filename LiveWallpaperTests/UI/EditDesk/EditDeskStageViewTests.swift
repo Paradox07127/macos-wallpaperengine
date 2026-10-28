@@ -293,7 +293,6 @@ struct EditDeskStageViewTests {
         model.setProgress(2, animated: false)
         let wallpapered = try #require(view.displayLayers[1])
         let empty = try #require(view.displayLayers[2])
-        let card = try #require(view.cardLayers["card-0"])
 
         // Why the stage takes a flag rather than drawing under a high-contrast appearance: AppKit
         // hands the token provider plain `darkAqua` while the system setting is off, so the tier
@@ -306,21 +305,17 @@ struct EditDeskStageViewTests {
 
         let restShell = try #require(wallpapered.normalStroke).alpha
         let restEmpty = try #require(empty.normalStroke).alpha
-        let restRing = try #require(card.thumbnail.borderColor).alpha
         // S9 gives the empty display its own `1px dashed .4`; the wallpapered shell stays on .25.
         #expect(restShell == 0.25, Comment(rawValue: "\(restShell)"))
         #expect(restEmpty == 0.40, Comment(rawValue: "\(restEmpty)"))
-        #expect(restRing == 0.10, Comment(rawValue: "\(restRing)"))
 
         model.increaseContrast = true
         await Task.yield()
         let hotShell = try #require(wallpapered.normalStroke).alpha
         let hotEmpty = try #require(empty.normalStroke).alpha
-        let hotRing = try #require(card.thumbnail.borderColor).alpha
         // GAP §6's tiers, and the proof that `Increased` has not drifted from `ink(contrast:)`.
         #expect(hotShell == 0.65, Comment(rawValue: "shell \(restShell) → \(hotShell)"))
         #expect(hotEmpty == 0.80, Comment(rawValue: "empty shell \(restEmpty) → \(hotEmpty)"))
-        #expect(hotRing == 0.35, Comment(rawValue: "inner ring \(restRing) → \(hotRing)"))
 
         // Control: the other accessibility input the stage carries must not move a single stroke.
         model.increaseContrast = false
@@ -329,10 +324,8 @@ struct EditDeskStageViewTests {
         await Task.yield()
         let backShell = try #require(wallpapered.normalStroke).alpha
         let backEmpty = try #require(empty.normalStroke).alpha
-        let backRing = try #require(card.thumbnail.borderColor).alpha
         #expect(backShell == restShell, Comment(rawValue: "shell \(restShell) → \(backShell)"))
         #expect(backEmpty == restEmpty, Comment(rawValue: "empty shell \(restEmpty) → \(backEmpty)"))
-        #expect(backRing == restRing, Comment(rawValue: "inner ring \(restRing) → \(backRing)"))
     }
 
     @Test("Swapping the library for a different set of the same size keeps the shelf drawn")
@@ -529,7 +522,7 @@ struct EditDeskStageViewTests {
             #expect(model.shelfItems[index].id == "card-40")
             #expect(model.visibleShelfRange.contains(index))
             let tile = try #require(view.cardLayers["card-40"])
-            #expect(try sameRect(#require(view.debugFocusRingFrame), tile.hitRect))
+            #expect(try sameRect(#require(view.debugFocusRingFrame), tile.face.convert(tile.face.bounds, to: tile.layer.superlayer)))
             if style.isCentred {
                 #expect(view.debugRowTarget == -Double(index) * StageGeometry.metrics(for: style).pitch)
                 #expect(abs(tile.frame.midX - view.bounds.midX) < 0.001)
@@ -1600,16 +1593,17 @@ struct EditDeskStageViewTests {
     @Test("The stage's context menu holds no unavailable row and separates a submenu's sections")
     func contextMenuShowsOnlyAvailableRows() throws {
         let model = makeModel()
-        var available = true
+        @MainActor final class Availability { var value = true }
+        let available = Availability()
         model.displayMenu = { _ in
             [
                 [
                     Self.row("Reload", false),
-                    Self.row("Apply to", available, submenu: [
+                    Self.row("Apply to", available.value, submenu: [
                         [Self.row("Left", true), Self.row("Right", false)], [Self.row("All Displays", true)],
                     ]),
                 ],
-                [Self.row("Rename", available), Self.row("Use System Name", false)],
+                [Self.row("Rename", available.value), Self.row("Use System Name", false)],
                 [Self.row("Clear", false)],
             ]
         }
@@ -1632,7 +1626,7 @@ struct EditDeskStageViewTests {
         #expect(submenu.items.map(\.isSeparatorItem) == [false, true, false])
         #expect(!enabled(submenu).contains(false))
 
-        available = false
+        available.value = false
         #expect(try view.menu(for: mouse(.rightMouseDown, at: point, in: view)) == nil, "a menu with nothing to offer still opens")
     }
 
@@ -1673,8 +1667,9 @@ struct EditDeskStageViewTests {
 
     private func screenCentre(_ id: StageDisplay.ID, in view: EditDeskStageView) throws -> CGPoint {
         let shell = try #require(view.displayLayers[id])
-        return try shell.content.convert(
-            CGPoint(x: shell.content.bounds.midX, y: shell.content.bounds.midY), to: #require(view.layer)
+        let layer = try #require(view.layer)
+        return shell.content.convert(
+            CGPoint(x: shell.content.bounds.midX, y: shell.content.bounds.midY), to: layer
         )
     }
 
@@ -1729,13 +1724,20 @@ struct EditDeskStageViewTests {
             try view.mouseUp(with: mouse(.leftMouseUp, at: release, in: view))
             #expect(!view.debugDragging)
         }
-        try view.mouseDown(with: mouse(.leftMouseDown, at: source, in: view))
-        try view.mouseDragged(with: mouse(.leftMouseDragged, at: target, in: view))
-        try #require(view.debugDragging)
-        try view.keyDown(with: key(53))
-        #expect(!view.debugDragging)
-        try view.mouseUp(with: mouse(.leftMouseUp, at: target, in: view))
-        #expect(model.dropTarget == nil)
+        for resumeDrag in [false, true] {
+            try view.mouseDown(with: mouse(.leftMouseDown, at: source, in: view))
+            try view.mouseDragged(with: mouse(.leftMouseDragged, at: target, in: view))
+            try #require(view.debugDragging)
+            try view.keyDown(with: key(53))
+            #expect(!view.debugDragging)
+            if resumeDrag {
+                try view.mouseDragged(with: mouse(.leftMouseDragged, at: target, in: view))
+                #expect(!view.debugDragging, "Escape must cancel the whole gesture, even if the mouse keeps moving")
+            }
+            let release = resumeDrag ? target : source
+            try view.mouseUp(with: mouse(.leftMouseUp, at: release, in: view))
+            #expect(model.dropTarget == nil)
+        }
         model.emit(.cardTapped("end"))
         var seen: [StageEvent] = []
         while let event = await iterator.next(), event != .cardTapped("end") {
@@ -1773,7 +1775,8 @@ struct EditDeskStageViewTests {
         model.interactionBlocked = false
 
         let shell = try #require(view.displayLayers[1])
-        let nameRect = try shell.layer.convert(shell.nameFrame, to: #require(view.layer))
+        let layer = try #require(view.layer)
+        let nameRect = shell.layer.convert(shell.nameFrame, to: layer)
         view.tap(at: CGPoint(x: nameRect.midX, y: nameRect.midY))
         let field = try #require(view.subviews.compactMap { $0 as? NSTextField }.first)
         #expect(try !pressAndDrag(wallpapered, to: empty), "a display being renamed stays put")
@@ -1902,10 +1905,9 @@ struct EditDeskStageViewTests {
         #expect(view.debugFocusedCardIndex == 0)
         try view.keyDown(with: key(124))
         #expect(view.debugFocusedCardIndex == 1)
-        let expected = StageGeometry.hitRect(StageGeometry.cardPlacement(
-            style: model.shelfStyle, index: 1, count: 14, progress: 1, focus: 0, windowSize: view.bounds.size
-        ), style: model.shelfStyle)
-        #expect(try sameRect(#require(view.debugFocusRingFrame), expected))
+        let focusedTile = try #require(view.cardLayers["card-1"])
+        #expect(view.debugFocusRing.superlayer === focusedTile.face)
+        #expect(view.debugFocusRing.frame == focusedTile.face.bounds)
         #expect(card.isAccessibilityFocused())
         try view.keyDown(with: key(123))
         #expect(view.debugFocusedCardIndex == 0)
@@ -2187,8 +2189,8 @@ struct EditDeskStageViewTests {
                 Comment(rawValue: "\(name): shadow α \(spread), r \(face.shadowRadius), offset \(face.shadowOffset)")
             )
             #expect(
-                shadowAlpha(tile.edgeShadow) == 0 && tile.sheen.opacity == 0,
-                Comment(rawValue: "\(name): contact shadow α \(shadowAlpha(tile.edgeShadow)), sheen \(tile.sheen.opacity)")
+                shadowAlpha(tile.edgeShadow) == 0,
+                Comment(rawValue: "\(name): contact shadow α \(shadowAlpha(tile.edgeShadow))")
             )
         }
         let view = EditDeskStageView(model: makeModel())
@@ -2237,60 +2239,6 @@ struct EditDeskStageViewTests {
         pose(tile, style: .facingIn, index: 6, focus: 6)
         let middle = edge.shadowOffset.width
         #expect(crate < 0 && right > 0 && middle == 0, Comment(rawValue: "x: crate \(crate), right half \(right), middle \(middle)"))
-    }
-
-    @Test("The sheen slides with each card's turn, stays on the card at 40°, holds under Reduce Motion and is gone in the grid")
-    func sheenFollowsTheTurn() {
-        let tile = refinedTile()
-        func slide(_ style: ShelfStyle, index: Int = 0, focus: Double = 0, hover: Double = 0, reduceMotion: Bool = false) -> CGFloat {
-            pose(tile, style: style, index: index, focus: focus, hover: hover, reduceMotion: reduceMotion)
-            return tile.sheen.frame.minX
-        }
-        // x = −1.6 × 200 × clamp(0.50 + 0.014·rotY + 0.012·rotZ, 0.10, 0.90)
-        let cases: [(String, CGFloat, CGFloat)] = [
-            ("crate at rest, 28°", slide(.crate), -285.44),
-            ("crate hovered square", slide(.crate, hover: 1), -160),
-            ("Facing In's right half, −28°", slide(.facingIn, index: 8, focus: 6), -34.56),
-            ("folders at 40°, clamped to .90", slide(.folders), -288),
-            ("crate hovered under Reduce Motion", slide(.crate, hover: 1, reduceMotion: true), -285.44),
-        ]
-        for (name, actual, expected) in cases {
-            #expect(abs(actual - expected) < 0.01, Comment(rawValue: "\(name): sheen at x \(actual), expected \(expected)"))
-        }
-        let sheen = tile.sheen
-        #expect(
-            sheen.superlayer === tile.thumbnail && abs(sheen.frame.width - 520) < 0.01 && sheen.frame.height == 112
-                && sheen.opacity == 1,
-            Comment(rawValue: "sheen \(sheen.frame) at \(sheen.opacity)")
-        )
-        pose(tile, progress: 2)
-        #expect(sheen.opacity == 0, Comment(rawValue: "sheen at \(sheen.opacity) in the grid"))
-    }
-
-    @Test("The top light and bottom shade are 1pt lines in the thumbnail's clip, and the inner ring takes the contrast tier")
-    func rimLinesAndInnerRing() {
-        let tile = refinedTile()
-        pose(tile)
-        let bounds = tile.thumbnail.bounds
-        #expect(tile.rimTop.superlayer === tile.thumbnail && tile.rimBottom.superlayer === tile.thumbnail)
-        #expect(
-            tile.rimTop.frame == CGRect(x: 0, y: 0, width: bounds.width, height: 1)
-                && tile.rimBottom.frame == CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1),
-            Comment(rawValue: "top \(tile.rimTop.frame), bottom \(tile.rimBottom.frame) in \(bounds)")
-        )
-        let light = tile.rimTop.backgroundColor
-        let shade = tile.rimBottom.backgroundColor
-        #expect(
-            (light?.components?.first ?? 0) > 0.99 && abs((light?.alpha ?? 0) - 0.30) < 0.0001
-                && (shade?.components?.first ?? 1) < 0.01 && abs((shade?.alpha ?? 0) - 0.35) < 0.0001,
-            Comment(rawValue: "top \(String(describing: light)), bottom \(String(describing: shade))")
-        )
-        let ring = tile.thumbnail.borderColor?.alpha ?? 0
-        #expect(tile.thumbnail.borderWidth == 1 && abs(ring - 0.10) < 0.0001, Comment(rawValue: "ring \(tile.thumbnail.borderWidth)pt at α \(ring)"))
-        let contrast = refinedTile(increasedContrast: true)
-        pose(contrast)
-        let raised = contrast.thumbnail.borderColor?.alpha ?? 0
-        #expect(abs(raised - 0.35) < 0.0001, Comment(rawValue: "Increase Contrast ring at α \(raised)"))
     }
 
     @Test("A tilted card keeps Core Animation's macOS default of antialiasing all four edges of its face and picture")
@@ -2927,14 +2875,12 @@ struct EditDeskStageViewTests {
         try #require(view.debugFocusedCardIndex == 4)
         let tile = try #require(view.cardLayers["card-4"])
         let ring = view.debugFocusRing
-        let turn = atan2(ring.transform.m12, ring.transform.m11) * 180 / .pi
         #expect(!ring.isHidden)
-        #expect(ring.bounds.size == tile.hitShape.rect.size, Comment(rawValue: "ring \(ring.bounds.size), card \(tile.hitShape.rect.size)"))
-        #expect(
-            abs(turn - tile.hitShape.rotationZDegrees) < 0.000_001,
-            Comment(rawValue: "ring turned \(turn)°, card \(tile.hitShape.rotationZDegrees)°")
-        )
-        #expect(abs(ring.position.x - tile.hitShape.rect.midX) < 0.000_001 && abs(ring.position.y - tile.hitShape.rect.midY) < 0.000_001)
+        #expect(ring.superlayer === tile.face, "focus must inherit perspective and be occluded with the card")
+        #expect(ring.frame == tile.face.bounds)
+        #expect(CATransform3DIsIdentity(ring.transform))
+        #expect(!CATransform3DIsIdentity(tile.face.transform))
+        #expect(ring.zPosition == 0)
     }
 
     private func bigLibrary(_ count: Int) -> [StageCard] {
@@ -3852,9 +3798,11 @@ struct EditDeskStageViewTests {
         model.gridCoversCards = true
         view.advance(dt: 1.0 / 60)
         #expect(shelf.isHidden, "the landed cards still draw under the grid, and show through between its tiles")
+        #expect(!view.debugAtlasItems.contains { $0.role == "StageCard" }, "Atlas must omit cards covered by the grid")
         model.setProgress(1, animated: true)
         #expect(model.leavingLibrary, "control: the return never started")
         #expect(!shelf.isHidden, "the return started with the cards hidden, so nothing shows as the grid goes")
+        #expect(view.debugAtlasItems.contains { $0.role == "StageCard" }, "Atlas must expose the cards again when the grid leaves")
     }
 
     @Test("A landed detail page hides the whole stage, and the stage is back the moment it leaves")

@@ -144,16 +144,29 @@ struct DisplayDetailHostTests {
         #expect(harness.manager.inspectedWallpaperAttempt(for: harness.screen)?.id == preparing)
     }
 
-    @Test("Play/Pause follows the user's intent, so a wallpaper held by policy can still be paused")
+    @Test("Display Play/Pause persists user intent even while policy holds playback")
     func toggleFollowsIntent() {
+        let harness = Harness()
+        let original = SettingsManager.shared.loadGlobalSettings()
+        defer {
+            harness.close()
+            SettingsManager.shared.saveGlobalSettings(original)
+        }
         let heldByPolicy = IntentPlayback(isPlaying: false, intendsToPlay: true)
-        DisplayDetailHost.togglePlayback(heldByPolicy)
+        harness.screen.installRuntimeSession(heldByPolicy)
+        DisplayDetailHost.togglePlayback(on: harness.screen, manager: harness.manager)
         #expect(heldByPolicy.pauseCount == 1)
         #expect(!heldByPolicy.userIntendsToPlay)
-        // Control: a user pause plays again.
-        let paused = IntentPlayback(isPlaying: false, intendsToPlay: false)
-        DisplayDetailHost.togglePlayback(paused)
-        #expect(paused.playCount == 1)
+        #expect(harness.manager.isUserPaused(harness.screen.id, fingerprint: harness.screen.displayFingerprint))
+
+        let rebuilt = IntentPlayback(isPlaying: true, intendsToPlay: true)
+        harness.screen.installRuntimeSession(rebuilt)
+        harness.manager.resetPlaybackStateMachine(for: harness.screen)
+        #expect(!rebuilt.userIntendsToPlay)
+
+        DisplayDetailHost.togglePlayback(on: harness.screen, manager: harness.manager)
+        #expect(rebuilt.playCount == 1)
+        #expect(!harness.manager.isUserPaused(harness.screen.id, fingerprint: harness.screen.displayFingerprint))
     }
 
     @Test("The web address prompt starts from the running URL; other sources start empty")

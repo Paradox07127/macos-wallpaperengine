@@ -84,6 +84,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var pressedCard: StageCard.ID?
     /// A wallpapered display pressed where a drag may lift it; nil over its chrome or when there is nowhere to drop it.
     private var pressedDisplay: StageDisplay.ID?
+    private var mousePressCancelled = false
     /// The display whose name is being edited in place, and the field doing it.
     private var renaming: (id: StageDisplay.ID, field: StageRenameField)?
     private var dragging = false
@@ -177,7 +178,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
         focusRingType = .none
         withoutActions {
-            shelfLayer.addSublayer(cardFocusRing)
             cardFocusRing.borderWidth = 3
             cardFocusRing.cornerRadius = DesignTokens.EditDesk.Corner.shelfCard
             cardFocusRing.cornerCurve = .continuous
@@ -1035,6 +1035,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         guard !model.interactionBlocked else { return false }
         if dragging {
             withoutActions { endDrag(cancelled: true) }
+            mousePressCancelled = true
+            gesture.mouseUp()
             startDisplayLinkIfNeeded()
             return true
         }
@@ -1674,6 +1676,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     override func mouseDown(with event: NSEvent) {
         guard !model.interactionBlocked else { return }
+        mousePressCancelled = false
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         gesture.mouseDown(at: point)
@@ -1714,7 +1717,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !model.interactionBlocked else { return }
+        guard !model.interactionBlocked, !mousePressCancelled else { return }
         let point = convert(event.locationInWindow, from: nil)
         withoutActions {
             if !dragging, gesture.shouldStartDrag(at: point), let pressed = pressedDragSource {
@@ -1760,7 +1763,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         } else {
             let point = convert(event.locationInWindow, from: nil)
             // A display drag cancelled with Esc must not turn into a click on whichever display it is released over.
-            if pressedCard == cardIndex(at: point).map({ cards[$0].id }),
+            if !mousePressCancelled, pressedCard == cardIndex(at: point).map({ cards[$0].id }),
                pressedDisplay == nil || pressedDisplay == displayID(at: point) {
                 tap(at: point, applies: event.modifierFlags.contains(.option))
             }
@@ -1970,17 +1973,18 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func updateCardFocusRing() {
         guard let index = focusedCardIndex, cardWindow.contains(index),
               progress.value >= StageGeometry.cardTapMinimumProgress, progress.value < 2,
-              !dragging, !model.interactionBlocked, window == nil || window?.firstResponder === self else {
+              !dragging, !model.interactionBlocked, window == nil || window?.firstResponder === self,
+              let tile = cardLayers[cards[index].id] else {
             cardFocusRing.isHidden = true
             return
         }
-        guard let tile = cardLayers[cards[index].id] else { return }
-        let shape = tile.hitShape
-        cardFocusRing.bounds = CGRect(origin: .zero, size: shape.rect.size)
-        cardFocusRing.position = CGPoint(x: shape.rect.midX, y: shape.rect.midY)
-        cardFocusRing.transform = CATransform3DMakeRotation(shape.rotationZDegrees * .pi / 180, 0, 0, 1)
+        // Inherit the face's perspective and hover transform, inside the card's stacking order.
+        if cardFocusRing.superlayer !== tile.face {
+            tile.face.addSublayer(cardFocusRing)
+        }
+        cardFocusRing.transform = CATransform3DIdentity
+        cardFocusRing.frame = tile.face.bounds
         cardFocusRing.cornerRadius = tile.face.cornerRadius
-        cardFocusRing.zPosition = (cardLayers.values.map(\.layer.zPosition).max() ?? 0) + 1
         cardFocusRing.isHidden = false
     }
 
@@ -2141,7 +2145,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     var debugFocusRingFrame: CGRect? {
-        cardFocusRing.isHidden ? nil : cardFocusRing.frame
+        cardFocusRing.isHidden ? nil : cardFocusRing.convert(cardFocusRing.bounds, to: shelfLayer)
     }
 
     var debugFocusRing: CALayer {
@@ -2183,9 +2187,17 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// Displays and shelf cards as drawn, in window points (bottom-left origin); label is the display or card id.
     var debugAtlasItems: [(role: String, label: String, frame: CGRect)] {
         guard !detailCovering else { return [] }
-        return displayLayers.filter { !$0.value.layer.isHidden }.map { id, entry in
+        func isVisible(_ layer: CALayer) -> Bool {
+            var current: CALayer? = layer
+            while let ancestor = current {
+                guard !ancestor.isHidden, ancestor.opacity > 0 else { return false }
+                current = ancestor.superlayer
+            }
+            return true
+        }
+        return displayLayers.filter { isVisible($0.value.layer) }.map { id, entry in
             ("StageDisplay", "\(id)", convert(entry.layer.convert(entry.layer.bounds, to: layer), to: nil))
-        } + cardLayers.filter { !$0.value.layer.isHidden }.map { id, card in ("StageCard", id, convert(card.hitRect, to: nil)) }
+        } + cardLayers.filter { isVisible($0.value.layer) }.map { id, card in ("StageCard", id, convert(card.hitRect, to: nil)) }
     }
     #endif
 

@@ -73,7 +73,7 @@ struct WidgetSettingsPopover: View {
 
     private var hasKindOptions: Bool {
         switch placement.kind {
-        case .systemOverview, .processes, .cpu, .gpu, .memory, .disk, .fleet, .weather: true
+        case .systemOverview, .cpu, .gpu, .memory, .disk, .fleet, .weather: true
         default: false
         }
     }
@@ -118,7 +118,7 @@ struct WidgetSettingsPopover: View {
         case .systemOverview:
             overviewOptions
         case .processes:
-            processesOptions
+            EmptyView()
         case .cpu:
             cpuOptions
         case .gpu:
@@ -158,20 +158,6 @@ struct WidgetSettingsPopover: View {
             "Show caption", icon: "text.below.photo", first: true,
             isOn: boolBinding(key: WeatherWidgetOptions.showCaptionKey, default: WeatherWidgetOptions.showCaptionDefault)
         )
-    }
-
-    // MARK: Processes
-
-    private var processesOptions: some View {
-        VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.md)) {
-            rowsStepper(
-                value: Binding(
-                    get: { MonitorWidgetDraft.processCount(placement) },
-                    set: { onUpdate(MonitorWidgetDraft.settingProcessCount($0, on: placement)) }
-                ),
-                in: MonitorWidgetDraft.processCountRange, first: true
-            )
-        }
     }
 
     // MARK: CPU
@@ -499,11 +485,6 @@ struct WidgetSettingsPopover: View {
 // MARK: - Pure draft mutations (unit-tested)
 
 enum MonitorWidgetDraft {
-    static let countKey = "count"
-
-    static let processCountRange = 1...12
-    static let defaultProcessCount = 5
-
     // MARK: GPU · sampling period
 
     static let gpuSampleSecondsKey = "gpuSampleSeconds"
@@ -531,22 +512,6 @@ enum MonitorWidgetDraft {
         } else {
             next.options[gpuSampleSecondsKey] = .number(value)
         }
-        return next
-    }
-
-    // MARK: Processes · count
-
-    static func processCount(_ placement: MonitorWidgetPlacement) -> Int {
-        placement.options[countKey]?
-            .intValue(clampedTo: processCountRange) ?? defaultProcessCount
-    }
-
-    static func settingProcessCount(
-        _ value: Int, on placement: MonitorWidgetPlacement
-    ) -> MonitorWidgetPlacement {
-        let clamped = min(max(value, processCountRange.lowerBound), processCountRange.upperBound)
-        var next = placement
-        next.options[countKey] = .number(Double(clamped))
         return next
     }
 

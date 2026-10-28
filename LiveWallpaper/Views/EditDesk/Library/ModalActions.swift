@@ -281,8 +281,7 @@ final class ModalActions {
     }
 
     #if !LITE_BUILD
-    /// An installed Workshop item's transfer, its pending update while nothing moves, or Installed when it can be
-    /// downloaded again; nil for an item with no Steam page. Read in the host's body, so the modal follows every byte count.
+    /// An installed Workshop item's transfer, pending update, or Installed status; nil without a Steam page. Read in the host's body, so the modal follows every byte count.
     func downloadStatus(for item: LibraryItem) -> WorkshopDownloadPresentation? {
         guard case let .workshop(entry) = item.source, let id = UInt64(entry.origin.workshopID) else { return nil }
         let bytes = inputs.progressBytes(id)
@@ -387,7 +386,7 @@ final class ModalActions {
                 NSWorkspace.shared.open(url)
             }
         }
-        if case .workshop = item.source {
+        if case let .workshop(entry) = item.source {
             actions.showInFinder = { [self] in
                 guard let current = inputs.item(id), case let .workshop(entry) = current.source else { return }
                 inputs.installedLibrary.showInFinder(entry)
@@ -397,9 +396,12 @@ final class ModalActions {
                 inputs.deleteInstalled(entry, inputs.installedLibrary)
             }
             if steamID(for: item) != nil {
-                actions.checkForUpdate = { [self] in
-                    guard let current = inputs.item(id), case let .workshop(entry) = current.source else { return }
-                    inputs.update(entry)
+                if updateState(for: entry) == .available {
+                    actions.checkForUpdate = { [self] in
+                        guard let current = inputs.item(id), case let .workshop(entry) = current.source,
+                              updateState(for: entry) == .available else { return }
+                        inputs.update(entry)
+                    }
                 }
                 actions.cancelUpdate = { [self] in
                     guard let current = inputs.item(id), let steamID = steamID(for: current) else { return }

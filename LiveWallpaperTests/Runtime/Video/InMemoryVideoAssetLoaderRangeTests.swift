@@ -240,6 +240,7 @@ struct InMemoryVideoAssetLoaderTeardownTests {
         loader.notifyWhenDrained(timeout: 30) { fired.withLock { $0 = true } }
         try await Task.sleep(for: .milliseconds(100))
         #expect(!fired.withLock { $0 })
+        #expect(held?.count == 4096)
         held = nil
         #expect(try await waitUntil(seconds: 5) { fired.withLock { $0 } })
     }
@@ -257,6 +258,7 @@ struct InMemoryVideoAssetLoaderTeardownTests {
         }
         try await Task.sleep(for: .milliseconds(100))
         #expect(probe != nil)
+        #expect(held?.count == 4096)
         held = nil
         #expect(try await waitUntil(seconds: 5) { probe == nil })
     }

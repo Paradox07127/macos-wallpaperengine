@@ -1,7 +1,8 @@
 import Foundation
-import LiveWallpaperCore
-import Testing
 @testable import LiveWallpaper
+import LiveWallpaperCore
+import os
+import Testing
 
 @Suite("AtomicFileStore: atomic write, recovery, rotation")
 struct AtomicFileStoreTests {
@@ -122,7 +123,7 @@ struct AtomicFileStoreTests {
         }
     }
 
-    @Test("delete removes both the primary and backup files")
+    @Test("Delete waits for an in-flight writer, then removes both persisted generations")
     func deleteRemovesBothFiles() throws {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -131,11 +132,71 @@ struct AtomicFileStoreTests {
 
         try store.write(TestValue(label: "first", count: 1))
         try store.write(TestValue(label: "second", count: 2))
-        try store.delete()
+        let lockIdentity = try #require(try FileManager.default.attributesOfItem(atPath: store.lockURL.path)[.systemFileNumber] as? NSNumber)
+        let writeReachedSync = DispatchSemaphore(value: 0)
+        let releaseWrite = DispatchSemaphore(value: 0)
+        let gated = OSAllocatedUnfairLock(initialState: false)
+        let writerStore = AtomicFileStore<TestValue>(
+            fileURL: fileURL,
+            durabilitySync: FileDurabilitySync(fullFsync: { fd in
+                let shouldWait = gated.withLock { used in
+                    guard !used else { return false }
+                    used = true
+                    return true
+                }
+                if shouldWait {
+                    writeReachedSync.signal()
+                    guard releaseWrite.wait(timeout: .now() + 5) == .success else { return ETIMEDOUT }
+                }
+                return FileDurabilitySync.system.fullFsync(fd)
+            }, fsync: FileDurabilitySync.system.fsync)
+        )
+        let writerFinished = DispatchGroup()
+        writerFinished.enter()
+        let writeFailure = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+        DispatchQueue.global().async {
+            defer { writerFinished.leave() }
+            do {
+                try writerStore.write(TestValue(label: "third", count: 3))
+            } catch {
+                writeFailure.withLock { $0 = error }
+            }
+        }
+        defer {
+            releaseWrite.signal()
+            _ = writerFinished.wait(timeout: .now() + 5)
+        }
+        try #require(writeReachedSync.wait(timeout: .now() + 2) == .success)
+        let deleteStarted = DispatchSemaphore(value: 0)
+        let deleteFinished = DispatchSemaphore(value: 0)
+        let deleteFailure = OSAllocatedUnfairLock<(any Error)?>(initialState: nil)
+        DispatchQueue.global().async {
+            deleteStarted.signal()
+            defer { deleteFinished.signal() }
+            do {
+                try store.delete()
+            } catch {
+                deleteFailure.withLock { $0 = error }
+            }
+        }
+        try #require(deleteStarted.wait(timeout: .now() + 2) == .success)
+        let finishedBeforeWriter = deleteFinished.wait(timeout: .now() + 0.1)
+        releaseWrite.signal()
+        try #require(writerFinished.wait(timeout: .now() + 2) == .success)
+        if finishedBeforeWriter == .timedOut {
+            try #require(deleteFinished.wait(timeout: .now() + 2) == .success)
+        }
+        #expect(deleteFailure.withLock { $0 == nil })
+        #expect(finishedBeforeWriter == .timedOut, "Delete must wait for the writer's exclusive file lock")
+        if let error = writeFailure.withLock({ $0 }) {
+            Issue.record("Delete interrupted the writer: \(error)")
+        }
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) == false)
         #expect(FileManager.default.fileExists(atPath: fileURL.appendingPathExtension("bak").path(percentEncoded: false)) == false)
         #expect(store.read() == nil)
+        let remainingLock = try #require(try FileManager.default.attributesOfItem(atPath: store.lockURL.path)[.systemFileNumber] as? NSNumber)
+        #expect(remainingLock == lockIdentity, "The lock inode must survive deletion for waiting writers")
     }
 
     /// Rotation must not consume the backup while it is the only readable generation,
@@ -298,7 +359,7 @@ struct AtomicFileStoreTests {
         return number?.intValue ?? 0
     }
 
-    private struct TestValue: Codable, Equatable {
+    private struct TestValue: Codable, Equatable, Sendable {
         let label: String
         let count: Int
     }

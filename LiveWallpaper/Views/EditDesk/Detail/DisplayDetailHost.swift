@@ -844,19 +844,13 @@ struct DisplayDetailHost: View {
     }
 
     private func togglePlayback(on screen: Screen) {
-        guard let controller = screen.playbackController else { return }
-        Self.togglePlayback(controller)
-        screenManager.markWallpaperSessionStateChanged()
+        Self.togglePlayback(on: screen, manager: screenManager)
     }
 
     /// Flips what the user asked for, which the button shows: under a policy pause the intent to play
     /// stays set while nothing plays, and the button reads Pause, so it must pause rather than play.
-    static func togglePlayback(_ playback: any WallpaperPlaybackControllable) {
-        if playback.userIntendsToPlay {
-            playback.pause()
-        } else {
-            playback.play()
-        }
+    static func togglePlayback(on screen: Screen, manager: ScreenManager) {
+        manager.togglePlayback(for: screen)
     }
 
     /// ⌘n picks the n-th display in the top bar's order.

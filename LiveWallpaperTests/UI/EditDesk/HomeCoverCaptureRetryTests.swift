@@ -22,34 +22,37 @@ struct HomeCoverCaptureRetryTests {
         let frame = try Self.pixel()
         var calls = 0
         let image = await HomePage.captureCover(
-            retryDelays: Self.delays,
+            retryDelays: HomePage.coverRetryDelays,
             isNewest: { true },
             sleep: { _ in },
             capture: {
                 calls += 1
-                return calls < 3 ? nil : frame
+                return calls < 8 ? nil : frame
             }
         )
         #expect(image === frame, "a capture that is nil during a transition hold leaves the card on the previous wallpaper")
-        #expect(calls == 3)
+        #expect(calls == 8, "a frame later than the old 1.4-second capture window must still refresh the preview")
     }
 
     @Test("A newer capture asked for stops the retries")
-    func aNewerRequestStopsRetrying() async {
-        var calls = 0
-        var newest = true
-        let image = await HomePage.captureCover(
-            retryDelays: Self.delays,
-            isNewest: { newest },
-            sleep: { _ in },
-            capture: {
-                calls += 1
-                newest = false
-                return nil
-            }
-        )
-        #expect(image == nil)
-        #expect(calls == 1, "a superseded request keeps capturing frames nobody shows")
+    func aNewerRequestStopsRetrying() async throws {
+        let frame = try Self.pixel()
+        for completesWithImage in [false, true] {
+            var calls = 0
+            var newest = true
+            let image = await HomePage.captureCover(
+                retryDelays: Self.delays,
+                isNewest: { newest },
+                sleep: { _ in },
+                capture: {
+                    calls += 1
+                    newest = false
+                    return completesWithImage ? frame : nil
+                }
+            )
+            #expect(image == nil, "a capture superseded while awaiting its image must not publish the old wallpaper")
+            #expect(calls == 1, "a superseded request keeps capturing frames nobody shows")
+        }
     }
 
     @Test("Retries end once the delays run out")

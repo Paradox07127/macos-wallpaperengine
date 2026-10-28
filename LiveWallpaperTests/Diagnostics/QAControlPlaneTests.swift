@@ -42,6 +42,25 @@ struct QAControlPlaneDefaultsTests {
 @Suite("QA control plane screen identity", .serialized)
 @MainActor
 struct QAControlPlaneScreenIdentityTests {
+    @Test("Rejected Atlas navigation preserves the current display detail")
+    func rejectedAtlasNavigationPreservesRoute() async throws {
+        let fixture = Fixture()
+        defer { fixture.manager.tearDownForTermination() }
+        let router = EditDeskRouter(initialNavigation: .screen(fixture.screen.id), initialAddWallpaperRequest: nil, isWorkshopAvailable: { true })
+        fixture.control.router = router
+        for arguments in [
+            #"{"page":"settings","settings":"invalid"}"#,
+            #"{"page":"settings","anchor":"invalid"}"#,
+        ] {
+            let result = try await fixture.call("ui.navigate", arguments: arguments)
+            #expect(result["ok"] as? Bool == false)
+            #expect(router.detailDisplayID == fixture.screen.id, "A rejected request closed the detail")
+            #expect(router.page == .home)
+        }
+        #expect(try await fixture.call("ui.navigate", arguments: #"{"page":"settings","settings":"general"}"#)["ok"] as? Bool == true)
+        #expect(router.detailDisplayID == nil && router.page == .settings)
+    }
+
     @Test("Explicit playback repeats preserve intent instead of toggling")
     func explicitPlaybackIsIdempotent() async throws {
         let fixture = Fixture()

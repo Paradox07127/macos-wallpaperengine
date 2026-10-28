@@ -1099,6 +1099,10 @@ struct WallpaperAutomationCoordinatorTests {
             }
             return try #require(restored.count == count + 1 ? restored.last : nil)
         }
+        func expectLand(_ expected: WallpaperContent, _ step: () -> Void) async throws {
+            let actual = try await land(step)
+            #expect(actual == expected)
+        }
         func played() -> [WallpaperContent] {
             orchestrator.shuffleDecks[screen.id].played.map(\.content)
         }
@@ -1111,11 +1115,11 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(played() == [initialContent, first])
         #expect(orchestrator.shuffleDecks[screen.id].played.first?.id == library[0].id)
 
-        #expect(try await land { orchestrator.regressLibraryShuffle(for: screen) } == first)
+        try await expectLand(first) { orchestrator.regressLibraryShuffle(for: screen) }
         #expect(played() == [initialContent])
         #expect(returned() == [second])
 
-        #expect(try await land { orchestrator.regressLibraryShuffle(for: screen) } == initialContent)
+        try await expectLand(initialContent) { orchestrator.regressLibraryShuffle(for: screen) }
         #expect(played().isEmpty)
         #expect(returned() == [second, first])
 
@@ -1126,7 +1130,7 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored.count == 4)
         #expect(store.get(for: screen.id)?.activeWallpaper == initialContent)
 
-        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == first)
+        try await expectLand(first) { orchestrator.advanceLibraryShuffle(for: screen) }
         #expect(played() == [initialContent])
         #expect(returned() == [second])
 
@@ -1151,8 +1155,8 @@ struct WallpaperAutomationCoordinatorTests {
         let removed = try #require(library.first { $0.id != current.id })
         let replacement = try #require(library.first { $0.id != current.id && $0.id != removed.id })
         library = [current, removed]
-        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == removed.content)
-        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == drawn)
+        try await expectLand(removed.content) { orchestrator.advanceLibraryShuffle(for: screen) }
+        try await expectLand(drawn) { orchestrator.advanceLibraryShuffle(for: screen) }
         library = [current]
         let count = restored.count
         orchestrator.regressLibraryShuffle(for: screen)
@@ -1162,10 +1166,10 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored.count == count, "a removed history row played again")
 
         library = [current, removed]
-        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == removed.content)
-        #expect(try await land { orchestrator.regressLibraryShuffle(for: screen) } == drawn)
+        try await expectLand(removed.content) { orchestrator.advanceLibraryShuffle(for: screen) }
+        try await expectLand(drawn) { orchestrator.regressLibraryShuffle(for: screen) }
         library = [current, replacement]
-        #expect(try await land { orchestrator.advanceLibraryShuffle(for: screen) } == replacement.content)
+        try await expectLand(replacement.content) { orchestrator.advanceLibraryShuffle(for: screen) }
     }
 
     @Test("Library shuffle has its own timer without needing a playlist")

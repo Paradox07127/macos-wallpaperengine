@@ -206,7 +206,7 @@ final class ParityCorpusCaptureTests: XCTestCase {
         if let shadowQuality {
             settings.shadowQuality = shadowQuality
         }
-        let inputs = try WPEParitySceneInputs(
+        let inputs = WPEParitySceneInputs(
             descriptor: descriptor,
             entryResolver: SceneResourceResolver(provider: provider),
             projectRoot: projectRoot,

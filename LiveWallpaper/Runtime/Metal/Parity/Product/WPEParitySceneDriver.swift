@@ -8,6 +8,25 @@ import Metal
 import os
 import QuartzCore
 
+/// Opt-in CPU submission intervals. GPU completion and presentation remain separate evidence.
+enum WPEParityFrameTrace {
+    static let enabled = ProcessInfo.processInfo.environment["LOOMSCREEN_PARITY_TRACE"] == "1"
+    private static let signposter = OSSignposter(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.loomscreen.pro", category: "WPEParityFrame"
+    )
+
+    static func begin(_ name: StaticString, scene: String?, renderer: AnyObject) -> OSSignpostIntervalState? {
+        guard enabled else { return nil }
+        let identity = "scene:\(scene ?? "local") renderer:\(ObjectIdentifier(renderer))"
+        return signposter.beginInterval(name, id: signposter.makeSignpostID(), "\(identity, privacy: .public)")
+    }
+
+    static func end(_ name: StaticString, _ interval: OSSignpostIntervalState?, submitted: Bool) {
+        guard let interval else { return }
+        signposter.endInterval(name, interval, "submitted:\(submitted)")
+    }
+}
+
 /// Present readiness, written by command-buffer completion handlers on Metal's callback threads.
 final class WPEParityPresentState: Sendable {
     struct CadenceCounts: Sendable {
@@ -853,6 +872,9 @@ final class WPEParitySceneDriver {
     func renderAndPresentFrame(layer: CAMetalLayer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                                buttonDown: Bool = false, audio: AudioSpectrumFrame? = nil,
                                date: Date = Date()) -> MTLCommandBuffer? {
+        let interval = WPEParityFrameTrace.begin("frame", scene: planSource?.workshopID, renderer: self)
+        var submitted = false
+        defer { WPEParityFrameTrace.end("frame", interval, submitted: submitted) }
         cadenceSubmissions?.attempts += 1
         guard let renderer, let plannedTarget,
               encodeFrame(renderer, timestamp: timestamp, pointer: pointer, buttonDown: buttonDown, audio: audio,
@@ -894,6 +916,7 @@ final class WPEParitySceneDriver {
             } else {
                 cadenceSubmissions?.drawableMisses += 1
             }
+            submitted = presented
             return presented ? commandBuffer : nil
         } catch {
             cadenceSubmissions?.presentErrors += 1
@@ -909,6 +932,9 @@ final class WPEParitySceneDriver {
     func renderAndPublishSpanFrame(to frames: WPESceneSpanFrames, timestamp: CFTimeInterval,
                                    pointer: SIMD2<Double>, buttonDown: Bool = false,
                                    audio: AudioSpectrumFrame? = nil, date: Date = Date()) -> MTLCommandBuffer? {
+        let interval = WPEParityFrameTrace.begin("frame", scene: planSource?.workshopID, renderer: self)
+        var submitted = false
+        defer { WPEParityFrameTrace.end("frame", interval, submitted: submitted) }
         guard let renderer, let plannedTarget else { return nil }
         let backbuffer = renderer.backbuffer
         let size = CGSize(width: backbuffer.width, height: backbuffer.height)
@@ -946,6 +972,7 @@ final class WPEParitySceneDriver {
         }
         commandBuffer.commit()
         didLogFrameFailure = false
+        submitted = true
         return commandBuffer
     }
 
@@ -1012,6 +1039,9 @@ final class WPEParitySceneDriver {
     private func encodeFrame(_ renderer: WPEParityFrameRenderer, timestamp: CFTimeInterval, pointer: SIMD2<Double>,
                              buttonDown: Bool, audio: AudioSpectrumFrame?, date: Date,
                              forceExternalFrame: Bool = false, resumingVideoFrame: Bool = false) -> Bool {
+        let interval = WPEParityFrameTrace.begin("encode", scene: planSource?.workshopID, renderer: self)
+        var submitted = false
+        defer { WPEParityFrameTrace.end("encode", interval, submitted: submitted) }
         submittedSceneBuffer = nil
         guard runtimeFailure == nil else { return false }
         // The first frame after load or resume steps by zero, so a stopped display link's gap is not scene time.
@@ -1065,6 +1095,7 @@ final class WPEParitySceneDriver {
             cadenceSubmissions?.sceneCommitted += 1
             submittedSceneBuffer = commandBuffer
             recordResources(renderer, .live)
+            submitted = true
             return true
         } catch {
             cadenceSubmissions?.sceneErrors += 1

@@ -91,8 +91,8 @@ struct WallpaperExportServiceTests {
         #expect(try rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 41)?.title == "Elsewhere")
     }
 
-    @Test("A superseded follow copy is removed once no display selects it, and added items stay")
-    func supersededFollowCopyRemoved() async throws {
+    @Test("A superseded follow copy is removed or its cleanup failure is reported, and added items stay", arguments: [false, true])
+    func supersededFollowCopyRemoved(blocksRemoval: Bool) async throws {
         let rig = try makeRig()
         defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
         let added = try rig.makeVideoBookmark(named: "added.mp4", label: "Added")
@@ -105,12 +105,24 @@ struct WallpaperExportServiceTests {
         coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: first.content), title: "First")
         try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != nil }
         let firstCopy = try #require(rig.manifestOnDisk().item(for: SystemWallpaperManifest.selectedChoiceID, displayID: 42))
+        let firstURL = rig.videosDirectory.appendingPathComponent(firstCopy.fileName)
+        if blocksRemoval {
+            try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: firstURL.path)
+        }
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: firstURL.path) }
         coordinator.follow(ScreenConfiguration(screenID: 42, wallpaper: second.content), title: "Second")
         try await waitUntil { try rig.manifestOnDisk().displaySelections["42"] != firstCopy.id }
         let manifest = try rig.manifestOnDisk()
         #expect(Set(manifest.items.map(\.title)) == ["Added", "Second"], "the superseded copy is still in the library")
-        #expect(!FileManager.default.fileExists(atPath: rig.videosDirectory.appendingPathComponent(firstCopy.fileName).path))
+        #expect(FileManager.default.fileExists(atPath: firstURL.path) == blocksRemoval)
         #expect(rig.service.items == manifest.items)
+        let selected = try #require(manifest.displaySelections["42"])
+        #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: selected))
+        if blocksRemoval {
+            #expect(rig.service.lastError?.contains(firstCopy.fileName) == true, "Committed selection must report leftover files")
+        } else {
+            #expect(rig.service.lastError == nil)
+        }
     }
 
     @Test("A followed copy is named after the wallpaper, not the display")

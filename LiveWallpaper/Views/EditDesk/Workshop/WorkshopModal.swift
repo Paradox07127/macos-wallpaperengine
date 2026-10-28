@@ -53,6 +53,7 @@ struct WorkshopModal: View {
                 for: item, isLiked: WorkshopBookmarkActions.contains(item.id),
                 toggleLike: { WorkshopBookmarkActions.toggle(item) }
             ),
+            primaryAction: updateButton,
             onDismiss: onDismiss,
             onTargetShortcut: pressByShortcut,
             onPrevious: navigation.canGoPrevious ? { navigate(forward: false) } : nil,
@@ -222,7 +223,7 @@ struct WorkshopModal: View {
     @ViewBuilder
     private var status: some View {
         if download != WorkshopDownloadPresentation() {
-            ModalDownloadStatusLine(presentation: download, button: updateButton)
+            ModalDownloadStatusLine(presentation: download)
         }
     }
 

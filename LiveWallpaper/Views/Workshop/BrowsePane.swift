@@ -357,7 +357,7 @@ struct BrowsePane: View {
             onBookmark: { WorkshopBookmarkActions.toggle(item) },
             applyDisplays: applyDisplays,
             canRunLibraryCopy: !unrunnableWorkshopIDs.contains(String(item.id)),
-            onApply: onApply.map { apply in { apply(item, $0) } },
+            onApply: onApply.map { apply in { @MainActor @Sendable in apply(item, $0) } },
             onSelect: { onOpenItem?(item) },
             onDownload: {
                 let downloads = WorkshopDownloadCoordinator.shared

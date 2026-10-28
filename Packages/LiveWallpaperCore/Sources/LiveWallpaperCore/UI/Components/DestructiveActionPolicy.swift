@@ -60,7 +60,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
         case .resetDisplaySettings:      return "Reset this display's settings?"
         case .resetAllSettings: return "Reset all settings?"
-        case .removeSystemWallpaper:     return "Remove this video from System Wallpaper?"
+        case .removeSystemWallpaper: return "Remove this wallpaper from System Wallpaper?"
         case .disconnectAerialsLibrary:  return "Disconnect Apple Aerials library?"
         case .forgetSteamWebAPIKey: return "Forget the Steam Web API key?"
         case .removeManagedSteamCMD: return "Remove the SteamCMD copy Loomscreen installed?"
@@ -76,11 +76,11 @@ public enum DestructiveAction: Identifiable, Equatable {
             return isInUse
                 ? String(
                     localized: "“\(title)” is on screen right now. It stops playing and its file is deleted immediately; the desktop keeps the last frame until you pick another wallpaper in System Settings.",
-                    bundle: .appLanguage, comment: "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title."
+                    bundle: .appLanguage, comment: "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the wallpaper title."
                 )
                 : String(
-                    localized: "“\(title)” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched.",
-                    bundle: .appLanguage, comment: "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title."
+                    localized: "“\(title)” and its copy in Loomscreen's shared folder are deleted. Your original files are untouched.",
+                    bundle: .appLanguage, comment: "Destructive confirm message for removing a published system wallpaper. Placeholder is the wallpaper title."
                 )
         case let .deleteScheme(name):
             return String(
@@ -104,7 +104,7 @@ public enum DestructiveAction: Identifiable, Equatable {
             )
         case .clearSystemWallpaperLibrary(let itemCount, let formattedSize):
             return String(
-                localized: "\(itemCount) videos and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
+                localized: "\(itemCount) wallpapers and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
                 bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk."
             )
         case let .clearLegacySystemWallpapers(itemCount, formattedSize, playingTitles, tileName):

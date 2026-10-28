@@ -5,7 +5,7 @@ import SwiftUI
 struct AgentFolderAccessSection: View {
     @AppStorage("Monitor.AuthorizationExpanded", store: .appScoped()) private var isAuthorizationExpanded = true
 
-    @Environment(\.openAgentActivity) private var openAgentActivity
+    @Environment(\.agentActivityPresented) private var agentActivityPresented
     @State private var claudeAuthorized = false
     @State private var codexAuthorized = false
 
@@ -27,7 +27,7 @@ struct AgentFolderAccessSection: View {
 
     @ViewBuilder
     private var authorizationRows: some View {
-        Button("Open Agent Activity") { openAgentActivity() }
+        Button("Open Agent Activity") { agentActivityPresented?.wrappedValue = true }
             .buttonStyle(.bordered)
         authorizationRow(
             title: "Claude Folder",
@@ -122,7 +122,7 @@ struct AgentFolderAccessSection: View {
 
 extension EnvironmentValues {
     /// Installed by `agentActivityOverlay()`; does nothing outside such a host.
-    @Entry var openAgentActivity: @MainActor () -> Void = {}
+    @Entry var agentActivityPresented: Binding<Bool>?
 }
 
 extension View {
@@ -138,7 +138,7 @@ private struct AgentActivityOverlay: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .environment(\.openAgentActivity) { isShown = true }
+            .environment(\.agentActivityPresented, $isShown)
             .infoOverlay(isPresented: $isShown) { close in
                 AppLanguageScope(defaults: .appScoped()) {
                     AgentActivityPanel(onDismiss: close)

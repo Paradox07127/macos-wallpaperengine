@@ -242,7 +242,7 @@ struct ProcessesWidgetView: View {
 
     // MARK: - Derived data
 
-    private func displayedProcesses(
+    func displayedProcesses(
         frameHeight: CGFloat, scaleHeight: CGFloat
     ) -> [MonitorProcessSample] {
         Self.topProcesses(
@@ -252,18 +252,7 @@ struct ProcessesWidgetView: View {
     }
 
     private func rowLimit(frameHeight: CGFloat, scaleHeight: CGFloat) -> Int {
-        let capacity = max(
-            Self.rowCapacity(frameHeight: frameHeight, scaleHeight: scaleHeight), 1
-        )
-        let requested: Int = if let n = context.placement.options[MonitorWidgetDraft.countKey]?
-            .intValue(clampedTo: MonitorWidgetDraft.processCountRange) {
-            n
-        } else if context.placement.size == .large {
-            MonitorWidgetDraft.processCountRange.upperBound
-        } else {
-            MonitorWidgetDraft.defaultProcessCount
-        }
-        return min(requested, capacity)
+        max(Self.rowCapacity(frameHeight: frameHeight, scaleHeight: scaleHeight), 1)
     }
 
     // MARK: - Pure helpers (nonisolated for tests)
@@ -319,7 +308,7 @@ struct ProcessesWidgetView: View {
 
 #if DEBUG
 private func processesMockContext(
-    size: MonitorWidgetSize, empty: Bool = false, count: Int? = nil
+    size: MonitorWidgetSize, empty: Bool = false
 ) -> MonitorWidgetContext {
     var system = MonitorSystemSnapshot()
     if !empty {
@@ -337,15 +326,14 @@ private func processesMockContext(
             MonitorProcessSample(name: "coreaudiod", cpuPercent: 0.9, memBytes: 96 * 1_048_576),
             MonitorProcessSample(name: "Terminal", cpuPercent: 0.4, memBytes: 210 * 1_048_576),
         ]
-    }
-    var options: [String: MonitorWidgetOptionValue] = [:]
-    if let count {
-        options[MonitorWidgetDraft.countKey] = .number(Double(count))
+        system.topProcesses?.append(contentsOf: (13 ... 40).map { index in
+            MonitorProcessSample(name: "Process \(index)", cpuPercent: 0.3 / Double(index), memBytes: UInt64(index) * 1_048_576)
+        })
     }
     return MonitorWidgetContext(
         snapshot: MonitorSnapshot(timestamp: 0, system: system),
         history: MonitorHistorySnapshot(),
-        placement: MonitorWidgetPlacement(kind: .processes, size: size, options: options),
+        placement: MonitorWidgetPlacement(kind: .processes, size: size),
         isEditing: false,
         reduceMotion: false,
         now: Date()
@@ -359,9 +347,9 @@ private func processesMockContext(
         .background(Design.boardWash)
 }
 
-#Preview("Processes M (count 12 → capacity clamps to 7)") {
-    ProcessesWidgetView(context: processesMockContext(size: .medium, count: 12))
-        .frame(width: 364, height: 170)
+#Preview("Processes M · enlarged") {
+    ProcessesWidgetView(context: processesMockContext(size: .medium))
+        .frame(width: 364, height: 240)
         .padding(32)
         .background(Design.boardWash)
 }
@@ -373,15 +361,8 @@ private func processesMockContext(
         .background(Design.boardWash)
 }
 
-#Preview("Processes L (auto row count → 12-row ceiling)") {
+#Preview("Processes L · fills available rows") {
     ProcessesWidgetView(context: processesMockContext(size: .large))
-        .frame(width: 364, height: 376)
-        .padding(32)
-        .background(Design.boardWash)
-}
-
-#Preview("Processes L (count override = 3)") {
-    ProcessesWidgetView(context: processesMockContext(size: .large, count: 3))
         .frame(width: 364, height: 376)
         .padding(32)
         .background(Design.boardWash)

@@ -66,7 +66,7 @@ struct BrowseCard: View, Equatable {
     /// False when the library copy's project cannot run on this Mac.
     var canRunLibraryCopy: Bool = true
     /// nil hides the apply submenu.
-    var onApply: ((CGDirectDisplayID) -> Void)?
+    var onApply: (@MainActor @Sendable (CGDirectDisplayID) -> Void)?
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}
 

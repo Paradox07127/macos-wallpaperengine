@@ -264,6 +264,9 @@ for plist in LiveWallpaperInfo.plist LoomscreenInfo.plist; do
     exit 1
   fi
 done
+# Exercise the independent public-key verifier without accessing a signing key.
+xcrun swift scripts/verify-sparkle-signature.swift --self-test
+grep -q 'verify-sparkle-signature.swift.*"$DMG".*"$APP_PLIST".*"$SIGN_OUT"' scripts/generate-appcast.sh
 for ent in LiveWallpaper/LiveWallpaper.entitlements LiveWallpaper/LiveWallpaperLite.entitlements; do
   if ! grep -q 'PRODUCT_BUNDLE_IDENTIFIER)-spki' "$ent"; then
     echo "ERROR: $ent cannot reach Sparkle's Installer XPC service; updates would fail to install." >&2
