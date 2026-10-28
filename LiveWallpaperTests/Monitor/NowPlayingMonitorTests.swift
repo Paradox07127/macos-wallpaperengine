@@ -31,6 +31,45 @@ private actor SystemMediaFixture {
 @Suite("System media source and fallback", .timeLimit(.minutes(1)))
 struct NowPlayingSystemSourceTests {
     @MainActor
+    @Test("Stopping during subscription setup leaves no system polling behind")
+    func stopDuringSubscriptionSetup() async throws {
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let didEnter = OSAllocatedUnfairLock(initialState: false)
+        let fixture = SystemMediaFixture(MonitorNowPlayingState(phase: .playing, title: "Fixture"))
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: {
+            let first = didEnter.withLock { entered in
+                let first = !entered
+                entered = true
+                return first
+            }
+            if first {
+                entered.signal()
+                _ = release.wait(timeout: .now() + 3)
+            }
+            return []
+        }, systemProvider: { try await fixture.read() }, systemPollInterval: .milliseconds(10))
+        let source = NowPlayingSource(monitor: monitor, artworkFetcher: offlineFetcher(), audioReactive: false, audioDemand: { _ in })
+        let stopper = Task.detached {
+            guard entered.wait(timeout: .now() + 3) == .success else {
+                release.signal()
+                return false
+            }
+            await source.stop()
+            release.signal()
+            return true
+        }
+        await source.start(sink: RecordingNowPlayingSink())
+        let stoppedDuringSetup = await stopper.value
+        try #require(stoppedDuringSetup, "The subscription must reach the controlled setup boundary")
+        let readsAfterStart = await fixture.reads
+        try await Task.sleep(for: .milliseconds(80))
+        let readsAfterSettling = await fixture.reads
+        await source.stop()
+        #expect(readsAfterSettling == readsAfterStart, "A source stopped during setup left its subscriber polling")
+    }
+
+    @MainActor
     @Test("System playback reaches the source sink, falls back on failure, and stops with its last subscriber")
     func systemPlaybackAndFallback() async throws {
         var external = MonitorNowPlayingState(phase: .playing, title: "Local test media")

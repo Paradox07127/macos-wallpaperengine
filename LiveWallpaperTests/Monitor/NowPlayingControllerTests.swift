@@ -6,6 +6,41 @@ import XCTest
 /// consent dialog and drive the user's player. Every case injects a fake executor.
 @MainActor
 final class NowPlayingControllerTests: XCTestCase {
+    func testSystemCommandsWaitForEarlierSubmission() async throws {
+        let submitted = Locked([Int]())
+        let firstEntered = expectation(description: "Next entered the system executor")
+        let pauseRequested = expectation(description: "Pause was requested after Next")
+        let releaseFirst = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let controller = NowPlayingController(systemExecutor: { command, _ in
+            if command == 4 {
+                firstEntered.fulfill()
+                for await _ in releaseFirst.stream { break }
+            }
+            submitted.mutate { $0.append(command) }
+        })
+        var state = MonitorNowPlayingState(phase: .playing, title: "Fixture")
+        state.isSystemMedia = true
+        state.systemPlayerID = "owned-player"
+        state.systemCommands = [1, 4]
+        let current = state
+        let next = Task { await controller.send(.next, for: current) }
+        await fulfillment(of: [firstEntered], timeout: 1)
+        let pause = Task {
+            pauseRequested.fulfill()
+            return await controller.send(.playPause, for: current)
+        }
+        await fulfillment(of: [pauseRequested], timeout: 1)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(submitted.value.isEmpty, "Pause overtook the pending Next submission")
+        releaseFirst.continuation.yield()
+        releaseFirst.continuation.finish()
+        let nextResult = await next.value
+        let pauseResult = await pause.value
+        XCTAssertTrue(succeeded(nextResult))
+        XCTAssertTrue(succeeded(pauseResult))
+        XCTAssertEqual(submitted.value, [4, 1])
+    }
+
     func testSystemControlsUseCapabilitiesAndKeepLegacyFallback() async {
         let log = Locked([Int]())
         let recorder = Recorder()
