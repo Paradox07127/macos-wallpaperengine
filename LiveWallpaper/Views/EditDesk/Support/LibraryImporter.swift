@@ -28,10 +28,7 @@ struct LibraryImporter {
                     comment: "Why one item of the Wallpaper Library's import wasn't added: not a video, web page or wallpaper folder."
                 )
             case .scenesUnavailable:
-                String(
-                    localized: "Wallpaper Engine projects aren't available in this edition.", bundle: .appLanguage,
-                    comment: "Why one item of the Wallpaper Library's import wasn't added: the app edition can't play Wallpaper Engine scenes."
-                )
+                Self.scenesUnavailableText
             case .noWallpaperInFolder:
                 String(
                     localized: "The folder has no videos or web page.", bundle: .appLanguage,
@@ -48,6 +45,20 @@ struct LibraryImporter {
                     comment: "Why one video of the Wallpaper Library's import wasn't added: the app couldn't save permission to reopen it."
                 )
             }
+        }
+
+        private static var scenesUnavailableText: String {
+            #if MAS_BUILD
+            String(
+                localized: "This edition doesn't support this project type.", bundle: .appLanguage,
+                comment: "Shown when a project this edition can't play is dropped, chosen, or imported."
+            )
+            #else
+            String(
+                localized: "Wallpaper Engine projects aren't available in this edition.", bundle: .appLanguage,
+                comment: "Why one item of the Wallpaper Library's import wasn't added: the app edition can't play Wallpaper Engine scenes."
+            )
+            #endif
         }
     }
 

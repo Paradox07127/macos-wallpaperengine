@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
@@ -290,3 +291,4 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
         onMain { [weak self] in self?.onSessionFinished?() }
     }
 }
+#endif

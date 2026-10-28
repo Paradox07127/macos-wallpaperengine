@@ -22,7 +22,9 @@ struct MenuBarContent: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var ownsSystemMonitorLease = false
+    #if !MAS_BUILD
     @State private var updater = SparkleUpdaterController.shared
+    #endif
     @State private var trustStore = TrustedHostStore.shared
 
     private var monitor: SystemMonitor { .shared }
@@ -87,7 +89,9 @@ struct MenuBarContent: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
+                #if !MAS_BUILD
                 updateButton
+                #endif
 
                 Toggle("", isOn: Binding(
                     get: { isWallpaperEnabled },
@@ -112,6 +116,7 @@ struct MenuBarContent: View {
         .frame(maxWidth: .infinity)
     }
 
+    #if !MAS_BUILD
     @ViewBuilder
     private var updateButton: some View {
         if updater.availableVersion != nil {
@@ -129,6 +134,7 @@ struct MenuBarContent: View {
             .accessibilityLabel(Text("Update available"))
         }
     }
+    #endif
 
     private var displays: some View {
         VStack(spacing: MenuBarMetrics.componentSpacing) {

@@ -20,10 +20,7 @@ enum DropFailure: Equatable {
         case .unrecognizedDrop:
             String(localized: "Choose a video, web file, or wallpaper folder.", bundle: .appLanguage)
         case .sceneUnsupportedInBuild:
-            String(
-                localized: "Wallpaper Engine projects need Loomscreen Pro, a separate free download.", bundle: .appLanguage,
-                comment: "Shown in Lite when a Wallpaper Engine project folder is dropped or chosen. Both editions are free; Pro is a separate build, not a paid tier."
-            )
+            Self.sceneUnsupportedText
         case .videoBookmarkFailed:
             String(localized: "Couldn't get secure access to this video.", bundle: .appLanguage)
         case .sourceMissing:
@@ -40,5 +37,19 @@ enum DropFailure: Equatable {
             String(localized: "Couldn't import this project: \(reason)", bundle: .appLanguage)
         #endif
         }
+    }
+
+    private static var sceneUnsupportedText: String {
+        #if MAS_BUILD
+        String(
+            localized: "This edition doesn't support this project type.", bundle: .appLanguage,
+            comment: "Shown when a project this edition can't play is dropped, chosen, or imported."
+        )
+        #else
+        String(
+            localized: "Wallpaper Engine projects need Loomscreen Pro, a separate free download.", bundle: .appLanguage,
+            comment: "Shown in Lite when a Wallpaper Engine project folder is dropped or chosen. Both editions are free; Pro is a separate build, not a paid tier."
+        )
+        #endif
     }
 }

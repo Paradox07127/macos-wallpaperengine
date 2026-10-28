@@ -12,7 +12,8 @@ public enum DestructiveAction: Identifiable, Equatable {
     /// `sceneCapable` = the build renders scenes; false (Lite) omits scene settings from the copy.
     case resetDisplaySettings(displayName: String, sceneCapable: Bool)
     /// `sceneCapable` = the build renders scenes; false (Lite) omits presets and Wallpaper Engine assets.
-    case resetAllSettings(sceneCapable: Bool)
+    /// `mentionsAerialsAndAI` = false drops Apple Aerials and AI session history from the scene-free copy.
+    case resetAllSettings(sceneCapable: Bool, mentionsAerialsAndAI: Bool = true)
     case removeSystemWallpaper(title: String, isInUse: Bool)
     case clearSystemWallpaperLibrary(itemCount: Int, formattedSize: String)
     /// `playingTitles` = legacy copies a display shows right now; they stop when deleted. `tileName` = the provider's tile name in System Settings.
@@ -143,15 +144,21 @@ public enum DestructiveAction: Identifiable, Equatable {
                     localized: "On \(displayName), this:\n• Resets playback settings, web wallpaper settings, and blur, brightness, saturation, warmth, vignette, and auto warm tint\n• Turns off the effect layer and returns its Density, Match local weather, Match density to weather, and Follow wind direction to their defaults\n• Turns off On Lock, shuffle, and rotation\n• Clears the schedule and switches back to the playlist\nThe wallpaper and playlist items are kept.",
                     bundle: .appLanguage, comment: "Destructive confirm message in a build without scenes. Placeholder is the display name. Capitalized names are control labels."
                 )
-        case let .resetAllSettings(sceneCapable):
-            return sceneCapable
-                ? String(
+        case let .resetAllSettings(sceneCapable, mentionsAerialsAndAI):
+            if sceneCapable {
+                return String(
                     localized: "This clears:\n• Every display's wallpaper, playlist, schedule, scene custom settings, overlays, and custom name\n• The wallpaper library, presets, and schemes\n• All preferences, shortcuts, and display defaults\n• Trusted origins, and folder access for Apple Aerials, Wallpaper Engine assets, and AI session history\nWallpaper files on disk are not deleted.",
                     bundle: .appLanguage, comment: "Destructive confirm message for resetting every app setting from Settings › Advanced."
                 )
-                : String(
+            }
+            return mentionsAerialsAndAI
+                ? String(
                     localized: "This clears:\n• Every display's wallpaper, playlist, schedule, overlays, and custom name\n• The wallpaper library and schemes\n• All preferences, shortcuts, and display defaults\n• Trusted origins, and folder access for Apple Aerials and AI session history\nWallpaper files on disk are not deleted.",
                     bundle: .appLanguage, comment: "Destructive confirm message for resetting every app setting from Settings › Advanced, in a build without scenes."
+                )
+                : String(
+                    localized: "This clears:\n• Every display's wallpaper, playlist, schedule, overlays, and custom name\n• The wallpaper library and schemes\n• All preferences, shortcuts, and display defaults\n• Trusted origins\nWallpaper files on disk are not deleted.",
+                    bundle: .appLanguage, comment: "Destructive confirm message for resetting every app setting from Settings › Advanced, in an edition without scenes, Apple Aerials, or AI sessions."
                 )
         case .disconnectAerialsLibrary:
             return String(

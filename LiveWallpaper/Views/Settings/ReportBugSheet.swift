@@ -40,12 +40,25 @@ struct ReportBugSheet: View {
     }
 
     private var header: some View {
-        SteamSheetHeader(
+        #if MAS_BUILD
+        let subtitle: LocalizedStringKey = "Continuing opens a prefilled issue in your browser. Review it first; published issues are public."
+        #else
+        let subtitle: LocalizedStringKey = "Continuing sends the prefilled diagnostics to GitHub. Review them first; published issues are public."
+        #endif
+        return SteamSheetHeader(
             icon: "ladybug.fill",
             title: "Report a Bug",
             iconTint: DesignTokens.Colors.Status.danger,
-            subtitle: "Continuing sends the prefilled diagnostics to GitHub. Review them first; published issues are public."
+            subtitle: subtitle
         )
+    }
+
+    private var attachLogHint: LocalizedStringKey {
+        #if MAS_BUILD
+        "Attach the sanitized log from Finder to the issue."
+        #else
+        "Attach the sanitized log from Finder to the GitHub issue."
+        #endif
     }
 
     private var diagnosticPreview: some View {
@@ -80,7 +93,7 @@ struct ReportBugSheet: View {
             if let logURL = sanitizedLogURL {
                 HStack {
                     Label {
-                        Text("Attach the sanitized log from Finder to the GitHub issue.")
+                        Text(attachLogHint)
                             .font(DesignTokens.Typography.caption)
                             .foregroundStyle(.secondary)
                     } icon: {

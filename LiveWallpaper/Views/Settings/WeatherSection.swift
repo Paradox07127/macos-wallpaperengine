@@ -60,6 +60,11 @@ extension GeneralSettingsView {
 
         } header: {
             SettingsSearchSectionHeader("Weather", anchor: .integrationsWeather)
+        } footer: {
+            Text("Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0)")
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

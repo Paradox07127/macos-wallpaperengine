@@ -57,6 +57,7 @@ extension GeneralSettingsView {
                     CopyVersionButton(version: versionString)
                 }
 
+                #if !MAS_BUILD
                 UpdateStatusLine()
                     .padding(.top, 2)
 
@@ -67,6 +68,7 @@ extension GeneralSettingsView {
                     updateChannelPicker
                         .controlSize(.small)
                 }
+                #endif
             }
         }
     }
@@ -86,7 +88,25 @@ extension GeneralSettingsView {
         .frame(maxWidth: layout.gridWidth)
     }
 
-    private var aboutActions: [AboutAction] {
+    private var aboutLinks: [AboutAction] {
+        #if MAS_BUILD
+        [
+            AboutAction(
+                id: "website",
+                title: "Website",
+                systemImage: "globe",
+                accent: .blue,
+                url: URL(string: "https://paradox07127.github.io/Loomscreen-WebUI/")
+            ),
+            AboutAction(
+                id: "privacy",
+                title: "Privacy Policy",
+                systemImage: "hand.raised",
+                accent: .indigo,
+                url: URL(string: "https://paradox07127.github.io/Loomscreen-WebUI/docs/privacy/")
+            ),
+        ]
+        #else
         [
             AboutAction(
                 id: "github",
@@ -102,6 +122,12 @@ extension GeneralSettingsView {
                 accent: .indigo,
                 url: URL(string: "https://github.com/Paradox07127/macos-wallpaperengine/discussions")
             ),
+        ]
+        #endif
+    }
+
+    private var aboutActions: [AboutAction] {
+        aboutLinks + [
             AboutAction(
                 id: "bug",
                 title: "Report a Bug",

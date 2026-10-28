@@ -35,11 +35,15 @@ final class EditDeskRouter {
 
     /// The System Wallpaper page publishes through the macOS 26 wallpaper extension.
     nonisolated static var systemWallpaperSupported: Bool {
+        #if MAS_BUILD
+        false
+        #else
         if #available(macOS 26.0, *) {
             true
         } else {
             false
         }
+        #endif
     }
 
     init(

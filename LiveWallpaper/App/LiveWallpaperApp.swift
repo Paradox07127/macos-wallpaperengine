@@ -46,13 +46,20 @@ struct AppStartupPlan: Equatable {
         currentBuild: String? = nil
     ) {
         #if LITE_BUILD
+        #if MAS_BUILD
+        let capabilities = ProductCapabilities(
+            sku: .lite, enabledFeatures: ProductCapabilities.lite.enabledFeatures.subtracting([.appleAerials])
+        )
+        #else
+        let capabilities = ProductCapabilities.lite
+        #endif
         screenManagerOptions = ScreenManagerStartupOptions(
             restoreSavedWallpapers: runtimeOptions.shouldRestoreSavedWallpapers,
             startAutomation: runtimeOptions.shouldStartAutomation,
             playsOpening: runtimeOptions.shouldRestoreSavedWallpapers,
             memoryPressureWatcher: SystemMemoryPressureWatcher.shared,
             seedsUserAbsenceAtLaunch: !runtimeOptions.isTesting,
-            featureCatalog: FeatureCatalog(capabilities: .lite),
+            featureCatalog: FeatureCatalog(capabilities: capabilities),
             originReconciler: PreservingOriginReconciler()
         )
         #else
@@ -194,10 +201,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             currentBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         )
 
+        #if !MAS_BUILD
         if !runtimeOptions.isTesting {
             wallpaperExportService.declareBundledProvider()
             wallpaperExportService.startObservingSharedRoot()
         }
+        #endif
 
         #if !LITE_BUILD
         if !runtimeOptions.isTesting {
@@ -223,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingsManager.shared.loadGlobalSettings().wallpaperVisibleInScreenCapture
         let manager = ScreenManager(startupOptions: startupPlan.screenManagerOptions)
         screenManager = manager
+        #if !MAS_BUILD
         if !runtimeOptions.isTesting, #available(macOS 26.0, *) {
             let selection = SystemWallpaperSelectionCoordinator(service: wallpaperExportService)
             systemWallpaperSelection = selection
@@ -231,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             manager.notifyWallpaperSessionChanged()
         }
+        #endif
 
 
         if manager.featureCatalog.isEnabled(.html) {
@@ -325,9 +336,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
+        #if !MAS_BUILD
         if !runtimeOptions.isTesting {
             SparkleUpdaterController.shared.start()
         }
+        #endif
         #if DEBUG
         if runtimeOptions.isTesting, ProcessInfo.processInfo.arguments.contains("--nixie-overlay-preview") {
             NixieOverlayPreview.present()

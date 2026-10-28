@@ -6,6 +6,7 @@ import SwiftUI
 #endif
 
 extension GeneralSettingsView {
+    #if !MAS_BUILD
     /// Shared by the General and About tabs. Saves in the binding: an `.onChange` would only run on the tab on screen.
     var updateChannelPicker: some View {
         Picker("", selection: Binding(
@@ -23,6 +24,7 @@ extension GeneralSettingsView {
         .fixedSize()
         .accessibilityLabel(Text("Update channel"))
     }
+    #endif
 
     @ViewBuilder
     var generalSection: some View {
@@ -75,6 +77,7 @@ extension GeneralSettingsView {
                 }
             }
 
+            #if !MAS_BUILD
             SettingRow(
                 icon: "arrow.triangle.2.circlepath",
                 iconColor: .purple,
@@ -99,6 +102,7 @@ extension GeneralSettingsView {
             ) {
                 updateChannelPicker
             }
+            #endif
 
             SettingRow(
                 icon: "dock.rectangle",

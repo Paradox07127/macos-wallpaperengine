@@ -111,11 +111,15 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         allItems.filter { item in
             switch item.destination {
             case .systemWallpaper:
+                #if MAS_BUILD
+                false
+                #else
                 if #available(macOS 26.0, *) {
                     true
                 } else {
                     false
                 }
+                #endif
             case .integrations, .overlays:
                 // Weather and overlay widgets ship on every SKU; only the audio row
                 // inside Integrations compiles out of Lite.
@@ -289,21 +293,35 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             group: .support,
             title: "Advanced",
             systemImage: "slider.horizontal.3",
-            keywords: ["logs", "diagnostics", "privacy", "hardware", "analytics"],
-            rows: [
-                "Copy Diagnostic Summary", "Export Diagnostics", "Report a Bug", "Log Files",
-                "Share anonymous hardware info", "Reset All Settings",
-            ]
+            keywords: advancedKeywords,
+            rows: advancedRows
         ),
         SettingsNavigationItem(
             destination: .about,
             group: .support,
             title: "About",
             systemImage: "info.circle",
-            keywords: ["version", "github", "report bug", "welcome tour"],
-            rows: ["View on GitHub", "Discussions", "Report a Bug", "Welcome Tour"]
+            keywords: aboutKeywords,
+            rows: aboutRows
         ),
     ]
+
+    #if MAS_BUILD
+    private static let advancedKeywords = ["logs", "diagnostics"]
+    private static let advancedRows = [
+        "Copy Diagnostic Summary", "Export Diagnostics", "Report a Bug", "Log Files", "Reset All Settings",
+    ]
+    private static let aboutKeywords = ["version", "website", "privacy", "report bug", "welcome tour"]
+    private static let aboutRows = ["Website", "Privacy Policy", "Report a Bug", "Welcome Tour"]
+    #else
+    private static let advancedKeywords = ["logs", "diagnostics", "privacy", "hardware", "analytics"]
+    private static let advancedRows = [
+        "Copy Diagnostic Summary", "Export Diagnostics", "Report a Bug", "Log Files",
+        "Share anonymous hardware info", "Reset All Settings",
+    ]
+    private static let aboutKeywords = ["version", "github", "report bug", "welcome tour"]
+    private static let aboutRows = ["View on GitHub", "Discussions", "Report a Bug", "Welcome Tour"]
+    #endif
 }
 
 struct SettingsNavigationItem: Identifiable, Equatable {
@@ -410,6 +428,13 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 languageRows.append("Translate wallpaper text")
                 languageKeywords += ["translate", "translation", "翻译", "翻譯", "翻訳", "traducir", "traducción"]
             }
+            #if MAS_BUILD
+            let startupRows = ["Start at login", "Show in Dock"]
+            let startupKeywords = ["login", "start", "launch", "dock", "menu bar"]
+            #else
+            let startupRows = ["Start at login", "Check for updates automatically", "Update channel", "Show in Dock"]
+            let startupKeywords = ["login", "start", "launch", "update", "beta", "channel", "dock", "menu bar"]
+            #endif
             return [
                 SettingsNavigationSearchTarget(
                     label: "Language",
@@ -420,8 +445,8 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Startup",
                     anchor: .generalStartup,
-                    rows: ["Start at login", "Check for updates automatically", "Update channel", "Show in Dock"],
-                    keywords: ["login", "start", "launch", "update", "beta", "channel", "dock", "menu bar"]
+                    rows: startupRows,
+                    keywords: startupKeywords
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Wallpaper",
@@ -561,6 +586,9 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 )
             ]
         case .workshopSetup:
+            #if MAS_BUILD
+            return []
+            #else
             return [
                 SettingsNavigationSearchTarget(
                     label: "Steam connection",
@@ -624,6 +652,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     keywords: []
                 ),
             ]
+            #endif
         case .systemWallpaper:
             var targets = [
                 SettingsNavigationSearchTarget(

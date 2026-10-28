@@ -24,9 +24,11 @@ struct GeneralSettingsView: View {
     /// The Edit Desk's undo history; nil in the old settings window.
     @Environment(EditDeskUndoStack.self) var undo: EditDeskUndoStack?
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
+    #if !MAS_BUILD
     @State var checksUpdatesAtLaunch: Bool = SparkleUpdaterController.shared.automaticallyChecksForUpdates
     @State var updateChannel: UpdateChannel = SparkleUpdaterController.shared.updateChannel
     @State var sendsHardwareProfile: Bool = SparkleUpdaterController.shared.sendsSystemProfile
+    #endif
     @State var globalPauseOnBattery: Bool
     @State var startOnLogin: Bool
     @State var loginItemStatus: SMAppService.Status

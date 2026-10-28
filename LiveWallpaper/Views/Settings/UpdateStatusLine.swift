@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import LiveWallpaperCore
 import SwiftUI
@@ -99,3 +100,4 @@ struct UpdateStatusLine: View {
         return formatter
     }
 }
+#endif

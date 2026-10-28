@@ -46,6 +46,7 @@ extension GeneralSettingsView {
                     .accessibilityLabel(Text("Show logs in Finder"))
             }
 
+            #if !MAS_BUILD
             SettingRow(
                 icon: "chart.bar.xaxis",
                 iconColor: .gray,
@@ -61,6 +62,7 @@ extension GeneralSettingsView {
                     .accessibilityLabel(Text("Share anonymous hardware info"))
                     .accessibilityHint(Text("Up to once a week, update checks include your Mac model, processor, memory, macOS version, language, and display count and resolution range. No identifiers are sent. Used to tune resource use."))
             }
+            #endif
 
             SettingRow(
                 icon: "arrow.counterclockwise",
@@ -81,8 +83,15 @@ extension GeneralSettingsView {
     // MARK: - Reset
 
     private func confirmResetAllSettings() {
+        #if MAS_BUILD
+        let action = DestructiveAction.resetAllSettings(
+            sceneCapable: screenManager.featureCatalog.isEnabled(.scene), mentionsAerialsAndAI: false
+        )
+        #else
+        let action = DestructiveAction.resetAllSettings(sceneCapable: screenManager.featureCatalog.isEnabled(.scene))
+        #endif
         pendingDestructive = PendingDestructive(
-            .resetAllSettings(sceneCapable: screenManager.featureCatalog.isEnabled(.scene)),
+            action,
             alternative: { beginExportFromAlert() },
             perform: { performResetAllSettings() }
         )
@@ -106,7 +115,9 @@ extension GeneralSettingsView {
         audioResponseEnabled = settings.audioResponseEnabled
         adaptiveFrameRateEnabled = settings.adaptiveFrameRateEnabled
         weatherLocation = settings.weatherLocation
+        #if !MAS_BUILD
         sendsHardwareProfile = SparkleUpdaterController.shared.sendsSystemProfile
+        #endif
         #if !LITE_BUILD
         applyAudioResponseEnabled(settings.audioResponseEnabled)
         #endif

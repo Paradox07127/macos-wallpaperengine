@@ -9771,6 +9771,42 @@
         }
       }
     },
+    "Attach the sanitized log from Finder to the issue." : {
+      "comment" : "Bug report attachment instruction; the label is not itself draggable. The Show Log in Finder action reveals the sanitized file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attach the sanitized log from Finder to the issue."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjunta el registro sin datos personales desde Finder a la incidencia."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder から個人情報を除去したログを Issue に添付してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从“访达”将脱敏日志附加到议题。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Finder 將去識別化日誌附加至議題。"
+          }
+        }
+      }
+    },
     "Attention" : {
       "comment" : "Agent Session widget settings: sort by attention priority.",
       "extractionState" : "manual",
@@ -17772,6 +17808,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在瀏覽器中繼續"
+          }
+        }
+      }
+    },
+    "Continuing opens a prefilled issue in your browser. Review it first; published issues are public." : {
+      "comment" : "Bug report sheet subtitle in an edition that names no issue host.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuing opens a prefilled issue in your browser. Review it first; published issues are public."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al continuar, se abrirá en el navegador una incidencia ya rellenada. Revísala antes; las incidencias publicadas son públicas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "続行するとブラウザで入力済みの Issue が開きます。内容を確認してください。公開した Issue は誰でも閲覧できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续操作会在浏览器中打开预填好的议题。请先检查内容；发布后的议题公开可见。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繼續操作會在瀏覽器中開啟預填好的議題。請先檢查內容；發布後的議題為公開資訊。"
           }
         }
       }
@@ -53440,6 +53512,42 @@
         }
       }
     },
+    "Privacy Policy" : {
+      "comment" : "Link on the About page to the app's privacy policy website.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy Policy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Política de privacidad"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシーポリシー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私政策"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱私權政策"
+          }
+        }
+      }
+    },
     "Private" : {
       "comment" : "Workshop item visibility.\nWorkshop paste error badge.",
       "localizations" : {
@@ -76722,6 +76830,42 @@
         }
       }
     },
+    "This clears:\n• Every display's wallpaper, playlist, schedule, overlays, and custom name\n• The wallpaper library and schemes\n• All preferences, shortcuts, and display defaults\n• Trusted origins\nWallpaper files on disk are not deleted." : {
+      "comment" : "Destructive confirm message for resetting every app setting from Settings › Advanced, in an edition without scenes, Apple Aerials, or AI sessions.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This clears:\n• Every display's wallpaper, playlist, schedule, overlays, and custom name\n• The wallpaper library and schemes\n• All preferences, shortcuts, and display defaults\n• Trusted origins\nWallpaper files on disk are not deleted."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se borra lo siguiente:\n• El fondo de pantalla, la playlist, la programación, las superposiciones y el nombre personalizado de cada pantalla\n• La biblioteca de fondos y los esquemas\n• Todas las preferencias, los atajos y los valores predeterminados de pantalla\n• Los orígenes de confianza\nLos archivos de fondo de pantalla del disco no se eliminan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次の内容を消去します：\n• 各ディスプレイの壁紙、プレイリスト、スケジュール、オーバーレイ、カスタム名\n• 壁紙ライブラリ、構成\n• すべての環境設定、ショートカット、ディスプレイのデフォルト\n• 信頼済みのオリジン\nディスク上の壁紙ファイルは削除されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将清除以下内容：\n• 每台显示器的壁纸、播放列表、计划、叠加层和自定义名称\n• 壁纸库和方案\n• 所有偏好设置、快捷键和显示器默认值\n• 已信任的来源\n磁盘上的壁纸文件不会被删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將清除以下內容：\n• 每台顯示器的桌布、播放列表、排程、疊加層和自訂名稱\n• 桌布庫和方案\n• 所有偏好設定、快速鍵和顯示器預設值\n• 已信任的來源\n磁碟上的桌布檔案不會被刪除。"
+          }
+        }
+      }
+    },
     "This clears:\n• Every display's wallpaper, playlist, schedule, overlays, and custom name\n• The wallpaper library and schemes\n• All preferences, shortcuts, and display defaults\n• Trusted origins, and folder access for Apple Aerials and AI session history\nWallpaper files on disk are not deleted." : {
       "comment" : "Destructive confirm message for resetting every app setting from Settings › Advanced, in a build without scenes.",
       "extractionState" : "manual",
@@ -76927,6 +77071,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此創作者尚未在這裡發布任何桌布。"
+          }
+        }
+      }
+    },
+    "This edition doesn't support this project type." : {
+      "comment" : "Shown when a project this edition can't play is dropped, chosen, or imported.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This edition doesn't support this project type."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta edición no admite este tipo de proyecto."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このエディションはこの種類のプロジェクトに対応していません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本不支持这种项目类型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本不支援這種專案類型。"
           }
         }
       }
@@ -84875,6 +85055,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "天氣"
+          }
+        }
+      }
+    },
+    "Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0)" : {
+      "comment" : "Weather settings footer crediting the weather data source. Keep the Markdown link and its URL unchanged.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos meteorológicos de [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気データ提供：[Open-Meteo.com](https://open-meteo.com/)（CC BY 4.0）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天气数据由 [Open-Meteo.com](https://open-meteo.com/) 提供（CC BY 4.0）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天氣資料由 [Open-Meteo.com](https://open-meteo.com/) 提供（CC BY 4.0）"
           }
         }
       }
