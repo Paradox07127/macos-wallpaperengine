@@ -117,20 +117,10 @@ struct BrowsePane: View {
                 filterBand
                 if showsResults {
                     keyRejectedBanner
+                    rateLimitBanner
                 }
             }
-            // Hung off the bars, not the content: on macOS 26 the content's top is masked and would fade the banner.
-            .overlay(alignment: .bottom) {
-                ZStack {
-                    if showsResults {
-                        rateLimitBanner
-                    }
-                }
-                .animation(phaseAnimation, value: viewModel.isRateLimited)
-                .alignmentGuide(.bottom) { $0[.top] }
-            }
-            // Before macOS 26 the bars stack above the content, which would otherwise draw over the banner.
-            .zIndex(1)
+            .animation(phaseAnimation, value: viewModel.isRateLimited)
         } bottom: {
             if !showsResults {
                 LibraryStatusBar(summary: Text("\(liked.count) wallpapers"))
