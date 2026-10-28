@@ -7,31 +7,33 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 0.9.2</title>
-      <pubDate>Sun, 25 Oct 2026 20:11:16 +0000</pubDate>
-      <sparkle:version>0.9.2</sparkle:version>
-      <sparkle:shortVersionString>0.9.2</sparkle:shortVersionString>
+      <title>Version 0.9.3</title>
+      <pubDate>Wed, 28 Oct 2026 05:16:37 +0000</pubDate>
+      <sparkle:version>0.9.3</sparkle:version>
+      <sparkle:shortVersionString>0.9.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Wallpaper Automation is a full page with a playlist crate, day ring and shuffle deck, plus Single Wallpaper mode.</li>
-<li>Playlists gain Auto-Advance and Loop; schedules support exact minutes and dragging across midnight.</li>
-<li>Library shuffle gains exclusions, previous-wallpaper history and reshuffling. The clock gains a Split-Flap style.</li>
+<li>Pro: follow the system Now Playing source in the music layer, including compatible players beyond Spotify and Apple Music.</li>
+<li>Drag one display onto another in Overview to copy its wallpaper setup.</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Wallpaper picking uses the in-page library with search and filters. Display controls, menus, contrast and translations are clearer.</li>
+<li>Library pages scroll beneath their filter and count bars, with clearer filters, empty results and context menus.</li>
+<li>Rename displays from the arrangement or Settings, and apply schemes and Workshop items to a named display from their menus.</li>
+<li>Simplify music visuals and process-widget sizing; put wallpaper updates in the detail header.</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Scene preset updates stay ordered; clearing a wallpaper preserves scene settings and reliably clears System Wallpaper.</li>
-<li>Fixed display transitions, time-zone switching, shortcut labels and network readings; hardened file saves, invalid schedules and Pro scene data.</li>
-<li>Fixed short schedule sections, shuffle counts and history, and keyboard interaction beneath information overlays.</li>
+<li>Keep cancelled display drags cancelled until mouse-up, and keep covered display controls from handling input.</li>
+<li>Retry failed cover captures safely and improve persistence, export cleanup and variable-font handling.</li>
+<li>Keep system media commands ordered and stop polling when the music source closes.</li>
+<li>Verify update archives against the app's existing Sparkle public key before publishing them.</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.2">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.2">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.3">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.3">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.2/Loomscreen-0.9.2.dmg" type="application/octet-stream" sparkle:edSignature="hk5ZdkPAX3wN3sK7HutGqxkX8tjsqcBLQTozHbwkmnCaui+rqZY+VgSCm1JWicVJiNIdLUaEQDerx9iz3pv2BQ==" length="16910201" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.3/Loomscreen-0.9.3.dmg" type="application/octet-stream" sparkle:edSignature="v2hBI6qsC+XTujycufW8F7LaHS2RzcZP2cQhoAjn9+7l5ZwAsfUreSXTC2czHWII2dtCP34H9XdjbC6erQCtDA==" length="16950933" />
     </item>
   </channel>
 </rss>
