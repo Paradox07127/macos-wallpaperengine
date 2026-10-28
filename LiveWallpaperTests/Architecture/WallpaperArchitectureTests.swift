@@ -1186,6 +1186,10 @@ struct WallpaperAutomationCoordinatorTests {
             #expect(played.isEmpty)
             #expect(returned == [second, first])
 
+            try await verifyHistoryBoundaryAndRedraw(first: first, second: second)
+        }
+
+        private func verifyHistoryBoundaryAndRedraw(first: WallpaperContent, second: WallpaperContent) async throws {
             orchestrator.regressLibraryShuffle(for: screen)
             for _ in 0 ..< 50 {
                 await Task.yield()
