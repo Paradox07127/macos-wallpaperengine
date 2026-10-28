@@ -19,7 +19,7 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertNil(options.titleFont)
         XCTAssertNil(options.alignment)
         XCTAssertEqual(options.titleScale, 1.0)
-        XCTAssertFalse(options.marquee)
+        XCTAssertTrue(options.marquee)
         XCTAssertTrue(options.showArtwork)
         XCTAssertTrue(options.showArtist)
         XCTAssertTrue(options.showAlbum)
@@ -36,7 +36,6 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertTrue(options.effectPulse)
         XCTAssertFalse(options.effectChromatic)
         XCTAssertFalse(options.effectShake)
-        XCTAssertTrue(options.effectParticles)
         XCTAssertFalse(options.effectRipple)
         XCTAssertEqual(options.beatSensitivity, 1.5)
     }
@@ -55,7 +54,7 @@ final class NowPlayingOptionsTests: XCTestCase {
         options.titleFont = .monospaced
         options.alignment = .trailing
         options.titleScale = 1.3
-        options.marquee = true
+        options.marquee = false
         options.showArtwork = false
         options.showArtist = false
         options.showAlbum = false
@@ -72,7 +71,6 @@ final class NowPlayingOptionsTests: XCTestCase {
         options.effectPulse = false
         options.effectChromatic = true
         options.effectShake = true
-        options.effectParticles = false
         options.effectRipple = true
         options.beatSensitivity = 2.2
 
@@ -90,7 +88,7 @@ final class NowPlayingOptionsTests: XCTestCase {
 
         for variant in [options, alternate] {
             let written = variant.applied(to: [:])
-            XCTAssertEqual(written.count, 28, "a field stopped persisting: \(written.keys.sorted())")
+            XCTAssertEqual(written.count, 27, "a field stopped persisting: \(written.keys.sorted())")
             XCTAssertEqual(Options(written), variant)
             XCTAssertTrue(Options().applied(to: written).isEmpty)
         }
@@ -203,7 +201,7 @@ final class NowPlayingOptionsTests: XCTestCase {
         ])
         XCTAssertEqual(options.style, .poster)
         XCTAssertEqual(options.opacity, 1.0)
-        XCTAssertFalse(options.marquee)
+        XCTAssertTrue(options.marquee)
         XCTAssertTrue(options.showArtwork)
         XCTAssertEqual(options.titleScale, 1.0)
         XCTAssertEqual(options.artworkShape, .rounded)

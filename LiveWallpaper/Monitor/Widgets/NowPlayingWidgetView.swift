@@ -31,9 +31,9 @@ struct NowPlayingWidgetLayout: Equatable {
     var visible: Set<Component>
     /// Any animation allowed (disc spin, entrance, glow pulse).
     var motion: Bool
-    /// Paused presentation: whole tile dims, all motion frozen.
+    /// Paused presentation dims the artwork and stops audio-driven motion.
     var dimmed: Bool
-    /// Long titles may loop horizontally: asked for *and* otherwise in motion.
+    /// Long titles may scroll independently of playback; Reduce Motion still stops them.
     var marquee: Bool
     /// Whether the transport row occupies space at all. It is laid out whenever this
     /// is true and merely fades with hover, so the pointer arriving never reflows the tile.
@@ -51,6 +51,7 @@ struct NowPlayingWidgetLayout: Equatable {
         isEditing: Bool,
         reduceMotion: Bool,
         canControl: Bool = false,
+        canSeek: Bool? = nil,
         hovering: Bool = false,
         hasLyrics: Bool = false
     ) -> NowPlayingWidgetLayout {
@@ -111,12 +112,12 @@ struct NowPlayingWidgetLayout: Equatable {
             visible: visible,
             motion: motion,
             dimmed: paused,
-            marquee: options.marquee && motion,
+            marquee: options.marquee && !reduceMotion,
             controlsAllowed: canControl && options.showControls && !isEditing,
             seekable: visible.contains(.progress)
                 && options.style.drawsLinearProgress
                 && options.seekOnProgressDrag
-                && canControl
+                && (canSeek ?? canControl)
                 && !isEditing
                 && (state.duration ?? 0) > 0
         )
@@ -334,15 +335,17 @@ struct NowPlayingWidgetView: View {
             isEditing: context.isEditing,
             reduceMotion: context.reduceMotion,
             canControl: canControl,
+            canSeek: state.map { NowPlayingController.supports(.seek(seconds: 0), state: $0) } ?? false,
             hovering: hovering,
             hasLyrics: !lyrics.isEmpty
         )
     }
 
-    /// Whether this player has a control vocabulary at all. Same table shape as
-    /// the ingest and artwork routes: a lookup, never a branch on the player.
     private var canControl: Bool {
-        NowPlayingControlMapping.mapping(for: state?.playerBundleID) != nil
+        guard let state else { return false }
+        return NowPlayingWidgetLayout.controlButtons(for: context.size).contains {
+            NowPlayingController.supports(Self.command(for: $0), state: state)
+        }
     }
 
     /// trackID when the player reports one, else `title|artist|album` — album is in
@@ -361,7 +364,8 @@ struct NowPlayingWidgetView: View {
     /// Turning the switch on must fetch for the track already on screen, so the
     /// option is part of the key rather than only a render-time filter.
     private var lyricsTaskKey: String {
-        "\(trackKey)|\(options.showLyrics ? 1 : 0)"
+        let eligible = state.map { NowPlayingLyrics.canFetch(for: $0) } ?? false
+        return "\(trackKey)|\(options.showLyrics ? 1 : 0)|\(eligible)"
     }
 
     private var accentColor: Color {
@@ -388,8 +392,7 @@ struct NowPlayingWidgetView: View {
     private var titleDesign: Font.Design { options.resolvedTitleFont.design }
     private var alignment: NowPlayingOptions.Alignment { options.resolvedAlignment }
 
-    /// Scrolling also needs the tile to be awake — `layout.marquee` already
-    /// folds in reduce-motion and pause, but not the board's suspend gate.
+    /// Title scrolling follows the overlay's suspend gate independently of playback.
     private var marqueeActive: Bool { layout.marquee && !suspended }
 
     /// Interpolated elapsed seconds at the current board tick (nil without a
@@ -604,7 +607,9 @@ struct NowPlayingWidgetView: View {
             let shown = layout.visible.contains(.controls)
             let side = min(max(min(size.width, size.height) * 0.19, 22), 46)
             HStack(spacing: side * 0.24) {
-                ForEach(NowPlayingWidgetLayout.controlButtons(for: context.size), id: \.self) { button in
+                ForEach(NowPlayingWidgetLayout.controlButtons(for: context.size).filter {
+                    NowPlayingController.supports(Self.command(for: $0), state: state)
+                }, id: \.self) { button in
                     controlButton(button, state: state, side: side)
                 }
             }
@@ -674,7 +679,7 @@ struct NowPlayingWidgetView: View {
     private func send(_ command: NowPlayingCommand, state: MonitorNowPlayingState) {
         Task { @MainActor in
             let result = await NowPlayingController.shared.send(
-                command, to: state.playerBundleID, duration: state.duration
+                command, for: state
             )
             if case .failure(.notAuthorized) = result { showPermissionNotice() }
         }
@@ -1119,7 +1124,7 @@ struct NowPlayingWidgetView: View {
     }
 }
 
-// MARK: - Marquee (opt-in horizontal loop for long titles)
+// MARK: - Marquee (overflow-only horizontal loop for long titles)
 
 private struct NowPlayingMarqueeText: View {
     let text: String
@@ -1176,6 +1181,8 @@ private struct NowPlayingMarqueeText: View {
             }
             .clipped()
             .task(id: plan) { await restart(for: plan) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: text))
     }
 
     private var label: some View {

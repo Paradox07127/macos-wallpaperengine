@@ -270,6 +270,14 @@ enum MonitorNowPlayingPhase: String, Codable, Sendable {
     }
 }
 
+enum MonitorNowPlayingMediaKind: String, Codable, Sendable {
+    case audio, video
+}
+
+enum MonitorNowPlayingMediaOrigin: String, Codable, Sendable {
+    case local, web
+}
+
 /// Optional fields reach the view as absence; do not paper over with defaults.
 struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var phase: MonitorNowPlayingPhase
@@ -286,6 +294,11 @@ struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var trackID: String?
     var playerBundleID: String?
     var artwork: Data?
+    var isSystemMedia: Bool?
+    var systemPlayerID: String?
+    var systemCommands: [Int]?
+    var mediaKind: MonitorNowPlayingMediaKind?
+    var mediaOrigin: MonitorNowPlayingMediaOrigin?
 }
 
 struct MonitorSourceHealth: Codable, Sendable, Equatable {

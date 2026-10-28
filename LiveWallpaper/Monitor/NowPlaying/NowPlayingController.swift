@@ -66,6 +66,7 @@ enum NowPlayingControlFailure: Error, Equatable, Sendable {
     case throttled
     /// The player (or the Apple Event machinery) rejected the script.
     case scriptFailed(OSStatus)
+    case systemFailed
 }
 
 /// A query must not provoke the Automation consent dialog; `value(for:from:)` answers nil until consent already exists.
@@ -122,6 +123,7 @@ final class NowPlayingController: ObservableObject {
     typealias QueryExecutor = @Sendable (String) -> Result<NowPlayingScriptValue, NowPlayingScriptError>
     /// Bundle ID in, `AEDeterminePermissionToAutomateTarget` status out.
     typealias PermissionProbe = @Sendable (String) -> OSStatus
+    typealias SystemExecutor = @Sendable (Int, String) async throws -> Void
 
     enum Status {
         static let notPermitted: OSStatus = -1743
@@ -152,6 +154,7 @@ final class NowPlayingController: ObservableObject {
     private let executor: Executor
     private let queryExecutor: QueryExecutor
     private let probe: PermissionProbe
+    private let systemExecutor: SystemExecutor?
     /// Keyed by the whole command, so two *different* seeks in quick succession
     /// both land while a repeated tap of the same button does not.
     private var lastSent: [Key: Date] = [:]
@@ -170,11 +173,72 @@ final class NowPlayingController: ObservableObject {
     init(
         executor: @escaping Executor = NowPlayingController.runAppleScript,
         queryExecutor: @escaping QueryExecutor = NowPlayingController.runAppleScriptQuery,
-        probe: @escaping PermissionProbe = NowPlayingController.determinePermission
+        probe: @escaping PermissionProbe = NowPlayingController.determinePermission,
+        systemExecutor: SystemExecutor? = nil
     ) {
         self.executor = executor
         self.queryExecutor = queryExecutor
         self.probe = probe
+        #if LITE_BUILD
+        self.systemExecutor = systemExecutor
+        #else
+        self.systemExecutor = systemExecutor ?? Self.sendSystemCommand
+        #endif
+    }
+
+    #if !LITE_BUILD
+    private nonisolated static func sendSystemCommand(_ command: Int, _ playerID: String) async throws {
+        try await NowPlayingSystemBridge.send(command: command, playerID: playerID)
+    }
+    #endif
+
+    nonisolated static func systemCommand(for command: NowPlayingCommand, state: MonitorNowPlayingState) -> Int? {
+        guard state.isSystemMedia == true, state.phase.hasTrack,
+              state.systemPlayerID?.isEmpty == false, let commands = state.systemCommands else { return nil }
+        let code: Int
+        switch command {
+        case .playPause:
+            let explicit = state.phase == .playing ? 1 : 0
+            code = commands.contains(explicit) ? explicit : 2
+        case .next: code = 4
+        case .previous: code = 5
+        case .seek: return nil
+        }
+        return commands.contains(code) ? code : nil
+    }
+
+    nonisolated static func supports(_ command: NowPlayingCommand, state: MonitorNowPlayingState) -> Bool {
+        if state.isSystemMedia == true, state.systemPlayerID != nil, state.systemCommands != nil {
+            if case .seek = command {
+                return script(for: command, bundleID: state.playerBundleID, duration: state.duration) != nil
+            }
+            return systemCommand(for: command, state: state) != nil
+        }
+        return script(for: command, bundleID: state.playerBundleID, duration: state.duration) != nil
+    }
+
+    @discardableResult
+    func send(_ command: NowPlayingCommand, for state: MonitorNowPlayingState, now: Date = Date()) async -> Result<Void, NowPlayingControlFailure> {
+        if let code = Self.systemCommand(for: command, state: state),
+           let playerID = state.systemPlayerID, let systemExecutor {
+            let key = Key(bundleID: playerID, command: command)
+            if let last = lastSent[key], now.timeIntervalSince(last) < Self.throttleWindow {
+                return .failure(.throttled)
+            }
+            if lastSent.count >= Self.lastSentCapacity {
+                lastSent.removeAll(keepingCapacity: true)
+            }
+            lastSent[key] = now
+            do {
+                try await systemExecutor(code, playerID)
+                return .success(())
+            } catch {
+                // Retrying a possibly submitted toggle via AppleScript could undo it.
+                return .failure(.systemFailed)
+            }
+        }
+        guard Self.supports(command, state: state) else { return .failure(.unsupportedPlayer) }
+        return await send(command, to: state.playerBundleID, duration: state.duration, now: now)
     }
 
     // MARK: Script generation (pure, test-visible)

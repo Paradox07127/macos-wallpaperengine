@@ -5,6 +5,150 @@ import os
 import Testing
 @testable import LiveWallpaper
 
+private actor SystemMediaFixture {
+    enum Failure: Error { case unavailable }
+    var state: MonitorNowPlayingState?
+    var failing = false
+    private(set) var reads = 0
+    init(_ state: MonitorNowPlayingState?) {
+        self.state = state
+    }
+
+    func set(_ state: MonitorNowPlayingState?, failing: Bool = false) {
+        self.state = state
+        self.failing = failing
+    }
+
+    func read() throws -> MonitorNowPlayingState? {
+        reads += 1
+        if failing {
+            throw Failure.unavailable
+        }
+        return state
+    }
+}
+
+@Suite("System media source and fallback", .timeLimit(.minutes(1)))
+struct NowPlayingSystemSourceTests {
+    @MainActor
+    @Test("System playback reaches the source sink, falls back on failure, and stops with its last subscriber")
+    func systemPlaybackAndFallback() async throws {
+        var external = MonitorNowPlayingState(phase: .playing, title: "Local test media")
+        external.playerBundleID = "com.colliderli.iina"
+        external.isSystemMedia = true
+        let fixture = SystemMediaFixture(external)
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] },
+                                        systemProvider: { try await fixture.read() }, systemPollInterval: .milliseconds(10))
+        let source = NowPlayingSource(monitor: monitor, artworkFetcher: offlineFetcher(), audioReactive: false, audioDemand: { _ in })
+        let sink = RecordingNowPlayingSink()
+        await source.start(sink: sink)
+        let appeared = await waitUntil { sink.box.states.last?.title == external.title }
+        try #require(appeared)
+        #expect(sink.box.states.last?.isSystemMedia == true)
+        monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPlaying)
+        #expect(monitor.currentState.playerBundleID == "com.colliderli.iina")
+
+        await fixture.set(nil, failing: true)
+        let fellBack = await waitUntil { sink.box.states.last?.playerBundleID == "com.spotify.client" }
+        try #require(fellBack, "A failed system reader must release its stale track to the legacy source")
+        external.phase = .paused
+        await fixture.set(external)
+        let recovered = await waitUntil { monitor.currentState.playerBundleID == "com.spotify.client" }
+        #expect(recovered)
+        monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPaused)
+        let paused = await waitUntil { sink.box.states.last?.playerBundleID == "com.colliderli.iina" }
+        try #require(paused)
+        await fixture.set(nil)
+        let emptyFallback = await waitUntil { sink.box.states.last?.playerBundleID == "com.spotify.client" }
+        try #require(emptyFallback)
+
+        await source.stop()
+        let reads = await fixture.reads
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(await fixture.reads == reads, "Closing the last consumer must stop spawning system queries")
+        external.phase = .playing
+        external.title = "Restarted local media"
+        await fixture.set(external)
+        await source.start(sink: sink)
+        let restarted = await waitUntil { sink.box.states.last?.title == external.title }
+        #expect(restarted)
+        await source.stop()
+    }
+
+    #if !LITE_BUILD
+    @Test("System payload validation preserves usable timelines and rejects stale loop anchors")
+    func payloadTimeline() async throws {
+        let raw = Data(#"{"bundleID":"com.colliderli.iina","title":"Track","playing":true,"duration":120,"position":42,"timestamp":1000,"rate":1}"#.utf8)
+        var payload = try JSONDecoder().decode(NowPlayingSystemSnapshot.self, from: raw)
+        let state = try #require(payload.state(now: 1002))
+        #expect(state.position == 42)
+        #expect(state.positionSampledAt == 1000)
+        #expect(state.isSystemMedia == true)
+        #expect(state.mediaKind == nil)
+        #expect(state.mediaOrigin == nil)
+        payload.controlID = "owned-player"
+        payload.commands = [5, 4, 1, 0, 999]
+        payload.mediaKind = "video"
+        payload.origin = "web"
+        let video = try #require(payload.state(now: 1002))
+        #expect(video.mediaKind == .video)
+        #expect(video.mediaOrigin == .web)
+        #expect(video.systemCommands == [0, 1, 4, 5])
+        payload.mediaKind = "unrecognized"
+        payload.origin = "unrecognized"
+        #expect(payload.state(now: 1002)?.mediaKind == nil)
+        #expect(payload.state(now: 1002)?.mediaOrigin == nil)
+        payload.rate = 2
+        let fast = try #require(payload.state(now: 1002))
+        #expect(fast.position == 46)
+        #expect(fast.positionSampledAt == nil)
+        payload.rate = 1
+        #expect(payload.state(now: 1200)?.position == nil)
+        payload.title = "  "
+        #expect(payload.state(now: 1002) == nil)
+        let bridge = NowPlayingSystemBridge(query: { requestsArtwork in
+            if requestsArtwork {
+                throw URLError(.timedOut)
+            }
+            return raw
+        })
+        let first = try await bridge.snapshot()
+        let withoutCover = try await bridge.snapshot()
+        #expect(first?.title == "Track")
+        #expect(withoutCover?.title == "Track", "A failed cover query must not discard valid system metadata")
+    }
+
+    @Test("The system subprocess is bounded and terminates on cancellation")
+    func subprocessLifetime() async throws {
+        for _ in 0 ..< 3 {
+            let data = try await NowPlayingSystemProcess().run(arguments: ["-l", "JavaScript", "-e", "'completed'"])
+            #expect(String(bytes: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) == "completed")
+            await Task.yield()
+        }
+        let timed = NowPlayingSystemProcess()
+        do {
+            _ = try await timed.run(arguments: ["-l", "JavaScript", "-e", "delay(10)"], timeout: .milliseconds(100))
+            Issue.record("A stalled script must time out")
+        } catch NowPlayingSystemProcess.Failure.timedOut {}
+        let cancelled = NowPlayingSystemProcess()
+        let task = Task { try await cancelled.run(arguments: ["-l", "JavaScript", "-e", "delay(10)"]) }
+        try await Task.sleep(for: .milliseconds(80))
+        task.cancel()
+        do {
+            _ = try await task.value
+            Issue.record("A cancelled script must fail")
+        } catch is CancellationError {}
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(!timed.isRunning)
+        #expect(!cancelled.isRunning)
+        do {
+            _ = try await NowPlayingSystemProcess().run(arguments: ["-l", "JavaScript", "-e", "'x'.repeat(4096)"], outputLimit: 128)
+            Issue.record("Oversize output must be rejected")
+        } catch NowPlayingSystemProcess.Failure.outputTooLarge {}
+    }
+    #endif
+}
+
 // MARK: - Playback notification fixtures
 
 private enum Fixture {

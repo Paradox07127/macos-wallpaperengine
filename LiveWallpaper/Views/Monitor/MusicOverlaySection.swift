@@ -558,11 +558,6 @@ struct MusicOverlaySection: View {
                         )
                         Divider()
                         elementToggle(
-                            icon: "sparkles", color: .purple, title: "Particles",
-                            binding: optionBinding(\.effectParticles)
-                        )
-                        Divider()
-                        elementToggle(
                             icon: "circle.circle", color: .blue, title: "Ripples",
                             binding: optionBinding(\.effectRipple)
                         )

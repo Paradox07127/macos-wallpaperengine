@@ -273,21 +273,6 @@ enum NowPlayingAudioLayer {
             limited(Double(max(band, 0)) * limited(intensity, to: 1) * limited(fade, to: 1), to: 1)
         }
 
-        /// How many motes the budget's soft edge spans.
-        nonisolated static let moteFadeWidth: Double = 3
-
-        /// How brightly mote `index` burns at this bass level, 0…1.
-        nonisolated static func moteVisibility(
-            index: Int, count: Int, bass: Float, intensity: Double
-        ) -> Double {
-            guard count > 0, index >= 0, index < count else { return 0 }
-            let share = limited(0.25 + Double(bass) * 1.5 * intensity, to: 1) * limited(intensity, to: 1)
-            let budget = Double(count) * share
-            // Three motes wide, not one: the budget moves ~48 motes per unit of bass, so
-            // a one-mote ramp would take a mote from full to dark visibly as a blink.
-            return limited(max(0, budget - Double(index)) / moteFadeWidth, to: 1)
-        }
-
         nonisolated static func rippleAlpha(progress: Double, fade: Double, intensity: Double) -> Double {
             limited((1 - progress) * 0.45 * fade * intensity, to: 1)
         }
@@ -406,7 +391,7 @@ struct NowPlayingAudioReactiveView: View {
         /// Vinyl: radial spikes outside the progress ring. `discFraction` is
         /// the platter radius as a fraction of this view's own radius.
         case radial(discFraction: CGFloat)
-        /// Aurora: low-band halo breathing + drifting accent motes.
+        /// Aurora: flowing ribbons driven by the audio bands.
         case aurora
     }
 
@@ -545,9 +530,6 @@ struct NowPlayingAudioReactiveView: View {
         case .aurora:
             drawWave(in: &context, size: size, now: now, gain: gain)
         }
-        if options.effectParticles {
-            drawParticles(in: &context, size: size, now: now, intensity: intensity, gain: gain)
-        }
         if options.effectRipple {
             drawRipples(in: &context, size: size, now: now, intensity: intensity)
         }
@@ -649,54 +631,7 @@ struct NowPlayingAudioReactiveView: View {
         }
     }
 
-    // MARK: Particles + ripples
-
-    /// Tile area decides the cap (roughly small / medium / large), and the bass
-    /// decides how many of them are lit right now.
-    static func particleCapacity(for size: CGSize) -> Int {
-        let area = size.width * size.height
-        if area < 30_000 { return 16 }
-        if area < 90_000 { return 32 }
-        return 64
-    }
-
-    /// Rising motes: every position is a pure function of seed(index) + time —
-    /// no stored particle state, so a tick costs arithmetic only.
-    private func drawParticles(
-        in context: inout GraphicsContext, size: CGSize, now: TimeInterval,
-        intensity: Double, gain: Double
-    ) {
-        let capacity = Self.particleCapacity(for: size)
-        let mid = Double(engine.drives.mid)
-        let envelope = Double(engine.drives.bassAtt)
-        for index in 0 ..< capacity {
-            let visibility = NowPlayingAudioLayer.Effects.moteVisibility(
-                index: index, count: capacity, bass: engine.drives.bass, intensity: intensity
-            )
-            guard visibility > 0 else { continue }
-            let s1 = Self.seedUnit(index, 1)
-            let s2 = Self.seedUnit(index, 2)
-            let s3 = Self.seedUnit(index, 3)
-            let s4 = Self.seedUnit(index, 4)
-            let riseSpeed = 0.015 + 0.02 * s2 + 0.09 * mid
-            let phase = (now * riseSpeed + s1).truncatingRemainder(dividingBy: 1)
-            let yFraction = 1 - phase
-            let x = (s3 + 0.04 * sin(now * (0.4 + 0.5 * s4) + s1 * 2 * .pi)) * size.width
-            let y = yFraction * size.height
-            let diameter = 3.5 + 2 * s4
-            let alpha = NowPlayingAudioLayer.Effects.alpha(
-                engine.fade * (0.16 + 0.62 * envelope) * gain * sin(.pi * yFraction) * visibility
-            )
-            guard alpha > 0.004 else { continue }
-            context.fill(
-                Path(ellipseIn: CGRect(
-                    x: x - diameter / 2, y: y - diameter / 2,
-                    width: diameter, height: diameter
-                )),
-                with: .color(accent.opacity(alpha))
-            )
-        }
-    }
+    // MARK: Ripples
 
     private func drawRipples(
         in context: inout GraphicsContext, size: CGSize, now: TimeInterval, intensity: Double
@@ -719,15 +654,6 @@ struct NowPlayingAudioReactiveView: View {
                 lineWidth: 2.2
             )
         }
-    }
-
-    /// Deterministic per-particle seed in 0…1 (splitmix64 finalizer).
-    private static func seedUnit(_ index: Int, _ salt: UInt64) -> Double {
-        var hash = UInt64(index) &* 0x9E37_79B9_7F4A_7C15 &+ salt &* 0xBF58_476D_1CE4_E5B9
-        hash ^= hash >> 31
-        hash = hash &* 0x94D0_49BB_1331_11EB
-        hash ^= hash >> 29
-        return Double(hash % 100_000) / 100_000
     }
 }
 

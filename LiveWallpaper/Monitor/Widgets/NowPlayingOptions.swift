@@ -97,7 +97,6 @@ struct NowPlayingOptions: Equatable, Sendable {
         static let effectPulse = "effectPulse"
         static let effectChromatic = "effectChromatic"
         static let effectShake = "effectShake"
-        static let effectParticles = "effectParticles"
         static let effectRipple = "effectRipple"
         static let beatSensitivity = "beatSensitivity"
     }
@@ -139,7 +138,7 @@ struct NowPlayingOptions: Equatable, Sendable {
     /// nil means "whatever this style already used" — see `defaultAlignment(for:)`.
     var alignment: Alignment?
     var titleScale = Defaults.titleScale
-    var marquee = false
+    var marquee = true
     var showArtwork = true
     var showArtist = true
     var showAlbum = true
@@ -161,7 +160,6 @@ struct NowPlayingOptions: Equatable, Sendable {
     var effectPulse = true
     var effectChromatic = false
     var effectShake = false
-    var effectParticles = true
     var effectRipple = false
     var beatSensitivity = Defaults.beatSensitivity
 
@@ -178,7 +176,7 @@ struct NowPlayingOptions: Equatable, Sendable {
         titleFont = Self.enumValue(options, Key.titleFont)
         alignment = Self.enumValue(options, Key.alignment)
         titleScale = Self.number(options, Key.titleScale, default: Defaults.titleScale, in: Limits.titleScale)
-        marquee = options[Key.marquee]?.boolValue ?? false
+        marquee = options[Key.marquee]?.boolValue ?? true
         showArtwork = options[Key.showArtwork]?.boolValue ?? true
         showArtist = options[Key.showArtist]?.boolValue ?? true
         showAlbum = options[Key.showAlbum]?.boolValue ?? true
@@ -201,7 +199,6 @@ struct NowPlayingOptions: Equatable, Sendable {
         effectPulse = options[Key.effectPulse]?.boolValue ?? true
         effectChromatic = options[Key.effectChromatic]?.boolValue ?? false
         effectShake = options[Key.effectShake]?.boolValue ?? false
-        effectParticles = options[Key.effectParticles]?.boolValue ?? true
         effectRipple = options[Key.effectRipple]?.boolValue ?? false
         beatSensitivity = Self.number(
             options, Key.beatSensitivity, default: Defaults.beatSensitivity, in: Limits.beatSensitivity
@@ -266,7 +263,7 @@ struct NowPlayingOptions: Equatable, Sendable {
             }
         )
         putNumber(Key.titleScale, titleScale, default: Defaults.titleScale, in: Limits.titleScale)
-        put(Key.marquee, marquee ? .bool(true) : nil)
+        put(Key.marquee, marquee ? nil : .bool(false))
         put(Key.showArtwork, showArtwork ? nil : .bool(false))
         put(Key.showArtist, showArtist ? nil : .bool(false))
         put(Key.showAlbum, showAlbum ? nil : .bool(false))
@@ -288,7 +285,6 @@ struct NowPlayingOptions: Equatable, Sendable {
         put(Key.effectPulse, effectPulse ? nil : .bool(false))
         put(Key.effectChromatic, effectChromatic ? .bool(true) : nil)
         put(Key.effectShake, effectShake ? .bool(true) : nil)
-        put(Key.effectParticles, effectParticles ? nil : .bool(false))
         put(Key.effectRipple, effectRipple ? .bool(true) : nil)
         putNumber(
             Key.beatSensitivity, beatSensitivity,

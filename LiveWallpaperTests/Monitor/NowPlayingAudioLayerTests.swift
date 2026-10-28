@@ -29,7 +29,7 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         XCTAssertLessThanOrEqual(Layer.Effects.waveAmplitude(band: 9, fade: 1, intensity: 9), 1)
     }
 
-    // MARK: Peak caps and mote fading
+    // MARK: Peak caps
 
     func testPeakCapRisesInstantlyAndFallsSlowly() {
         XCTAssertEqual(Layer.Effects.peak(previous: 0.2, band: 0.9, dt: 1 / 30), 0.9, accuracy: 1e-6)
@@ -41,46 +41,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
 
         XCTAssertEqual(Layer.Effects.peak(previous: 0.05, band: 0, dt: 10), 0, accuracy: 1e-6)
         XCTAssertGreaterThanOrEqual(Layer.Effects.peak(previous: 0, band: 0, dt: 1), 0)
-    }
-
-    func testMoteVisibilityIsContinuousInTheBass() {
-        let count = 32
-        for index in [0, 5, 15, 24, 31] {
-            var previous = Layer.Effects.moteVisibility(
-                index: index, count: count, bass: 0, intensity: 1
-            )
-            var biggestJump = 0.0
-            for step in 1 ... 400 {
-                let bass = Float(step) / 400
-                let value = Layer.Effects.moteVisibility(
-                    index: index, count: count, bass: bass, intensity: 1
-                )
-                biggestJump = max(biggestJump, abs(value - previous))
-                previous = value
-                XCTAssertGreaterThanOrEqual(value, 0)
-                XCTAssertLessThanOrEqual(value, 1)
-            }
-            XCTAssertLessThan(
-                biggestJump, 0.1,
-                "mote \(index) jumps \(biggestJump) in brightness over a 1/400 change in bass"
-            )
-        }
-    }
-
-    func testMoteVisibilityGrowsWithTheBass() {
-        let count = 32
-        func lit(_ bass: Float) -> Double {
-            (0 ..< count)
-                .map { Layer.Effects.moteVisibility(index: $0, count: count, bass: bass, intensity: 1) }
-                .reduce(0, +)
-        }
-        XCTAssertLessThan(lit(0.05), lit(0.4))
-        XCTAssertLessThan(lit(0.4), lit(0.9))
-        XCTAssertEqual(
-            Layer.Effects.moteVisibility(index: 0, count: count, bass: 0.9, intensity: 0),
-            0, accuracy: 1e-6,
-            "the intensity dial at zero still lights a mote"
-        )
     }
 
     // MARK: shouldRun — full truth table
@@ -540,9 +500,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
             XCTAssertLessThanOrEqual(
                 Effects.rippleAlpha(progress: 0, fade: 1, intensity: intensity), 1
             )
-            XCTAssertLessThanOrEqual(
-                Effects.moteVisibility(index: 0, count: 64, bass: drive, intensity: intensity), 1
-            )
         }
 
         XCTAssertEqual(Effects.shakeOffset(bass: 0, intensity: intensity), 0)
@@ -567,11 +524,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         XCTAssertLessThan(
             Effects.chromaticOffset(treb: 0.1, intensity: 0.5),
             Effects.chromaticOffset(treb: 0.1, intensity: 1.0)
-        )
-        XCTAssertGreaterThan(Effects.moteVisibility(index: 0, count: 32, bass: 0, intensity: 1), 0)
-        XCTAssertLessThan(
-            Effects.moteVisibility(index: 12, count: 32, bass: 0.1, intensity: 1),
-            Effects.moteVisibility(index: 12, count: 32, bass: 0.6, intensity: 1)
         )
     }
 

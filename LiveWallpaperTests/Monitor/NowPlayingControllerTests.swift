@@ -6,6 +6,57 @@ import XCTest
 /// consent dialog and drive the user's player. Every case injects a fake executor.
 @MainActor
 final class NowPlayingControllerTests: XCTestCase {
+    func testSystemControlsUseCapabilitiesAndKeepLegacyFallback() async {
+        let log = Locked([Int]())
+        let recorder = Recorder()
+        let controller = NowPlayingController(executor: recorder.executor, systemExecutor: { command, playerID in
+            XCTAssertEqual(playerID, "owned-player")
+            log.mutate { $0.append(command) }
+        })
+        var state = MonitorNowPlayingState(phase: .playing, title: "Fixture")
+        state.playerBundleID = "com.colliderli.iina"
+        state.isSystemMedia = true
+        state.systemPlayerID = "owned-player"
+        state.systemCommands = [0, 1, 2, 4, 5]
+        let now = Date()
+        let pause = await controller.send(.playPause, for: state, now: now)
+        XCTAssertTrue(succeeded(pause))
+        let duplicate = await controller.send(.playPause, for: state, now: now)
+        XCTAssertEqual(failure(duplicate), .throttled)
+        state.phase = .paused
+        let play = await controller.send(.playPause, for: state, now: now.addingTimeInterval(1))
+        XCTAssertTrue(succeeded(play))
+        let next = await controller.send(.next, for: state, now: now)
+        XCTAssertTrue(succeeded(next))
+        let previous = await controller.send(.previous, for: state, now: now)
+        XCTAssertTrue(succeeded(previous))
+        XCTAssertEqual(log.value, [1, 0, 4, 5])
+        state.systemCommands = [0, 1]
+        let unsupported = await controller.send(.next, for: state)
+        XCTAssertEqual(failure(unsupported), .unsupportedPlayer)
+        XCTAssertFalse(NowPlayingController.supports(.seek(seconds: 0), state: state))
+        XCTAssertTrue(recorder.scripts.isEmpty)
+        state.systemCommands = nil
+        state.playerBundleID = Self.music
+        let fallback = await controller.send(.playPause, for: state)
+        XCTAssertTrue(succeeded(fallback))
+        XCTAssertEqual(recorder.scripts.count, 1)
+    }
+
+    func testUncertainSystemFailureNeverRetriesAnAppleScriptToggle() async {
+        let recorder = Recorder()
+        let controller = NowPlayingController(executor: recorder.executor, systemExecutor: { _, _ in throw URLError(.timedOut) })
+        var state = MonitorNowPlayingState(phase: .playing, title: "Fixture")
+        state.playerBundleID = Self.spotify
+        state.isSystemMedia = true
+        state.systemPlayerID = "owned-player"
+        state.systemCommands = [2]
+        let uncertain = await controller.send(.playPause, for: state)
+        XCTAssertEqual(failure(uncertain), .systemFailed)
+        XCTAssertTrue(recorder.scripts.isEmpty)
+        XCTAssertEqual(controller.authorization(for: Self.spotify), .notDetermined)
+    }
+
     private static let spotify = "com.spotify.client"
     private static let music = "com.apple.Music"
 

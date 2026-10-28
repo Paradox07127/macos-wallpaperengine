@@ -18,6 +18,12 @@ struct LyricLine: Equatable, Sendable {
 // MARK: - Parsing and lookup (pure)
 
 enum NowPlayingLyrics {
+    nonisolated static func canFetch(for state: MonitorNowPlayingState) -> Bool {
+        guard state.mediaKind != .video else { return false }
+        return state.isSystemMedia != true
+            || NowPlayingArtworkRoute.all.contains(where: { $0.bundleID == state.playerBundleID })
+    }
+
     /// LRC → timed lines. Unparseable rows are skipped. Applies `[offset:]` after the pass.
     nonisolated static func parseLRC(_ text: String) -> [LyricLine] {
         var body = text
@@ -294,7 +300,8 @@ actor NowPlayingLyricsFetcher {
     // MARK: Cache and fetch
 
     func lyrics(for state: MonitorNowPlayingState) async throws -> [LyricLine]? {
-        guard let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return nil }
+        guard NowPlayingLyrics.canFetch(for: state),
+              let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return nil }
         if let hit = memo.cached(key) {
             return hit
         }
@@ -426,7 +433,8 @@ final class NowPlayingLyricsStore {
     }
 
     func lyrics(for state: MonitorNowPlayingState) async -> [LyricLine] {
-        guard let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return [] }
+        guard NowPlayingLyrics.canFetch(for: state),
+              let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return [] }
         if let hit = cache[key] { return hit }
         if let expiry = missExpiry[key] {
             if now() < expiry { return [] }

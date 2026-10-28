@@ -52,7 +52,15 @@ struct NowPlayingPlayerMapping: Sendable {
 
 @MainActor
 final class NowPlayingMonitor: NSObject {
+    #if LITE_BUILD
     static let shared = NowPlayingMonitor()
+    #else
+    static let shared = NowPlayingMonitor(systemProvider: readSystemSnapshot)
+
+    private nonisolated static func readSystemSnapshot() async throws -> MonitorNowPlayingState? {
+        try await NowPlayingSystemBridge.shared.snapshot()
+    }
+    #endif
 
     nonisolated static let mappings = NowPlayingPlayerMapping.all
 
@@ -74,6 +82,12 @@ final class NowPlayingMonitor: NSObject {
     typealias LaunchSnapshotProvider = @MainActor (String) async -> String?
     private let launchSnapshotProvider: LaunchSnapshotProvider
     private var didAttemptLaunchSeed = false
+    typealias SystemProvider = @Sendable () async throws -> MonitorNowPlayingState?
+    private let systemProvider: SystemProvider?
+    private let systemPollInterval: Duration
+    private var systemTask: Task<Void, Never>?
+    private var systemState: MonitorNowPlayingState?
+    private var systemGeneration: UInt64 = 0
 
     init(
         registersObservers: Bool = true,
@@ -82,9 +96,13 @@ final class NowPlayingMonitor: NSObject {
         },
         launchSnapshotProvider: @escaping LaunchSnapshotProvider = { bundleID in
             await NowPlayingController.shared.value(for: .launchSnapshot, from: bundleID)?.stringValue
-        }
+        },
+        systemProvider: SystemProvider? = nil,
+        systemPollInterval: Duration = .seconds(1)
     ) {
         self.runningBundleIDs = runningBundleIDs
+        self.systemProvider = systemProvider
+        self.systemPollInterval = systemPollInterval
         self.launchSnapshotProvider = launchSnapshotProvider
         super.init()
         guard registersObservers else { return }
@@ -112,6 +130,7 @@ final class NowPlayingMonitor: NSObject {
     }
 
     deinit {
+        systemTask?.cancel()
         DistributedNotificationCenter.default().removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
@@ -128,7 +147,12 @@ final class NowPlayingMonitor: NSObject {
     }
 
     func playerDidTerminate(bundleID: String) {
-        guard records.removeValue(forKey: bundleID) != nil else { return }
+        let hadRecord = records.removeValue(forKey: bundleID) != nil
+        let wasSystemPlayer = systemState?.playerBundleID == bundleID
+        if wasSystemPlayer {
+            systemState = nil
+        }
+        guard hadRecord || wasSystemPlayer else { return }
         ordinal &+= 1
         notifySubscribers()
     }
@@ -192,6 +216,19 @@ final class NowPlayingMonitor: NSObject {
     // MARK: - Arbitration
 
     var currentState: MonitorNowPlayingState {
+        if var systemState {
+            let fallback = arbitratedRecord()?.state
+            if systemState.phase == .playing || fallback?.phase != .playing {
+                if let fallback, fallback.playerBundleID == systemState.playerBundleID,
+                   fallback.title == systemState.title, fallback.artist == systemState.artist {
+                    if systemState.playerBundleID == "com.spotify.client" {
+                        systemState.trackID = fallback.trackID ?? systemState.trackID
+                    }
+                    systemState.artwork = systemState.artwork ?? fallback.artwork
+                }
+                return systemState
+            }
+        }
         if let record = arbitratedRecord() { return record.state }
         let knownPlayers = Set(Self.mappings.map(\.bundleID))
         let anyRunning = !runningBundleIDs().isDisjoint(with: knownPlayers)
@@ -214,6 +251,41 @@ final class NowPlayingMonitor: NSObject {
         subscribers[id] = handler
         handler(ordinal, currentState)
         seedFromRunningPlayersIfNeeded()
+        startSystemPollingIfNeeded()
+    }
+
+    private func startSystemPollingIfNeeded() {
+        guard systemTask == nil, let provider = systemProvider else { return }
+        systemGeneration &+= 1
+        let generation = systemGeneration
+        let interval = systemPollInterval
+        systemTask = Task { [weak self] in
+            var failures = 0
+            var inactivityFactor = 1
+            while !Task.isCancelled {
+                do {
+                    let state = try await provider()
+                    guard !Task.isCancelled else { return }
+                    self?.applySystemState(state, generation: generation)
+                    failures = 0
+                    inactivityFactor = state?.phase == .playing ? 1 : state == nil ? 3 : 2
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.applySystemState(nil, generation: generation)
+                    failures = min(failures + 1, 4)
+                }
+                do {
+                    try await Task.sleep(for: failures == 0 ? interval * inactivityFactor : .seconds(1 << failures))
+                } catch { return }
+            }
+        }
+    }
+
+    private func applySystemState(_ state: MonitorNowPlayingState?, generation: UInt64) {
+        guard systemGeneration == generation, !subscribers.isEmpty, systemState != state else { return }
+        systemState = state
+        ordinal &+= 1
+        notifySubscribers()
     }
 
     private func seedFromRunningPlayersIfNeeded() {
@@ -279,6 +351,12 @@ final class NowPlayingMonitor: NSObject {
 
     func unsubscribe(id: UUID) {
         subscribers.removeValue(forKey: id)
+        if subscribers.isEmpty {
+            systemGeneration &+= 1
+            systemTask?.cancel()
+            systemTask = nil
+            systemState = nil
+        }
     }
 
     private func notifySubscribers() {

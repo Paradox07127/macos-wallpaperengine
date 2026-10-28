@@ -296,6 +296,36 @@ struct NowPlayingLyricsTests {
         #expect(header?.hasSuffix(" (https://github.com/Paradox07127/macos-wallpaperengine)") == true)
     }
 
+    @Test("System web and local-media titles never enter external lyric searches")
+    func systemMediaStaysLocal() async throws {
+        let log = RequestLog()
+        let fetcher = NowPlayingLyricsFetcher(transport: { request in
+            log.record(request)
+            return ok(request, recordJSON())
+        })
+        var state = trackState()
+        state.isSystemMedia = true
+        for bundle in ["com.google.Chrome", "com.colliderli.iina"] {
+            state.playerBundleID = bundle
+            let lines = try await fetcher.lyrics(for: state)
+            #expect(lines == nil)
+        }
+        #expect(log.count == 0)
+        state.playerBundleID = "com.apple.Music"
+        let lines = try await fetcher.lyrics(for: state)
+        #expect(lines?.isEmpty == false)
+        #expect(log.count == 1)
+        let store = await NowPlayingLyricsStore(load: { try await fetcher.lyrics(for: $0) }, cancelOthers: { _ in })
+        let cached = await store.lyrics(for: state)
+        #expect(!cached.isEmpty)
+        state.mediaKind = .video
+        let hidden = await store.lyrics(for: state)
+        let rejected = try await fetcher.lyrics(for: state)
+        #expect(hidden.isEmpty)
+        #expect(rejected == nil)
+        #expect(log.count == 1, "Video classification must suppress lookup and cached music lyrics")
+    }
+
     @Test("An exact-endpoint hit is parsed and never falls through to search")
     func exactHitIsUsed() async throws {
         let log = RequestLog()

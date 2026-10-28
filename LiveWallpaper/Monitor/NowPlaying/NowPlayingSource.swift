@@ -1,4 +1,8 @@
 import Foundation
+#if !LITE_BUILD
+import CryptoKit
+import Darwin
+#endif
 
 final actor NowPlayingSource: MonitorDataSource {
     nonisolated let sourceID = "nowPlaying"
@@ -57,8 +61,9 @@ final actor NowPlayingSource: MonitorDataSource {
     /// already put the playhead in every notification, and asking twice would
     /// spend an Apple Event to learn what we were just told.
     private static func needsPositionPolling(_ state: MonitorNowPlayingState) -> Bool {
-        guard state.phase.hasTrack, let bundleID = state.playerBundleID else { return false }
-        guard let mapping = NowPlayingMonitor.mappings.first(where: { $0.bundleID == bundleID }) else {
+        guard state.isSystemMedia != true,
+              state.phase.hasTrack, let bundleID = state.playerBundleID,
+              let mapping = NowPlayingMonitor.mappings.first(where: { $0.bundleID == bundleID }) else {
             return false
         }
         return mapping.positionKey == nil
@@ -188,7 +193,8 @@ final actor NowPlayingSource: MonitorDataSource {
             await fetcher.cancelInFlight(except: key)
             guard stillCurrent() else { return }
         }
-        if let key, state.artwork == nil {
+        if let key, state.artwork == nil,
+           NowPlayingArtworkRoute.all.contains(where: { $0.bundleID == state.playerBundleID }) {
             let cached = await fetcher.cachedArtwork(forKey: key)
             guard stillCurrent() else { return }
             if let cached {
@@ -257,3 +263,260 @@ final actor NowPlayingSource: MonitorDataSource {
         await sink.updateNowPlaying(state)
     }
 }
+
+#if !LITE_BUILD
+struct NowPlayingSystemSnapshot: Decodable, Sendable {
+    var bundleID: String?
+    var title: String?
+    var artist: String?
+    var album: String?
+    var trackID: String?
+    var artworkID: String?
+    var playing: Bool
+    var duration: Double?
+    var position: Double?
+    var timestamp: Double?
+    var rate: Double?
+    var artwork: String?
+    var controlID: String?
+    var commands: [Int]?
+    var mediaKind: String?
+    var origin: String?
+
+    var identity: String {
+        let fields = [bundleID, trackID, title, artist, album, artworkID].map { $0 ?? "" }
+        let bytes = (try? JSONEncoder().encode(fields)) ?? Data()
+        return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func state(now: Double = Date().timeIntervalSince1970) -> MonitorNowPlayingState? {
+        guard let bundleID, !bundleID.isEmpty, bundleID.utf8.count <= 512,
+              let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              title.utf8.count <= 16384 else { return nil }
+        var state = MonitorNowPlayingState(phase: playing ? .playing : .paused, title: title)
+        state.playerBundleID = bundleID
+        state.artist = artist?.isEmpty == false ? artist : nil
+        state.album = album?.isEmpty == false ? album : nil
+        state.trackID = "system:\(bundleID):\(identity)"
+        state.isSystemMedia = true
+        state.systemPlayerID = controlID.flatMap { !$0.isEmpty && $0.utf8.count <= 4096 ? $0 : nil }
+        state.systemCommands = commands.map { Array(Set($0.filter { [0, 1, 2, 4, 5].contains($0) })).sorted() }
+        state.mediaKind = mediaKind.flatMap(MonitorNowPlayingMediaKind.init(rawValue:))
+        state.mediaOrigin = origin.flatMap(MonitorNowPlayingMediaOrigin.init(rawValue:))
+        state.duration = duration.flatMap { $0.isFinite && $0 > 0 && $0 <= 604_800 ? $0 : nil }
+        if let position, position.isFinite, position >= 0 {
+            state.position = state.duration.map { min(position, $0) } ?? position
+            if let timestamp, timestamp.isFinite, timestamp <= now + 2,
+               now - timestamp <= 86400 {
+                let speed = rate.flatMap { $0.isFinite && $0 > 0 && $0 <= 16 ? $0 : nil } ?? 1
+                let advanced = position + (playing ? max(0, now - timestamp) * speed : 0)
+                if playing, let duration = state.duration, advanced > duration + 2 {
+                    state.position = nil
+                } else if speed == 1 {
+                    state.positionSampledAt = timestamp
+                } else {
+                    state.position = state.duration.map { min(advanced, $0) } ?? advanced
+                }
+            }
+        }
+        return state
+    }
+}
+
+actor NowPlayingSystemBridge {
+    static let shared = NowPlayingSystemBridge()
+    typealias Query = @Sendable (Bool) async throws -> Data
+    private let query: Query
+    private var artworkKey: String?
+    private var artwork: Data?
+    private var lastArtworkAttempt = Date.distantPast
+
+    init(query: Query? = nil) {
+        self.query = query ?? Self.querySystem
+    }
+
+    private static func querySystem(artwork: Bool) async throws -> Data {
+        let arguments = ["-l", "JavaScript", "-e", script] + (artwork ? ["artwork"] : [])
+        return try await NowPlayingSystemProcess().run(arguments: arguments)
+    }
+
+    enum ControlFailure: Error { case rejected }
+
+    /// Submission is not a player acknowledgement; subsequent snapshots report the actual state.
+    static func send(command: Int, playerID: String) async throws {
+        struct Reply: Decodable { let submitted: Bool }
+        let data = try await NowPlayingSystemProcess().run(arguments: ["-l", "JavaScript", "-e", script, "command", playerID, String(command)])
+        guard try JSONDecoder().decode(Reply.self, from: data).submitted else { throw ControlFailure.rejected }
+    }
+
+    func snapshot() async throws -> MonitorNowPlayingState? {
+        let raw = try await query(false)
+        let snapshot = try JSONDecoder().decode(NowPlayingSystemSnapshot.self, from: raw)
+        guard var state = snapshot.state() else {
+            artworkKey = nil
+            artwork = nil
+            return nil
+        }
+        if artworkKey != snapshot.identity {
+            artworkKey = snapshot.identity
+            artwork = nil
+            lastArtworkAttempt = .distantPast
+        } else if artwork == nil, Date().timeIntervalSince(lastArtworkAttempt) >= 30 {
+            lastArtworkAttempt = Date()
+            do {
+                let bytes = try await query(true)
+                let enriched = try JSONDecoder().decode(NowPlayingSystemSnapshot.self, from: bytes)
+                guard enriched.identity == snapshot.identity, artworkKey == snapshot.identity else { return state }
+                if let encoded = enriched.artwork, encoded.utf8.count <= 2_796_204,
+                   let data = Data(base64Encoded: encoded), !data.isEmpty,
+                   data.count <= NowPlayingArtworkFetcher.maxImageBytes {
+                    artwork = data
+                }
+            } catch {
+                try Task.checkCancellation()
+            }
+        }
+        state.artwork = artwork
+        return state
+    }
+
+    static let script = #"""
+    ObjC.import('Foundation');
+    function nil(x) { return !x || x.isNil(); }
+    function text(x) { return nil(x) ? null : String(ObjC.unwrap(x)).slice(0,4096); }
+    function run(args) {
+        const framework=$.NSBundle.bundleWithPath('/System/Library/PrivateFrameworks/MediaRemote.framework');
+        if (nil(framework) || !framework.load) throw Error('MediaRemote unavailable');
+        const Request=$.NSClassFromString('MRNowPlayingRequest');
+        if (nil(Request)) throw Error('Now Playing unavailable');
+        const path=Request.localNowPlayingPlayerPath, item=Request.localNowPlayingItem;
+        const client=nil(path)?null:path.client, info=nil(item)?null:item.nowPlayingInfo;
+        function field(key) { return nil(info)?null:info.objectForKey('kMRMediaRemoteNowPlayingInfo'+key); }
+        function number(key) { const x=field(key); if(nil(x))return null; const n=Number(ObjC.unwrap(x)); return isFinite(n)?n:null; }
+        const date=field('Timestamp');
+        const out={
+            bundleID:nil(client)?null:(text(client.parentApplicationBundleIdentifier)||text(client.bundleIdentifier)),
+            playing:Boolean(Request.localIsPlaying), title:text(field('Title')),
+            artist:text(field('Artist')), album:text(field('Album')),
+            trackID:text(field('ContentItemIdentifier')), artworkID:text(field('ArtworkIdentifier')),
+            duration:number('Duration'), position:number('ElapsedTime'), rate:number('PlaybackRate'),
+            timestamp:nil(date)?null:Number(date.timeIntervalSince1970)
+        };
+        out.controlID=nil(path)?null:JSON.stringify([out.bundleID,text(client.bundleIdentifier),Number(client.processIdentifier),text(path.player.identifier)]);
+        const supported=Request.respondsToSelector($.NSSelectorFromString('localSupportedCommands'))?Request.localSupportedCommands:null;
+        out.commands=nil(supported)?null:[];
+        if(!nil(supported))for(let i=0;i<Math.min(Number(supported.count),128);i++) {
+            const entry=supported.objectAtIndex(i), command=Number(entry.command);
+            if(Boolean(entry.isEnabled)&&[0,1,2,4,5].includes(command))out.commands.push(command);
+        }
+        const skip=field('ProhibitsSkip');
+        if(out.commands&&!nil(skip)&&Boolean(ObjC.unwrap(skip)))out.commands=out.commands.filter(x=>x!==4&&x!==5);
+        const kind=text(field('MediaType'));
+        out.mediaKind=kind==='kMRMediaRemoteNowPlayingInfoTypeAudio'?'audio':kind==='kMRMediaRemoteNowPlayingInfoTypeVideo'?'video':null;
+        out.origin=null;
+        const asset=field('AssetURL');
+        if(!nil(asset)) {
+            const url=asset.respondsToSelector($.NSSelectorFromString('scheme'))?asset:$.NSURL.URLWithString(asset);
+            const scheme=nil(url)?null:text(url.scheme);
+            out.origin=scheme==='file'?'local':['http','https'].includes(scheme)?'web':null;
+        }
+        if(args[0]==='command') {
+            const command=Number(args[2]);
+            if(!out.title||!out.bundleID||out.controlID!==args[1]||!out.commands||!out.commands.includes(command))return JSON.stringify({submitted:false});
+            const request=Request.alloc.initWithPlayerPath(path);
+            if(!request.respondsToSelector($.NSSelectorFromString('sendCommand:options:queue:completion:')))return JSON.stringify({submitted:false});
+            request.sendCommandOptionsQueueCompletion(command,$.NSDictionary.alloc.init,null,null);
+            const until=Date.now()+200;
+            while(Date.now()<until)$.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.02));
+            return JSON.stringify({submitted:true});
+        }
+        if(!out.title || !out.bundleID || args[0]!=='artwork')return JSON.stringify(out);
+        ObjC.bindFunction('objc_msgSend',['void',['id','selector','id','id']]);
+        const request=Request.alloc.initWithPlayerPath(path);
+        const callback=ObjC.block(['void',['id','id']],function(art,error){
+            if(!nil(art)&&nil(error)) {
+                const data=art.respondsToSelector($.NSSelectorFromString('imageData'))?art.imageData:art;
+                if(!nil(data)&&Number(data.length)<=2097152)out.artwork=ObjC.unwrap(data.base64EncodedStringWithOptions(0));
+            }
+            out.artworkCompleted=true;
+        });
+        const holder=$.NSPredicate.predicateWithBlock(callback), block=holder.valueForKey('block');
+        $.objc_msgSend(request,$.NSSelectorFromString('requestNowPlayingItemArtworkWithCompletion:'),block,null);
+        const deadline=Date.now()+800;
+        while(!out.artworkCompleted&&Date.now()<deadline)$.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.02));
+        return JSON.stringify(out);
+    }
+    """#
+}
+
+/// The lock serializes launch/cancel; one run task owns the output file and exit readback.
+final class NowPlayingSystemProcess: @unchecked Sendable {
+    enum Failure: Error { case timedOut, outputTooLarge, exited(Int32) }
+    private let lock = NSLock()
+    private let process = Process()
+    private var cancelled = false
+
+    var isRunning: Bool {
+        lock.withLock { process.isRunning }
+    }
+
+    func run(arguments: [String], timeout: Duration = .seconds(3), outputLimit: Int = 3 * 1024 * 1024) async throws -> Data {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("loomscreen-media-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("snapshot.json")
+        FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        let file = try FileHandle(forWritingTo: url)
+        defer { try? file.close() }
+        return try await withTaskCancellationHandler {
+            defer {
+                if isRunning {
+                    cancel()
+                }
+            }
+            try lock.withLock {
+                guard !cancelled else { throw CancellationError() }
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                process.arguments = arguments
+                process.standardOutput = file
+                process.standardError = FileHandle.nullDevice
+                try process.run()
+            }
+            let deadline = ContinuousClock.now.advanced(by: timeout)
+            while isRunning {
+                try Task.checkCancellation()
+                guard ContinuousClock.now < deadline else { throw Failure.timedOut }
+                let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+                guard size <= outputLimit else { throw Failure.outputTooLarge }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            try Task.checkCancellation()
+            guard process.terminationStatus == 0 else { throw Failure.exited(process.terminationStatus) }
+            let reader = try FileHandle(forReadingFrom: url)
+            defer { try? reader.close() }
+            let data = try reader.read(upToCount: outputLimit + 1) ?? Data()
+            guard data.count <= outputLimit else { throw Failure.outputTooLarge }
+            return data
+        } onCancel: { self.cancel() }
+    }
+
+    private func cancel() {
+        let needsKill = lock.withLock {
+            cancelled = true
+            guard process.isRunning else { return false }
+            process.terminate()
+            return true
+        }
+        if needsKill {
+            Task.detached { [self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                lock.withLock {
+                    if process.isRunning {
+                        Darwin.kill(process.processIdentifier, SIGKILL)
+                    }
+                }
+            }
+        }
+    }
+}
+#endif

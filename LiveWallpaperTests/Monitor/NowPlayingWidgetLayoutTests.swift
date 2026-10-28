@@ -3,6 +3,18 @@ import XCTest
 import LiveWallpaperCore
 
 final class NowPlayingWidgetLayoutTests: XCTestCase {
+    func testTransportSupportDoesNotGrantSeeking() {
+        var state = fullState()
+        state.isSystemMedia = true
+        state.playerBundleID = "com.google.Chrome"
+        state.systemPlayerID = "owned-browser"
+        state.systemCommands = [0, 1]
+        let layout = Layout.resolve(state: state, size: .medium, options: NowPlayingOptions([:]),
+                                    isEditing: false, reduceMotion: false, canControl: true, canSeek: false, hovering: true)
+        XCTAssertTrue(layout.controlsAllowed)
+        XCTAssertFalse(layout.seekable)
+    }
+
     private typealias Layout = NowPlayingWidgetLayout
     private typealias Component = NowPlayingWidgetLayout.Component
     private typealias Style = NowPlayingWidgetView.Style
@@ -320,15 +332,14 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
 
     // MARK: Marquee
 
-    func testMarqueeNeedsBothTheSwitchAndMotion() {
+    func testLongTitlesScrollByDefaultIncludingPausedMedia() {
         var on = NowPlayingOptions()
         on.marquee = true
 
         XCTAssertTrue(resolve(fullState(), .medium, .poster, options: on).marquee)
-        XCTAssertFalse(
-            resolve(fullState(), .medium, .poster, options: NowPlayingOptions()).marquee,
-            "marquee ran without the user asking for it"
-        )
+        var off = NowPlayingOptions()
+        off.marquee = false
+        XCTAssertFalse(resolve(fullState(), .medium, .poster, options: off).marquee)
         XCTAssertFalse(
             resolve(fullState(), .medium, .poster, reduceMotion: true, options: on).marquee,
             "marquee kept moving under reduce motion"
@@ -336,7 +347,7 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
 
         var paused = fullState()
         paused.phase = .paused
-        XCTAssertFalse(resolve(paused, .medium, .poster, options: on).marquee)
+        XCTAssertTrue(resolve(paused, .medium, .poster, options: on).marquee)
         XCTAssertFalse(resolve(nil, .medium, .poster, isEditing: true, options: on).marquee)
     }
 
