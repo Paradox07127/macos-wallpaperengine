@@ -1076,12 +1076,12 @@ struct WallpaperAutomationCoordinatorTests {
 
     @MainActor
     private struct LibraryShuffleHistoryScenario {
-
         @MainActor
         private final class State {
             var library = ["a", "b", "c", "d"].map {
                 WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default))
             }
+
             var restored: [WallpaperContent] = []
         }
 
