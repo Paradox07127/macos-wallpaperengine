@@ -8,7 +8,11 @@ extension GeneralSettingsView {
         Section {
             SettingRow(
                 icon: "cloud.sun",
-                iconColor: weatherShowsInlineStatus ? weatherPermissionColor : .cyan,
+                iconColor: SettingRowIconTint.resolve(
+                    isOn: weatherLocation.source != .off,
+                    status: weatherShowsInlineStatus ? weatherPermissionColor : .secondary,
+                    brand: .cyan
+                ),
                 title: "Weather Location",
                 info: "System requires location access; Manual uses a selected city."
             ) {

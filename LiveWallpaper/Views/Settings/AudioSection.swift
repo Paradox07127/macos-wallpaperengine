@@ -8,7 +8,7 @@ extension GeneralSettingsView {
         Section {
             SettingRow(
                 icon: "waveform",
-                iconColor: audioResponseEnabled ? audioStatusColor : .pink,
+                iconColor: SettingRowIconTint.resolve(isOn: audioResponseEnabled, status: audioStatusColor, brand: .pink),
                 title: "Audio Response",
                 info: "Requires system audio access. Compatible scenes use local analysis; audio is not saved or uploaded."
             ) {

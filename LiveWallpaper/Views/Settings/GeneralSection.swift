@@ -43,7 +43,11 @@ extension GeneralSettingsView {
         Section {
             SettingRow(
                 icon: "power.circle.fill",
-                iconColor: loginItemShowsInlineStatus ? loginItemStatusColor : .green,
+                iconColor: SettingRowIconTint.resolve(
+                    isOn: startOnLogin || loginItemNeedsApproval,
+                    status: loginItemShowsInlineStatus ? loginItemStatusColor : .secondary,
+                    brand: .green
+                ),
                 title: "Start at login"
             ) {
                 HStack(spacing: 8) {

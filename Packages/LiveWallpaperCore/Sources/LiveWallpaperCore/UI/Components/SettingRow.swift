@@ -11,6 +11,14 @@ public struct SettingRowTitleBadge {
     }
 }
 
+public enum SettingRowIconTint {
+    /// `status == .secondary` means a neutral state (idle, pending), which keeps the row's own color.
+    public static func resolve(isOn: Bool, status: Color, brand: Color) -> Color {
+        guard isOn else { return .secondary }
+        return status == .secondary ? brand : status
+    }
+}
+
 /// Subtitles carry current state; static explanations go in `info`.
 public struct SettingRow<Content: View>: View {
     let icon: String
