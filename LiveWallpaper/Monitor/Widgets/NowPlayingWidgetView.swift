@@ -394,9 +394,6 @@ struct NowPlayingWidgetView: View {
     private var titleDesign: Font.Design { options.resolvedTitleFont.design }
     private var alignment: NowPlayingOptions.Alignment { options.resolvedAlignment }
 
-    /// Title scrolling follows the overlay's suspend gate independently of playback.
-    private var marqueeActive: Bool { layout.marquee && !suspended }
-
     /// Interpolated elapsed seconds at the current board tick (nil without a
     /// live position); a scrub under the pointer or a landed seek wins over it.
     private var elapsed: Double? {
@@ -488,16 +485,16 @@ struct NowPlayingWidgetView: View {
         }
     }
 
-    /// One title renderer for all three styles: the marquee replaces the
-    /// truncating label only while it is allowed to move.
+    /// One title renderer for all three styles: with the marquee option the title stays
+    /// on one line, and it scrolls only while the overlay is not suspended.
     @ViewBuilder
     private func titleText(
         _ text: String, size: CGFloat, weight: Font.Weight, lineLimit: Int, minimumScale: CGFloat
     ) -> some View {
         let font = Font.system(size: size, weight: weight, design: titleDesign)
         let color = Color.white.opacity(textAlpha(0.97))
-        if marqueeActive {
-            NowPlayingMarqueeText(text: text, font: font, color: color)
+        if layout.marquee {
+            NowPlayingMarqueeText(text: text, font: font, color: color, moving: !suspended)
         } else {
             Text(verbatim: text)
                 .font(font)
@@ -1132,6 +1129,7 @@ private struct NowPlayingMarqueeText: View {
     let text: String
     let font: Font
     let color: Color
+    let moving: Bool
 
     /// Points per second — slow enough to read from across a room.
     private let speed: Double = 30
@@ -1150,7 +1148,7 @@ private struct NowPlayingMarqueeText: View {
     }
 
     private var plan: ScrollPlan {
-        ScrollPlan(text: text, isScrolling: overflows,
+        ScrollPlan(text: text, isScrolling: overflows && moving,
                    distance: ((naturalWidth + gap) * 2).rounded() / 2,
                    windowWidth: (clippedWidth * 2).rounded() / 2)
     }

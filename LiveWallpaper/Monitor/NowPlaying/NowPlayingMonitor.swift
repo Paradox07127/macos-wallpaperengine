@@ -224,10 +224,25 @@ final class NowPlayingMonitor: NSObject {
     var currentState: MonitorNowPlayingState {
         if var systemState {
             let fallback = arbitratedRecord()?.state
-            if systemState.phase == .playing || fallback?.phase != .playing {
-                if let fallback, fallback.playerBundleID == systemState.playerBundleID,
-                   fallback.title == systemState.title, fallback.artist == systemState.artist,
-                   fallback.album == nil || systemState.album == nil || fallback.album == systemState.album {
+            let sameTrack = fallback.map {
+                $0.playerBundleID == systemState.playerBundleID && $0.title == systemState.title
+                    && $0.artist == systemState.artist
+                    && ($0.album == nil || systemState.album == nil || $0.album == systemState.album)
+            } ?? false
+            if systemState.phase == .playing || fallback?.phase != .playing || sameTrack {
+                // The player's own notification is newer than a paused system poll of the same track.
+                if let fallback, sameTrack, systemState.phase != .playing {
+                    systemState.phase = .playing
+                    if fallback.position != nil {
+                        systemState.position = fallback.position
+                        systemState.positionSampledAt = fallback.positionSampledAt
+                        systemState.playbackRate = fallback.playbackRate
+                    } else {
+                        systemState.positionSampledAt = Date().timeIntervalSince1970
+                        systemState.playbackRate = fallback.playbackRate ?? 1
+                    }
+                }
+                if let fallback, sameTrack {
                     if systemState.playerBundleID == "com.spotify.client" {
                         systemState.trackID = fallback.trackID ?? systemState.trackID
                     }

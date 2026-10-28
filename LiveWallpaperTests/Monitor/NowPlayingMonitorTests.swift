@@ -146,6 +146,31 @@ struct NowPlayingSystemSourceTests {
     }
 
     @MainActor
+    @Test("A player's Playing notification for the paused system track keeps the system identity and artwork")
+    func playingNotificationForPausedSystemTrackKeepsSystemFrame() async throws {
+        var external = MonitorNowPlayingState(phase: .paused, title: "ENDROLL", artist: "Yoohei Kawakami", album: "ENDROLL")
+        external.playerBundleID = "com.apple.Music"
+        external.isSystemMedia = true
+        external.trackID = "system:com.apple.Music:1"
+        external.artwork = Data([0x01, 0x02])
+        let fixture = SystemMediaFixture(external)
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] },
+                                        systemProvider: { try await fixture.read() }, systemPollInterval: .seconds(30))
+        let source = NowPlayingSource(monitor: monitor, artworkFetcher: offlineFetcher(), audioReactive: false, audioDemand: { _ in })
+        let sink = RecordingNowPlayingSink()
+        await source.start(sink: sink)
+        let appeared = await waitUntil { monitor.currentState.isSystemMedia == true }
+        try #require(appeared)
+
+        monitor.ingest(name: Fixture.musicName, userInfo: Fixture.musicPlaying)
+        let state = monitor.currentState
+        #expect(state.phase == .playing)
+        #expect(state.trackID == "system:com.apple.Music:1", "Swapping to the notification frame changes the track key")
+        #expect(state.artwork == Data([0x01, 0x02]), "Swapping to the notification frame drops the artwork")
+        await source.stop()
+    }
+
+    @MainActor
     @Test("Music queries its authorized playhead only while the selected system track has no position")
     func missingSystemPositionUsesMusicFallback() async throws {
         var external = MonitorNowPlayingState(phase: .playing, title: "Music Track", duration: 300)
@@ -247,6 +272,35 @@ struct NowPlayingSystemSourceTests {
         let withoutCover = try await bridge.snapshot()
         #expect(first?.title == "Track")
         #expect(withoutCover?.title == "Track", "A failed cover query must not discard valid system metadata")
+    }
+
+    @Test("A new artwork identifier for the same track keeps the cover until the replacement lands")
+    func artworkRevisionKeepsCover() async throws {
+        actor Payload {
+            var artworkID = "cover-1"
+            var title = "Track"
+            func set(artworkID: String? = nil, title: String? = nil) {
+                if let artworkID {
+                    self.artworkID = artworkID
+                }
+                if let title {
+                    self.title = title
+                }
+            }
+
+            func json(artwork: Bool) -> Data {
+                let cover = artwork ? #","artwork":"AQI=""# : ""
+                return Data(#"{"bundleID":"com.apple.Music","title":"\#(title)","playing":true,"trackID":"1","artworkID":"\#(artworkID)"\#(cover)}"#.utf8)
+            }
+        }
+        let payload = Payload()
+        let bridge = NowPlayingSystemBridge(query: { await payload.json(artwork: $0) })
+        _ = try await bridge.snapshot()
+        #expect(try await bridge.snapshot()?.artwork == Data([0x01, 0x02]))
+        await payload.set(artworkID: "cover-2")
+        #expect(try await bridge.snapshot()?.artwork == Data([0x01, 0x02]))
+        await payload.set(title: "Other Track")
+        #expect(try await bridge.snapshot()?.artwork == nil)
     }
 
     @Test("System Spotify identity retains its provider track URI across artwork revisions")

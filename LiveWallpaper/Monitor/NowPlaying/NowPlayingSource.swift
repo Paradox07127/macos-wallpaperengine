@@ -348,6 +348,9 @@ actor NowPlayingSystemBridge {
     private let query: Query
     private var artworkKey: String?
     private var artwork: Data?
+    private var artworkTrack: [String]?
+    /// false = `artwork` is nil or belongs to an older artwork identifier of the same track.
+    private var artworkIsCurrent = false
     private var lastArtworkAttempt = Date.distantPast
 
     init(query: Query? = nil) {
@@ -373,14 +376,21 @@ actor NowPlayingSystemBridge {
         let snapshot = try JSONDecoder().decode(NowPlayingSystemSnapshot.self, from: raw)
         guard var state = snapshot.state() else {
             artworkKey = nil
+            artworkTrack = nil
             artwork = nil
             return nil
         }
         if artworkKey != snapshot.identity {
             artworkKey = snapshot.identity
-            artwork = nil
+            // A same-track artwork revision keeps the old cover on screen until the new one lands.
+            artworkIsCurrent = false
+            let track = [state.trackID, state.title, state.artist, state.album].map { $0 ?? "" }
+            if artworkTrack != track {
+                artwork = nil
+            }
+            artworkTrack = track
             lastArtworkAttempt = .distantPast
-        } else if artwork == nil, Date().timeIntervalSince(lastArtworkAttempt) >= 30 {
+        } else if !artworkIsCurrent, Date().timeIntervalSince(lastArtworkAttempt) >= 30 {
             lastArtworkAttempt = Date()
             do {
                 let bytes = try await query(true)
@@ -390,6 +400,7 @@ actor NowPlayingSystemBridge {
                    let data = Data(base64Encoded: encoded), !data.isEmpty,
                    data.count <= NowPlayingArtworkFetcher.maxImageBytes {
                     artwork = data
+                    artworkIsCurrent = true
                 }
             } catch {
                 try Task.checkCancellation()
