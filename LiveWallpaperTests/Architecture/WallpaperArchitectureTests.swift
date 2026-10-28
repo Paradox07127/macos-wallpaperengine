@@ -1049,9 +1049,7 @@ struct WallpaperAutomationCoordinatorTests {
         #expect(restored == [second.content, third.content])
         #expect(marks == [.libraryShuffle, .libraryShuffle])
         let saved = try #require(store.get(for: screen.id))
-        #expect(saved.wallpaperQueue == [first])
-        #expect(saved.playlistRotationMinutes == 120)
-        #expect(saved.fitMode == .aspectFit)
+        expectCuratedQueuePreserved(saved, first: first)
         entries.withLock { $0 = [third, missing] }
         orchestrator.advanceLibraryShuffle(for: screen)
         for _ in 0 ..< 50 {
@@ -1059,12 +1057,25 @@ struct WallpaperAutomationCoordinatorTests {
         }
         #expect(restored.count == 2)
         entries.withLock { $0 = [first] }
+        await expectSuspendedLibraryShuffleDoesNotRestore(orchestrator, screen: screen) { restored.count }
+    }
+
+    private func expectSuspendedLibraryShuffleDoesNotRestore(
+        _ orchestrator: WallpaperAutomationOrchestrator, screen: Screen, restoredCount: () -> Int
+    ) async {
         orchestrator.advanceLibraryShuffle(for: screen)
         orchestrator.suspendForUserAbsence()
         for _ in 0 ..< 50 {
             await Task.yield()
         }
-        #expect(restored.count == 2)
+        #expect(restoredCount() == 2)
+    }
+
+    private func expectCuratedQueuePreserved(_ saved: ScreenConfiguration, first: WallpaperQueueEntry) {
+        let expectedQueue: [WallpaperQueueEntry] = [first]
+        #expect(saved.wallpaperQueue == expectedQueue)
+        #expect(saved.playlistRotationMinutes == 120)
+        #expect(saved.fitMode == .aspectFit)
     }
 
     @Test("Library shuffle rewinds through its in-memory history and draws the returned card first")
@@ -1147,6 +1158,23 @@ struct WallpaperAutomationCoordinatorTests {
         func verifyRewindAndReset() async throws -> WallpaperContent {
             let first = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
             let second = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+            try await verifyRewind(first: first, second: second)
+
+            try pick(initialContent)
+            orchestrator.regressLibraryShuffle(for: screen)
+            #expect(played.isEmpty)
+            try pick(second)
+            let drawn = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+            #expect(drawn != second)
+            #expect(returned.isEmpty)
+
+            orchestrator.reshuffleLibrary(for: screen)
+            #expect(orchestrator.shuffleDecks[screen.id] == LibraryShuffleDeck())
+            #expect(store.get(for: screen.id)?.activeWallpaper == drawn)
+            return drawn
+        }
+
+        private func verifyRewind(first: WallpaperContent, second: WallpaperContent) async throws {
             #expect(played == [initialContent, first])
             #expect(orchestrator.shuffleDecks[screen.id].played.first?.id == state.library[0].id)
 
@@ -1168,19 +1196,6 @@ struct WallpaperAutomationCoordinatorTests {
             try await expectLand(first) { orchestrator.advanceLibraryShuffle(for: screen) }
             #expect(played == [initialContent])
             #expect(returned == [second])
-
-            try pick(initialContent)
-            orchestrator.regressLibraryShuffle(for: screen)
-            #expect(played.isEmpty)
-            try pick(second)
-            let drawn = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
-            #expect(drawn != second)
-            #expect(returned.isEmpty)
-
-            orchestrator.reshuffleLibrary(for: screen)
-            #expect(orchestrator.shuffleDecks[screen.id] == LibraryShuffleDeck())
-            #expect(store.get(for: screen.id)?.activeWallpaper == drawn)
-            return drawn
         }
 
         func verifyChangedLibrary(after drawn: WallpaperContent) async throws {

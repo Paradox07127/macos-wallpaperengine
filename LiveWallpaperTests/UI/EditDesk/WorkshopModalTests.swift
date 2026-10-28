@@ -89,8 +89,6 @@ struct WorkshopModalTests {
     @Test("An item not in the library offers download buttons and Save only; a queued display spins in place")
     func downloadRowFollowsTheQueue() {
         let both: [CGDirectDisplayID] = [1, 2]
-        let leftOnly: [CGDirectDisplayID] = [1]
-        let rightOnly: [CGDirectDisplayID] = [2]
         let idle = row()
         #expect(idle.mode == .download)
         #expect(pressable(idle) == both)
@@ -100,6 +98,19 @@ struct WorkshopModalTests {
         #expect(idle.extras == idleExtras)
 
         let queued = row(ticket: .waiting, queued: 2, busy: true)
+        expectQueuedDownloadRow(queued)
+
+        // After Save only the download runs with no display queued, and a display can still be queued onto it.
+        let saving = row(busy: true)
+        #expect(pressable(saving) == both)
+        let savingExtras: [WorkshopModalButtonRow.Extra] = [.init(kind: .cancelDownload)]
+        #expect(saving.extras == savingExtras)
+    }
+
+    private func expectQueuedDownloadRow(_ queued: WorkshopModalButtonRow) {
+        let both: [CGDirectDisplayID] = [1, 2]
+        let leftOnly: [CGDirectDisplayID] = [1]
+        let rightOnly: [CGDirectDisplayID] = [2]
         #expect(leading(queued) == nil, "a queued display that took the lead would move another one under the pointer")
         #expect(layout(queued).buttons == both)
         #expect(layout(queued).menu.isEmpty)
@@ -107,12 +118,6 @@ struct WorkshopModalTests {
         #expect(pressable(queued) == leftOnly, "the queued display is taken; the other one moves the apply there")
         let queuedExtras: [WorkshopModalButtonRow.Extra] = [.init(kind: .cancelAutoApply), .init(kind: .cancelDownload)]
         #expect(queued.extras == queuedExtras)
-
-        // After Save only the download runs with no display queued, and a display can still be queued onto it.
-        let saving = row(busy: true)
-        #expect(pressable(saving) == both)
-        let savingExtras: [WorkshopModalButtonRow.Extra] = [.init(kind: .cancelDownload)]
-        #expect(saving.extras == savingExtras)
     }
 
     @Test("While the apply runs, or a setup step or Steam blocks the download, no display can be pressed")

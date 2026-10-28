@@ -873,19 +873,7 @@ struct BrowseRequestShapeTests {
         let json = try #require(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any])
         let groups = try #require(json["taggroups"] as? [[String: [String]]])
         #expect(groups == [["tags": ["Abstract", "Anime"]], ["tags": ["Approved"]]])
-        #expect(json["appid"] as? Int == 431_960)
-        #expect(json["query_type"] as? Int == 3)
-        #expect(json["days"] as? Int == 7)
-        #expect(json["page"] as? Int == 1)
-        #expect(json["numperpage"] as? Int == 50)
-        for flag in ["return_previews", "return_tags", "return_metadata", "return_short_description", "return_vote_data", "return_children"] {
-            #expect(json[flag] as? Bool == true, Comment(rawValue: flag))
-        }
-        let excluded = try #require(json["excludedtags"] as? [String])
-        #expect(Set(excluded) == ["Application", "Asset", "Mature", "Preset", "Questionable"])
-        #expect(json["requiredtags"] == nil)
-        #expect(json["match_all_tags"] == nil)
-        #expect(json["search_text"] == nil)
+        try expectTagGroupQueryOptions(json)
 
         let keylessSuite = try TestScratch.defaultsSuite("workshop.browse.request.misc.taggroupsKeyless")
         defer { keylessSuite.discard() }
@@ -902,6 +890,22 @@ struct BrowseRequestShapeTests {
         #expect(excludedGenres.count == 23)
         #expect(!excludedGenres.contains("Anime"))
         #expect(!excludedGenres.contains("Abstract"))
+    }
+
+    private func expectTagGroupQueryOptions(_ json: [String: Any]) throws {
+        #expect(json["appid"] as? Int == 431_960)
+        #expect(json["query_type"] as? Int == 3)
+        #expect(json["days"] as? Int == 7)
+        #expect(json["page"] as? Int == 1)
+        #expect(json["numperpage"] as? Int == 50)
+        for flag in ["return_previews", "return_tags", "return_metadata", "return_short_description", "return_vote_data", "return_children"] {
+            #expect(json[flag] as? Bool == true, Comment(rawValue: flag))
+        }
+        let excluded = try #require(json["excludedtags"] as? [String])
+        #expect(Set(excluded) == ["Application", "Asset", "Mature", "Preset", "Questionable"])
+        #expect(json["requiredtags"] == nil)
+        #expect(json["match_all_tags"] == nil)
+        #expect(json["search_text"] == nil)
     }
 
     @Test("input_json carries the search text and target")

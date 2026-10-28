@@ -25,13 +25,7 @@ struct WorkshopAnimatedGIFDecodeTests {
                       sourceFolderBookmark: bookmark, cacheRelativePath: nil, previewFileName: name)
         }
         let fifo = root.appendingPathComponent("blocked.gif")
-        #expect(mkfifo(fifo.path, 0o600) == 0)
-        try #require(fifo.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == false)
-        #expect(origin("blocked.gif").sourcePreviewURL == fifo)
-        try #require(!WPEPreviewImageDecodeBudget.acceptsFile(at: fifo))
-        #expect(WPEPreviewImageDecodeBudget.readData(from: fifo) == nil)
-        #expect(await ShelfPreviewFrames.load(origin("blocked.gif"), maxPixelSize: 32) == nil)
-        #expect(await ShelfThumbnailCache.Sources().scene(origin("blocked.gif"), CGSize(width: 32, height: 32)) == nil)
+        try await expectBlockedPreviewRejected(at: fifo, origin: origin("blocked.gif"))
 
         let large = root.appendingPathComponent("large.gif")
         try Data().write(to: large)
@@ -53,6 +47,17 @@ struct WorkshopAnimatedGIFDecodeTests {
         #expect(await ShelfThumbnailCache.Sources().scene(origin("normal.gif"), CGSize(width: 32, height: 32)) != nil)
         #expect(WPEPreviewImageDecodeBudget.readData(from: root) == nil)
         #expect(WPEPreviewImageDecodeBudget.readData(from: root.appendingPathComponent("missing.gif")) == nil)
+    }
+
+    @MainActor
+    private func expectBlockedPreviewRejected(at fifo: URL, origin: WPEOrigin) async throws {
+        #expect(mkfifo(fifo.path, 0o600) == 0)
+        try #require(fifo.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == false)
+        #expect(origin.sourcePreviewURL == fifo)
+        try #require(!WPEPreviewImageDecodeBudget.acceptsFile(at: fifo))
+        #expect(WPEPreviewImageDecodeBudget.readData(from: fifo) == nil)
+        #expect(await ShelfPreviewFrames.load(origin, maxPixelSize: 32) == nil)
+        #expect(await ShelfThumbnailCache.Sources().scene(origin, CGSize(width: 32, height: 32)) == nil)
     }
 
     @Test("Single-frame PNG decodes to a static image")
@@ -395,15 +400,14 @@ struct MountedGIFHostVisibilityTests {
         var requestedSizes: [WorkshopPreviewSize] = []
         var releases: [CheckedContinuation<WorkshopPreviewAsset?, Never>] = []
         func thumbnail(presented: Bool, size: WorkshopPreviewSize = .tile) -> AnyView {
-            AnyView(AnimatedGIFThumbnail(
-                url: URL(fileURLWithPath: "/visibility.png"), previewSize: size,
+            visibilityPreview(
+                presented: presented, size: size, controller: controller,
                 onImageSizeChange: { publishedSizes.append($0) },
-                controller: controller, loadAsset: { _, size in
+                loadAsset: { _, size in
                     requestedSizes.append(size)
                     return await withCheckedContinuation { releases.append($0) }
                 }
-            ).environment(\.inspectorContentIsVisible, presented)
-                .environment(\._accessibilityReduceMotion, false))
+            )
         }
         let host = NSHostingView(rootView: thumbnail(presented: false))
         let window = VisibilityWindow(contentRect: CGRect(x: -30000, y: -30000, width: 120, height: 100),
@@ -421,10 +425,9 @@ struct MountedGIFHostVisibilityTests {
         host.rootView = thumbnail(presented: false)
         try await Task.sleep(for: .milliseconds(100))
         releases[0].resume(returning: asset)
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(controller.displayedFrame == nil, "A hidden preview must not publish its cancelled load")
-        #expect(requestedSizes.count == 1)
-        #expect(publishedSizes.isEmpty, "A cancelled load must not resize the visible preview")
+        try await expectCancelledPreviewHidden(
+            controller, requestedCount: { requestedSizes.count }, publishedSizes: { publishedSizes }
+        )
 
         host.rootView = thumbnail(presented: true)
         await GIFTestFixtures.waitUntil { releases.count == 2 }
@@ -432,13 +435,36 @@ struct MountedGIFHostVisibilityTests {
         releases[1].resume(returning: asset)
         await GIFTestFixtures.waitUntil { controller.displayedFrame != nil }
         #expect(controller.displayedFrame != nil)
-        #expect(publishedSizes == [CGSize(width: 96, height: 48)])
+        let expectedPublishedSizes: [CGSize?] = [CGSize(width: 96, height: 48)]
+        #expect(publishedSizes == expectedPublishedSizes)
 
         host.rootView = thumbnail(presented: true, size: .hero)
         await GIFTestFixtures.waitUntil { releases.count == 3 }
         try #require(releases.count == 3)
-        #expect(requestedSizes == [.tile, .tile, .hero])
+        let expectedRequestedSizes: [WorkshopPreviewSize] = [.tile, .tile, .hero]
+        #expect(requestedSizes == expectedRequestedSizes)
         releases[2].resume(returning: asset)
+    }
+
+    private func visibilityPreview(
+        presented: Bool, size: WorkshopPreviewSize, controller: GIFAnimationController,
+        onImageSizeChange: @escaping @MainActor (CGSize?) -> Void,
+        loadAsset: @escaping @MainActor (URL, WorkshopPreviewSize) async -> WorkshopPreviewAsset?
+    ) -> AnyView {
+        AnyView(AnimatedGIFThumbnail(
+            url: URL(fileURLWithPath: "/visibility.png"), previewSize: size,
+            onImageSizeChange: onImageSizeChange, controller: controller, loadAsset: loadAsset
+        ).environment(\.inspectorContentIsVisible, presented)
+            .environment(\._accessibilityReduceMotion, false))
+    }
+
+    private func expectCancelledPreviewHidden(
+        _ controller: GIFAnimationController, requestedCount: () -> Int, publishedSizes: () -> [CGSize?]
+    ) async throws {
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(controller.displayedFrame == nil, "A hidden preview must not publish its cancelled load")
+        #expect(requestedCount() == 1)
+        #expect(publishedSizes().isEmpty, "A cancelled load must not resize the visible preview")
     }
 
     @Test("A cached animation resumes when the mounted inspector returns")
