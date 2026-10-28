@@ -1761,7 +1761,10 @@ struct ScreenManagerCoordinationTests {
         let originalConfigurations = SettingsManager.shared.loadConfigurations()
         defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
         let wallpaper = WallpaperContent.html(source: .inline("<p>one</p>"), config: .default)
-        SettingsManager.shared.replaceAllConfigurations([ScreenConfiguration(screenID: source.id, wallpaper: wallpaper)])
+        var sourceConfiguration = ScreenConfiguration(screenID: source.id, wallpaper: wallpaper)
+        sourceConfiguration.videoDisplayMode = .spanAllDisplays
+        sourceConfiguration.sceneSpanGroupID = UUID()
+        SettingsManager.shared.replaceAllConfigurations([sourceConfiguration])
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
             startAutomation: false,
@@ -1793,12 +1796,23 @@ struct ScreenManagerCoordinationTests {
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
+        #if !LITE_BUILD
+        let sourceImport = manager.wpeImportTracker.bumpGeneration(for: source.id)
+        let staleTargetImport = manager.wpeImportTracker.bumpGeneration(for: target.id)
+        #endif
         CoordinationNotificationScope.$current.withValue(notificationScope) {
             manager.applyConfiguration(from: source, to: target)
         }
+        #if !LITE_BUILD
+        #expect(!manager.wpeImportTracker.isCurrentGeneration(staleTargetImport, for: target.id))
+        #expect(manager.wpeImportTracker.isCurrentGeneration(sourceImport, for: source.id))
+        #endif
         try await Self.waitUntil(timeout: .seconds(20)) { commits.byScreen[target.id] != nil }
 
         #expect(manager.getConfiguration(for: target)?.activeWallpaper == wallpaper)
+        #expect(manager.getConfiguration(for: target)?.videoDisplayMode == .perDisplay)
+        #expect(manager.getConfiguration(for: target)?.sceneSpanGroupID == nil)
+        #expect(manager.getConfiguration(for: source)?.sceneSpanGroupID == sourceConfiguration.sceneSpanGroupID)
         let group = try #require(commits.byScreen[target.id] ?? nil, "the copy committed outside any switch group")
         #expect(group.pace == .manual)
         #expect(commits.byScreen[bystander.id] == nil, "a third display took the copy too")

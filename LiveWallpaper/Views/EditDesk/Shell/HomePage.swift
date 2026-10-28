@@ -674,8 +674,10 @@ struct HomePage: View {
     }
 
     private func applyConfigurationToAllDisplays(from screen: Screen) {
-        let recording = undo?.begin(.applyToAllDisplays, displays: screenManager.screens.filter { $0.id != screen.id })
-        let content = screenManager.getConfiguration(for: screen)?.activeWallpaper
+        guard let content = screenManager.getConfiguration(for: screen)?.activeWallpaper else { return }
+        let recording = undo?.begin(
+            .applyToAllDisplays, displays: screenManager.screens.filter { $0.id != screen.id }, requiresConfigurationCommit: true
+        )
         screenManager.applyConfigurationToAllDisplays(from: screen)
         recording?.announce(
             ApplyOutcome.appliedToAllText(wallpapersOn: screenManager.wallpapersGloballyEnabled), showing: content, to: toasts
@@ -683,8 +685,8 @@ struct HomePage: View {
     }
 
     private func applyConfiguration(from source: Screen, to target: Screen) {
-        let recording = undo?.begin(.applyWallpaper, displays: [target])
-        let content = screenManager.getConfiguration(for: source)?.activeWallpaper
+        guard let content = screenManager.getConfiguration(for: source)?.activeWallpaper else { return }
+        let recording = undo?.begin(.applyWallpaper, displays: [target], requiresConfigurationCommit: true)
         screenManager.applyConfiguration(from: source, to: target)
         recording?.announce(
             ApplyOutcome.appliedText(on: target.name, wallpapersOn: screenManager.wallpapersGloballyEnabled), showing: content, to: toasts

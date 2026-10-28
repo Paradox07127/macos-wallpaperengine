@@ -212,7 +212,9 @@ final class EditDeskUndoStack {
     }
 
     /// Snapshots `displays` before a change; `includesOverlay` snapshots their overlays too, which a scheme replaces.
-    func begin(_ action: Action, displays: [Screen], includesOverlay: Bool = false) -> UndoRecording {
+    func begin(
+        _ action: Action, displays: [Screen], includesOverlay: Bool = false, requiresConfigurationCommit: Bool = false
+    ) -> UndoRecording {
         movementCoalescingStep = nil
         let recording = UndoRecording(stack: self, action: action, displays: displays.map { screen in
             (screen.id, Display(
@@ -220,7 +222,9 @@ final class EditDeskUndoStack {
                 configuration: manager.getConfiguration(for: screen),
                 overlay: includesOverlay ? manager.monitorOverlay(for: screen) : nil
             ))
-        })
+        }, committedAfter: requiresConfigurationCommit ? Dictionary(uniqueKeysWithValues: displays.map {
+            ($0.id, manager.configurationRevision(for: $0))
+        }) : [:])
         unsettledDisplays += recording.outstanding.count
         return recording
     }
@@ -374,7 +378,7 @@ final class EditDeskUndoStack {
     fileprivate func settle(_ recording: UndoRecording, showing content: WallpaperContent?) async -> UUID? {
         // All waits start now: a preparation failure is posted once, so a wait that started after it would sit out the timeout.
         let waits = recording.outstanding.map { displayID in
-            (displayID, Task { await confirm(content, on: displayID) })
+            (displayID, Task { await confirm(content, on: displayID, committedAfter: recording.committedAfter[displayID]) })
         }
         var stepID: UUID?
         for (displayID, wait) in waits {
@@ -383,11 +387,15 @@ final class EditDeskUndoStack {
         return stepID
     }
 
-    private func confirm(_ content: WallpaperContent?, on displayID: CGDirectDisplayID) async -> Bool {
+    private func confirm(
+        _ content: WallpaperContent?, on displayID: CGDirectDisplayID, committedAfter revision: UInt64?
+    ) async -> Bool {
         guard let content else {
             return manager.screen(withID: displayID).map { manager.getConfiguration(for: $0) == nil } ?? false
         }
-        return await router.awaitApplied(matching: content, on: displayID, timeout: router.confirmationTimeout)
+        return await router.awaitApplied(
+            matching: content, on: displayID, committedAfter: revision, timeout: router.confirmationTimeout
+        )
     }
 
     private func finish(_ recording: UndoRecording) -> UUID? {
@@ -755,15 +763,17 @@ final class UndoRecording {
     fileprivate var displays: [(id: CGDirectDisplayID, state: EditDeskUndoStack.Display)]
     fileprivate var outstanding: Set<CGDirectDisplayID>
     fileprivate var landed: Set<CGDirectDisplayID> = []
+    fileprivate let committedAfter: [CGDirectDisplayID: UInt64]
     private let stack: EditDeskUndoStack
 
     fileprivate init(
         stack: EditDeskUndoStack, action: EditDeskUndoStack.Action,
-        displays: [(id: CGDirectDisplayID, state: EditDeskUndoStack.Display)]
+        displays: [(id: CGDirectDisplayID, state: EditDeskUndoStack.Display)], committedAfter: [CGDirectDisplayID: UInt64]
     ) {
         self.stack = stack
         self.action = action
         self.displays = displays
+        self.committedAfter = committedAfter
         outstanding = Set(displays.map(\.id))
     }
 

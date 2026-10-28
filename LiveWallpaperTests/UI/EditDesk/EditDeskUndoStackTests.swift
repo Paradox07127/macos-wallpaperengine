@@ -491,6 +491,27 @@ struct EditDeskUndoStackTests {
         #expect(unconfirmed.restored.isEmpty)
     }
 
+    @Test("A copy of content already shown records only a committed replacement", .timeLimit(.minutes(1)), arguments: [false, true])
+    func sameContentCopyWaitsForItsCommit(commits: Bool) async throws {
+        let stack = stack(timeout: .milliseconds(300))
+        let before = try #require(manager.configuration(on: manager.left))
+        let recording = stack.begin(.applyWallpaper, displays: [manager.left], requiresConfigurationCommit: true)
+        var replacement = before
+        replacement.muted.toggle()
+        manager.confirmsRestores = false
+        manager.restoreRecordedConfiguration(replacement, overlay: nil, on: manager.left)
+
+        let confirmation = Task { await recording.settle(showing: before.activeWallpaper) }
+        await Task.yield()
+        #expect(stack.undoSteps.isEmpty, "the copy was recorded before its settings committed")
+        if commits {
+            manager.commitHeldRestores()
+        }
+        let stepID = await confirmation.value
+        #expect((stepID != nil) == commits)
+        #expect(stack.undoSteps.count == (commits ? 1 : 0))
+    }
+
     @Test("Undoing a scene change lands the owner's pending edit, then commits the earlier descriptor; another scene there is skipped", .timeLimit(.minutes(1)))
     func sceneChangeUndoesAfterTheFlush() async throws {
         let stack = stack()

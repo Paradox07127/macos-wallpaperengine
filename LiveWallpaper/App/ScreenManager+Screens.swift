@@ -550,8 +550,10 @@ extension ScreenManager {
     func applyConfiguration(from source: Screen, to target: Screen) {
         guard !isTerminating,
               target.id != source.id,
-              let template = configurationStore.get(for: source.id, fingerprint: source.displayFingerprint) else { return }
+              var template = configurationStore.get(for: source.id, fingerprint: source.displayFingerprint) else { return }
 
+        template.videoDisplayMode = .perDisplay
+        template.sceneSpanGroupID = nil
         WallpaperSwitchGroup.$current.withValue(WallpaperSwitchGroup.forManualAction()) {
             copyConfiguration(template, from: source, to: target, logPrefix: "Apply to")
         }
@@ -559,6 +561,8 @@ extension ScreenManager {
 
     /// Runs inside the caller's switch group.
     private func copyConfiguration(_ template: ScreenConfiguration, from source: Screen, to target: Screen, logPrefix: String) {
+        beginExplicitWallpaperSelection(for: target)
+        automationCoordinator.resetRotationClock(for: target.id)
         // Shared with `applyScheme`: one rebind implementation, so the two
         // paths cannot drift on which identity fields have to move.
         let copy = template.reboundToDisplay(
