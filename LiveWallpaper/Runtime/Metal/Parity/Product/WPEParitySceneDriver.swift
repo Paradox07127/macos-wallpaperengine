@@ -18,7 +18,7 @@ enum WPEParityFrameTrace {
     static func begin(_ name: StaticString, scene: String?, renderer: AnyObject) -> OSSignpostIntervalState? {
         guard enabled else { return nil }
         let identity = "scene:\(scene ?? "local") renderer:\(ObjectIdentifier(renderer))"
-        return signposter.beginInterval(name, id: signposter.makeSignpostID(), "\(identity, privacy: .public)")
+        return signposter.beginInterval(name, id: signposter.makeSignpostID(), "\(identity, privacy: .private)")
     }
 
     static func end(_ name: StaticString, _ interval: OSSignpostIntervalState?, submitted: Bool) {
