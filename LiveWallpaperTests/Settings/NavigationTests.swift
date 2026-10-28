@@ -327,4 +327,68 @@ struct NavigationTests {
         #expect(lite?.anchor != .generalLanguage)
         #expect(general.searchFocus(matching: "translate", capabilities: .lite)?.rows.contains("Translate wallpaper text") != true)
     }
+
+    @Test("Lite and App Store search never surfaces Pro-only vocabulary", arguments: ProOnlySearchCase.all)
+    func liteAndAppStoreSearchHideProOnlyVocabulary(_ searchCase: ProOnlySearchCase) {
+        let capabilities = searchCase.edition.capabilities
+        let term = searchCase.term
+        let holdsTerm = { (text: String) in text.localizedCaseInsensitiveContains(term) }
+
+        AppLanguageOverride.with(.english) {
+            let results = SettingsNavigation.filteredResults(matching: term, capabilities: capabilities)
+                .filter { $0.destination != searchCase.liteDestination }
+            for result in results {
+                let names = result.item.searchTargets(capabilities: capabilities).flatMap { [$0.label] + $0.rows }
+                let leakedNames = names.filter { $0.localizedInEveryLanguage.contains(where: holdsTerm) }
+                #expect(!holdsTerm(result.title), "\(searchCase) lists the page \"\(result.title)\"")
+                #expect(result.matchHint.map(holdsTerm) != true, "\(searchCase) hints \"\(result.matchHint ?? "")\" on \(result.title)")
+                #expect(leakedNames.isEmpty, "\(searchCase) finds \(leakedNames) on \(result.title)")
+            }
+            #expect(
+                results.isEmpty,
+                "\(searchCase) lands on \(results.map { "\($0.title) [\($0.anchor?.rawValue ?? "page")] \($0.matchHint ?? "-")" })"
+            )
+        }
+    }
+}
+
+enum SearchEdition: String, Sendable {
+    case lite
+    case appStore
+
+    var capabilities: ProductCapabilities {
+        switch self {
+        case .lite:
+            .lite
+        case .appStore:
+            ProductCapabilities(
+                sku: ProductCapabilities.lite.sku,
+                enabledFeatures: ProductCapabilities.lite.enabledFeatures.subtracting([.appleAerials])
+            )
+        }
+    }
+}
+
+struct ProOnlySearchCase: Sendable, CustomTestStringConvertible {
+    let edition: SearchEdition
+    let term: String
+
+    var testDescription: String {
+        "\(edition.rawValue) search for \"\(term)\""
+    }
+
+    /// The one page where the term names real Lite UI; the App Store edition drops that page under
+    /// `MAS_BUILD`, which this Pro-hosted test cannot compile.
+    var liteDestination: SettingsNavigation? {
+        term == "system wallpaper" ? .systemWallpaper : nil
+    }
+
+    static let proOnlyTerms = [
+        "Workshop", "Steam", "SteamCMD", "Wallpaper Engine",
+        "scene", "scenes", "engine assets", "shader",
+        "Steam Guard", "API key", "system wallpaper",
+    ]
+
+    static let all: [Self] = proOnlyTerms.map { Self(edition: .lite, term: $0) }
+        + (proOnlyTerms + ["Aerials"]).map { Self(edition: .appStore, term: $0) }
 }
