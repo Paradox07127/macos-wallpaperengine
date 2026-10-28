@@ -345,9 +345,7 @@ final class SavedLibraryModel {
 
     /// The rows `filter` would list under the current chip and search.
     func count(of filter: Filter) -> Int {
-        #if LITE_BUILD
-        switch filter {}
-        #else
+        #if !LITE_BUILD
         chipItems.count { matches($0, filter) && (query.isEmpty || matchesQuery($0)) }
         #endif
     }

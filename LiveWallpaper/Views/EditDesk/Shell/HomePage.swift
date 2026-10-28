@@ -903,19 +903,19 @@ struct HomePage: View {
                 stage: stage,
                 sort: Binding(get: { library?.sort ?? .recentlyUsed }, set: { library?.sort = $0 }),
                 filter: Binding(get: { library?.filter }, set: { library?.filter = $0 }),
-                filterCount: {
-                    #if LITE_BUILD
-                    switch $0 {}
-                    #else
-                    return library?.count(of: $0) ?? 0
-                    #endif
-                },
+                filterCount: countLibraryItems(for:),
                 onImport: promptLibraryImport,
                 keepsImportOnShelf: library?.items.isEmpty == true,
                 showsAerialsControls: library?.chip == .aerials && library?.aerialsStatus.isAuthorized == true
             )
             shelfEmptyHint
         }
+    }
+
+    private func countLibraryItems(for filter: SavedLibraryModel.Filter) -> Int {
+        #if !LITE_BUILD
+        library?.count(of: filter) ?? 0
+        #endif
     }
 
     @ViewBuilder
