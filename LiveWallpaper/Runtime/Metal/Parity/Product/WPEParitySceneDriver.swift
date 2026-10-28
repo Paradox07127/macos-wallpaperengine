@@ -1054,7 +1054,7 @@ final class WPEParitySceneDriver {
         let pixels = SIMD2(Double(backbuffer.width), Double(backbuffer.height))
         let input = WPEParityFrameInput(cursor: SIMD2<Float>(pointer * pixels),
                                         scriptCursor: scriptPointer.map { SIMD2<Float>($0 * pixels) },
-                                        cursorOverPicture: pointerOverPicture, buttonDown: buttonDown,
+                                        cursorOverPicture: !mouseInteractionEnabled || pointerOverPicture, buttonDown: buttonDown,
                                         audio: audio.map { ($0.left, $0.right) }, date: date)
         do {
             let start = CACurrentMediaTime()

@@ -1205,6 +1205,55 @@ struct BrowseRequestShapeTests {
         await model.appearRefresh?.value
     }
 
+    @Test("Returning keeps Relevance selected but clearing it uses the latest configured default")
+    func onAppearRefreshesSessionSortFallback() async throws {
+        let suite = try TestScratch.defaultsSuite("workshop.browse.request.defaultSort.sessionFallback")
+        defer { suite.discard() }
+        let store = MutableSettings(defaultSort: "mostPopular")
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
+        services.hasWebAPIKey = true
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
+        model.searchInput = "city"
+        model.updateSort(.search)
+        await model.reload()
+
+        store.settings.workshopDefaultSort = "lastUpdated"
+        model.onAppear()
+        #expect(model.preferredSort == .search)
+        model.searchInput = ""
+        #expect(model.preferredSort == .lastUpdated)
+        await model.reload()
+        await model.appearRefresh?.value
+    }
+
+    @Test("A settings scope with no effective query change keeps the current page", arguments: ["browse", "tag", "creator"])
+    func ignoredSearchScopeKeepsCurrentPage(scope: String) async throws {
+        let suite = try TestScratch.defaultsSuite("workshop.browse.request.scopePage.\(scope)")
+        defer { suite.discard() }
+        let (services, servicesDirectory) = Self.makeStubbedServices()
+        defer { try? FileManager.default.removeItem(at: servicesDirectory) }
+        services.hasWebAPIKey = true
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() })
+        if scope == "tag" {
+            model.applyScopeForTesting(pinnedTag: "Anime")
+        } else if scope == "creator" {
+            model.applyScopeForTesting(creator: .init(steamID: "76561198000000000", name: "Creator"))
+        }
+        await model.reload()
+        await model.goToPage(3)
+        try #require(model.pageIndex == 3)
+        #expect(!model.hasPendingChanges, "pagination is not a query edit")
+
+        suite.defaults.set(WorkshopSearchTextTarget.titleOnly.rawValue, forKey: BrowseViewModel.searchTextTargetKey)
+        model.onAppear()
+        await model.appearRefresh?.value
+
+        #expect(model.searchTextTarget == .titleOnly)
+        #expect(model.pageIndex == 3, "a scope absent from this query restarted pagination")
+        #expect(!model.hasPendingChanges)
+    }
+
     @Test("Returning after the key was rejected off-page rebuilds Browse for the public page")
     func onAppearReconcilesKeyPathFlippedOffPage() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearKeyPath")

@@ -409,10 +409,13 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         case nil: false
         }
         if sourceGone {
-            if dragging, case let .card(id) = ghost.source {
-                model.emit(.dropCancelled(card: id))
+            if dragging {
+                endDrag(cancelled: true)
             }
-            dragging = false
+            pressedCard = nil
+            pressedDisplay = nil
+            mousePressCancelled = true
+            gesture.mouseUp()
             ghost.finish()
             NSCursor.arrow.set()
         }
@@ -1692,7 +1695,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     private func draggableDisplay(at point: CGPoint) -> StageDisplay.ID? {
         guard displays.count > 1, renaming == nil, let id = displayID(at: point),
-              displays.first(where: { $0.id == id })?.state != .empty else { return nil }
+              displays.first(where: { $0.id == id })?.hasConfiguration == true else { return nil }
         if let chrome = model.hoveredPlayback, chrome.displayID == id,
            chrome.rect.contains(point) || chrome.clearRect.contains(point) {
             return nil
@@ -2275,6 +2278,11 @@ private final class StageContextMenu: NSMenu {
             for entry in section {
                 let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
                 item.isEnabled = entry.isEnabled
+                if entry.isDestructive {
+                    item.attributedTitle = NSAttributedString(
+                        string: entry.title, attributes: [.foregroundColor: NSColor(DesignTokens.Colors.Status.danger)]
+                    )
+                }
                 if entry.submenu.isEmpty {
                     item.action = #selector(runAction(_:))
                     item.target = self

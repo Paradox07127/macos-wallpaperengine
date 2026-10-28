@@ -76,7 +76,7 @@ struct LibraryChipsRow: View {
     #if !LITE_BUILD
     /// No filter ever matches an aerial, so that chip keeps the button only while a filter is on, to turn it off.
     private var showsFilterControl: Bool {
-        selection != "\(SavedLibraryModel.Chip.aerials)" || filter != nil
+        selection != SavedLibraryModel.Chip.aerials.rawValue || filter != nil
     }
 
     private var filterControl: some View {

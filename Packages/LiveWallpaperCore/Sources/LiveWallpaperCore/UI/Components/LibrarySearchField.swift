@@ -75,6 +75,7 @@ public struct LibrarySearchField: View {
                         .foregroundStyle(DesignTokens.Colors.textSecondary)
                 }
                 .buttonStyle(.borderless)
+                .disabled(isDisabled)
                 .help(Text("Clear search"))
                 .accessibilityLabel(Text("Clear search"))
             }

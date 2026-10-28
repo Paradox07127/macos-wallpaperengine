@@ -6,7 +6,7 @@ import Observation
 
 @MainActor @Observable
 final class SavedLibraryModel {
-    enum Chip: CaseIterable { case all, bookmarks, recent, steam, local, aerials }
+    enum Chip: String, CaseIterable { case all, bookmarks, recent, steam, local, aerials }
     enum Sort: CaseIterable {
         case recentlyUsed, dateAdded, name, type, size
     }

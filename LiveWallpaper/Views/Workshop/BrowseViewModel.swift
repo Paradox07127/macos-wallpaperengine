@@ -341,7 +341,7 @@ final class BrowseViewModel {
     private static let searchDebounce: Duration = .milliseconds(500)
 
     var hasPendingChanges: Bool {
-        makeRequest(page: 1) != currentRequest
+        makeRequest(page: currentRequest.page) != currentRequest
     }
 
     init(
@@ -401,12 +401,12 @@ final class BrowseViewModel {
     }
 
     private func applySettingsDefaults() -> Bool {
-        guard !userChangedSortThisSession else { return false }
         let settings = loadGlobalSettings()
         let sort = Self.defaultSort(from: settings.workshopDefaultSort)
         let timeFrame = Self.defaultTimeFrame(from: settings.workshopDefaultTimeFrame)
-        guard sort != defaultSort || timeFrame != preferredTimeFrame else { return false }
         defaultSort = sort
+        guard !userChangedSortThisSession,
+              sort != preferredSort || timeFrame != preferredTimeFrame else { return false }
         preferredSort = sort
         preferredTimeFrame = timeFrame
         return true

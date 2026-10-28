@@ -13,7 +13,8 @@ struct EditDeskStageViewTests {
         model.displays = [
             StageDisplay(
                 id: 1, fingerprint: "external", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
-                isBuiltin: false, name: "External", badgeText: "External", statusText: "Active", cover: nil, state: .ok
+                isBuiltin: false, name: "External", badgeText: "External", statusText: "Active", cover: nil, state: .ok,
+                hasConfiguration: true
             ),
             StageDisplay(
                 id: 2, fingerprint: "builtin", frame: CGRect(x: 96, y: -1117, width: 1728, height: 1117),
@@ -1774,6 +1775,18 @@ struct EditDeskStageViewTests {
         }
 
         #expect(try !pressAndDrag(empty, to: wallpapered), "an empty display has no wallpaper to hand over")
+        let unconfiguredStates: [StageDisplay.State] = [
+            .preparing(text: "Preparing"),
+            .failed(StageFailureChip(symbol: "xmark", text: "Failed", failureClass: .fatal)),
+        ]
+        for state in unconfiguredStates {
+            model.displays[1].state = state
+            await Task.yield()
+            view.layoutSubtreeIfNeeded()
+            #expect(try !pressAndDrag(empty, to: wallpapered), "a first attempt has no committed wallpaper to copy")
+        }
+        model.displays[1].state = .empty
+        await Task.yield()
 
         model.interactionBlocked = true
         #expect(try !pressAndDrag(wallpapered, to: empty), "a covered stage must not take the press")
@@ -1808,6 +1821,26 @@ struct EditDeskStageViewTests {
         view.layoutSubtreeIfNeeded()
         try #require(view.displayLayers.count == 1)
         #expect(try !pressAndDrag(wallpapered, to: CGPoint(x: wallpapered.x + 40, y: wallpapered.y)), "a lone display has nowhere to go")
+    }
+
+    @Test("Disconnecting a display being dragged cancels the drop and clears the destination", .timeLimit(.minutes(1)))
+    func disconnectedDragClearsItsDestination() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let source = try screenCentre(1, in: view)
+        let target = try screenCentre(2, in: view)
+        try view.mouseDown(with: mouse(.leftMouseDown, at: source, in: view))
+        try view.mouseDragged(with: mouse(.leftMouseDragged, at: target, in: view))
+        try #require(view.debugDragging && model.dropTarget == 2)
+
+        model.displays.removeFirst()
+        await Task.yield()
+        view.layoutSubtreeIfNeeded()
+        #expect(!view.debugDragging)
+        #expect(model.dropTarget == nil, "the disconnected source left the surviving display highlighted")
     }
 
     @Test("The name-row dot is green only while the wallpaper runs")

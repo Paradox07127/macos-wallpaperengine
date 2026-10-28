@@ -239,7 +239,7 @@ struct BrowsePane: View {
            !viewModel.currentPageIsFilteredOut {
             return .error(error)
         }
-        if !viewModel.hasLoadedPage, viewModel.isLoading {
+        if viewModel.items.isEmpty, viewModel.isLoading || viewModel.hasPendingChanges {
             return .skeleton
         }
         if viewModel.items.isEmpty, !viewModel.currentPageIsFilteredOut {
@@ -584,12 +584,7 @@ struct BrowsePane: View {
                 title: Text("Steam is rate-limiting — retry in \(Self.countdown(rateLimitRemaining))")
                     .accessibilityLabel(Text("Steam is rate-limiting. Retry in \(Self.countdown(rateLimitRemaining)).")),
                 surface: .chrome
-            ) {
-                Button("Retry") { Task { await viewModel.reload() } }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(rateLimitRemaining > 0)
-            }
+            )
             .padding(DesignTokens.Spacing.md)
             .transition(.move(edge: .top).combined(with: .opacity))
         }
@@ -598,7 +593,8 @@ struct BrowsePane: View {
     // MARK: - Helpers
 
     private var isSearchActive: Bool {
-        viewModel.creatorFilter == nil && viewModel.pinnedTag == nil && !viewModel.searchInput.isEmpty
+        viewModel.creatorFilter == nil && viewModel.pinnedTag == nil
+            && !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var isFilterActive: Bool {
@@ -626,8 +622,9 @@ struct BrowsePane: View {
         if let tag = viewModel.pinnedTag {
             return String(localized: "No results tagged “\(WorkshopTagLocalization.displayName(tag))”.", bundle: .appLanguage, comment: "Empty tag-scoped Workshop browse. Placeholder is the tag.")
         }
-        if !viewModel.searchInput.isEmpty {
-            return String(localized: "No results for “\(viewModel.searchInput)” in Workshop", bundle: .appLanguage, comment: "Empty Workshop search result. Placeholder is the query.")
+        let query = viewModel.currentRequest.searchText
+        if !query.isEmpty {
+            return String(localized: "No results for “\(query)” in Workshop", bundle: .appLanguage, comment: "Empty Workshop search result. Placeholder is the query.")
         }
         if isFilterActive {
             return String(localized: "No results for these filters.", bundle: .appLanguage, comment: "Empty Workshop result when type/age filters exclude everything.")

@@ -177,6 +177,62 @@ final class WPEParityProductControlsTests: XCTestCase {
         XCTAssertEqual(pressed.state, SIMD4(1, 1, 1, 0))
     }
 
+    func testCursorParticleBirthsStayAtTheCentreWithFollowDisabled() async throws {
+        let fixture = try fixture()
+        let particle = Data(#"{"maxcount":8,"renderer":[],"controlpoint":[{"id":0,"flags":1}],"emitter":[{"name":"sphererandom","controlpoint":0,"rate":1000,"flags":2,"distancemax":0}],"initializer":[{"name":"lifetimerandom","min":10,"max":10}]}"#.utf8)
+        let assets = WPEParityProgramAssets(sources: [
+            .lookup(scratch) { $0 == "particles/follow.json" ? particle : nil },
+            .directory(fixture.root.appending(path: "wpeassets")), .directory(fixture.wpeAssets),
+        ])
+        let document = try WPESceneDocumentParser.parse(data: Data(#"""
+        {"camera":{"center":"0 0 -1","eye":"0 0 0","up":"0 1 0"},
+         "general":{"orthogonalprojection":{"width":64,"height":64},"clearenabled":true,
+                    "clearcolor":"0 0 0","camerashake":false,"cameraparallax":false},
+         "objects":[{"id":1,"particle":"particles/follow.json","origin":"32 32 0"},
+                    {"id":2,"image":"models/util/solidlayer.json","origin":"32 32 0","size":"64 64","color":"0 0 0"}]}
+        """#.utf8), userValues: [:])
+        let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+        let driver = try WPEParitySceneDriver(device: device)
+        defer { driver.cleanup() }
+        driver.setMouseInteractionEnabled(false)
+        driver.setPresentFitMode(.contain)
+        try await driver.load(document: document, assets: assets, settings: .init(bloom: false),
+                              drawableSize: CGSize(width: 128, height: 64), pixelFormat: .rgba8Unorm_srgb,
+                              compiler: fixture.compiler, diskCache: .init(cachesURL: scratch),
+                              renderScaleOverride: 1, textureCompression: nil, particleSeed: 7)
+        let renderer = try XCTUnwrap(driver.renderer)
+        let mailbox = WPEPointerMailbox()
+        mailbox.publishGeometry(.init(viewFrameInScreen: CGRect(x: 0, y: 0, width: 128, height: 64)))
+        let frames = WPESceneSpanFrames()
+        var timestamp: CFTimeInterval = 100
+        func render(at point: CGPoint) async throws {
+            mailbox.publishMouseLocation(point, timestampNanos: 1)
+            let input = driver.pointerInput(mailbox)
+            let buffer = try XCTUnwrap(driver.renderAndPublishSpanFrame(
+                to: frames, timestamp: timestamp, pointer: input.position, buttonDown: input.buttonDown,
+                date: Date(timeIntervalSince1970: 0)
+            ))
+            await buffer.completed()
+            XCTAssertNil(buffer.error)
+            timestamp += 1.0 / 60
+        }
+        // The first frame seeds the clock without advancing particles. The square picture occupies x32...96.
+        try await render(at: CGPoint(x: 64, y: 32))
+        let locations = [CGPoint(x: 48, y: 48), CGPoint(x: 8, y: 32),
+                         CGPoint(x: 160, y: 32), CGPoint(x: 80, y: 16)]
+        for (index, location) in locations.enumerated() {
+            try await render(at: location)
+            let count = try XCTUnwrap(renderer.particleLiveCount("1"))
+            XCTAssertEqual(count, index + 1, "one real birth per frame")
+            let positions = try XCTUnwrap(renderer.instance.particles.scene.control(objectID: "1") { $0.position })
+            let birth = try XCTUnwrap(positions.dropFirst(index).first)
+            // The owner is at the scene centre, so a centre-locked control point births at local zero.
+            XCTAssertEqual(birth.x, 0, accuracy: 1e-4, "pointer at \(location)")
+            XCTAssertEqual(birth.y, 0, accuracy: 1e-4, "pointer at \(location)")
+            XCTAssertEqual(birth.z, 0, accuracy: 1e-4, "pointer at \(location)")
+        }
+    }
+
     func testDesktopClickWithinOneFrameReachesTheSceneScript() async throws {
         let harness = try await clickHarness()
         let before = try await clickCounts(harness.actor)

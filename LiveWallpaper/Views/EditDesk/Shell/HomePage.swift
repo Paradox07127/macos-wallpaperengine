@@ -981,18 +981,11 @@ struct HomePage: View {
     }
 
     private static func chipID(_ chip: SavedLibraryModel.Chip) -> String {
-        switch chip {
-        case .all: "all"
-        case .bookmarks: "bookmarks"
-        case .recent: "recent"
-        case .steam: "steam"
-        case .local: "local"
-        case .aerials: "aerials"
-        }
+        chip.rawValue
     }
 
     private static func chip(for id: String) -> SavedLibraryModel.Chip {
-        SavedLibraryModel.Chip.allCases.first { chipID($0) == id } ?? .all
+        SavedLibraryModel.Chip(rawValue: id) ?? .all
     }
 
     static func chipTitle(_ chip: SavedLibraryModel.Chip) -> LocalizedStringKey {
@@ -1423,6 +1416,7 @@ struct HomePage: View {
     /// Drops the cover of a display that no longer has a wallpaper; true when it has none, so an
     /// in-flight capture of the removed wallpaper is superseded even before its first cover landed.
     static func reconcileCover(_ display: inout StageDisplay, hasConfiguration: Bool) -> Bool {
+        display.hasConfiguration = hasConfiguration
         guard !hasConfiguration else { return false }
         display.cover = nil
         return true

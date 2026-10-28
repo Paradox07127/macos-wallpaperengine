@@ -28,6 +28,7 @@ struct StageDisplay: Identifiable, Equatable {
     var statusText: String
     var cover: CGImage?
     var state: State
+    var hasConfiguration = false
     /// What is playing on the screen, drawn inside the content layer. Empty only while `state` is
     /// `.empty`, where the two lines are hidden.
     var wallpaperTitle: String = ""
@@ -74,6 +75,7 @@ struct StageDisplay: Identifiable, Equatable {
             && lhs.statusText == rhs.statusText
             && lhs.cover === rhs.cover
             && lhs.state == rhs.state
+            && lhs.hasConfiguration == rhs.hasConfiguration
             && lhs.wallpaperTitle == rhs.wallpaperTitle
             && lhs.wallpaperKind == rhs.wallpaperKind
             && lhs.showsPlaylistControls == rhs.showsPlaylistControls
