@@ -155,6 +155,7 @@ final class NowPlayingController: ObservableObject {
     private let queryExecutor: QueryExecutor
     private let probe: PermissionProbe
     private let systemExecutor: SystemExecutor?
+    private var systemSubmission: Task<Void, Error>?
     /// Keyed by the whole command, so two *different* seeks in quick succession
     /// both land while a repeated tap of the same button does not.
     private var lastSent: [Key: Date] = [:]
@@ -229,8 +230,19 @@ final class NowPlayingController: ObservableObject {
                 lastSent.removeAll(keepingCapacity: true)
             }
             lastSent[key] = now
-            do {
+            let previous = systemSubmission
+            let submission = Task {
+                _ = await previous?.result
+                try Task.checkCancellation()
                 try await systemExecutor(code, playerID)
+            }
+            systemSubmission = submission
+            do {
+                try await withTaskCancellationHandler {
+                    try await submission.value
+                } onCancel: {
+                    submission.cancel()
+                }
                 return .success(())
             } catch {
                 // Retrying a possibly submitted toggle via AppleScript could undo it.

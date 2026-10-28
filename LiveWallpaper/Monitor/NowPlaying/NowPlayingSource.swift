@@ -9,7 +9,7 @@ final actor NowPlayingSource: MonitorDataSource {
 
     private let monitorOverride: NowPlayingMonitor?
     private let fetcher: NowPlayingArtworkFetcher
-    private let subscriptionID = UUID()
+    private var subscriptionID = UUID()
     private var monitor: NowPlayingMonitor?
     private var sink: (any MonitorSnapshotSink)?
     private var lastForwardedOrdinal: UInt64?
@@ -135,20 +135,30 @@ final actor NowPlayingSource: MonitorDataSource {
     func start(sink: any MonitorSnapshotSink) async {
         self.sink = sink
         let id = subscriptionID
+        let startGeneration = generation
         let forward: @Sendable (UInt64, MonitorNowPlayingState) -> Void = { [weak self] ordinal, state in
             guard let self else { return }
-            Task { await self.push(state, ordinal: ordinal) }
+            Task { await self.push(state, ordinal: ordinal, sourceGeneration: startGeneration) }
         }
         let override = monitorOverride
-        monitor = await MainActor.run { () -> NowPlayingMonitor in
+        let subscribedMonitor = await MainActor.run { () -> NowPlayingMonitor in
             let monitor = override ?? NowPlayingMonitor.shared
             monitor.subscribe(id: id, handler: forward)
             return monitor
         }
+        guard generation == startGeneration else {
+            await MainActor.run { subscribedMonitor.unsubscribe(id: id) }
+            return
+        }
+        monitor = subscribedMonitor
     }
 
     func stop() async {
         generation &+= 1
+        let id = subscriptionID
+        subscriptionID = UUID()
+        let monitor = self.monitor
+        self.monitor = nil
         sink = nil
         stopPositionPolling()
         artworkTask?.cancel()
@@ -162,15 +172,13 @@ final actor NowPlayingSource: MonitorDataSource {
         lastForwardedOrdinal = nil
         await setAudioDemand(false)
         guard let monitor else { return }
-        self.monitor = nil
-        let id = subscriptionID
         await MainActor.run { monitor.unsubscribe(id: id) }
     }
 
-    private func push(_ state: MonitorNowPlayingState, ordinal: UInt64) async {
+    private func push(_ state: MonitorNowPlayingState, ordinal: UInt64, sourceGeneration: UInt64) async {
         // MainActor→actor hops are unordered; the ordinal drops a stale frame. Re-read generation after every suspension so an interleaved stop() wins.
         let gen = generation
-        guard let sink else { return }
+        guard generation == sourceGeneration, let sink else { return }
         if let last = lastForwardedOrdinal, ordinal <= last { return }
         lastForwardedOrdinal = ordinal
 
