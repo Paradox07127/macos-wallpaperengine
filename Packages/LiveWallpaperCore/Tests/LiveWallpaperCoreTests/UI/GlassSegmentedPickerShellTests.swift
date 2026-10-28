@@ -77,7 +77,7 @@ struct GlassSegmentedPickerShellTests {
     private static func buttonLabels(in view: some View) -> [String] {
         // SwiftUI builds no AX nodes until an assistive client asks for them; this is what VoiceOver sets.
         let enhancedUI = "AXEnhancedUserInterface"
-        let setAttribute = Selector(("accessibilitySetValue:forAttribute:"))
+        let setAttribute = NSSelectorFromString("accessibilitySetValue:forAttribute:")
         NSApplication.shared.perform(setAttribute, with: NSNumber(value: true), with: enhancedUI)
         defer { NSApplication.shared.perform(setAttribute, with: NSNumber(value: false), with: enhancedUI) }
         let host = NSHostingView(rootView: view.fixedSize())
