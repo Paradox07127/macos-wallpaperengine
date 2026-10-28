@@ -140,7 +140,6 @@ struct BrowsePane: View {
 
     private struct QueryInputs: Equatable {
         let searchInput: String
-        let searchTextTarget: WorkshopSearchTextTarget
         let sort: WorkshopSortMode
         let timeFrame: WorkshopTimeFrame
         let types: Set<WorkshopContentTypeFilter>
@@ -153,7 +152,6 @@ struct BrowsePane: View {
     private var queryInputs: QueryInputs {
         QueryInputs(
             searchInput: viewModel.searchInput,
-            searchTextTarget: viewModel.searchTextTarget,
             sort: viewModel.preferredSort,
             timeFrame: viewModel.preferredTimeFrame,
             types: viewModel.selectedTypes,
