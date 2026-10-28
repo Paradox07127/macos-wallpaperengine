@@ -13,7 +13,7 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
-## [0.9.3] — 2026-10-27
+## [0.9.3] — 2026-10-28
 
 ### Added
 
@@ -37,6 +37,7 @@ what shipped at that time; current behavior is documented in `docs/`.
   covered display controls from handling input.
 - Persistence and export cleanup preserve file-operation ordering and report
   failures; Pro handles excess variable-font coordinates safely.
+- Keep system media commands ordered and stop polling when a music source closes.
 - Verify update archives against the app's existing Sparkle public key before
   publishing their appcast entries.
 
