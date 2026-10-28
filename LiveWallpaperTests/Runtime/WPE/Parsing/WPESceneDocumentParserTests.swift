@@ -433,6 +433,10 @@ struct WPESceneDocumentParserTests {
         #expect(point.lightSourceSize == 5)
         #expect(point.minimumDistance == 6)
         #expect(point.dependencies == ["259", "459"])
+        expectPointLightBindings(point)
+    }
+
+    private func expectPointLightBindings(_ point: WPESceneLightObject) {
         #expect(point.fieldBindings["radius"]?.seed == .number(100))
         #expect(point.fieldBindings["radius"]?.resolvedValue == .number(175))
         #expect(point.fieldBindings["radius"]?.userBindings == [

@@ -71,10 +71,8 @@ struct SettingsPersistenceFailureTests {
         #expect(schemes.schemes == expectedSchemes)
         #expect(manager.loadGlobalSettings().globalPauseOnBattery)
         // The old disk copy survives; retaining desired memory does not pretend the disk write succeeded.
-        #expect(AtomicFileStore<[ScreenConfiguration]>(fileURL: directory.url(for: .screenConfigurations)).read() == diskConfigBefore)
-        #expect(AtomicFileStore<[WallpaperBookmark]>(fileURL: directory.url(for: .wallpaperBookmarks)).read() == diskBookmarksBefore)
-        #expect(AtomicFileStore<[ScreenScheme]>(fileURL: directory.url(for: .screenSchemes)).read() == diskSchemesBefore)
-        #expect(AtomicFileStore<GlobalSettings>(fileURL: directory.url(for: .globalSettings)).read()?.globalPauseOnBattery == false)
+        expectDiskUnchanged(directory: directory, diskConfigBefore: diskConfigBefore,
+                            diskBookmarksBefore: diskBookmarksBefore, diskSchemesBefore: diskSchemesBefore)
         #expect(await !(manager.flushPendingWrites())) // Persistent fault must not yield a successful flush.
 
         files.allowPromotions()
@@ -87,6 +85,16 @@ struct SettingsPersistenceFailureTests {
         #expect(restarted.loadScreenSchemes() == expectedSchemes)
         #expect(restarted.loadGlobalSettings().globalPauseOnBattery)
         await TestScratch.discard(root, flushing: manager, restarted)
+    }
+
+    private func expectDiskUnchanged(
+        directory: ConfigurationDirectory, diskConfigBefore: [ScreenConfiguration]?,
+        diskBookmarksBefore: [WallpaperBookmark]?, diskSchemesBefore: [ScreenScheme]?
+    ) {
+        #expect(AtomicFileStore<[ScreenConfiguration]>(fileURL: directory.url(for: .screenConfigurations)).read() == diskConfigBefore)
+        #expect(AtomicFileStore<[WallpaperBookmark]>(fileURL: directory.url(for: .wallpaperBookmarks)).read() == diskBookmarksBefore)
+        #expect(AtomicFileStore<[ScreenScheme]>(fileURL: directory.url(for: .screenSchemes)).read() == diskSchemesBefore)
+        #expect(AtomicFileStore<GlobalSettings>(fileURL: directory.url(for: .globalSettings)).read()?.globalPauseOnBattery == false)
     }
 
     @Test("Termination reports a failed final disk promotion instead of a successful save")

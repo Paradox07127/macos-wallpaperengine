@@ -29,13 +29,17 @@ struct WPEDisplayedFrameCaptureTests {
         #expect(capture.colorSpace?.name == CGColorSpace.sRGB)
         #expect(!capture.isEDR)
         let actual = try stack.bytes(capture.texture)
+        expectCapturedPixels(actual, expected: expected, width: drawable.width)
+    }
+
+    private func expectCapturedPixels(_ actual: [UInt8], expected: [UInt8], width: Int) {
         #expect(actual.count == expected.count)
-        let worst = zip(actual, expected).map { abs(Int($0) - Int($1)) }.max() ?? .max
+        let worst: Int = zip(actual, expected).map { abs(Int($0) - Int($1)) }.max() ?? .max
         #expect(worst <= 1)
         // `.contain` letterboxes the all-red square scene: a black bar beside a red centre, so an empty capture cannot match.
-        let row = 32 * drawable.width * 4
+        let row = 32 * width * 4
         #expect(Array(expected[row ..< row + 4]) == [0, 0, 0, 255])
-        let centre = row + drawable.width / 2 * 4
+        let centre = row + width / 2 * 4
         #expect(Array(expected[centre ..< centre + 4]) == [255, 0, 0, 255])
     }
 

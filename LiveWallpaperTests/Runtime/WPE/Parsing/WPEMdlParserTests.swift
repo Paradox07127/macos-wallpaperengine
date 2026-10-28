@@ -307,6 +307,10 @@ struct WPEMdlParserTests {
         #expect(animation.channels[1].boneIndex == 1)
         #expect(animation.channels[1].keyframes[0].translation == SIMD3<Float>(7, 8, 9))
         #expect(animation.channels[1].keyframes[1].euler == SIMD3<Float>(0, 0, 0))
+        try expectMDLA0006Tail(animation)
+    }
+
+    private func expectMDLA0006Tail(_ animation: WPEPuppetAnimation) throws {
         let tail = try #require(animation.tail)
         #expect(tail.mdlaVersion == 6)
         #expect(tail.blendCurves?.hasCurves == true)

@@ -75,14 +75,7 @@ struct OverlayRemoveAllTests {
         // Past the canvas's debounced write, which would report per-widget removals late.
         try await Task.sleep(for: .milliseconds(400))
 
-        let cleared = manager.monitorOverlay(for: screen)
-        #expect(cleared.board.widgets.isEmpty, "widgets are left: \(cleared.board.widgets.map(\.kind))")
-        #expect(!cleared.clock.enabled && !cleared.music.enabled)
-        #expect(manager.weatherOverlay(for: screen).particleEffect == ParticleEffect.none)
-        #expect(session.interaction.placements.isEmpty && !session.hasObjects)
-        #expect(stack.undoSteps.count == 1, "Remove All left \(stack.undoSteps.count) undo steps")
-        #expect(stack.undoSteps.last?.action == .removeAllObjects)
-        #expect(notices == [String(localized: "Remove All", bundle: .appLanguage)], "Remove All posted \(notices)")
+        expectRemovedObjects(manager: manager, screen: screen, session: session, stack: stack, notices: notices)
 
         let undone = try #require(await stack.undo())
         #expect(undone.restored == [screen.name])
@@ -94,6 +87,20 @@ struct OverlayRemoveAllTests {
         #expect(session.interaction.placements.map(\.id) == [cpu.id, gpu.id])
         #expect(session.effectVisible && session.hasObjects)
         #expect(notices.count == 1)
+    }
+
+    private func expectRemovedObjects(
+        manager: UndoTestManager, screen: Screen, session: OverlayEditorSession,
+        stack: EditDeskUndoStack, notices: [String]
+    ) {
+        let cleared = manager.monitorOverlay(for: screen)
+        #expect(cleared.board.widgets.isEmpty, "widgets are left: \(cleared.board.widgets.map(\.kind))")
+        #expect(!cleared.clock.enabled && !cleared.music.enabled)
+        #expect(manager.weatherOverlay(for: screen).particleEffect == ParticleEffect.none)
+        #expect(session.interaction.placements.isEmpty && !session.hasObjects)
+        #expect(stack.undoSteps.count == 1, "Remove All left \(stack.undoSteps.count) undo steps")
+        #expect(stack.undoSteps.last?.action == .removeAllObjects)
+        #expect(notices == [String(localized: "Remove All", bundle: .appLanguage)], "Remove All posted \(notices)")
     }
 
     @Test("The detail host records Remove All on the window's undo stack, flushing the editor first")
