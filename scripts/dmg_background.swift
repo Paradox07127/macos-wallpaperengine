@@ -1,10 +1,6 @@
 // Renders the DMG window background and emits a HiDPI (@1x+@2x) TIFF.
 //
-//   swift scripts/dmg_background.swift <out.tiff> "<App Name>"
-//
-// The app name is baked into the Terminal command on the image, so Pro and Lite
-// need separate renders — that is why release-app.sh calls this per SKU instead
-// of committing a static PNG.
+//   swift scripts/dmg_background.swift <out.tiff>
 
 import AppKit
 import CoreGraphics
@@ -17,16 +13,15 @@ import UniformTypeIdentifiers
 // this image by absolute coordinate, so release-app.sh imports these same
 // numbers via --print-layout for the dmgbuild settings.
 //
-// H carries ~100pt of dead space below the last icon on purpose: Finder draws
+// H carries ~100pt of dead space below the icon labels on purpose: Finder draws
 // the path bar (and optionally the status bar) inside the window, eating up to
 // ~52pt. The layout hides these bars, but the viewer's Finder preferences can
 // still affect the available content height.
 let W: CGFloat = 680
-let H: CGFloat = 560
+let H: CGFloat = 340
 let iconSize: CGFloat = 104
 let appCenter = CGPoint(x: 180, y: 155)
 let appsCenter = CGPoint(x: 500, y: 155)
-let readmeCenter = CGPoint(x: 340, y: 400)
 
 // Gaps between an icon's edge and the arrow; the end gap also leaves room for
 // the arrowhead, which extends past the shaft's end point.
@@ -40,11 +35,7 @@ func rgb(_ r: Int, _ g: Int, _ b: Int, _ a: CGFloat = 1) -> CGColor {
 let cGradTop = rgb(249, 250, 252)
 let cGradBottom = rgb(228, 232, 239)
 let cTitle = rgb(48, 54, 64)
-let cSubtitle = rgb(126, 134, 148)
 let cArrow = rgb(168, 178, 194)
-let cCodeBg = rgb(255, 255, 255, 0.85)
-let cCodeBorder = rgb(198, 205, 216)
-let cCodeText = rgb(58, 66, 78)
 
 /// Finder icon coords are top-left origin; CoreGraphics is bottom-left.
 func cgY(_ finderY: CGFloat) -> CGFloat { H - finderY }
@@ -60,40 +51,6 @@ func drawText(_ ctx: CGContext, _ s: String, font: NSFont, color: CGColor,
     let line = CTLineCreateWithAttributedString(NSAttributedString(string: s, attributes: attrs))
     let bounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
     ctx.textPosition = CGPoint(x: centerX - bounds.width / 2 - bounds.origin.x, y: baselineY)
-    CTLineDraw(line, ctx)
-}
-
-/// Painted onto the background, so it cannot be selected. The same command is
-/// duplicated in the READ ME text file, which is where users can copy it from.
-func drawCodeBlock(_ ctx: CGContext, _ cmd: String, centerY finderY: CGFloat) {
-    let font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: font,
-        .foregroundColor: NSColor(cgColor: cCodeText)!,
-    ]
-    let line = CTLineCreateWithAttributedString(NSAttributedString(string: cmd, attributes: attrs))
-    var ascent: CGFloat = 0, descent: CGFloat = 0
-    let textW = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
-
-    let padX: CGFloat = 16, boxH: CGFloat = 34
-    let boxW = CGFloat(textW) + padX * 2
-    if boxW > W - 24 {
-        FileHandle.standardError.write(
-            "ERROR: command too wide for the window (\(Int(boxW))pt > \(Int(W - 24))pt)\n".data(using: .utf8)!)
-        exit(1)
-    }
-    let box = CGRect(x: (W - boxW) / 2, y: cgY(finderY) - boxH / 2, width: boxW, height: boxH)
-    let path = CGPath(roundedRect: box, cornerWidth: 8, cornerHeight: 8, transform: nil)
-
-    ctx.addPath(path)
-    ctx.setFillColor(cCodeBg)
-    ctx.fillPath()
-    ctx.addPath(path)
-    ctx.setStrokeColor(cCodeBorder)
-    ctx.setLineWidth(1)
-    ctx.strokePath()
-
-    ctx.textPosition = CGPoint(x: box.minX + padX, y: box.midY - (ascent - descent) / 2)
     CTLineDraw(line, ctx)
 }
 
@@ -133,7 +90,7 @@ func drawCurvedArrow(_ ctx: CGContext, from x0: CGFloat, to x1: CGFloat, y: CGFl
     ctx.fillPath()
 }
 
-func render(appName: String, scale: CGFloat, to url: URL) {
+func render(scale: CGFloat, to url: URL) {
     let cs = CGColorSpace(name: CGColorSpace.sRGB)!
     guard let ctx = CGContext(data: nil, width: Int(W * scale), height: Int(H * scale),
                               bitsPerComponent: 8, bytesPerRow: 0, space: cs,
@@ -158,13 +115,6 @@ func render(appName: String, scale: CGFloat, to url: URL) {
                     to: appsCenter.x - iconSize / 2 - arrowEndGap,
                     y: appCenter.y, lift: 38)
 
-    drawText(ctx, "Blocked on first launch? Run this once in Terminal:",
-             font: .systemFont(ofSize: 12.5, weight: .medium),
-             color: cSubtitle, centerX: W / 2, baselineY: cgY(258))
-
-    drawCodeBlock(ctx, "xattr -dr com.apple.quarantine \"/Applications/\(appName).app\"",
-                  centerY: 292)
-
     NSGraphicsContext.current = prev
 
     guard let img = ctx.makeImage(),
@@ -186,22 +136,19 @@ if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "--print-layout
     DMG_APP_Y=\(Int(appCenter.y))
     DMG_APPS_X=\(Int(appsCenter.x))
     DMG_APPS_Y=\(Int(appsCenter.y))
-    DMG_README_X=\(Int(readmeCenter.x))
-    DMG_README_Y=\(Int(readmeCenter.y))
     """)
     exit(0)
 }
 
-guard CommandLine.arguments.count == 3 else {
+guard CommandLine.arguments.count == 2 else {
     FileHandle.standardError.write("""
-    usage: dmg_background.swift <out.tiff> "<App Name>"
+    usage: dmg_background.swift <out.tiff>
            dmg_background.swift --print-layout
 
     """.data(using: .utf8)!)
     exit(2)
 }
 let outURL = URL(fileURLWithPath: CommandLine.arguments[1])
-let appName = CommandLine.arguments[2]
 
 let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
     .appendingPathComponent("dmgbg-\(ProcessInfo.processInfo.processIdentifier)")
@@ -210,8 +157,8 @@ defer { try? FileManager.default.removeItem(at: tmp) }
 
 let at1x = tmp.appendingPathComponent("bg.png")
 let at2x = tmp.appendingPathComponent("bg@2x.png")
-render(appName: appName, scale: 1, to: at1x)
-render(appName: appName, scale: 2, to: at2x)
+render(scale: 1, to: at1x)
+render(scale: 2, to: at2x)
 
 // A plain PNG renders blurry on Retina; -cathidpicheck packs both scales into
 // one TIFF that Finder resolves per-display.

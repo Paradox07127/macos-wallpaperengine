@@ -2,15 +2,15 @@
 
 [English](../en/releasing.md) · **简体中文**
 
-这是手动发 `0.x` 版本的维护者清单。公开构建用 Apple Development 证书签名（带
-Team ID，Sparkle 才能加载），以 DMG 形式从 GitHub Releases 分发。不是
-Developer ID，也没有公证。
+这是手动发 `0.x` 版本的维护者清单。公开构建用团队的 Developer ID Application 证书签名，
+经过公证，以 DMG 形式从 GitHub Releases 分发。app 和 DMG 都装订了公证票据，所以 Gatekeeper
+直接放行下载的副本，不需要终端命令。0.9.3 及更早的版本用 Apple Development 签名，没有公证。
 
 ## 当前的更新器边界
 
 已安装的副本去拉 `main` 上按 SKU 分开的 Sparkle appcast（`appcast-lite.xml` /
-`appcast-pro.xml`）。Sparkle 下载对应 DMG、校验 EdDSA 签名并替换应用。新下载的
-构建没有公证；如果 macOS 拦截手动下载的副本，可能需要清除隔离标记。
+`appcast-pro.xml`）。Sparkle 下载对应 DMG、校验 EdDSA 签名并替换应用。手动下载的
+构建经过公证，可以直接打开。
 
 ## 版本号清单
 
@@ -62,8 +62,8 @@ JavaScriptCore，或手动链接的 libc++ 动态库。Sparkle 是故意链接�
 这些 ad-hoc archive 是**验证证据，不是出货用的 entitlement 产物**。Xcode 的
 "Sign to Run Locally"路径可能注入 `get-task-allow=true`，而
 `scripts/check_entitlements.sh --app` 必须拒绝这种形态。真正出货的 Pro/Lite
-有效 entitlement 与嵌套签名，在签名 Mac 上针对最终 Apple Development 签名应用验证。
-Developer ID 信任与公证是未来分发步骤，当前打包脚本不会完成。不要以 ad-hoc 冒烟 archive
+有效 entitlement 与嵌套签名，在签名 Mac 上针对最终 Developer ID 签名应用验证；
+`release-app.sh` 会做这项验证，并完成公证和装订。不要以 ad-hoc 冒烟 archive
 代替出货产物，也不要豁免 `get-task-allow` 检查失败。
 
 ## 文档与 UI 素材
@@ -98,8 +98,23 @@ export PATH="$PWD/build/release-tools/bin:$PATH"
 
 `dmgbuild` 直接写入 DMG 窗口布局，无需自动控制 Finder。
 `scripts/dmg_settings.py` 从打包输入读取背景、图标位置和 `/Applications` 拖放链接。
-窗口几何数据和背景由 `scripts/dmg_background.swift` 提供，按 SKU 渲染时会把该 SKU 的应用名烘进图上显示的
-Gatekeeper 命令里——这也是它在打包时生成、而不是作为静态 PNG 提交的原因。
+窗口几何数据和背景由 `scripts/dmg_background.swift` 提供。DMG 里只有 app 和
+`/Applications` 链接。
+
+签名和公证需要打包机上有两样东西：
+
+- login 钥匙串里有且只有一个属于本项目 Team 的 **Developer ID Application** 身份。
+  脚本按 SHA-1 签名，因为同一 Team 的两张证书同名。
+- 一个 `notarytool` 钥匙串配置，默认名 `loomscreen-notary`（可用 `NOTARY_PROFILE` 覆盖）。
+  用 account.apple.com 生成的 App 专用密码建一次：
+
+  ```sh
+  xcrun notarytool store-credentials loomscreen-notary --apple-id <Apple ID> --team-id <Team ID>
+  ```
+
+脚本在归档之前检查这两项。每个 SKU 提交两次公证：先提交压缩后的 app（票据装订到 app 上，
+从 DMG 拖出的副本离线也能过 Gatekeeper），再提交签名后的 DMG。装订会改动 DMG，所以它在
+校验和与 Sparkle EdDSA 签名之前执行。
 
 预期命令：
 
@@ -112,7 +127,7 @@ scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks \
   --notes-file build/release-notes/X.Y.Z.md
 ```
 
-`--notes-file` 实际上不是可选项。不加的话 appcast 会退回到只有 quarantine 那一行，
+`--notes-file` 实际上不是可选项。不加的话 appcast 会退回到只有发布说明链接，
 于是 Sparkle 的更新弹窗对本次发布只字不提，而 GitHub 页面列得好好的。漏掉某一个 SKU
 很容易且没有提示——打包依然报成功。
 
@@ -120,7 +135,8 @@ scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks \
 会在同一个 commit 上把门禁跑三遍。`--skip-checks` 跳过的正是这次重复——只有在上面
 那轮门禁已经在这个 commit 上通过时才用它，并在发布报告里写明。它**不会**跳过每个
 SKU 真正要紧的核验：Sparkle 辅助程序重签与 Team ID 对齐、签名验证、对已签 app 的
-有效 entitlements 检查、bundle ID / 显示名 / 版本号字段、DMG 挂载与验签、sha256、
+有效 entitlements 检查、bundle ID / 显示名 / 版本号字段、app 与 DMG 的公证和装订、
+DMG 挂载后的验签与 Gatekeeper 检查、sha256、
 以及 appcast 再生成。这些是无条件执行的。
 
 不构建、不签名地验证干净克隆下的工具链契约：
@@ -131,7 +147,7 @@ scripts/release-app.sh --sku lite --version X.Y.Z --plan
 scripts/release-app.sh --sku pro  --version X.Y.Z --plan
 ```
 
-`--plan` 不做构建也不写任何产物。签名身份以及将来可能的公证凭据始终是
+`--plan` 不做构建也不写任何产物。签名身份和公证凭据始终是
 环境/机器层面的输入，不存放在本仓库里。
 
 公开的 Lite 产物必须命名为 `Loomscreen-X.Y.Z.dmg`，Pro 产物必须命名为
@@ -168,7 +184,7 @@ git push origin main
 第一行必须是只含本次版本号的 H1，例如 `# 0.9.0b2`，之后空一行。
 整份双语发布说明只保留这一个版本标题。
 
-四块，顺序固定：下载选择表 → 折叠的首次启动说明 → 三段式 changelog → 系统要求。
+三块，顺序固定：下载选择表 → 三段式 changelog → 系统要求。
 英文整套在前，`---` 分隔，中文整套在后。链接定义放在文件最末尾，两种语言共用。
 
 ````markdown
@@ -180,27 +196,6 @@ git push origin main
 | --- | --- | --- |
 | [**Lite**][lite] | Intel or Apple Silicon | Video · Web |
 | [**Pro**][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
-
-<details>
-<summary><b>First launch</b> — if macOS says the app is damaged</summary>
-
-Nothing here is notarized, so a DMG downloaded by hand is quarantined and macOS
-may refuse to open it. If that happens, run this once:
-
-```sh
-xattr -dr com.apple.quarantine /Applications/Loomscreen.app
-```
-
-For Pro:
-
-```sh
-xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
-```
-
-In-app Sparkle updates normally handle the flag during installation. A fresh
-manual download may need this step again.
-
-</details>
 
 ## What's New
 
@@ -227,25 +222,19 @@ Requires macOS 14.6+.
   一个包通吃，不要按架构拆成两行（2026-08-30 试过又撤回：同一个链接出现两次看着像贴错）。
   Pro 是 `arm64` 单架构，所以那行只写 Apple Silicon。架构结论以本次发布的 `lipo -archs` 为准，
   别照抄上一版。
-- **首次启动块是兜底，不是强制步骤。** 2026-08-30 的 Sparkle 2.9.6 安装探针观察到隔离标记被清除；
-  文案写“如果 macOS 拒绝打开”，不承诺以后每次手动下载都无需处理。说明不能删，手动 DMG
-  仍可能带隔离标记，`release_contract_check.sh` 会检查 appcast 包含该命令。
-- **`</summary>` 后面要空一行**，否则 GitHub 不会渲染 `<details>` 里的 markdown。
-- **一键复制靠的就是围栏代码块** —— GitHub 会自动加复制按钮。Lite 与 Pro 分成两个块，
-  各有各的按钮。
 - changelog 条目取自 `git log <上一个 tag>..HEAD` 里实际发出去的东西，挑用户会注意到的写。
   这是 changelog，不是每个 commit 的汇总，也不是把 `CHANGELOG.md` 换个说法。没内容的小节整段省略。
 - 等价就是等价：版本号、命令行、路径、SKU 名（Loomscreen / Loomscreen Pro）两边字面一致
   且不翻译，任何一边都不许比另一边少一条。中文标题用 新功能 / 改进 / Bug 修复。
-- 仍然**不要写**：营销式标语或开场段落、按子系统划分的小标题。下载与首次启动**是要写的**，
-  但只用上面的表格与折叠块形式，不要退回成散文段落。
+- 仍然**不要写**：营销式标语或开场段落、按子系统划分的小标题。下载块**是要写的**，
+  但只用上面的表格形式，不要退回成散文段落。
 
 这份文件是两个界面的**唯一真值源**：`gh release create --notes-file` 用它渲染 release 页，
 `scripts/generate-appcast.sh --notes-file` 从中抽出三段 changelog——只取 `---` 之前的英文
-半边——注入 Sparkle 的更新弹窗。下载表、折叠块和中文半边都不会进弹窗：正在下载的更新器
+半边——注入 Sparkle 的更新弹窗。下载表和中文半边都不会进弹窗：正在下载的更新器
 不需要下载表，而且面板只有 565x402。**notes 要在打包之前写好**，因为
 `release-app.sh --notes-file` 是在打包时把它交给 appcast 生成器的；漏传不报错，只会退回成
-弹窗里只有 quarantine 一行。
+弹窗里只有发布说明链接。
 
 ## 发布后验证
 
@@ -260,12 +249,9 @@ shasum -a 256 Loomscreen-X.Y.Z.dmg   # 必须等于 build/release/Loomscreen-X.Y
 
 然后对构建本身做冒烟：
 
-1. 在一台干净的 Mac 上安装 Lite DMG。
-2. 执行：
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/Loomscreen.app
-   ```
-3. 启动 Loomscreen，确认菜单栏应用能打开。
+1. 在一台干净的 Mac 上从 release 页下载 Lite DMG（这样它带隔离标记），把 app 拖进 `/Applications`。
+2. 不运行任何终端命令，直接启动 Loomscreen。Gatekeeper 可以弹出「从互联网下载」的确认框，但不能拦截。
+3. 确认菜单栏应用能打开。
 4. 在 **设置 → 关于** 里确认版本为 `X.Y.Z`。
 5. 确认**立即检查**走的是 Sparkle（不是报错，也不是 appcast 还没上 `main` 时的假“已是最新”）。
 

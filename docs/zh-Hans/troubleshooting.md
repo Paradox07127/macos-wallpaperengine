@@ -6,7 +6,7 @@
 
 | 问题 | 先检查 | 处理 |
 |---|---|---|
-| "Loomscreen.app 已损坏 / 无法打开" | Gatekeeper 可能拦截未公证构建，但这条提示不能单独确定原因 | 校验 DMG 后按[安装说明](install.md)使用对应 Lite/Pro 命令；仍失败则收集启动错误 |
+| "Loomscreen.app 已损坏 / 无法打开" | Gatekeeper 可能拦截未公证构建（0.9.3 及更早）或损坏的下载，但这条提示不能单独确定原因 | 校验 DMG；0.9.3 及更早版本按[安装说明](install.md)使用对应 Lite/Pro 命令；仍失败则收集启动错误 |
 | 菜单栏图标不见了 | 应用还在运行吗（活动监视器）？菜单栏是不是太挤？ | 从 `/Applications` 重新启动；检查登录项限制 |
 | 完全启动不了 | 是否 macOS 14.6+？Pro 另需 Apple Silicon | Lite 带一个未经测试的 Intel 切片；Pro 仅支持 Apple Silicon |
 

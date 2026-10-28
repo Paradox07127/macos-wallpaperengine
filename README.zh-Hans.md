@@ -88,7 +88,7 @@
 
 1. 从 [Releases](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest) 下载最新 `Loomscreen-x.y.z.dmg`。
 2. 拖拽 **Loomscreen.app** 到 `/Applications`。
-3. 启动应用。发布版使用 Apple Development 签名，尚未公证；如果 macOS 拒绝打开手动下载的副本，先核对发布的校验和，再清除隔离标记：
+3. 启动应用。0.9.3 之后的版本使用 Developer ID 签名并经过公证，macOS 会直接打开。0.9.3 及更早的版本没有公证；如果 macOS 拒绝打开这些版本，先核对发布的校验和，再清除隔离标记：
    ```bash
    xattr -dr com.apple.quarantine /Applications/Loomscreen.app
    ```

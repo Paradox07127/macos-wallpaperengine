@@ -10,9 +10,11 @@
 
 ### 如果 macOS 拒绝打开下载的应用
 
-当前公开安装包使用 **Apple Development 签名**，不是 Developer ID 签名，且**尚未公证**。
-手动下载的副本可能被 Gatekeeper 拦截。先在同时放有 DMG 与校验文件的目录中，
-核对随发布提供的校验和：
+0.9.3 之后的版本使用 **Developer ID 签名**并**经过公证**，Gatekeeper 会直接放行。
+如果这些版本仍被拒绝，下载的文件可能已损坏：重新下载并核对校验和。
+
+0.9.3 及更早的版本使用 **Apple Development 签名**，**没有公证**，手动下载的副本
+可能被 Gatekeeper 拦截。先在同时放有 DMG 与校验文件的目录中，核对随发布提供的校验和：
 
 ```bash
 shasum -a 256 -c Loomscreen-x.y.z.dmg.sha256
@@ -30,8 +32,8 @@ Pro：
 xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
 ```
 
-然后重新打开。这只适用于可信的手动下载，不是所有启动失败的通用修复。
-应用内 Sparkle 更新通常会在安装时处理隔离标记；重新手动下载的副本可能还需要处理。
+然后重新打开。这只适用于可信的 0.9.3 及更早版本的手动下载，不是所有启动失败的通用修复。
+应用内 Sparkle 更新通常会在安装时处理隔离标记。
 
 ## 系统权限提示
 

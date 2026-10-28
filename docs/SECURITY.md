@@ -54,9 +54,11 @@ guards; it is not a general public wallpaper API.
 
 ## Distribution and updates
 
-Public DMGs use **Apple Development signing**, not Developer ID signing, and
-are **not notarized**. A trusted manually downloaded app may need quarantine
-cleared; verify its published `.dmg.sha256` first. See [Install](en/install.md).
+Public DMGs after 0.9.3 are signed with **Developer ID** and **notarized**; the
+app and the DMG each carry a stapled notarization ticket. Version 0.9.3 and
+earlier use Apple Development signing and are not notarized, so a trusted
+manually downloaded copy of those may need quarantine cleared; verify its
+published `.dmg.sha256` first. See [Install](en/install.md).
 A checksum verifies the downloaded bytes against the published value; it does
 not replace trust in the publisher.
 

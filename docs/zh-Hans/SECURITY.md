@@ -33,8 +33,9 @@
 
 ## 分发与更新
 
-公开 DMG 使用 **Apple Development 签名**，不是 Developer ID 签名，且**尚未公证**。
-可信的手动下载可能需要清除隔离标记，请先验证发布的 `.dmg.sha256`，见[安装](install.md)。
+0.9.3 之后的公开 DMG 使用 **Developer ID 签名**并**经过公证**，app 和 DMG 都装订了公证票据。
+0.9.3 及更早的版本使用 Apple Development 签名，没有公证；这些版本的可信手动下载可能需要清除隔离标记，
+请先验证发布的 `.dmg.sha256`，见[安装](install.md)。
 校验和证明下载内容与发布值相符，不能替代对发布者的信任。
 
 Sparkle 分别读取 Lite/Pro 的 HTTPS appcast，按应用内固定的 Ed25519 公钥验证更新包，

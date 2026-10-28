@@ -158,5 +158,5 @@ worker 并行——那些套件有文件系统与进程生命周期上的契约�
 
 ## 打包发版
 
-维护者专用的 Apple Development 签名 DMG 打包流程、预检清单和更新器现状，见
+维护者专用的 Developer ID 签名、公证 DMG 打包流程、预检清单和更新器现状，见
 [`releasing.md`](releasing.md)。

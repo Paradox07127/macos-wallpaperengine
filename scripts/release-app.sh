@@ -2,13 +2,11 @@
 #
 # Build, sign, and package a release DMG for either SKU.
 #
-# Both SKUs ship signed with the free Apple Development certificate rather than
-# ad-hoc. That is not about Gatekeeper — it still rejects both — it is about
-# having a Team ID at all: Hardened Runtime's library validation refuses to load
-# any third-party framework whose Team ID differs from the host's, and two
-# ad-hoc signatures count as "different". Sparkle is a framework, so ad-hoc
-# would mean it cannot load. Manual signing prevents Xcode from
-# selecting an Apple Development certificate that would fail on other Macs.
+# Both SKUs ship signed with the team's Developer ID Application identity,
+# notarized, and with tickets stapled to both the app and the DMG, so Gatekeeper opens a
+# downloaded copy without a Terminal step. Manual signing keeps Xcode from
+# picking an Apple Development certificate. The notary credentials come from a
+# notarytool keychain profile (NOTARY_PROFILE, default loomscreen-notary).
 #
 # Usage:
 #   scripts/release-app.sh --sku lite --version 0.2.0
@@ -115,9 +113,8 @@ resign_sparkle_helpers() {
     echo "ERROR: Sparkle.framework missing from $app" >&2
     exit 1
   fi
-  local identity
-  identity="$(codesign -dvv "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
-  if [[ -z "$identity" ]] || codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'; then
+  local identity="$SIGN_IDENTITY"
+  if codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'; then
     echo "ERROR: $app is not team-signed; Sparkle helpers cannot share a Team ID." >&2
     exit 1
   fi
@@ -144,14 +141,14 @@ resign_sparkle_helpers() {
   [[ -d "$installer" ]] || { echo "ERROR: missing $installer" >&2; rm -f "$ent"; exit 1; }
   [[ -f "$autoupdate" ]] || { echo "ERROR: missing $autoupdate" >&2; rm -f "$ent"; exit 1; }
   [[ -d "$updater_app" ]] || { echo "ERROR: missing $updater_app" >&2; rm -f "$ent"; exit 1; }
-  codesign -f -s "$identity" -o runtime "$installer"
+  codesign -f -s "$identity" --timestamp -o runtime "$installer"
   if [[ -d "$downloader" ]]; then
-    codesign -f -s "$identity" -o runtime --preserve-metadata=entitlements "$downloader"
+    codesign -f -s "$identity" --timestamp -o runtime --preserve-metadata=entitlements "$downloader"
   fi
-  codesign -f -s "$identity" -o runtime "$autoupdate"
-  codesign -f -s "$identity" -o runtime "$updater_app"
-  codesign -f -s "$identity" -o runtime "$sparkle"
-  codesign -f -s "$identity" -o runtime --entitlements "$ent" "$app"
+  codesign -f -s "$identity" --timestamp -o runtime "$autoupdate"
+  codesign -f -s "$identity" --timestamp -o runtime "$updater_app"
+  codesign -f -s "$identity" --timestamp -o runtime "$sparkle"
+  codesign -f -s "$identity" --timestamp -o runtime --entitlements "$ent" "$app"
   rm -f "$ent"
   trap - EXIT
 
@@ -179,6 +176,26 @@ resign_sparkle_helpers() {
   echo "  ✓ Sparkle helpers TeamIdentifier=$host_team"
 }
 
+# notarytool exits 0 for an Invalid verdict too; only status Accepted counts.
+notarize() {
+  local submission="$1" label="$2"
+  local result="$OUTPUT_DIR/notary-$ARTIFACT-$label.json"
+  xcrun notarytool submit "$submission" --keychain-profile "$NOTARY_PROFILE" \
+    --wait --output-format json > "$result" || true
+  local status id
+  status="$(plutil -extract status raw "$result" 2>/dev/null || true)"
+  id="$(plutil -extract id raw "$result" 2>/dev/null || true)"
+  if [[ "$status" != "Accepted" ]]; then
+    echo "ERROR: $label notarization status '${status:-unknown}' (submission ${id:-none})." >&2
+    cat "$result" >&2
+    if [[ -n "$id" ]]; then
+      xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" >&2 || true
+    fi
+    exit 1
+  fi
+  echo "  ✓ $label notarized (submission $id)"
+}
+
 OUTPUT_DIR="$ROOT/build/release"
 STAGING_DIR="$OUTPUT_DIR/staging-$ARTIFACT"
 ARCHIVE_PATH="$OUTPUT_DIR/${ARTIFACT}-${VERSION}.xcarchive"
@@ -186,7 +203,6 @@ APP_PATH="$STAGING_DIR/${APP_NAME}.app"
 DMG_PATH="$OUTPUT_DIR/${ARTIFACT}-${VERSION}.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 DMG_BG_PATH="$OUTPUT_DIR/dmg-bg-${ARTIFACT}.tiff"
-README_NAME="READ ME — first launch.txt"
 
 if [[ "$PLAN" == "1" ]]; then
   echo "sku=$SKU"
@@ -250,7 +266,7 @@ if [[ "$SKIP_CHECKS" == "1" ]]; then
   echo "== [$SKU] Pre-flight: skipping release-candidate checks ($SKIP_REASON) =="
 else
   echo "== [$SKU] Pre-flight: release-candidate checks =="
-  REQUIRE_DEVELOPER_ID=0 scripts/release_candidate_check.sh || {
+  REQUIRE_DEVELOPER_ID=1 scripts/release_candidate_check.sh || {
     echo "ERROR: release_candidate_check.sh failed; fix before packaging." >&2
     exit 1
   }
@@ -268,19 +284,25 @@ if [[ -z "$EXPECTED_TEAM_ID" ]]; then
   echo "ERROR: could not read DEVELOPMENT_TEAM from the project" >&2
   exit 1
 fi
-# `find-identity` prints the certificate's common name, not its OU, so the Team
-# ID is not checkable here — only that an identity exists at all. A wrong team
-# is caught by check_entitlements.sh --app further down, which compares against
-# the signed binary.
-if ! security find-identity -v -p codesigning | grep -q "Apple Development"; then
-  echo "ERROR: no Apple Development signing identity in this keychain." >&2
-  echo "       Sparkle is a framework and Hardened Runtime's library validation" >&2
-  echo "       refuses to load it without a matching Team ID, so an ad-hoc build" >&2
-  echo "       would ship with updates silently broken." >&2
+# Signing by SHA-1: two Developer ID certificates of one team share a name,
+# and codesign rejects an ambiguous name.
+DEVELOPER_ID_HASHES="$(security find-identity -v -p codesigning \
+  | awk -v team="($EXPECTED_TEAM_ID)\"" '/"Developer ID Application: / && index($0, team) {print $2}')"
+if [[ "$(grep -c . <<<"$DEVELOPER_ID_HASHES")" != "1" ]]; then
+  echo "ERROR: need exactly one Developer ID Application identity for team $EXPECTED_TEAM_ID; found:" >&2
+  security find-identity -v -p codesigning | grep 'Developer ID Application' >&2 || true
+  exit 1
+fi
+SIGN_IDENTITY="$DEVELOPER_ID_HASHES"
+
+NOTARY_PROFILE="${NOTARY_PROFILE:-loomscreen-notary}"
+if [[ "$DRY_RUN" != "1" ]] && ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+  echo "ERROR: notarytool keychain profile '$NOTARY_PROFILE' is missing or rejected. Create it with:" >&2
+  echo "       xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <Apple ID> --team-id $EXPECTED_TEAM_ID" >&2
   exit 1
 fi
 
-echo "== [$SKU] Archiving $SCHEME (Release, Apple Development signed, team $EXPECTED_TEAM_ID) =="
+echo "== [$SKU] Archiving $SCHEME (Release, Developer ID $SIGN_IDENTITY, team $EXPECTED_TEAM_ID) =="
 xcodebuild archive \
   -project LiveWallpaper.xcodeproj \
   -scheme "$SCHEME" \
@@ -291,7 +313,8 @@ xcodebuild archive \
   -skipPackagePluginValidation \
   -skipMacroValidation \
   CODE_SIGN_STYLE=Manual \
-  CODE_SIGN_IDENTITY="Apple Development" \
+  CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+  OTHER_CODE_SIGN_FLAGS=--timestamp \
   DEVELOPMENT_TEAM="$EXPECTED_TEAM_ID" \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
@@ -338,8 +361,6 @@ resign_sparkle_helpers "$APP_PATH"
 
 echo "== [$SKU] Verifying signature =="
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" 2>&1 | tail -5
-spctl --assess --type execute --verbose "$APP_PATH" 2>&1 | tail -3 \
-  || echo "  (spctl rejects a non-Developer-ID signature as expected — users will run xattr -dr com.apple.quarantine.)"
 
 echo "== [$SKU] Entitlement baseline (shipped app) =="
 # Validate the archive's effective entitlements, not only the source plist.
@@ -379,39 +400,16 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-echo "== [$SKU] Adding READ-ME =="
-# No /Applications symlink here — dmgbuild adds it inside the
-# image. Staging one too would mount two Applications icons.
-
-# The DMG background can only carry one language (Finder resolves a single
-# backgroundImageAlias), so the English-only image points here for the rest.
-cat > "$STAGING_DIR/$README_NAME" <<EOF
-$DISPLAY_NAME $VERSION
-
-────────────────────────────  English  ────────────────────────────
-
-This build is signed, but not with a paid Apple Developer ID. On first
-launch macOS Gatekeeper will block it unless you run, one time, in Terminal:
-
-    xattr -dr com.apple.quarantine "/Applications/${APP_NAME}.app"
-
-After that, double-click ${APP_NAME}.app like any other app.
-
-This command removes the "downloaded from the internet" quarantine flag that
-macOS puts on the app. It does not change the app itself.
-
-───────────────────────────  简体中文  ────────────────────────────
-
-本版本已签名，但未使用付费的 Apple Developer ID，macOS 的 Gatekeeper
-会拦截首次启动。请在「终端」中执行一次以下命令：
-
-    xattr -dr com.apple.quarantine "/Applications/${APP_NAME}.app"
-
-之后就可以像普通 App 一样双击打开 ${APP_NAME}.app。
-
-该命令的作用是移除 macOS 给「从互联网下载的文件」加上的隔离标记，
-不会修改 App 本身。
-EOF
+echo "== [$SKU] Notarizing app =="
+# The app carries its own ticket so a copy dragged out of the DMG passes
+# Gatekeeper offline.
+APP_ZIP="$OUTPUT_DIR/${ARTIFACT}-notarize.zip"
+rm -f "$APP_ZIP"
+ditto -c -k --keepParent "$APP_PATH" "$APP_ZIP"
+notarize "$APP_ZIP" app
+rm -f "$APP_ZIP"
+xcrun stapler staple "$APP_PATH"
+xcrun stapler validate "$APP_PATH"
 
 echo "== [$SKU] Rendering DMG background =="
 # Import the window/icon geometry from the renderer rather than repeating it, so
@@ -422,12 +420,12 @@ DMG_LAYOUT="$(swift "$ROOT/scripts/dmg_background.swift" --print-layout)" || {
   exit 1
 }
 eval "$DMG_LAYOUT"
-[[ -n "${DMG_WINDOW_W:-}" && -n "${DMG_README_Y:-}" ]] || {
+[[ -n "${DMG_WINDOW_W:-}" && -n "${DMG_APPS_Y:-}" ]] || {
   echo "ERROR: DMG layout import produced no values." >&2
   exit 1
 }
 
-swift "$ROOT/scripts/dmg_background.swift" "$DMG_BG_PATH" "$APP_NAME" || {
+swift "$ROOT/scripts/dmg_background.swift" "$DMG_BG_PATH" || {
   echo "ERROR: could not render the DMG background." >&2
   exit 1
 }
@@ -441,7 +439,6 @@ fi
 dmgbuild -s "$ROOT/scripts/dmg_settings.py" \
   -D "staging=$STAGING_DIR" \
   -D "app_name=$APP_NAME" \
-  -D "readme=$README_NAME" \
   -D "background=$DMG_BG_PATH" \
   -D "layout=$DMG_LAYOUT" \
   "$VOLNAME" "$DMG_PATH" \
@@ -450,6 +447,14 @@ dmgbuild -s "$ROOT/scripts/dmg_settings.py" \
     tail -20 "$OUTPUT_DIR/dmg-$ARTIFACT.log" >&2
     exit 1
   }
+
+echo "== [$SKU] Signing and notarizing DMG =="
+codesign -s "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
+notarize "$DMG_PATH" dmg
+# Stapling rewrites the DMG, so it must precede the checksum and the Sparkle signature below.
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
 
 echo "== [$SKU] Verifying DMG =="
 # Verify the packaged app before publishing its checksum.
@@ -460,11 +465,14 @@ if ! hdiutil attach "$DMG_PATH" -nobrowse -readonly -mountpoint "$DMG_MOUNT" >/d
   exit 1
 fi
 DMG_VERIFY_LOG="$(mktemp -t lw-dmg-verify.XXXXXX)"
-if codesign --verify --deep --strict "$DMG_MOUNT/${APP_NAME}.app" 2>"$DMG_VERIFY_LOG"; then
-  echo "  ✓ DMG mounts and ${APP_NAME}.app signature verifies"
+if codesign --verify --deep --strict "$DMG_MOUNT/${APP_NAME}.app" 2>"$DMG_VERIFY_LOG" \
+    && spctl --assess --type execute --verbose=2 "$DMG_MOUNT/${APP_NAME}.app" 2>>"$DMG_VERIFY_LOG" \
+    && xcrun stapler validate "$DMG_MOUNT/${APP_NAME}.app" >>"$DMG_VERIFY_LOG" 2>&1; then
+  echo "  ✓ DMG mounts; ${APP_NAME}.app verifies and Gatekeeper accepts it"
+  grep 'source=' "$DMG_VERIFY_LOG" || true
   DMG_OK=1
 else
-  echo "ERROR: ${APP_NAME}.app inside the DMG failed signature verification:" >&2
+  echo "ERROR: ${APP_NAME}.app inside the DMG failed signature or Gatekeeper verification:" >&2
   cat "$DMG_VERIFY_LOG" >&2
   DMG_OK=0
 fi

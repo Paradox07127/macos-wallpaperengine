@@ -6,7 +6,7 @@
 
 | Problem | Check | Fix |
 |---|---|---|
-| "Loomscreen.app is damaged / can’t be opened" | Gatekeeper may block the non-notarized build; this message alone does not establish the cause | Verify the DMG checksum, then follow the matching Lite/Pro command in [Install](install.md); if it persists, collect the launch error |
+| "Loomscreen.app is damaged / can’t be opened" | Gatekeeper may block a non-notarized build (0.9.3 or earlier) or a damaged download; this message alone does not establish the cause | Verify the DMG checksum; for 0.9.3 or earlier follow the matching Lite/Pro command in [Install](install.md); if it persists, collect the launch error |
 | Menu bar icon missing | Is the app running (Activity Monitor)? Crowded menu bar? | Relaunch from `/Applications`; check login-item restrictions |
 | App won't launch at all | macOS 14.6+? Pro additionally needs Apple Silicon | Lite ships an untested Intel slice; Pro is Apple Silicon only |
 

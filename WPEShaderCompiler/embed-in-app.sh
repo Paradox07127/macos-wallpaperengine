@@ -57,7 +57,10 @@ METAL_IR_CONVERTER="$TOOLCHAIN_ROOT/lib/libmetalirconverter.dylib"
 for source in "$HELPER" "$DXCOMPILER" "$METAL_IR_CONVERTER"; do
     /usr/bin/lipo -verify_arch arm64 "$source"
 done
-SIGN_OPTIONS=(--force --timestamp=none --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}")
+# release-app.sh passes --timestamp here; notarization rejects code without a secure timestamp.
+TIMESTAMP_OPTION=--timestamp=none
+case " ${OTHER_CODE_SIGN_FLAGS:-} " in *" --timestamp "*) TIMESTAMP_OPTION=--timestamp ;; esac
+SIGN_OPTIONS=(--force "$TIMESTAMP_OPTION" --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}")
 if [ "${ENABLE_HARDENED_RUNTIME:-NO}" = YES ]; then
     SIGN_OPTIONS+=(--options runtime)
 fi

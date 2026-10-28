@@ -12,10 +12,14 @@
 
 ### If macOS refuses to open the download
 
-Current public packages use **Apple Development signing**, not Developer ID
-signing, and are **not notarized**. A manually downloaded copy may be blocked
-by Gatekeeper. First compare the DMG with the published checksum, in the folder
-containing both downloaded files:
+Releases after 0.9.3 are signed with **Developer ID** and **notarized**, so
+Gatekeeper opens them without extra steps. If one of them is still refused,
+the download is probably damaged: download it again and compare checksums.
+
+Version 0.9.3 and earlier use **Apple Development signing** and are **not
+notarized**, so Gatekeeper may block a manually downloaded copy. First compare
+the DMG with the published checksum, in the folder containing both downloaded
+files:
 
 ```bash
 shasum -a 256 -c Loomscreen-x.y.z.dmg.sha256
@@ -34,9 +38,9 @@ For Pro:
 xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
 ```
 
-Reopen the app. This is a fallback for a trusted manual download, not a repair
-for every launch failure. In-app Sparkle updates normally handle quarantine
-during installation; a fresh manual download may require this step again.
+Reopen the app. This is a fallback for a trusted manual download of 0.9.3 or
+earlier, not a repair for every launch failure. In-app Sparkle updates normally
+handle quarantine during installation.
 
 ## System permission prompts
 

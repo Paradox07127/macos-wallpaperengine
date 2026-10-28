@@ -6,9 +6,8 @@ import shlex
 layout = dict(assignment.split("=", 1) for assignment in shlex.split(defines["layout"]))
 staging = Path(defines["staging"])
 app = f"{defines['app_name']}.app"
-readme = defines["readme"]
 
-files = [str(staging / app), str(staging / readme)]
+files = [str(staging / app)]
 symlinks = {"Applications": "/Applications"}
 # Hiding the extension writes FinderInfo on the signed bundle and breaks strict verification.
 background = defines["background"]
@@ -20,7 +19,6 @@ text_size = 16
 icon_locations = {
     app: (int(layout["DMG_APP_X"]), int(layout["DMG_APP_Y"])),
     "Applications": (int(layout["DMG_APPS_X"]), int(layout["DMG_APPS_Y"])),
-    readme: (int(layout["DMG_README_X"]), int(layout["DMG_README_Y"])),
 }
 default_view = "icon-view"
 show_status_bar = False

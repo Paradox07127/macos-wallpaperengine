@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     --derived-data) DERIVED_DATA="${2:-}"; shift 2 ;;
     # The release notes this version ships with, so the update dialog and the
     # GitHub release page say the same thing. Optional: without it the dialog
-    # falls back to the quarantine line alone, which is what shipped before 0.6.2.
+    # shows only the release-notes link.
     --notes-file)  NOTES_FILE="${2:-}"; shift 2 ;;
     *) echo "ERROR: unknown argument: $1" >&2; exit 64 ;;
   esac
@@ -205,15 +205,9 @@ if [[ -n "$NOTES_FILE" ]]; then
   ' "$NOTES_FILE")"
 fi
 
-# Measured 2026-08-30: Sparkle really does clear com.apple.quarantine on what it
-# installs (2.9.6, in Installer.xpc) — a user who ran the command once never has
-# to run it again across updates. So this is phrased as a fallback ("if macOS
-# refuses"), not an instruction, and sits in one line at the bottom. It cannot be
-# dropped: nothing here is notarized, a hand-downloaded DMG still arrives
-# quarantined, and release_contract_check.sh asserts this command is present.
 read -r -d '' DESCRIPTION <<HTML || true
 $CHANGELOG_HTML
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</code> once; updates $TITLE installs itself clear the flag. <a href="$NOTES_URL">Full release notes</a> · <a href="$NOTES_URL">完整发布说明</a></small></p>
+<p><small><a href="$NOTES_URL">Full release notes</a> · <a href="$NOTES_URL">完整发布说明</a></small></p>
 HTML
 
 URL="$(python3 - "$REPO_SLUG" "$TAG_PREFIX$VERSION" "$DMG_NAME" <<'PYURL'
@@ -286,10 +280,6 @@ XML
 written="$(item_version "$(appcast_items "$CHANNEL" "$APPCAST_TMP")")"
 if [[ "$written" != "$BUILD" ]]; then
   echo "ERROR: wrote sparkle:version=$written, expected $BUILD" >&2
-  exit 1
-fi
-if ! grep -q 'xattr -dr com.apple.quarantine' "$APPCAST_TMP"; then
-  echo "ERROR: $APPCAST carries no quarantine instructions; the update dialog would omit them." >&2
   exit 1
 fi
 if ! xmllint --noout "$APPCAST_TMP" 2>/dev/null; then

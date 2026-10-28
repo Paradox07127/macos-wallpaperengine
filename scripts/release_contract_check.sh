@@ -287,12 +287,6 @@ if ! grep -q 'must equal --version' scripts/generate-appcast.sh; then
   echo "ERROR: generate-appcast.sh no longer requires sparkle:version to match the marketing version." >&2
   exit 1
 fi
-# Nothing here is notarized, so a hand-installed DMG stays quarantined. The
-# update dialog is the only place a user reliably reads before installing.
-if ! grep -q 'xattr -dr com.apple.quarantine' scripts/generate-appcast.sh; then
-  echo "ERROR: generate-appcast.sh no longer puts the quarantine command in the update notes." >&2
-  exit 1
-fi
 
 # Run the real writer/verifier against the RFC 8032 archive and an isolated feed;
 # the fixture signer only emits its published test-vector signature, never a key.
@@ -428,7 +422,6 @@ import runpy
 settings = runpy.run_path("scripts/dmg_settings.py", init_globals={"defines": {
     "staging": "/fixture/staging with spaces",
     "app_name": "Loomscreen Pro",
-    "readme": "READ ME — first launch.txt",
     "background": "/fixture/background.tiff",
     "layout": " ".join(
         assignment.split("=", 1)[0] + "=1"

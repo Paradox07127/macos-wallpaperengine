@@ -3,16 +3,18 @@
 **English** · [简体中文](../zh-Hans/releasing.md)
 
 This is the maintainer checklist for a manual `0.x` release. Public builds are
-signed with an Apple Development certificate (a Team ID, so Sparkle can load)
-and distributed from GitHub Releases as DMGs. They are not Developer ID signed
-and are not notarized.
+signed with the team's Developer ID Application certificate, notarized, and
+distributed from GitHub Releases as DMGs. The app and the DMG each carry a
+stapled notarization ticket, so Gatekeeper opens a downloaded copy without a
+Terminal step. Releases up to 0.9.3 used Apple Development signing
+and were not notarized.
 
 ## Current updater boundary
 
 Installed copies check a per-SKU Sparkle appcast (`appcast-lite.xml` /
 `appcast-pro.xml` on `main`). Sparkle downloads that SKU's DMG, verifies the
-EdDSA signature, and replaces the app. A manually downloaded build
-may need quarantine cleared if macOS blocks it; there is no notarization.
+EdDSA signature, and replaces the app. A manually downloaded build opens
+directly because it is notarized.
 
 ## Version checklist
 
@@ -80,9 +82,8 @@ These ad-hoc archives are verification evidence, **not shipping entitlement
 artifacts**. Xcode's “Sign to Run Locally” path may inject
 `get-task-allow=true`, and `scripts/check_entitlements.sh --app` must reject that
 shape. Validate effective Pro/Lite entitlements and nested signatures on the signing
-Mac against the final Apple Development-signed shipping apps. Developer ID
-trust and notarization are separate future distribution steps, not checks the
-current packaging script performs. Do not substitute the ad-hoc smoke archive
+Mac against the final Developer ID-signed shipping apps; `release-app.sh` does
+this and also notarizes and staples them. Do not substitute the ad-hoc smoke archive
 for a shipping artifact or waive a `get-task-allow` failure.
 
 ## Documentation and UI media
@@ -124,9 +125,26 @@ export PATH="$PWD/build/release-tools/bin:$PATH"
 `dmgbuild` writes the DMG window layout directly, without Finder automation.
 `scripts/dmg_settings.py` takes the background, icon positions and `/Applications`
 drop link from the packaging inputs. The window geometry and background come from
-`scripts/dmg_background.swift`, which bakes the SKU's app name into the
-Gatekeeper command shown on the image — that is why it is generated at package
-time instead of committed as a static PNG.
+`scripts/dmg_background.swift`. The DMG holds only the app and the
+`/Applications` link.
+
+Signing and notarization need two inputs on the packaging Mac:
+
+- Exactly one **Developer ID Application** identity for the project's team in the
+  login keychain. The script signs by its SHA-1, because two certificates of one
+  team share a name.
+- A `notarytool` keychain profile, `loomscreen-notary` by default (override with
+  `NOTARY_PROFILE`). Create it once with an app-specific password from
+  account.apple.com:
+
+  ```sh
+  xcrun notarytool store-credentials loomscreen-notary --apple-id <Apple ID> --team-id <Team ID>
+  ```
+
+The script checks both before it archives. Each SKU makes two notarization
+submissions: the zipped app first (its ticket is stapled to the app, so a copy
+dragged out of the DMG passes Gatekeeper offline), then the signed DMG. Stapling
+changes the DMG, so it runs before the checksum and the Sparkle EdDSA signature.
 
 Expected commands, Lite first so packaging order matches upload order:
 
@@ -138,7 +156,7 @@ scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks \
 ```
 
 `--notes-file` is not optional in practice. Without it the appcast falls back to
-the quarantine line alone, so Sparkle's update dialog says nothing about the
+the release-notes link alone, so Sparkle's update dialog says nothing about the
 release while the GitHub page lists everything. Forgetting it on one SKU is easy
 and silent — the packaging run still reports success.
 
@@ -148,7 +166,8 @@ default, so an unqualified pair of commands runs it three times on one commit.
 passed on this exact commit, and say so in the release report. It does **not**
 skip the per-SKU checks that matter: Sparkle helper re-signing and Team ID
 alignment, signature verification, effective-entitlement inspection of the
-signed app, bundle ID / display name / version fields, DMG mount and verify,
+signed app, bundle ID / display name / version fields, app and DMG
+notarization and stapling, DMG mount, signature and Gatekeeper verification,
 sha256, and appcast regeneration. Those are unconditional.
 
 Validate the clean-clone tooling contract without building or signing:
@@ -159,8 +178,8 @@ scripts/release-app.sh --sku lite --version X.Y.Z --plan
 scripts/release-app.sh --sku pro  --version X.Y.Z --plan
 ```
 
-`--plan` performs no build and writes no artifact. Signing identities and any
-future notarization credentials remain environment/machine inputs; they are not
+`--plan` performs no build and writes no artifact. Signing identities and
+notarization credentials remain environment/machine inputs; they are not
 stored in this repository.
 
 The public Lite asset must be named `Loomscreen-X.Y.Z.dmg`. The Pro asset must
@@ -202,8 +221,8 @@ The first line must be an H1 containing only the release version, for example
 `# 0.9.0b2`, followed by a blank line. Use one version heading for the entire
 bilingual document.
 
-Four blocks, in this order: a download chooser, a collapsed first-launch note,
-the three-section changelog, and the system requirement. English set first,
+Three blocks, in this order: a download chooser, the three-section changelog,
+and the system requirement. English set first,
 then `---`, then the equivalent Simplified Chinese set. Link definitions go at
 the very bottom of the file and are shared by both languages.
 
@@ -216,27 +235,6 @@ the very bottom of the file and are shared by both languages.
 | --- | --- | --- |
 | [**Lite**][lite] | Intel or Apple Silicon | Video · Web |
 | [**Pro**][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
-
-<details>
-<summary><b>First launch</b> — if macOS says the app is damaged</summary>
-
-Nothing here is notarized, so a DMG downloaded by hand is quarantined and macOS
-may refuse to open it. If that happens, run this once:
-
-```sh
-xattr -dr com.apple.quarantine /Applications/Loomscreen.app
-```
-
-For Pro:
-
-```sh
-xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
-```
-
-In-app Sparkle updates normally handle the flag during installation. A fresh
-manual download may need this step again.
-
-</details>
 
 ## What's New
 
@@ -264,16 +262,6 @@ Details that have bitten before:
   (tried and reverted on 2026-08-30: the same link twice reads as a mistake).
   Pro is `arm64` only, so its row says Apple Silicon. Take the architecture claim
   from this release's `lipo -archs`, not from last release's notes.
-- **The first-launch block is a fallback, not an instruction.** Measured 2026-08-30:
-  Sparkle 2.9.6 cleared `com.apple.quarantine` in the recorded installation probe.
-  Phrase the command as "if macOS refuses to open it"; do not promise it is
-  unnecessary for every future manual download. It cannot be dropped
-  entirely — a hand-downloaded DMG still arrives quarantined, and
-  `release_contract_check.sh` asserts the command is present in the appcast.
-- **Leave a blank line after `</summary>`** or GitHub will not render the markdown
-  inside `<details>`.
-- **One-click copy is just a fenced code block** — GitHub adds the copy button.
-  Keep Lite and Pro in separate blocks so each gets its own button.
 - Changelog items come from what actually shipped in `git log <previous-tag>..HEAD`,
   picking what a user would notice. This is a changelog, not a summary of every
   commit, and not a rewording of `CHANGELOG.md`. Drop any section with nothing in it.
@@ -281,18 +269,18 @@ Details that have bitten before:
   names (Loomscreen / Loomscreen Pro) stay identical and untranslated, and neither
   language omits an item the other has. The Chinese headings are 新功能 / 改进 / Bug 修复.
 - Still out: a marketing tagline or lead paragraph, and per-subsystem headings.
-  The download and first-launch blocks *are* wanted — but only in the table and
-  collapsed form above, never as prose paragraphs.
+  The download block *is* wanted — but only in the table form above, never as
+  prose paragraphs.
 
 This file is the single source for both surfaces. `gh release create --notes-file`
 renders the release page from it, and `scripts/generate-appcast.sh --notes-file`
 lifts the three changelog sections — English half only, everything before the
-`---` — into Sparkle's update dialog. The download table, the collapsed block and
-the Chinese half never reach the dialog: an updater that is already downloading
+`---` — into Sparkle's update dialog. The download table and the Chinese half
+never reach the dialog: an updater that is already downloading
 does not need a download table, and the pane is only 565x402. Write the notes
 *before* packaging, because `release-app.sh --notes-file` passes them to the
 appcast generator at package time; omitting the flag silently falls back to a
-dialog carrying nothing but the quarantine line.
+dialog carrying nothing but the release-notes link.
 
 ## Post-release verification
 
@@ -308,12 +296,11 @@ shasum -a 256 Loomscreen-X.Y.Z.dmg   # must equal build/release/Loomscreen-X.Y.Z
 
 Then smoke the build itself:
 
-1. Install the Lite DMG on a clean Mac.
-2. Run:
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/Loomscreen.app
-   ```
-3. Launch Loomscreen and confirm the menu bar app opens.
+1. Download the Lite DMG from the release page on a clean Mac, so it arrives
+   quarantined, and drag the app to `/Applications`.
+2. Launch Loomscreen without any Terminal step. Gatekeeper may ask to confirm an
+   app downloaded from the internet; it must not block it.
+3. Confirm the menu bar app opens.
 4. In **Settings -> About**, confirm the version is `X.Y.Z`.
 5. Confirm **Check Now** talks to Sparkle (not an error, not a false
    “up to date” before the appcast is on `main`).

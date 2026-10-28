@@ -88,7 +88,7 @@ Both editions are free and open source. Lite keeps the complete workspace and vi
 
 1. Download the latest `Loomscreen-x.y.z.dmg` from [Releases](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest).
 2. Drag **Loomscreen.app** into `/Applications`.
-3. Launch it. Releases use Apple Development signing and are not notarized; if macOS refuses to open a manually downloaded copy, verify its published checksum and clear quarantine:
+3. Launch it. Releases after 0.9.3 are signed with Developer ID and notarized, so macOS opens them directly. Version 0.9.3 and earlier are not notarized; if macOS refuses to open one of those, verify its published checksum and clear quarantine:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Loomscreen.app
    ```

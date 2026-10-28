@@ -193,5 +193,5 @@ and inspect the actual passed/failed/skipped results, not just the exit code.
 
 ## Packaging a release
 
-See [`releasing.md`](releasing.md) for the maintainer-only Apple Development-signed DMG
-packaging flow, preflight checklist, and current updater status.
+See [`releasing.md`](releasing.md) for the maintainer-only Developer ID-signed, notarized
+DMG packaging flow, preflight checklist, and current updater status.
