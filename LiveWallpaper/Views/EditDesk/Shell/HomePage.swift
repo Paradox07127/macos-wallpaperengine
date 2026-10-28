@@ -172,6 +172,16 @@ struct HomePage: View {
         let page: HomePage
 
         func body(content: Content) -> some View {
+            shelfUpdates(content: content)
+                // The rename path: a display's drawn name comes out of these rows. Watched on the
+                // whole library rather than the filtered rows, which also change on every keystroke.
+                .onChange(of: page.library?.items) { page.refreshAllStates() }
+                .onChange(of: page.shelfCapacity) { page.syncShelf() }
+                .onChange(of: page.stage.visibleShelfRange) { page.loadShelfThumbnails() }
+                .onChange(of: page.stage.visibleGridRange) { page.loadShelfThumbnails() }
+        }
+
+        private func shelfUpdates(content: Content) -> some View {
             content
                 .onChange(of: page.library?.visibleItems) { page.syncShelf() }
                 #if !LITE_BUILD
@@ -179,12 +189,6 @@ struct HomePage: View {
                 #endif
                 // State refreshes rewrite `stage.displays` without rebuilding the cards, whose capsules wave by it.
                 .onChange(of: page.drawingDisplayIDs) { page.syncShelf() }
-                // The rename path: a display's drawn name comes out of these rows. Watched on the
-                // whole library rather than the filtered rows, which also change on every keystroke.
-                .onChange(of: page.library?.items) { page.refreshAllStates() }
-                .onChange(of: page.shelfCapacity) { page.syncShelf() }
-                .onChange(of: page.stage.visibleShelfRange) { page.loadShelfThumbnails() }
-                .onChange(of: page.stage.visibleGridRange) { page.loadShelfThumbnails() }
         }
     }
 

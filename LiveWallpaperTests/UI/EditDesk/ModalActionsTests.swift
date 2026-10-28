@@ -168,12 +168,7 @@ struct ModalActionsTests {
         let rows = modal.headerActions(
             for: current, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
         )
-        #expect(rows.map(\.kind) == [.bookmark(isBookmarked: false), .rename, .showInFinder, .removeFromLibrary])
-        try #require(rows.count == 4)
-        #expect(rows.map(\.isDestructive) == [false, false, false, true])
-        #expect(ModalHeaderAction.groups(rows).map { $0.map(\.kind) } == [
-            [.bookmark(isBookmarked: false), .rename], [.showInFinder], [.removeFromLibrary],
-        ])
+        try expectSavedHeaderActions(rows)
         rows[1].perform()
         #expect(requested == ["rename"])
         // Control: the context menus keep Apply to; only the title row drops it.
@@ -212,6 +207,17 @@ struct ModalActionsTests {
             "the status line, not the title row, cancels the update"
         )
         #endif
+    }
+
+    private func expectSavedHeaderActions(_ rows: [ModalHeaderAction]) throws {
+        let expectedKinds: [ModalHeaderAction.Kind] = [.bookmark(isBookmarked: false), .rename, .showInFinder, .removeFromLibrary]
+        #expect(rows.map(\.kind) == expectedKinds)
+        try #require(rows.count == 4)
+        #expect(rows.map(\.isDestructive) == [false, false, false, true])
+        let expectedGroups: [[ModalHeaderAction.Kind]] = [
+            [.bookmark(isBookmarked: false), .rename], [.showInFinder], [.removeFromLibrary],
+        ]
+        #expect(ModalHeaderAction.groups(rows).map { $0.map(\.kind) } == expectedGroups)
     }
 
     @Test("A saved video's context menu adds it to System Wallpaper or takes it out; a web page's offers neither")
@@ -417,20 +423,7 @@ struct ModalActionsTests {
             for: current, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
         ).flatMap(\.self)
 
-        #expect(rows.map(\.title) == [
-            String(localized: "Apply to", bundle: .appLanguage),
-            String(localized: "Add Bookmark", bundle: .appLanguage),
-            String(localized: "Rename", bundle: .appLanguage),
-            String(localized: "Show in Finder", bundle: .appLanguage),
-            String(localized: "Remove from Wallpaper Library", bundle: .appLanguage),
-        ])
-        try #require(rows.count == 5)
-        #expect(rows.map(\.isEnabled) == [true, true, true, true, true])
-        #expect(rows.map(\.isDestructive) == [false, false, false, false, true])
-        #expect(rows[0].submenu.map { $0.map(\.title) } == [
-            ["Left", "Center", "Right"], [String(localized: "All Displays", bundle: .appLanguage)],
-        ])
-        try #require(rows[0].submenu.count == 2 && rows[0].submenu[0].count == 3 && rows[0].submenu[1].count == 1)
+        try expectSavedMenuRows(rows)
         rows[0].submenu[0][1].action()
         #expect(fixture.applied.map(\.1) == [2])
         rows[0].submenu[1][0].action()
@@ -460,6 +453,23 @@ struct ModalActionsTests {
         installed.last?.action()
         #expect(requested == ["rename", "delete"])
         #endif
+    }
+
+    private func expectSavedMenuRows(_ rows: [StageMenuItem]) throws {
+        #expect(rows.map(\.title) == [
+            String(localized: "Apply to", bundle: .appLanguage),
+            String(localized: "Add Bookmark", bundle: .appLanguage),
+            String(localized: "Rename", bundle: .appLanguage),
+            String(localized: "Show in Finder", bundle: .appLanguage),
+            String(localized: "Remove from Wallpaper Library", bundle: .appLanguage),
+        ])
+        try #require(rows.count == 5)
+        #expect(rows.map(\.isEnabled) == [true, true, true, true, true])
+        #expect(rows.map(\.isDestructive) == [false, false, false, false, true])
+        #expect(rows[0].submenu.map { $0.map(\.title) } == [
+            ["Left", "Center", "Right"], [String(localized: "All Displays", bundle: .appLanguage)],
+        ])
+        try #require(rows[0].submenu.count == 2 && rows[0].submenu[0].count == 3 && rows[0].submenu[1].count == 1)
     }
 
     @Test("The context menu splits into apply, organize, reveal, download and remove sections, in that order")

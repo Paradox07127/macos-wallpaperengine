@@ -805,16 +805,10 @@ struct EditDeskStageViewTests {
         #expect(shell.content.cornerRadius == 12)
         #expect(shell.content.cornerCurve == .continuous)
         model.setTileConcealed(display: 1, true)
-        #expect(shell.content.opacity == 0)
-        #expect(shell.content.animation(forKey: "opacity") == nil)
-        #expect(shell.content.superlayer === flightLayer)
-        #expect(sameRect(shell.content.frame, destination))
+        expectFlightContent(shell, on: flightLayer, at: destination, opacity: 0)
         #expect(!view.debugNeedsDisplayLink)
         model.setTileConcealed(display: 1, false)
-        #expect(shell.content.opacity == 1)
-        #expect(shell.content.animation(forKey: "opacity") == nil)
-        #expect(shell.content.superlayer === flightLayer)
-        #expect(sameRect(shell.content.frame, destination))
+        expectFlightContent(shell, on: flightLayer, at: destination, opacity: 1)
         model.setTileConcealed(display: 1, true)
         await model.returnTile(display: 1)
         #expect(shell.content.opacity == 1)
@@ -822,6 +816,13 @@ struct EditDeskStageViewTests {
         #expect(sameRect(shell.content.frame, original))
         #expect(shell.content.cornerRadius == 3)
         #expect(flightLayer.sublayers?.isEmpty != false)
+    }
+
+    private func expectFlightContent(_ shell: DisplayShellLayer, on layer: CALayer, at frame: CGRect, opacity: Float) {
+        #expect(shell.content.opacity == opacity)
+        #expect(shell.content.animation(forKey: "opacity") == nil)
+        #expect(shell.content.superlayer === layer)
+        #expect(sameRect(shell.content.frame, frame))
     }
 
     @Test("Unplug, detach and window removal restore concealed content and release an awaiting flight", arguments: ["unplug", "detach", "window"])
@@ -1385,10 +1386,14 @@ struct EditDeskStageViewTests {
         #expect(model.progress == 1, "another drag's end lowered this one's shelf")
 
         // Control: a shelf the user had open before the drag came in.
+        expectUserOpenedShelfStaysOpen(frame: view.frame, band: band)
+    }
+
+    private func expectUserOpenedShelfStaysOpen(frame: CGRect, band: CGPoint) {
         let opened = makeModel()
         let other = EditDeskStageView(model: opened)
         defer { other.detach() }
-        other.frame = view.frame
+        other.frame = frame
         other.layoutSubtreeIfNeeded()
         opened.setProgress(1, animated: false)
         #expect(other.trackFileDrag(at: band) == .shelf)
@@ -1901,6 +1906,10 @@ struct EditDeskStageViewTests {
         #expect(await events.next() == .cardApplyRequested("card-1"))
         try #require(actions[1].handler?() == true)
         #expect(await events.next() == .cardTapped("card-1"))
+        try expectCardKeyboardFocus(view, model: model, card: card)
+    }
+
+    private func expectCardKeyboardFocus(_ view: EditDeskStageView, model: EditDeskStageModel, card: NSAccessibilityElement) throws {
         try view.keyDown(with: key(124))
         #expect(view.debugFocusedCardIndex == 0)
         try view.keyDown(with: key(124))
