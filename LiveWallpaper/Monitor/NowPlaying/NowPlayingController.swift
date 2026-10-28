@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import CoreServices
 import Foundation
@@ -458,3 +459,4 @@ extension NowPlayingController {
         return AEDeterminePermissionToAutomateTarget(target, typeWildCard, typeWildCard, false)
     }
 }
+#endif

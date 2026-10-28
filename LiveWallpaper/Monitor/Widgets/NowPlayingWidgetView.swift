@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import SwiftUI
 import ImageIO
 import LiveWallpaperCore
@@ -1417,4 +1418,5 @@ private extension MusicOverlayContext {
     .padding(32)
     .background(Design.boardWash)
 }
+#endif
 #endif

@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 import LiveWallpaperCore
 import SwiftUI
@@ -360,3 +361,4 @@ extension NowPlayingOptions {
         return artwork
     }
 }
+#endif

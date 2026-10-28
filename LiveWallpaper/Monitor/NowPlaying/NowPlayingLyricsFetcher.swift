@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 // MARK: - Parsed shapes
@@ -487,3 +488,4 @@ final class NowPlayingLyricsStore {
         }
     }
 }
+#endif

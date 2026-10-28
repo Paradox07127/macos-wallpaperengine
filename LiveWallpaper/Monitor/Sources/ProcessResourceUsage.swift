@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Darwin
 import Foundation
 
@@ -20,3 +21,4 @@ enum ProcessResourceUsage {
         return (resident, "resident")
     }
 }
+#endif

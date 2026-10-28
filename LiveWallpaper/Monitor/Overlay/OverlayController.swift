@@ -3,13 +3,17 @@ import LiveWallpaperCore
 
 enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
     case monitor
+    #if !MAS_BUILD
     case music
+    #endif
     case clock
 
     func isEnabled(in overlay: MonitorOverlayConfiguration) -> Bool {
         switch self {
         case .monitor: overlay.enabled
+        #if !MAS_BUILD
         case .music: overlay.music.enabled
+        #endif
         case .clock: overlay.clock.enabled
         }
     }
@@ -17,7 +21,9 @@ enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
     func level(in overlay: MonitorOverlayConfiguration) -> MonitorOverlayLevel {
         switch self {
         case .monitor: overlay.level
+        #if !MAS_BUILD
         case .music: overlay.music.level
+        #endif
         case .clock: overlay.clock.level
         }
     }
@@ -100,7 +106,9 @@ final class OverlayController: NSObject {
 
     private enum HostContent {
         case monitor(HostView, MonitorBoardConfiguration)
+        #if !MAS_BUILD
         case music(MusicHostView, MusicOverlayConfiguration)
+        #endif
         case clock(ClockHostView, ClockOverlayConfiguration)
     }
 
@@ -128,17 +136,21 @@ final class OverlayController: NSObject {
             return nil
         }
 
+        #if !MAS_BUILD
         var musicConfig: MusicOverlayConfiguration? {
             if case .music(_, let config) = content { return config }
             return nil
         }
+        #endif
 
         var pointerScope: PointerScope {
             switch content {
             case .monitor(let view, _): view.pointerScope
+            #if !MAS_BUILD
             // The layer has no edit mode of its own: either its controls want
             // the pointer or the window is click-through.
             case .music(let view, _): view.wantsPointer ? .widgetsOnly : .none
+            #endif
             case .clock: .none
             }
         }
@@ -152,7 +164,9 @@ final class OverlayController: NSObject {
         func push(_ snapshot: MonitorSnapshot) {
             switch content {
             case .monitor(let view, _): view.push(snapshot)
+            #if !MAS_BUILD
             case .music(let view, _): view.push(snapshot)
+            #endif
             case .clock: break
             }
         }
@@ -160,7 +174,9 @@ final class OverlayController: NSObject {
         func setSuspended(_ suspended: Bool) {
             switch content {
             case .monitor(let view, _): view.setSuspended(suspended)
+            #if !MAS_BUILD
             case .music(let view, _): view.setSuspended(suspended)
+            #endif
             case let .clock(view, _): view.setSuspended(suspended)
             }
         }
@@ -168,7 +184,9 @@ final class OverlayController: NSObject {
         func acceptsPointer(atLocalPoint point: NSPoint) -> Bool {
             switch content {
             case .monitor(let view, _): view.acceptsPointer(atLocalPoint: point)
+            #if !MAS_BUILD
             case .music(let view, _): view.acceptsPointer(atLocalPoint: point)
+            #endif
             case .clock: false
             }
         }
@@ -176,7 +194,9 @@ final class OverlayController: NSObject {
         var view: NSView {
             switch content {
             case .monitor(let view, _): view
+            #if !MAS_BUILD
             case .music(let view, _): view
+            #endif
             case let .clock(view, _): view
             }
         }
@@ -290,9 +310,11 @@ final class OverlayController: NSObject {
             case .monitor(let view, _):
                 host.content = .monitor(view, overlay.board)
                 view.apply(configuration: overlay.board, safeArea: safeArea)
+            #if !MAS_BUILD
             case .music(let view, _):
                 host.content = .music(view, overlay.music)
                 view.apply(configuration: overlay.music, safeArea: safeArea)
+            #endif
             case let .clock(view, _):
                 host.content = .clock(view, overlay.clock)
                 view.apply(configuration: overlay.clock, safeArea: safeArea)
@@ -337,6 +359,7 @@ final class OverlayController: NSObject {
                 guard let self, let host else { return }
                 updateInteractive(host)
             }
+        #if !MAS_BUILD
         case .music:
             let music = MusicHostView(
                 frame: frame,
@@ -347,6 +370,7 @@ final class OverlayController: NSObject {
             music.setSuspended(true)
             window.contentView = music
             host = Host(window: window, content: .music(music, overlay.music), level: level)
+        #endif
         case .clock:
             let clock = ClockHostView(frame: frame, configuration: overlay.clock, safeArea: safeArea)
             clock.autoresizingMask = [.width, .height]
@@ -490,9 +514,11 @@ final class OverlayController: NSObject {
         hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.boardConfig
     }
 
+    #if !MAS_BUILD
     func music(screenID: CGDirectDisplayID) -> MusicOverlayConfiguration? {
         hosts[MonitorOverlayHostKey(screenID: screenID, module: .music)]?.musicConfig
     }
+    #endif
 
     func boardEditCallback(
         screenID: CGDirectDisplayID,
@@ -677,7 +703,11 @@ final class OverlayController: NSObject {
     }
 
     nonisolated static func stackingOrder(_ modules: [MonitorOverlayModule]) -> [MonitorOverlayModule] {
+        #if MAS_BUILD
+        let order: [MonitorOverlayModule] = [.monitor, .clock]
+        #else
         let order: [MonitorOverlayModule] = [.monitor, .clock, .music]
+        #endif
         return order.filter { modules.contains($0) }
     }
 
@@ -713,13 +743,18 @@ final class OverlayController: NSObject {
         var gpuSeconds: Double?
         var sampleSeconds: Double?
         var demand = MonitorSampleDemand()
+        #if MAS_BUILD
+        let music = false
+        let musicWantsAudio = false
+        #else
         var music = false
         var musicWantsAudio = false
         let reduceMotion = reduceMotionWatcher.isReduced
+        #endif
         for (key, host) in hosts where visibleHostKeys.contains(key) {
             switch host.content {
             case .monitor(_, let board):
-                let shown = board.widgets.filter { !$0.isHidden }
+                let shown = board.widgets.filter { !$0.isHidden && $0.kind.isAvailableInEdition }
                 kinds.formUnion(shown.map(\.kind))
                 if let s = MonitorWidgetDraft.gpuSampleSeconds(in: shown) {
                     gpuSeconds = min(gpuSeconds ?? s, s)
@@ -727,12 +762,14 @@ final class OverlayController: NSObject {
                 let interval = board.refreshIntervalSeconds
                 sampleSeconds = min(sampleSeconds ?? interval, interval)
                 demand = demand.union(MonitorSampleDemand.of(shown))
+            #if !MAS_BUILD
             case .music(_, let configuration):
                 music = true
                 // The tap and its FFT only pay for themselves while a layer
                 // actually draws the reactive effects; Reduce Motion hides them.
                 musicWantsAudio = musicWantsAudio
                     || (!reduceMotion && NowPlayingOptions(configuration.options).audioReactive)
+            #endif
             case .clock: break
             }
         }

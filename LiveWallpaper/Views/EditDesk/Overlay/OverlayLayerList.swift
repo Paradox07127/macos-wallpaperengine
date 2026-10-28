@@ -53,21 +53,28 @@ enum OverlayLayerList {
     static func rows(
         placements: [MonitorWidgetPlacement], boardEnabled: Bool, clockEnabled: Bool, musicEnabled: Bool
     ) -> [OverlayLayerRow] {
-        [OverlayLayerRow(selection: .board, kind: .board, action: .toggle(isOn: boardEnabled))] + placements.map {
-            OverlayLayerRow(selection: .widget($0.id), kind: .widget($0.kind), action: .remove)
-        } + [
-            OverlayLayerRow(selection: .clock, kind: .clock, action: .toggle(isOn: clockEnabled)),
-            OverlayLayerRow(selection: .music, kind: .music, action: .toggle(isOn: musicEnabled)),
-        ]
+        let clock = OverlayLayerRow(selection: .clock, kind: .clock, action: .toggle(isOn: clockEnabled))
+        #if MAS_BUILD
+        let singletons = [clock]
+        #else
+        let singletons = [clock, OverlayLayerRow(selection: .music, kind: .music, action: .toggle(isOn: musicEnabled))]
+        #endif
+        return [OverlayLayerRow(selection: .board, kind: .board, action: .toggle(isOn: boardEnabled))]
+            + placements.filter(\.kind.isAvailableInEdition).map {
+                OverlayLayerRow(selection: .widget($0.id), kind: .widget($0.kind), action: .remove)
+            } + singletons
     }
 
     static func layerCount(_ rows: [OverlayLayerRow]) -> Int {
         rows.count { $0.kind != .board }
     }
 
-    /// `MonitorWidgetKind.allCases` already drops the decode-only `nixieClock`.
+    #if MAS_BUILD
+    static let addItems: [OverlayAddItem] = MonitorWidgetKind.addableCases.map(OverlayAddItem.widget) + [.clock]
+    #else
     static let addItems: [OverlayAddItem] =
-        MonitorWidgetKind.allCases.map(OverlayAddItem.widget) + [.music, .clock]
+        MonitorWidgetKind.addableCases.map(OverlayAddItem.widget) + [.music, .clock]
+    #endif
 
     /// Singletons that are already on get a mark on their tile; widgets can be added any number of times.
     static func isOnCanvas(_ item: OverlayAddItem, musicEnabled: Bool, clockEnabled: Bool) -> Bool {

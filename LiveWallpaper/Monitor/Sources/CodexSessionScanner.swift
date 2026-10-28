@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 
+#if !MAS_BUILD
 struct CodexSessionScanner: Sendable {
     struct SessionFile: Sendable, Equatable {
         var url: URL
@@ -278,8 +279,10 @@ struct CodexSessionScanner: Sendable {
         component.count == 4 && component.allSatisfy(\.isNumber)
     }
 }
+#endif
 
 enum CodexProcessProbe {
+    #if !MAS_BUILD
     private static let pathBufferSize = 4096
     private static let codexNameBytes: [CChar] = "codex".utf8.map { CChar(bitPattern: $0) }
 
@@ -364,4 +367,5 @@ enum CodexProcessProbe {
             return start == 0 || bytes[start - 1] == CChar(UInt8(ascii: "/"))
         }
     }
+    #endif
 }

@@ -17,7 +17,9 @@ struct BoardSettingsView: View {
     var body: some View {
         VStack(spacing: 12) {
             boardSection
+            #if !MAS_BUILD
             AgentFolderAccessSection()
+            #endif
         }
         .onAppear(perform: reload)
         .onChange(of: screen.id) { _, _ in reload() }

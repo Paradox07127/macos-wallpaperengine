@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import SwiftUI
 
 struct NowPlayingLyricsView: View {
@@ -103,3 +104,4 @@ struct NowPlayingLyricsView: View {
         (isCurrent ? 0.95 : 0.45) * brightness
     }
 }
+#endif

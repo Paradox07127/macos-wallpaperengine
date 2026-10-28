@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 import LiveWallpaperCore
 
@@ -12,3 +13,4 @@ struct MusicOverlayContext {
     var reduceMotion: Bool
     var now: Date
 }
+#endif

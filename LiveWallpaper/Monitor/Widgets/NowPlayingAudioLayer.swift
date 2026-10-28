@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import SwiftUI
 
 // MARK: - Pure decision + reduction (unit-tested, no capture dependencies)
@@ -657,4 +658,5 @@ struct NowPlayingAudioReactiveView: View {
     }
 }
 
+#endif
 #endif

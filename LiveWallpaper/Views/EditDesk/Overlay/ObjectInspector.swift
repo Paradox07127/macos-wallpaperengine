@@ -83,9 +83,11 @@ struct ObjectInspector: View {
             if let placement = placements.first(where: { $0.id == id }) {
                 scrolling {
                     VStack(spacing: DesignTokens.Spacing.md) {
+                        #if !MAS_BUILD
                         if placement.kind == .fleet {
                             AgentFolderAccessSection()
                         }
+                        #endif
                         WidgetSettingsPopover(
                             placement: placement,
                             onUpdate: { session.interaction.updateWidget($0) },
@@ -97,20 +99,25 @@ struct ObjectInspector: View {
             } else {
                 emptyState
             }
-        case .music:
-            if let screen {
-                scrolling {
-                    MusicOverlaySection(screen: screen, screenManager: screenManager)
-                }
-            }
         case .clock:
             if let screen {
                 scrolling {
                     ClockOverlaySection(screen: screen, screenManager: screenManager)
                 }
             }
+        #if MAS_BUILD
+        case .music, .empty:
+            emptyState
+        #else
+        case .music:
+            if let screen {
+                scrolling {
+                    MusicOverlaySection(screen: screen, screenManager: screenManager)
+                }
+            }
         case .empty:
             emptyState
+        #endif
         }
     }
 

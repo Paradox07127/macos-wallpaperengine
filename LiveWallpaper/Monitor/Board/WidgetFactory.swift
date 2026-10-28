@@ -89,6 +89,23 @@ enum WidgetFactory {
     }
 }
 
+extension MonitorWidgetKind {
+    /// False where this edition cannot sample the kind; saved cards of it still decode but are not drawn or sampled.
+    var isAvailableInEdition: Bool {
+        #if MAS_BUILD
+        // The App Store sandbox cannot read other processes or the agents' session folders.
+        ![.processes, .fleet, .aiEngine].contains(self)
+        #else
+        true
+        #endif
+    }
+
+    /// The kinds a user can add in this edition; `allCases` already drops the decode-only `nixieClock`.
+    static var addableCases: [Self] {
+        allCases.filter(\.isAvailableInEdition)
+    }
+}
+
 struct MonitorWidgetNameTile: View {
     let kind: MonitorWidgetKind
     let cellHeight: CGFloat

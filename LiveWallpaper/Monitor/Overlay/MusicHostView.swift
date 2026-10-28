@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import LiveWallpaperCore
 import SwiftUI
@@ -145,3 +146,4 @@ struct MusicOverlayRootContainer: View {
         .background(Color.clear)
     }
 }
+#endif

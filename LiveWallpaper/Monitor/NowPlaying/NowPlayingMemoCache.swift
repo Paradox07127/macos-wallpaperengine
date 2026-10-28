@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 struct NowPlayingMemoCache<Value: Sendable> {
@@ -75,3 +76,4 @@ struct NowPlayingMemoCache<Value: Sendable> {
         order.append(key)
     }
 }
+#endif

@@ -216,7 +216,8 @@ final class HostView: NSView {
         if isEditing {
             return .wholeBoard
         }
-        return configuration.mouseInteractionEnabled && configuration.widgets.contains { !$0.isHidden }
+        return configuration.mouseInteractionEnabled
+            && configuration.widgets.contains { !$0.isHidden && $0.kind.isAvailableInEdition }
             ? .widgetsOnly : .none
     }
 
@@ -240,7 +241,7 @@ final class HostView: NSView {
             guard !geometry.isDegenerate else { return false }
             let point = isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
             return interactionModel.placements.contains { placement in
-                guard !placement.isHidden else { return false }
+                guard !placement.isHidden, placement.kind.isAvailableInEdition else { return false }
                 let size = geometry.pixelSize(for: placement.kind, size: placement.size)
                 let origin = LayoutEngine.pixelOrigin(
                     normalized: CGPoint(x: placement.x, y: placement.y), boardSize: geometry.boardSize

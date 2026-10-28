@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 struct NowPlayingArtworkRoute: Sendable {
@@ -274,3 +275,4 @@ actor NowPlayingArtworkFetcher {
         return data
     }
 }
+#endif

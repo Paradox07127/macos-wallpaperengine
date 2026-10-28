@@ -631,6 +631,7 @@ enum SystemMetricsSamplers {
         min(Int(written), capacity)
     }
 
+    #if !MAS_BUILD
     static func sampleTopProcesses(
         previous: [Int32: ProcessCPUCounters],
         interval: TimeInterval,
@@ -767,6 +768,7 @@ enum SystemMetricsSamplers {
         }
         return TopProcessesResult(samples: samples, ioSamples: ioSamples, counters: counters)
     }
+    #endif
 
     /// Per-core percentage: a process using three cores for one second is 300%.
     static func processCPUPercent(cpuNanoseconds: UInt64, elapsedSeconds: Double) -> Double {
@@ -785,6 +787,7 @@ enum SystemMetricsSamplers {
         return current
     }
 
+    #if !MAS_BUILD
     private static func processName(pid: Int32) -> String {
         var buffer = [UInt8](repeating: 0, count: 1024)
         let length = proc_name(pid, &buffer, UInt32(buffer.count))
@@ -794,6 +797,7 @@ enum SystemMetricsSamplers {
         }
         return "pid \(pid)"
     }
+    #endif
 
     // MARK: - Accessory batteries (IORegistry HID)
 
@@ -843,6 +847,7 @@ enum SystemMetricsSamplers {
         var totalFootprintBytes: UInt64
     }
 
+    #if !MAS_BUILD
     static func sampleANE(limit: Int = 5) -> ANESample {
         let capacity = proc_listallpids(nil, 0)
         guard capacity > 0 else {
@@ -888,6 +893,7 @@ enum SystemMetricsSamplers {
             totalFootprintBytes: total
         )
     }
+    #endif
 
     // MARK: - sysctl scalars
 

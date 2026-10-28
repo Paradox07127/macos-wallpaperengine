@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 #if !LITE_BUILD
 import CryptoKit
@@ -549,4 +550,5 @@ final class NowPlayingSystemProcess: @unchecked Sendable {
         }
     }
 }
+#endif
 #endif

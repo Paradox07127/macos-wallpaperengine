@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 final class ClaudeAgentSource: MonitorDataSource {
@@ -282,3 +283,4 @@ private actor Engine {
         "claude"
     }
 }
+#endif

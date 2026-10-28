@@ -495,6 +495,22 @@ actor Runtime {
 
     static func systemOptions(for kinds: Set<MonitorWidgetKind>) -> SystemMetricsSource.Options {
         let overview = kinds.contains(.systemOverview)
+        #if MAS_BUILD
+        // The App Store sandbox cannot read the SMC or other processes' task info.
+        return SystemMetricsSource.Options(
+            gpu: overview || kinds.contains(.gpu),
+            topProcesses: false,
+            ane: false,
+            accessories: kinds.contains(.power),
+            sensors: false,
+            processIO: false,
+            cpu: overview || kinds.contains(.cpu),
+            memory: overview || kinds.contains(.memory),
+            network: overview || kinds.contains(.network),
+            disk: overview || kinds.contains(.disk),
+            power: overview || kinds.contains(.power)
+        )
+        #else
         return SystemMetricsSource.Options(
             gpu: overview || kinds.contains(.gpu),
             topProcesses: kinds.contains(.processes) || kinds.contains(.cpu) || kinds.contains(.memory),
@@ -508,6 +524,7 @@ actor Runtime {
             disk: overview || kinds.contains(.disk),
             power: overview || kinds.contains(.power)
         )
+        #endif
     }
 
     private func rebuild(force: Bool = false) async {
@@ -629,8 +646,13 @@ actor Runtime {
                     ) ?? 3
                 ))
             } else {
+                #if MAS_BUILD
+                let includeTopProcesses = false
+                #else
+                let includeTopProcesses = resolved.topProcesses
+                #endif
                 built.append(SystemMetricsSource(
-                    includeTopProcesses: resolved.topProcesses,
+                    includeTopProcesses: includeTopProcesses,
                     interval: resolved.sampleIntervalSeconds ?? 2.0
                 ))
             }

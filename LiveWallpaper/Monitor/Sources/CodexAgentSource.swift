@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 import os
 
@@ -244,3 +245,4 @@ final class CodexAgentSource: MonitorDataSource {
         )
     }
 }
+#endif

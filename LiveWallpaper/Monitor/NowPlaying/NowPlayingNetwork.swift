@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 enum NowPlayingNetwork {
@@ -72,3 +73,4 @@ private final class AllowListRedirectPolicy: NSObject, URLSessionTaskDelegate {
         completionHandler(allowed ? request : nil)
     }
 }
+#endif

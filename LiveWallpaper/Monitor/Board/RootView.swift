@@ -164,8 +164,8 @@ struct RootView: View {
 
     /// The desktop drops hidden widgets; the editor keeps them as placeholders.
     private var drawnPlacements: [MonitorWidgetPlacement] {
-        guard let editor else { return model.placements.filter { !$0.isHidden } }
-        return editor.overlay.enabled ? model.placements : []
+        guard let editor else { return model.placements.filter { !$0.isHidden && $0.kind.isAvailableInEdition } }
+        return editor.overlay.enabled ? model.placements.filter(\.kind.isAvailableInEdition) : []
     }
 
     @ViewBuilder

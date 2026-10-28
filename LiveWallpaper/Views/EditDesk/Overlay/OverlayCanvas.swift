@@ -95,9 +95,11 @@ struct OverlayCanvas: View {
             if session.overlay.clock.enabled {
                 object(.clock) { singleton(.clock) }
             }
+            #if !MAS_BUILD
             if session.overlay.music.enabled {
                 object(.music) { singleton(.music) }
             }
+            #endif
             dropPreview.allowsHitTesting(false)
             guides.allowsHitTesting(false)
         }
@@ -112,11 +114,13 @@ struct OverlayCanvas: View {
             ClockOverlayFace(configuration: session.overlay.clock,
                              now: session.preview.chartReference(fallback: Date()), animates: false)
         } else {
+            #if !MAS_BUILD
             NowPlayingWidgetView(context: MusicOverlayContext(
                 snapshot: session.preview.snapshot ?? MonitorSnapshot(), size: session.overlay.music.size,
                 options: session.overlay.music.options, isEditing: true, reduceMotion: true,
                 now: session.preview.chartReference(fallback: Date())
             ))
+            #endif
         }
     }
 

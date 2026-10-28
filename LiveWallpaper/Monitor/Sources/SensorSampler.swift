@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 import IOKit
 import os
@@ -185,3 +186,4 @@ private struct SMCKeyData {
         (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
+#endif

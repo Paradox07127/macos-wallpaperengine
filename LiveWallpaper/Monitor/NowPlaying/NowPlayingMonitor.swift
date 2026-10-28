@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import Foundation
 
@@ -404,3 +405,4 @@ final class NowPlayingMonitor: NSObject {
         return value
     }
 }
+#endif

@@ -61,6 +61,7 @@ enum MusicOverlayLayout {
         return next
     }
 
+    #if !MAS_BUILD
     static func settingOptions(
         on configuration: MusicOverlayConfiguration,
         _ transform: (inout NowPlayingOptions) -> Void
@@ -71,4 +72,5 @@ enum MusicOverlayLayout {
         next.options = options.applied(to: configuration.options)
         return next
     }
+    #endif
 }

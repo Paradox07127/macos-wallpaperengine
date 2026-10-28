@@ -462,7 +462,11 @@ final class OverlayEditorSession {
 
     /// Whether Remove All has anything to take off.
     var hasObjects: Bool {
+        #if MAS_BUILD
+        !interaction.placements.isEmpty || overlay.clock.enabled || effectVisible
+        #else
         !interaction.placements.isEmpty || overlay.clock.enabled || overlay.music.enabled || effectVisible
+        #endif
     }
 
     /// Takes every widget, the clock, music and the effect off this display.
@@ -479,7 +483,10 @@ final class OverlayEditorSession {
             store.writeBoard(board, for: identity)
         }
         setClockEnabled(false)
+        // The App Store edition has no music layer to remove; a saved one is left as written.
+        #if !MAS_BUILD
         setMusicEnabled(false)
+        #endif
         if removed.effect != .none {
             setEffectVisible(false)
         }

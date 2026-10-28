@@ -35,6 +35,12 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         _ includeIO: Bool
     ) -> SystemMetricsSamplers.TopProcessesResult
 
+    #if MAS_BUILD
+    /// The sandbox cannot read other processes, so the walk yields nothing.
+    static let defaultTopProcessesSampler: TopProcessesSampler = { _, _, _ in
+        SystemMetricsSamplers.TopProcessesResult(samples: [], ioSamples: [], counters: [:])
+    }
+    #else
     static let defaultTopProcessesSampler: TopProcessesSampler = { previous, interval, includeIO in
         SystemMetricsSamplers.sampleTopProcesses(
             previous: previous,
@@ -43,6 +49,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             includeIO: includeIO
         )
     }
+    #endif
 
     private let interval: TimeInterval
     private let gpuSampleCadence: Int
@@ -148,7 +155,9 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         private var lastTopProcessesSampledAt: Date?
         private var lastANE: SystemMetricsSamplers.ANESample?
         private var lastANESampledAt: Date?
+        #if !MAS_BUILD
         private var sensorSampler: SensorSampler?
+        #endif
         private var cpuInfo: MonitorCPUInfo?
         private var gpuDeviceName: String?
 
@@ -325,6 +334,9 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 topIOProcesses = lastTopIOProcesses
             }
 
+            #if MAS_BUILD
+            let sensors: MonitorSensorReadings? = nil
+            #else
             if options.ane, shouldSampleANE(now: now) {
                 lastANE = SystemMetricsSamplers.sampleANE()
                 lastANESampledAt = now
@@ -337,6 +349,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 }
                 sensors = sensorSampler?.sample()
             }
+            #endif
 
             let loadAverages = options.cpu ? loadAverageSampler() : nil
 

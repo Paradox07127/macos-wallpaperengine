@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import SwiftUI
 import ImageIO
 import CoreGraphics
@@ -146,3 +147,4 @@ final class NowPlayingAccentStore {
         }
     }
 }
+#endif

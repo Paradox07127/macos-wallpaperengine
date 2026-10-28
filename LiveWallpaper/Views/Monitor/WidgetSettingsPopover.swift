@@ -145,8 +145,10 @@ struct WidgetSettingsPopover: View {
                 historyWindowPicker(defaultWindow: SystemOverviewOptions.defaultHistoryWindow)
                 toggleRow("Show history curve", icon: "chart.xyaxis.line",
                           isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
+                #if !MAS_BUILD
                 toggleRow("Show sensors", icon: "thermometer.medium",
                           isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
+                #endif
             }
         }
     }
@@ -170,8 +172,10 @@ struct WidgetSettingsPopover: View {
                           isOn: boolBinding(key: MonitorCPUDraft.showHeatmapKey, default: true))
                 toggleRow("Show composition", icon: "chart.pie",
                           isOn: boolBinding(key: MonitorCPUDraft.showCompositionKey, default: true))
+                #if !MAS_BUILD
                 toggleRow("Show sensors", icon: "thermometer.medium",
                           isOn: boolBinding(key: MonitorCPUDraft.showSensorsKey, default: true))
+                #endif
                 if placement.size == .small {
                     toggleRow("Show history curve", icon: "chart.xyaxis.line",
                               isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
@@ -189,8 +193,10 @@ struct WidgetSettingsPopover: View {
             VStack(spacing: spacing(DesignTokens.Spacing.xs)) {
                 toggleRow("Show load breakdown", icon: "chart.bar.xaxis",
                           isOn: boolBinding(key: MonitorWidgetDraft.showLoadBreakdownKey, default: true))
+                #if !MAS_BUILD
                 toggleRow("Show sensors", icon: "thermometer.medium",
                           isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
+                #endif
                 if placement.size == .small {
                     toggleRow("Show history curve", icon: "chart.xyaxis.line",
                               isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
@@ -225,7 +231,9 @@ struct WidgetSettingsPopover: View {
         VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.sm)) {
             historyWindowPicker(defaultWindow: placement.size == .large ? 120 : 60, first: true)
             breakdownPicker
+            #if !MAS_BUILD
             topProcessesRow
+            #endif
         }
     }
 
@@ -235,7 +243,9 @@ struct WidgetSettingsPopover: View {
         VStack(alignment: .leading, spacing: spacing(DesignTokens.Spacing.sm)) {
             historyWindowPicker(defaultWindow: 120, first: true)
             breakdownPicker
+            #if !MAS_BUILD
             topProcessesRow
+            #endif
         }
     }
 

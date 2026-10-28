@@ -5,16 +5,19 @@ enum SourceRegistration {
 
     static let sharedCursorStore = TailCursorStore()
 
+    #if !MAS_BUILD
     /// Deliberately not inside the agents factory: the Now Playing source must
     /// exist whenever a music layer is visible, with or without any board.
     static let nowPlayingFactory: Runtime.SourceFactory = { options in
         guard options.music else { return [] }
         return [NowPlayingSource(audioReactive: options.musicAudioReactive)]
     }
+    #endif
 
     @MainActor static func registerDefaultFactories() {
         guard !registered else { return }
         registered = true
+        #if !MAS_BUILD
         _ = NowPlayingMonitor.shared
         Runtime.extraSourceFactories.append(nowPlayingFactory)
         Runtime.extraSourceFactories.append { options in
@@ -29,5 +32,6 @@ enum SourceRegistration {
             }
             return sources
         }
+        #endif
     }
 }

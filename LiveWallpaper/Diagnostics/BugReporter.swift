@@ -279,6 +279,10 @@ enum BugReporter {
     }
 
     private static func runningExecutables() -> [(pid: Int32, path: String)] {
+        #if MAS_BUILD
+        // The App Store sandbox cannot enumerate other processes.
+        return []
+        #else
         // PROC_PIDPATHINFO_MAXSIZE; the macro does not import into Swift.
         var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
         return CodexProcessProbe.allPIDs().compactMap { pid in
@@ -286,6 +290,7 @@ enum BugReporter {
             guard length > 0, let path = String(bytes: buffer.prefix(Int(length)), encoding: .utf8) else { return nil }
             return (pid: pid, path: path)
         }
+        #endif
     }
 
     private static func sanitizedRecentLogLines() -> [String] {
