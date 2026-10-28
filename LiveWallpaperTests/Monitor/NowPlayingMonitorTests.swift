@@ -50,8 +50,9 @@ struct NowPlayingSystemSourceTests {
             return []
         }, systemProvider: { try await fixture.read() }, systemPollInterval: .milliseconds(10))
         let source = NowPlayingSource(monitor: monitor, artworkFetcher: offlineFetcher(), audioReactive: false, audioDemand: { _ in })
+        let waitForSetup: @Sendable () -> Bool = { entered.wait(timeout: .now() + 3) == .success }
         let stopper = Task.detached {
-            guard entered.wait(timeout: .now() + 3) == .success else {
+            guard waitForSetup() else {
                 release.signal()
                 return false
             }
