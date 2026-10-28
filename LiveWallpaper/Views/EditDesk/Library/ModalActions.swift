@@ -353,6 +353,7 @@ final class ModalActions {
                 undo?.recordRename(of: before)
             }
         }
+        #if !MAS_BUILD
         if let exportService, EditDeskRouter.systemWallpaperSupported,
            case let .bookmark(bookmark) = item.source, case .video = bookmark.content {
             let published = exportService.isPublished(bookmarkID: bookmark.id)
@@ -368,6 +369,7 @@ final class ModalActions {
                 }
             }
         }
+        #endif
         if Self.revealBookmark(for: item) != nil {
             actions.showInFinder = { [self] in
                 guard let current = inputs.item(id), let data = Self.revealBookmark(for: current),

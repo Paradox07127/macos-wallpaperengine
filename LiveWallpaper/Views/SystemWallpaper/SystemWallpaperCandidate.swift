@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import LiveWallpaperCore
 import SwiftUI
@@ -198,3 +199,4 @@ struct SystemWallpaperCandidateTile: View {
             .accessibilityHidden(true)
     }
 }
+#endif

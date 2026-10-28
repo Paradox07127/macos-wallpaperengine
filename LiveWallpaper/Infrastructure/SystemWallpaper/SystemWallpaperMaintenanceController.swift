@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import Foundation
 import Observation
@@ -102,3 +103,4 @@ final class SystemWallpaperMaintenanceController {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 }
+#endif

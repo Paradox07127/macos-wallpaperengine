@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import CoreVideo
 import Foundation
 import Metal
@@ -73,3 +74,4 @@ final class SystemWallpaperFramePool {
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import LiveWallpaperCore
 import SwiftUI
 
@@ -107,3 +108,4 @@ struct SystemWallpaperMaintenanceResult: View {
         }
     }
 }
+#endif

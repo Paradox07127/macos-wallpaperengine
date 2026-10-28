@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AVFoundation
 import CoreVideo
 import Foundation
@@ -67,3 +68,4 @@ final class SystemWallpaperMovieWriter {
         writer.cancelWriting()
     }
 }
+#endif

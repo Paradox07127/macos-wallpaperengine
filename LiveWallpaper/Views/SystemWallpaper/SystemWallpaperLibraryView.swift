@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import ImageIO
 import LiveWallpaperCore
@@ -416,3 +417,4 @@ enum SystemWallpaperThumbnails {
         }
     }
 }
+#endif

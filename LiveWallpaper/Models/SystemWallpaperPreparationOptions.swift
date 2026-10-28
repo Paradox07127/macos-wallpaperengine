@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import CoreGraphics
 import Foundation
 
@@ -18,3 +19,4 @@ struct SystemWallpaperPreparationOptions: Codable, Equatable, Sendable {
             && Int(size.width).isMultiple(of: 2) && Int(size.height).isMultiple(of: 2)
     }
 }
+#endif

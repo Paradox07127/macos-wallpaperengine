@@ -1,5 +1,7 @@
 import Foundation
 
+// The App Store edition keeps only the heartbeat read: lock-screen snapshots skip displays a provider still owns.
+#if !MAS_BUILD
 enum SystemWallpaperPlaybackMode: String, Codable, Equatable, CaseIterable {
     case always
     case stillOnDesktop
@@ -88,6 +90,7 @@ struct SystemWallpaperManifest: Codable, Equatable {
             && name != "." && name != ".."
     }
 }
+#endif
 
 struct SystemWallpaperProviderIdentity: Codable, Equatable {
     /// CFBundleVersion of the appex. This half separates two processes an in-place update leaves behind at the same path.
@@ -98,6 +101,7 @@ struct SystemWallpaperProviderIdentity: Codable, Equatable {
     /// Diagnostics only — which process to look at when a stale beat shows up.
     var pid: Int32
 
+    #if !MAS_BUILD
     static func current(bundle: Bundle = .main) -> SystemWallpaperProviderIdentity {
         SystemWallpaperProviderIdentity(
             build: bundle.infoDictionary?["CFBundleVersion"] as? String ?? "",
@@ -105,6 +109,7 @@ struct SystemWallpaperProviderIdentity: Codable, Equatable {
             pid: ProcessInfo.processInfo.processIdentifier
         )
     }
+    #endif
 
     /// Read the bundled appex, not the app Info.plist — they carry separate CFBundleVersions. Scan the directory so Lite and Pro share one path.
     static func bundledProvider(host hostBundle: Bundle = .main) -> SystemWallpaperProviderIdentity? {
@@ -125,6 +130,7 @@ struct SystemWallpaperProviderIdentity: Codable, Equatable {
     }
 }
 
+#if !MAS_BUILD
 /// An appex outlives the bundle it was launched from; lives here so the decision is unit-testable.
 enum SystemWallpaperProviderStaleness {
     enum Verdict: Equatable {
@@ -186,6 +192,7 @@ enum SystemWallpaperProviderStaleness {
         return normalized
     }
 }
+#endif
 
 struct SystemWallpaperHeartbeat: Codable, Equatable {
     var timestamp: Date
@@ -250,6 +257,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         leakedRenderThreadCount = try c.decodeIfPresent(Int.self, forKey: .leakedRenderThreadCount)
     }
 
+    #if !MAS_BUILD
     /// Reject a beat whose stamp disagrees, and an unstamped beat (leftover 0.6.2). Only a missing expectation disables the check.
     func isFromProvider(matching expected: SystemWallpaperProviderIdentity?) -> Bool {
         guard let expected else { return true }
@@ -274,6 +282,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         if let activeChoiceIDs { return activeChoiceIDs.contains(itemID) }
         return activeChoiceID == itemID
     }
+    #endif
 
     /// A legacy desktop-picture refresh must not replace a selected native wallpaper.
     func ownsDisplay(_ displayID: UInt32, now: Date) -> Bool {
@@ -282,6 +291,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         return activeDisplayIDs?.contains(displayID) ?? true
     }
 
+    #if !MAS_BUILD
     /// Version plus build: beta seeds keep the same x.y.z across weekly builds,
     /// and a layout verdict is only valid for the exact build that produced it.
     static func currentOSVersion() -> String {
@@ -297,6 +307,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         }
         return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)-\(build)"
     }
+    #endif
 }
 
 /// Both sides must encode with identical settings or the appex silently reads
@@ -307,7 +318,9 @@ enum SystemWallpaperCoding {
 }
 
 enum SystemWallpaperPaths {
+    #if !MAS_BUILD
     static let darwinLibraryChangedNote = "com.loomscreen.wallpaper.libraryChanged"
+    #endif
 
     /// Real home, not NSHomeDirectory()/homeDirectoryForCurrentUser — those point at the container inside a sandbox.
     static var realHomeDirectory: URL {
@@ -322,19 +335,22 @@ enum SystemWallpaperPaths {
             .appendingPathComponent("Library/Containers/\(hostBundleID)/Data/Library/Application Support/Loomscreen/SystemWallpaper", isDirectory: true)
     }
 
-    static func manifestURL(hostBundleID: String) -> URL {
-        sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("manifest.json")
-    }
-
     static func heartbeatURL(hostBundleID: String) -> URL {
         sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("heartbeat.json")
+    }
+
+    #if !MAS_BUILD
+    static func manifestURL(hostBundleID: String) -> URL {
+        sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("manifest.json")
     }
 
     static func videosDirectory(hostBundleID: String) -> URL {
         sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("Videos", isDirectory: true)
     }
+    #endif
 }
 
+#if !MAS_BUILD
 enum SystemWallpaperLibrary {
     /// Persist the shrunk manifest first, then delete files — a failed persist stays consistent; a failed delete is an orphan the sweep reclaims.
     static func remove(
@@ -461,3 +477,4 @@ enum SystemWallpaperLock {
         return try body()
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import LiveWallpaperCore
 import SwiftUI
@@ -138,3 +139,4 @@ private struct DisplayRow: View {
         }
     }
 }
+#endif

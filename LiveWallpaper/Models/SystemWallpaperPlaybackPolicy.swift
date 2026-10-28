@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 enum PlaybackTier: String, Equatable {
@@ -45,3 +46,4 @@ enum PlaybackPolicy {
         }
     }
 }
+#endif

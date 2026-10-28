@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import LiveWallpaperCore
 import SwiftUI
 
@@ -153,3 +154,4 @@ struct SystemWallpaperLegacyBanner: View {
         }
     }
 }
+#endif

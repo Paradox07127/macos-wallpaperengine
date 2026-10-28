@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import CoreGraphics
 import Foundation
 
@@ -49,3 +50,4 @@ enum SystemWallpaperFollowPreferences {
         return options
     }
 }
+#endif

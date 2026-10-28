@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 @MainActor
@@ -67,3 +68,4 @@ enum SystemWallpaperMaintenanceClient {
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 /// The one answer to "is the system side set up?", shared by the System Wallpaper page and Settings.
@@ -51,3 +52,4 @@ enum SystemWallpaperLegacyCopies {
         return total
     }
 }
+#endif

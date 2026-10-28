@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 struct SystemWallpaperFollowState: Equatable, Sendable {
@@ -19,3 +20,4 @@ struct SystemWallpaperFollowState: Equatable, Sendable {
 
     var displays: [UInt32: Display] = [:]
 }
+#endif

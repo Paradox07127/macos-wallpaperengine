@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import AVFoundation
 import CryptoKit
@@ -1165,3 +1166,13 @@ final class WallpaperExportService {
         }
     }
 }
+#else
+import Observation
+
+/// The App Store edition ships no wallpaper extension; views that read this service optionally always find it absent.
+@MainActor
+@Observable
+final class WallpaperExportService {
+    private init() {}
+}
+#endif

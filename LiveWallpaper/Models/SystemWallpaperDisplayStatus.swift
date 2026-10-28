@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 /// One row of the System Wallpaper page's display list: what macOS shows on a display Loomscreen follows.
@@ -52,3 +53,4 @@ struct SystemWallpaperDisplayStatus: Equatable, Identifiable {
         }
     }
 }
+#endif

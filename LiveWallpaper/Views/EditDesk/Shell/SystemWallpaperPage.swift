@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import LiveWallpaperCore
 import SwiftUI
 
@@ -25,3 +26,15 @@ struct SystemWallpaperPage: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { stageSize = $0 }
     }
 }
+#else
+import SwiftUI
+
+/// The App Store edition has no System Wallpaper page; the router never selects it, the shell's page switch still names it.
+struct SystemWallpaperPage: View {
+    let router: EditDeskRouter
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#endif

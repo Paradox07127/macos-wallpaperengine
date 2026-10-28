@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import Foundation
 
 @objc protocol SystemWallpaperMaintenanceProtocol {
@@ -147,3 +148,4 @@ struct SystemWallpaperRecoveryPolicy {
         return true
     }
 }
+#endif

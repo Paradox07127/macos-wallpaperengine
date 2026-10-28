@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import LiveWallpaperCore
 import SwiftUI
@@ -169,3 +170,4 @@ struct SystemWallpaperRegistrationSheet: View {
         NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
     }
 }
+#endif

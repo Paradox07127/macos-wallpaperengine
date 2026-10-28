@@ -89,7 +89,9 @@ enum SettingsWindowMetrics {
 @MainActor
 struct SettingsWindowHost {
     let manager: ScreenManager
+    #if !MAS_BUILD
     let wallpaperExportService: WallpaperExportService
+    #endif
     #if !LITE_BUILD
     let workshopDoctorService: SteamCMDDoctorService
     let workshopServices: WorkshopServices
@@ -149,7 +151,9 @@ struct SettingsWindowHost {
         let baseContentView = root
             .environment(manager)
             .environment(\.featureCatalog, manager.featureCatalog)
+            #if !MAS_BUILD
             .environment(wallpaperExportService)
+            #endif
 
         #if !LITE_BUILD
         let contentView = baseContentView
@@ -179,8 +183,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored nonisolated(unsafe) private var showOnboardingObserver: NSObjectProtocol?
     @ObservationIgnored private var globalShortcutManager: GlobalShortcutManager?
     @ObservationIgnored private let lifecycle = ApplicationLifecycleController()
+    #if !MAS_BUILD
     @ObservationIgnored let wallpaperExportService = WallpaperExportService()
     @ObservationIgnored private var systemWallpaperSelection: SystemWallpaperSelectionCoordinator?
+    #endif
     #if !LITE_BUILD
     @ObservationIgnored private let workshopDoctorService = SteamCMDDoctorService()
     @ObservationIgnored private let workshopServices = WorkshopServices()
@@ -445,7 +451,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         globalShortcutManager?.stop()
+        #if !MAS_BUILD
         systemWallpaperSelection?.stop()
+        #endif
         globalShortcutManager = nil
         removeLifecycleObservers()
         closeApplicationWindowsForTermination()
@@ -539,6 +547,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             workshopServices: workshopServices,
             workshopSetupController: workshopSetupController
         )
+        #elseif MAS_BUILD
+        let host = SettingsWindowHost(manager: manager)
         #else
         let host = SettingsWindowHost(manager: manager, wallpaperExportService: wallpaperExportService)
         #endif
@@ -705,7 +715,9 @@ struct LiveWallpaperApp: App {
             )
             .environment(screenManager)
             .environment(\.featureCatalog, screenManager.featureCatalog)
+            #if !MAS_BUILD
             .environment(appDelegate.wallpaperExportService)
+            #endif
             .appLanguageScoped(defaults: .appScoped())
         } else {
             Text("Initializing…")

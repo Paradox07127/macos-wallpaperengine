@@ -9,6 +9,7 @@ enum SystemWallpaperClockPolicy {
             || ["hourhand", "minutehand", "secondhand", "clockface", "digitalclock", "analogclock"].contains(key)
     }
 
+    #if !MAS_BUILD
     static func visibilityOverrides(projectData: Data?) -> [String: Bool] {
         guard let projectData,
               let project = (try? JSONSerialization.jsonObject(with: projectData)) as? [String: Any],
@@ -56,6 +57,7 @@ enum SystemWallpaperClockPolicy {
         }
         return hidden
     }
+    #endif
 
     /// Runs only in the disposable web-export session. Keep late-created/replaced widgets hidden.
     static let webScript = #"""

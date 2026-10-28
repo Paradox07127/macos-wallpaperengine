@@ -14,6 +14,7 @@ extension Notification {
     static let clearedDisplayIDKey = "displayID"
 }
 
+#if !MAS_BUILD
 /// Serial preparation with the latest selection winning on each display. Never starts web capture.
 @MainActor
 @Observable
@@ -242,3 +243,4 @@ final class SystemWallpaperSelectionCoordinator {
         selections[display]?.token == selection.token && service.clearGeneration == selection.clearGeneration
     }
 }
+#endif

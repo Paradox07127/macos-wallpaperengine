@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import LiveWallpaperCore
 import SwiftUI
 
@@ -227,3 +228,13 @@ struct SystemWallpaperStatusLine: View {
         }
     }
 }
+#else
+import SwiftUI
+
+/// The App Store edition has no System Wallpaper settings; navigation never lists the page, the detail switch still names it.
+struct SystemWallpaperSettingsView: View {
+    var body: some View {
+        EmptyView()
+    }
+}
+#endif
