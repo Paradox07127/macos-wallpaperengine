@@ -396,10 +396,10 @@ final class ModalActions {
                 inputs.deleteInstalled(entry, inputs.installedLibrary)
             }
             if steamID(for: item) != nil {
-                if updateState(for: entry) == .available {
+                if canUpdate(entry) {
                     actions.checkForUpdate = { [self] in
                         guard let current = inputs.item(id), case let .workshop(entry) = current.source,
-                              updateState(for: entry) == .available else { return }
+                              canUpdate(entry) else { return }
                         inputs.update(entry)
                     }
                 }
@@ -516,6 +516,15 @@ final class ModalActions {
     func installedStateKey(for item: LibraryItem) -> String {
         guard let entry = localInfoEntry(for: item), let id = UInt64(entry.origin.workshopID) else { return "" }
         return "\(inputs.phase(id)) \(inputs.installedLibrary.updatedWorkshopIDs.contains(entry.id))"
+    }
+
+    private func canUpdate(_ entry: WPEHistoryEntry) -> Bool {
+        guard inputs.installedLibrary.updatedWorkshopIDs.contains(entry.id),
+              let id = UInt64(entry.origin.workshopID) else { return false }
+        switch inputs.phase(id) {
+        case .downloading, .importing: return false
+        default: return true
+        }
     }
 
     private func updateState(for entry: WPEHistoryEntry) -> InstalledItemExtras.UpdateState {

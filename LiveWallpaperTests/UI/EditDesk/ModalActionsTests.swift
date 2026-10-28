@@ -805,7 +805,7 @@ struct ModalActionsTests {
         #expect(local.deleteInstalled != nil)
     }
 
-    @Test("Only an available update has a title-row button; the status line only offers cancellation")
+    @Test("An available update has a title-row button; the status line only offers cancellation")
     func statusLineButtonFollowsTheUpdateState() throws {
         let fixture = Fixture()
         let item = workshop("123")
@@ -828,7 +828,7 @@ struct ModalActionsTests {
         #expect(cancel.title == String(localized: "Cancel", bundle: .appLanguage))
         cancel.action()
         #expect(cancelled == [123])
-        for state: InstalledItemExtras.UpdateState? in [.upToDate, .unknown, .failed(message: "Offline"), nil] {
+        for state: InstalledItemExtras.UpdateState? in [.upToDate, .unknown, nil] {
             #expect(actions.statusButton(for: state) == nil)
             #expect(actions.updateButton(for: state) == nil)
         }
@@ -869,6 +869,7 @@ struct ModalActionsTests {
         ))
         var inputs = fixture.inputs()
         inputs.installedLibrary = model
+        inputs.phase = { _ in fixture.phase }
         inputs.update = { _ in updates += 1 }
         let modal = fixture.modal(inputs: inputs)
         model.onAppear()
@@ -881,11 +882,29 @@ struct ModalActionsTests {
         let update = try #require(availableUpdate)
         update()
         #expect(updates == 1)
+        fixture.phase = .failed("Offline")
+        let failedState = await modal.content(for: item).installed?.updateState
+        #expect(failedState == .failed(message: "Offline"))
+        let retry = try #require(modal.actions(for: item).updateButton(for: failedState))
+        retry.action()
+        #expect(updates == 2, "a failed transfer must not hide a known newer version's retry")
+        let updateTitle = String(localized: "Update", bundle: .appLanguage)
+        let retryMenu = modal.menuItems(for: item, requestRename: {}, requestDelete: {}).flatMap { $0 }
+        let retryItem = try #require(retryMenu.first { $0.title == updateTitle })
+        retryItem.action()
+        #expect(updates == 3)
+        fixture.phase = .downloading
+        #expect(modal.actions(for: item).checkForUpdate == nil)
+        retry.action()
+        #expect(updates == 3, "a stale retry must not enqueue another active transfer")
+        fixture.phase = .failed("Offline")
         fixture.remoteEpochs = [:]
         model.onAppear()
         update()
-        #expect(updates == 1, "a stale Update button must not turn into re-download once the update is gone")
+        retry.action()
+        #expect(updates == 3, "stale Update and retry buttons must not re-download once the update is gone")
         #expect(modal.actions(for: item).checkForUpdate == nil)
+        #expect(modal.actions(for: item).updateButton(for: failedState) == nil)
         model.onDisappear()
     }
 

@@ -288,7 +288,10 @@ extension WallpaperModalActions {
     }
 
     func updateButton(for state: InstalledItemExtras.UpdateState?) -> ModalExtraButton? {
-        guard state == .available else { return nil }
+        switch state {
+        case .available, .failed: break
+        default: return nil
+        }
         return checkForUpdate.map { ModalExtraButton(title: String(localized: "Update", bundle: .appLanguage), action: $0) }
     }
 }
