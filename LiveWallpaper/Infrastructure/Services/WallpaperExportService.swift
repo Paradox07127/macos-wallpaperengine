@@ -25,6 +25,10 @@ final class WallpaperExportService {
             try WallpaperExportService.extractPackagedVideo(packageURL: source, entryName: name, to: destination)
         }
 
+        var writeManifestData: @Sendable (Data, URL) throws -> Void = { data, url in
+            try data.write(to: url, options: .atomic)
+        }
+
         /// The appex this app ships. A heartbeat stamped with anything else is not evidence about our extension. `nil` disables the check.
         var expectedProvider: SystemWallpaperProviderIdentity?
         var isProviderRunning: @Sendable (Int32) -> Bool = { pid in
@@ -150,7 +154,7 @@ final class WallpaperExportService {
             manifest.displaySelections[String(displayID)] = itemID
             manifest.clearedDisplays[String(displayID)] = nil
             try writeManifest(manifest)
-            return try removeUnselectedCopies(from: manifest)
+            return removeUnselectedCopies(from: manifest)
         }
         items = cleanup.manifest.items
         lastError = cleanup.failures.isEmpty ? nil : cleanup.failures.joined(separator: "\n")
@@ -165,7 +169,7 @@ final class WallpaperExportService {
             manifest.displaySelections[String(displayID)] = nil
             manifest.clearedDisplays[String(displayID)] = generation
             try writeManifest(manifest)
-            return try removeUnselectedCopies(from: manifest)
+            return removeUnselectedCopies(from: manifest)
         }
         items = cleanup.manifest.items
         lastError = cleanup.failures.isEmpty ? nil : cleanup.failures.joined(separator: "\n")
@@ -173,19 +177,24 @@ final class WallpaperExportService {
         postLibraryChanged()
     }
 
-    /// Caller holds the manifest lock.
-    private func removeUnselectedCopies(from manifest: SystemWallpaperManifest) throws -> (manifest: SystemWallpaperManifest, failures: [String]) {
+    /// Caller holds the lock and has committed its selection; cleanup failures retain that committed result.
+    private func removeUnselectedCopies(from manifest: SystemWallpaperManifest) -> (manifest: SystemWallpaperManifest, failures: [String]) {
         var manifest = manifest
         var failures: [String] = []
         // Displays without their own selection resolve through `selectedItemID`.
         let selected = Set(manifest.displaySelections.values).union([manifest.selectedItemID].compactMap(\.self))
         for item in manifest.items where item.id.hasPrefix(Self.selectionCopyIDPrefix) && !selected.contains(item.id) {
-            manifest = try SystemWallpaperLibrary.remove(
-                id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) },
-                onFileRemovalFailure: { name, error in
-                    failures.append("\(name): \(error.localizedDescription)")
-                }
-            ) ?? manifest
+            do {
+                manifest = try SystemWallpaperLibrary.remove(
+                    id: item.id, from: manifest, videosDirectory: videosDirectory, persist: { try writeManifest($0) },
+                    onFileRemovalFailure: { name, error in
+                        failures.append("\(name): \(error.localizedDescription)")
+                    }
+                ) ?? manifest
+            } catch {
+                failures.append("\(item.fileName): \(error.localizedDescription)")
+                break
+            }
         }
         return (manifest, failures)
     }
@@ -1099,7 +1108,7 @@ final class WallpaperExportService {
             withIntermediateDirectories: true
         )
         let data = try SystemWallpaperCoding.encoder.encode(manifest)
-        try data.write(to: manifestURL, options: .atomic)
+        try dependencies.writeManifestData(data, manifestURL)
     }
 
     private func refreshDiskUsage() {

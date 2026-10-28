@@ -84,7 +84,8 @@ version_gt() {
 
 # Prints the items of one channel verbatim; the file is this script's own output.
 appcast_items() {
-  [[ -f "$APPCAST" ]] || return 0
+  local source="${2:-$APPCAST}"
+  [[ -f "$source" ]] || return 0
   awk -v want="$1" '
     /<item>/ { buf = ""; inside = 1 }
     inside { buf = buf $0 "\n" }
@@ -93,7 +94,7 @@ appcast_items() {
       is_beta = (buf ~ /<sparkle:channel>beta<\/sparkle:channel>/)
       if ((want == "beta") == is_beta) printf "%s", buf
     }
-  ' "$APPCAST"
+  ' "$source"
 }
 
 item_version() {
@@ -144,7 +145,8 @@ SIGN_ARGS=("$DMG")
 [[ -n "$KEY_FILE" ]] && SIGN_ARGS+=(--ed-key-file "$KEY_FILE")
 # macOS ships no timeout(1), so run it in the background and reap it by hand.
 SIGN_OUT="$(mktemp)"
-trap 'rm -f "$SIGN_OUT"' EXIT
+APPCAST_TMP=""
+trap 'rm -f "$SIGN_OUT" "$APPCAST_TMP"' EXIT
 "$SIGN_UPDATE" "${SIGN_ARGS[@]}" >"$SIGN_OUT" 2>&1 &
 SIGN_PID=$!
 ( sleep 60; kill -9 "$SIGN_PID" 2>/dev/null ) 2>/dev/null &
@@ -214,7 +216,19 @@ $CHANGELOG_HTML
 <p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</code> once; updates $TITLE installs itself clear the flag. <a href="$NOTES_URL">Full release notes</a> · <a href="$NOTES_URL">完整发布说明</a></small></p>
 HTML
 
-URL="https://github.com/$REPO_SLUG/releases/download/$TAG_PREFIX$VERSION/$DMG_NAME"
+URL="$(python3 - "$REPO_SLUG" "$TAG_PREFIX$VERSION" "$DMG_NAME" <<'PYURL'
+import sys
+from urllib.parse import quote
+repo, tag, filename = sys.argv[1:]
+print(f"https://github.com/{repo}/releases/download/{quote(tag, safe='')}/{quote(filename, safe='')}")
+PYURL
+)"
+XML_URL="$(python3 - "$URL" <<'PYXML'
+import sys
+from xml.sax.saxutils import quoteattr
+print(quoteattr(sys.argv[1]))
+PYXML
+)"
 PUB_DATE="$(date -u "+%a, %d %b %Y %H:%M:%S +0000")"
 # Read the real deployment target rather than hardcoding one that can drift.
 MIN_OS="$(grep -m1 'MACOSX_DEPLOYMENT_TARGET = ' "$ROOT/LiveWallpaper.xcodeproj/project.pbxproj" \
@@ -236,7 +250,7 @@ NEW_ITEM="$(cat <<XML
       <description sparkle:descriptionFormat="html"><![CDATA[
 $DESCRIPTION
       ]]></description>
-      <enclosure url="$URL" type="application/octet-stream" $SIG_ATTRS />
+      <enclosure url=$XML_URL type="application/octet-stream" $SIG_ATTRS />
     </item>
 XML
 )"
@@ -252,6 +266,7 @@ else
   BETA_ITEM="$NEW_ITEM"
 fi
 
+APPCAST_TMP="$(mktemp "$ROOT/.$(basename "$APPCAST").XXXXXX")"
 {
   cat <<XML
 <?xml version="1.0" encoding="utf-8"?>
@@ -266,21 +281,24 @@ XML
   if [[ -n "$STABLE_ITEM" ]]; then printf '%s\n' "$STABLE_ITEM"; fi
   if [[ -n "$BETA_ITEM" ]]; then printf '%s\n' "$BETA_ITEM"; fi
   printf '  </channel>\n</rss>\n'
-} > "$APPCAST"
+} > "$APPCAST_TMP"
 
-written="$(item_version "$(appcast_items "$CHANNEL")")"
+written="$(item_version "$(appcast_items "$CHANNEL" "$APPCAST_TMP")")"
 if [[ "$written" != "$BUILD" ]]; then
   echo "ERROR: wrote sparkle:version=$written, expected $BUILD" >&2
   exit 1
 fi
-if ! grep -q 'xattr -dr com.apple.quarantine' "$APPCAST"; then
+if ! grep -q 'xattr -dr com.apple.quarantine' "$APPCAST_TMP"; then
   echo "ERROR: $APPCAST carries no quarantine instructions; the update dialog would omit them." >&2
   exit 1
 fi
-if ! xmllint --noout "$APPCAST" 2>/dev/null; then
+if ! xmllint --noout "$APPCAST_TMP" 2>/dev/null; then
   echo "ERROR: $APPCAST is not well-formed XML." >&2
   exit 1
 fi
+chmod 644 "$APPCAST_TMP"
+mv -f "$APPCAST_TMP" "$APPCAST"
+APPCAST_TMP=""
 
 echo "  ✓ wrote $APPCAST"
 echo "    enclosure: $URL"

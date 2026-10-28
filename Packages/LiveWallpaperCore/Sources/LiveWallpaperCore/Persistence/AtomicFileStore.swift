@@ -17,7 +17,7 @@ public struct FileDurabilitySync: Sendable {
 }
 
 public struct AtomicFileStore<Value: Codable> {
-    public enum StoreError: Error, CustomStringConvertible {
+    public enum StoreError: LocalizedError, CustomStringConvertible {
         case writeFailed(underlying: Error)
         case deleteFailed(underlying: Error)
 
@@ -28,6 +28,10 @@ public struct AtomicFileStore<Value: Codable> {
             case let .deleteFailed(error):
                 "AtomicFileStore: delete failed — \(error.localizedDescription)"
             }
+        }
+
+        public var errorDescription: String? {
+            description
         }
     }
 
@@ -272,16 +276,12 @@ public struct AtomicFileStore<Value: Codable> {
         let path = lockURL.path(percentEncoded: false)
         let fd = open(path, O_CREAT | O_RDWR, 0o600)
         guard fd >= 0 else {
-            throw StoreError.writeFailed(underlying: POSIXError(
-                .init(rawValue: errno) ?? .EIO
-            ))
+            throw POSIXError(.init(rawValue: errno) ?? .EIO)
         }
         if flock(fd, LOCK_EX) != 0 {
             let err = errno
             close(fd)
-            throw StoreError.writeFailed(underlying: POSIXError(
-                .init(rawValue: err) ?? .EIO
-            ))
+            throw POSIXError(.init(rawValue: err) ?? .EIO)
         }
         return fd
     }

@@ -123,6 +123,37 @@ struct AtomicFileStoreTests {
         }
     }
 
+    @Test("Lock-open failures retain the operation and original POSIX diagnostic", arguments: ["write", "writeRaw", "delete"])
+    func lockFailureReportsOriginalCause(operation: String) throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AtomicFileStore<TestValue>(fileURL: directory.appendingPathComponent("payload.json"))
+        try FileManager.default.createDirectory(at: store.lockURL, withIntermediateDirectories: false)
+
+        do {
+            switch operation {
+            case "write": try store.write(TestValue(label: "value", count: 1))
+            case "writeRaw": try store.writeRaw(Data("{}".utf8))
+            default: try store.delete()
+            }
+            Issue.record("A directory cannot be opened as the writable lock file")
+        } catch let error as AtomicFileStore<TestValue>.StoreError {
+            let underlying: any Error
+            switch error {
+            case let .writeFailed(cause):
+                #expect(operation != "delete")
+                underlying = cause
+            case let .deleteFailed(cause):
+                #expect(operation == "delete")
+                underlying = cause
+            }
+            let posix = try #require(underlying as? POSIXError, "The operation error must directly contain the POSIX cause")
+            #expect(posix.code == .EISDIR)
+            #expect(error.description.contains(posix.localizedDescription))
+            #expect(error.localizedDescription == error.description)
+        }
+    }
+
     @Test("Delete waits for an in-flight writer, then removes both persisted generations")
     func deleteRemovesBothFiles() throws {
         let directory = try makeTempDirectory()

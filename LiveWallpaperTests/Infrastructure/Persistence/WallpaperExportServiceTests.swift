@@ -125,6 +125,71 @@ struct WallpaperExportServiceTests {
         }
     }
 
+    @Test("A committed selection or clear survives a later cleanup manifest failure", .timeLimit(.minutes(1)), arguments: [false, true])
+    func selectionCommitSurvivesCleanupWriteFailure(clearsSelection: Bool) async throws {
+        let attempts = OSAllocatedUnfairLock(initialState: 0)
+        let rig = try makeRig(manifestWrite: { data, url in
+            let attempt = attempts.withLock { count in
+                count += 1
+                return count
+            }
+            if attempt == 3 {
+                throw POSIXError(.EIO)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        let configuration = ScreenConfiguration(screenID: 42, wallpaper: bookmark.content)
+        let key = try WallpaperExportService.sourceKey(for: bookmark.content)
+        let old = SystemWallpaperManifest.Item(id: "selected-old", title: "Old", fileName: "old.mp4", addedAt: Self.referenceNow)
+        let unused = SystemWallpaperManifest.Item(id: "selected-unused", title: "Unused", fileName: "unused.mp4", addedAt: Self.referenceNow)
+        let target = SystemWallpaperManifest.Item(id: "selected-target", title: "Target", fileName: "target.mp4", addedAt: Self.referenceNow, sourceKey: key)
+        try FileManager.default.createDirectory(at: rig.videosDirectory, withIntermediateDirectories: true)
+        for item in [old, unused, target] {
+            try Data("video".utf8).write(to: rig.videosDirectory.appendingPathComponent(item.fileName))
+        }
+        var initial = SystemWallpaperManifest(version: 1, items: [old, unused, target], selectedItemID: clearsSelection ? nil : old.id)
+        initial.displaySelections["42"] = old.id
+        try SystemWallpaperCoding.encoder.encode(initial).write(to: rig.manifestURL, options: .atomic)
+        rig.service.refresh()
+        try rig.showSelectedTile(on: [42])
+        let coordinator = SystemWallpaperSelectionCoordinator(service: rig.service, notificationCenter: NotificationCenter())
+        defer { coordinator.stop() }
+        coordinator.follow(configuration, title: "Target")
+        if clearsSelection {
+            // The old follow is still queued when this synchronous clear commits.
+            coordinator.clear(displayID: 42)
+        } else {
+            try await waitUntil {
+                guard let phase = coordinator.followState.displays[42]?.phase else { return false }
+                switch phase {
+                case .ready, .failed: return true
+                default: return false
+                }
+            }
+        }
+        let committed = try rig.manifestOnDisk()
+        #expect(attempts.withLock { $0 } == 3, "The third write must be the injected cleanup failure")
+        #expect(committed.items.map(\.id) == [unused.id, target.id], "The first cleanup committed before the second one failed")
+        #expect(rig.service.items == committed.items, "UI must show the last committed manifest")
+        #expect(!FileManager.default.fileExists(atPath: rig.videosDirectory.appendingPathComponent(old.fileName).path))
+        #expect(FileManager.default.fileExists(atPath: rig.videosDirectory.appendingPathComponent(unused.fileName).path), "Failed cleanup must not delete a still-referenced file")
+        #expect(rig.service.lastError?.contains(POSIXError(.EIO).localizedDescription) == true)
+        if clearsSelection {
+            #expect(committed.displaySelections["42"] == nil)
+            #expect(committed.clearedDisplays["42"] == 1)
+            #expect(coordinator.followState.displays[42] == nil, "A committed clear must cancel its old queued follow")
+        } else {
+            #expect(committed.displaySelections["42"] == target.id)
+            #expect(coordinator.followState.displays[42]?.phase == .ready(itemID: target.id), "Cleanup failure must not fail the committed selection")
+        }
+        let bytes = try Data(contentsOf: rig.manifestURL)
+        rig.service.refreshProviderStatus()
+        await Task.yield()
+        #expect(try Data(contentsOf: rig.manifestURL) == bytes, "The committed selection must not be retried or a clear resurrected")
+    }
+
     @Test("A followed copy is named after the wallpaper, not the display")
     func followedCopyTitle() {
         let video = ScreenConfiguration(screenID: 42, wallpaper: .video(bookmarkData: Data("clip".utf8), packageEntryName: nil))
@@ -628,6 +693,7 @@ struct WallpaperExportServiceTests {
         now: Date = referenceNow,
         copyOperation: (@Sendable (URL, URL) throws -> Void)? = nil,
         extractionOperation: (@Sendable (URL, String, URL) throws -> Void)? = nil,
+        manifestWrite: (@Sendable (Data, URL) throws -> Void)? = nil,
         duringThumbnail: PublishHook? = nil,
         expectedProvider: SystemWallpaperProviderIdentity? = nil,
         isProviderRunning: @escaping @Sendable (Int32) -> Bool = { _ in true }
@@ -663,6 +729,9 @@ struct WallpaperExportServiceTests {
         )
         if let extractionOperation {
             dependencies.extractVideoFromPackage = extractionOperation
+        }
+        if let manifestWrite {
+            dependencies.writeManifestData = manifestWrite
         }
         let service = WallpaperExportService(dependencies: dependencies)
         return Rig(service: service, root: root, sourceDirectory: sources)

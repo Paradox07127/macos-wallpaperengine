@@ -294,6 +294,108 @@ if ! grep -q 'xattr -dr com.apple.quarantine' scripts/generate-appcast.sh; then
   exit 1
 fi
 
+# Run the real writer/verifier against the RFC 8032 archive and an isolated feed;
+# the fixture signer only emits its published test-vector signature, never a key.
+python3 - <<'PYAPPCAST'
+import base64
+import os
+from pathlib import Path
+import plistlib
+import shutil
+import subprocess
+import tempfile
+from urllib.parse import quote
+import xml.etree.ElementTree as ET
+
+public_key = bytes.fromhex("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c")
+signature = bytes.fromhex(
+    "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085a"
+    "c1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00"
+)
+previous_feed = b'''<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <item>
+      <sparkle:version>0.9.2</sparkle:version>
+      <description>xattr -dr com.apple.quarantine</description>
+    </item>
+  </channel>
+</rss>
+'''
+
+with tempfile.TemporaryDirectory(prefix="loomscreen-appcast-contract-") as temporary:
+    root = Path(temporary)
+    scripts = root / "scripts"
+    scripts.mkdir()
+    for name in ("generate-appcast.sh", "verify-sparkle-signature.swift"):
+        shutil.copy2(Path("scripts") / name, scripts / name)
+    for name in ("LoomscreenInfo.plist", "LiveWallpaperInfo.plist"):
+        (root / name).write_bytes(plistlib.dumps({"SUPublicEDKey": base64.b64encode(public_key).decode()}))
+    project = root / "LiveWallpaper.xcodeproj"
+    project.mkdir()
+    (project / "project.pbxproj").write_text("MACOSX_DEPLOYMENT_TARGET = 14.6;\n")
+    derived = root / "derived"
+    signer = derived / "artifacts/sparkle/Sparkle/bin/sign_update"
+    signer.parent.mkdir(parents=True)
+    signer.write_text("#!/bin/sh\nprintf '%s\\n' 'sparkle:edSignature=\""
+                      + base64.b64encode(signature).decode() + "\" length=\"1\"'\n")
+    signer.chmod(0o700)
+    stub_bin = root / "bin"
+    stub_bin.mkdir()
+
+    def run(sku, archive_name, fault=None):
+        feed = root / f"appcast-{sku}.xml"
+        feed.write_bytes(previous_feed)
+        archive = root / archive_name
+        archive.write_bytes(b"r")
+        for stub in stub_bin.iterdir():
+            stub.unlink()
+        if fault == "validation":
+            stub = stub_bin / "xmllint"
+            stub.write_text("#!/bin/sh\nexit 1\n")
+            stub.chmod(0o700)
+        elif fault == "write":
+            stub = stub_bin / "cat"
+            stub.write_text('''#!/bin/bash
+if [[ $# -eq 0 ]]; then
+  input="$(/bin/cat)"
+  if [[ "$input" == '<?xml version='* ]]; then
+    printf 'partial XML'
+    exit 74
+  fi
+  printf '%s\\n' "$input"
+else
+  /bin/cat "$@"
+fi
+''')
+            stub.chmod(0o700)
+        environment = dict(os.environ, PATH=str(stub_bin) + os.pathsep + os.environ["PATH"])
+        with (root / "writer.log").open("w+") as log:
+            result = subprocess.run(
+                ["bash", str(scripts / "generate-appcast.sh"), "--sku", sku, "--version", "0.9.3",
+                 "--dmg", str(archive), "--derived-data", str(derived)],
+                env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=90,
+            )
+            log.seek(0)
+            output = log.read()
+        if fault:
+            assert result.returncode != 0, f"{fault} control did not fail"
+            assert feed.read_bytes() == previous_feed, f"{fault} failure replaced the previous valid feed"
+        else:
+            assert result.returncode == 0, output
+            enclosure = ET.fromstring(feed.read_bytes()).find("./channel/item/enclosure")
+            assert enclosure is not None
+            expected = "https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.3/" + quote(archive_name, safe="")
+            assert enclosure.attrib["url"] == expected, enclosure.attrib["url"]
+        assert not list(root.glob(f".appcast-{sku}.xml.*")), "temporary appcast output leaked"
+
+    for sku in ("lite", "pro"):
+        run(sku, 'release &"#%?.dmg')
+        run(sku, "release.dmg", "validation")
+        run(sku, "release.dmg", "write")
+print("Appcast writer: encoded filenames and failed validation/write preservation passed for both SKUs")
+PYAPPCAST
+
 if grep -Eq -- '(^|[ ="])-lc\+\+|CLANG_CXX_LIBRARY|c\+\+17|gnu\+\+17' "$project_file"; then
   echo "ERROR: removed manual libc++/target C++17 settings resurfaced." >&2
   exit 1
