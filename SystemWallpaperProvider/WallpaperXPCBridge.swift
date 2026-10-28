@@ -352,6 +352,7 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             (#selector(WallpaperExtensionXPCProtocol.addChoiceRequest(request:onBehalfOfProcess:reply:)), [0, 1]),
             (#selector(WallpaperExtensionXPCProtocol.removeChoiceRequest(request:reply:)), [0]),
             (#selector(WallpaperExtensionXPCProtocol.selectedChoicesDidChange(for:reply:)), [0]),
+            (#selector(WallpaperExtensionXPCProtocol.restoreSelectedChoices(for:reply:)), [0]),
             (#selector(WallpaperExtensionXPCProtocol.invokeContextMenuAction(menuItemID:groupItemID:reply:)), [0, 1]),
             (#selector(WallpaperExtensionNumberDownloadXPCProtocol.isChoiceDownloaded(with:reply:)), [0]),
             // Stubs, but stubs the system can still call: an un-allowlisted

@@ -198,12 +198,13 @@ See [Workspace](workspace.md#arrange-overlays).
   cover-derived accents, drag placement and optional lyrics. Pro adds system
   audio-driven visual effects, including Wave, when Audio Response is enabled.
 
-Track changes come from Spotify/Apple Music notifications, with a startup
-state read when needed. Apple Music's missing playhead is queried through
-Apple Events while the source is active, so progress and synchronized lyrics
-can follow it when Automation permission is granted. Playback buttons and
-seeking use the same permission boundary. Without a usable playhead or timed
-lyrics, the display falls back rather than inventing timing.
+Pro follows the system Now Playing session, showing the metadata, artwork and
+progress its player supplies. Play/pause, previous and next appear when supported;
+system-source seeking is not available. Availability depends on the player and
+macOS. Lite uses Spotify/Apple Music notifications; Pro keeps them as a fallback.
+AppleScript controls and supplementary playhead queries for Spotify/Music use
+Automation permission. Without a usable playhead or timed lyrics, the display
+falls back rather than inventing timing.
 
 Cover art and optional LRCLIB lyrics use HTTPS host allowlists, response-size
 limits and caches. Lyrics are off by default. Preview artwork uses cached

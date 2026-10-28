@@ -60,7 +60,7 @@ The menu bar keeps everyday controls close. Closing the management window keeps 
 - **Menu bar first** — global on/off, per-display play/pause and prev/next, plus a live CPU / GPU / RAM / thermal strip.
 - **One overlay canvas** — arrange eleven widget types, a freely resizable Nixie or Split-Flap clock and music per display. Add 12 particle effects and weather response through the effect layer.
 - **Opening & switching animations** — choose how your desktop appears and how wallpapers change, with simpler motion under Reduce Motion and Low Power Mode.
-- **Music layer** — Spotify and Apple Music, Poster/Vinyl/Aurora layouts, cover art, playback controls and optional synchronized lyrics. Pro adds system audio-driven visual effects.
+- **Music layer** — Spotify and Apple Music, plus the system Now Playing source in Pro, Poster/Vinyl/Aurora layouts, cover art, playback controls and optional synchronized lyrics. Pro adds system audio-driven visual effects.
 - **System Wallpaper (macOS 26+)** — publish videos to the macOS wallpaper provider so they can play with Loomscreen closed, subject to provider compatibility.
 - **Power-aware playback** — configurable full-screen, occlusion, battery and Low Power Mode rules; lock/sleep and resource-pressure handling preserve your play/pause intent.
 - **Global shortcuts** — eight bindable actions, from play/pause-all to reload.

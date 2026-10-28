@@ -26,8 +26,10 @@ there are no backports to earlier minor versions.
   project/dependency roots and the Steam library. The app also has platform
   permissions for enabled features; it is not limited to reading one wallpaper.
 - **Music** uses Spotify/Apple Music notifications and Apple Events for control
-  and playhead reads. Artwork and optional lyrics have HTTPS host allowlists,
-  size limits and caches. Lyrics are off by default.
+  and supplementary playhead reads. Pro also reads the system Now Playing session
+  through a bounded local subprocess using a private macOS media bridge; available
+  metadata and commands depend on the player and system. Artwork and optional
+  lyrics have HTTPS host allowlists, size limits and caches. Lyrics are off by default.
 - **Agent Session** reads local session records for status. Diagnostic exports
   are generated locally and redacted; review them before sharing.
 

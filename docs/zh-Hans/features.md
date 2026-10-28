@@ -121,9 +121,10 @@ URL、HTML 文件、本地文件夹和内联 HTML 通过 WKWebView 运行。可�
 - **Agent 会话**：读取本地 Claude Code 与 Codex 会话记录呈现状态；ANE 内存表示内存占用，不是神经引擎利用率。
 - **音乐 / 正在播放**：独立的 Poster、Vinyl、Aurora 布局，封面取色、拖拽定位和可选歌词。Pro 开启音频响应后可使用含 Wave 在内的系统音频视觉效果。
 
-曲目信息来自 Spotify/Apple Music 通知，必要时在启动阶段读取现有状态。
-Apple Music 通知缺少播放位置，数据源活动时会通过 Apple Events 查询；授予自动化权限后，
-进度与同步歌词可以跟随它。播放控制与跳转使用同一权限边界。
+Pro 跟随系统“正在播放”会话，显示播放器提供的元数据、封面与进度；支持时提供播放/暂停、
+上一首和下一首，系统来源暂不支持拖动进度。可用性取决于播放器及 macOS。
+Lite 使用 Spotify/Apple Music 通知；Pro 也保留它们作为回退。
+Spotify/Music 的 AppleScript 控制与补充播放位置查询使用自动化授权。
 缺少可用播放位置或带时间歌词时会降级显示，不伪造同步时间。
 
 封面与可选 LRCLIB 歌词通过 HTTPS 域名白名单、响应大小限制和缓存获取。

@@ -22,6 +22,8 @@ import Foundation
     func removeChoiceRequest(request: Any?, reply: @escaping @Sendable (Error?) -> Void)
     @objc(selectedChoicesDidChangeFor:reply:)
     func selectedChoicesDidChange(for id: Any?, reply: @escaping @Sendable (Error?) -> Void)
+    @objc(restoreSelectedChoicesFor:reply:)
+    func restoreSelectedChoices(for ids: Any?, reply: @escaping @Sendable (Error?) -> Void)
     @objc(invokeContextMenuActionWithMenuItemID:groupItemID:reply:)
     func invokeContextMenuAction(menuItemID: Any?, groupItemID: Any?, reply: @escaping @Sendable (Error?) -> Void)
     // Downloads

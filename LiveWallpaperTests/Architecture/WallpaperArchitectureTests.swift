@@ -1069,107 +1069,140 @@ struct WallpaperAutomationCoordinatorTests {
 
     @Test("Library shuffle rewinds through its in-memory history and draws the returned card first")
     func libraryShuffleRewindsThroughHistory() async throws {
-        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
-        var library = ["a", "b", "c", "d"].map {
-            WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default))
+        let scenario = try LibraryShuffleHistoryScenario()
+        let drawn = try await scenario.verifyRewindAndReset()
+        try await scenario.verifyChangedLibrary(after: drawn)
+    }
+
+    @MainActor
+    private struct LibraryShuffleHistoryScenario {
+        @MainActor
+        private final class State {
+            var library = ["a", "b", "c", "d"].map {
+                WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default))
+            }
+            var restored: [WallpaperContent] = []
         }
-        let initialContent = library[0].content
-        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: initialContent, fitMode: .aspectFit)
-        initial.wallpaperMode = .libraryShuffle
-        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
-        var restored: [WallpaperContent] = []
-        let orchestrator = WallpaperAutomationOrchestrator(
-            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
-            saveConfiguration: { store.save($0) },
-            restoreProposedConfiguration: { _, _ in },
-            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
-            prepareAutomation: { _, proposed, _, intended in
-                guard intended() else { return .cancelled }
-                restored.append(proposed.activeWallpaper)
-                store.save(proposed)
-                return .ready
-            },
-            libraryEntries: { library.map(LibraryShuffleCandidate.init) }, libraryEntryAvailable: { _ in true }
-        )
-        func land(_ step: () -> Void) async throws -> WallpaperContent {
-            let count = restored.count
+
+        private let state: State
+        private let screen: Screen
+        private let initialContent: WallpaperContent
+        private let store: WallpaperConfigurationStore
+        private let orchestrator: WallpaperAutomationOrchestrator
+
+        init() throws {
+            let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+            let state = State()
+            let initialContent = state.library[0].content
+            var initial = ScreenConfiguration(screenID: screen.id, wallpaper: initialContent, fitMode: .aspectFit)
+            initial.wallpaperMode = .libraryShuffle
+            let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([initial]))
+            self.state = state
+            self.screen = screen
+            self.initialContent = initialContent
+            self.store = store
+            orchestrator = WallpaperAutomationOrchestrator(
+                configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(), screensProvider: { [screen] },
+                saveConfiguration: { store.save($0) }, restoreProposedConfiguration: { _, _ in },
+                bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true },
+                prepareAutomation: { _, proposed, _, intended in
+                    guard intended() else { return .cancelled }
+                    state.restored.append(proposed.activeWallpaper)
+                    store.save(proposed)
+                    return .ready
+                },
+                libraryEntries: { state.library.map(LibraryShuffleCandidate.init) }, libraryEntryAvailable: { _ in true }
+            )
+        }
+
+        private func land(_ step: () -> Void) async throws -> WallpaperContent {
+            let count = state.restored.count
             step()
-            for _ in 0 ..< 50 where restored.count == count {
+            for _ in 0 ..< 50 where state.restored.count == count {
                 await Task.yield()
             }
-            return try #require(restored.count == count + 1 ? restored.last : nil)
+            return try #require(state.restored.count == count + 1 ? state.restored.last : nil)
         }
-        func expectLand(_ expected: WallpaperContent, _ step: () -> Void) async throws {
+
+        private func expectLand(_ expected: WallpaperContent, _ step: () -> Void) async throws {
             let actual = try await land(step)
             #expect(actual == expected)
         }
-        func played() -> [WallpaperContent] {
+
+        private var played: [WallpaperContent] {
             orchestrator.shuffleDecks[screen.id].played.map(\.content)
         }
-        func returned() -> [WallpaperContent] {
+
+        private var returned: [WallpaperContent] {
             orchestrator.shuffleDecks[screen.id].returned.map(\.content)
         }
 
-        let first = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
-        let second = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
-        #expect(played() == [initialContent, first])
-        #expect(orchestrator.shuffleDecks[screen.id].played.first?.id == library[0].id)
-
-        try await expectLand(first) { orchestrator.regressLibraryShuffle(for: screen) }
-        #expect(played() == [initialContent])
-        #expect(returned() == [second])
-
-        try await expectLand(initialContent) { orchestrator.regressLibraryShuffle(for: screen) }
-        #expect(played().isEmpty)
-        #expect(returned() == [second, first])
-
-        orchestrator.regressLibraryShuffle(for: screen)
-        for _ in 0 ..< 50 {
-            await Task.yield()
-        }
-        #expect(restored.count == 4)
-        #expect(store.get(for: screen.id)?.activeWallpaper == initialContent)
-
-        try await expectLand(first) { orchestrator.advanceLibraryShuffle(for: screen) }
-        #expect(played() == [initialContent])
-        #expect(returned() == [second])
-
-        func pick(_ content: WallpaperContent) throws {
+        private func pick(_ content: WallpaperContent) throws {
             var config = try #require(store.get(for: screen.id))
             config.activeWallpaper = content
             store.save(config)
         }
-        try pick(initialContent)
-        orchestrator.regressLibraryShuffle(for: screen)
-        #expect(played().isEmpty)
-        try pick(second)
-        let drawn = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
-        #expect(drawn != second)
-        #expect(returned().isEmpty)
 
-        orchestrator.reshuffleLibrary(for: screen)
-        #expect(orchestrator.shuffleDecks[screen.id] == LibraryShuffleDeck())
-        #expect(store.get(for: screen.id)?.activeWallpaper == drawn)
+        func verifyRewindAndReset() async throws -> WallpaperContent {
+            let first = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+            let second = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+            #expect(played == [initialContent, first])
+            #expect(orchestrator.shuffleDecks[screen.id].played.first?.id == state.library[0].id)
 
-        let current = try #require(library.first { $0.content == drawn })
-        let removed = try #require(library.first { $0.id != current.id })
-        let replacement = try #require(library.first { $0.id != current.id && $0.id != removed.id })
-        library = [current, removed]
-        try await expectLand(removed.content) { orchestrator.advanceLibraryShuffle(for: screen) }
-        try await expectLand(drawn) { orchestrator.advanceLibraryShuffle(for: screen) }
-        library = [current]
-        let count = restored.count
-        orchestrator.regressLibraryShuffle(for: screen)
-        for _ in 0 ..< 50 {
-            await Task.yield()
+            try await expectLand(first) { orchestrator.regressLibraryShuffle(for: screen) }
+            #expect(played == [initialContent])
+            #expect(returned == [second])
+
+            try await expectLand(initialContent) { orchestrator.regressLibraryShuffle(for: screen) }
+            #expect(played.isEmpty)
+            #expect(returned == [second, first])
+
+            orchestrator.regressLibraryShuffle(for: screen)
+            for _ in 0 ..< 50 {
+                await Task.yield()
+            }
+            #expect(state.restored.count == 4)
+            #expect(store.get(for: screen.id)?.activeWallpaper == initialContent)
+
+            try await expectLand(first) { orchestrator.advanceLibraryShuffle(for: screen) }
+            #expect(played == [initialContent])
+            #expect(returned == [second])
+
+            try pick(initialContent)
+            orchestrator.regressLibraryShuffle(for: screen)
+            #expect(played.isEmpty)
+            try pick(second)
+            let drawn = try await land { orchestrator.advanceLibraryShuffle(for: screen) }
+            #expect(drawn != second)
+            #expect(returned.isEmpty)
+
+            orchestrator.reshuffleLibrary(for: screen)
+            #expect(orchestrator.shuffleDecks[screen.id] == LibraryShuffleDeck())
+            #expect(store.get(for: screen.id)?.activeWallpaper == drawn)
+            return drawn
         }
-        #expect(restored.count == count, "a removed history row played again")
 
-        library = [current, removed]
-        try await expectLand(removed.content) { orchestrator.advanceLibraryShuffle(for: screen) }
-        try await expectLand(drawn) { orchestrator.regressLibraryShuffle(for: screen) }
-        library = [current, replacement]
-        try await expectLand(replacement.content) { orchestrator.advanceLibraryShuffle(for: screen) }
+        func verifyChangedLibrary(after drawn: WallpaperContent) async throws {
+            let current = try #require(state.library.first { $0.content == drawn })
+            let removed = try #require(state.library.first { $0.id != current.id })
+            let replacement = try #require(state.library.first { $0.id != current.id && $0.id != removed.id })
+            state.library = [current, removed]
+            try await expectLand(removed.content) { orchestrator.advanceLibraryShuffle(for: screen) }
+            try await expectLand(drawn) { orchestrator.advanceLibraryShuffle(for: screen) }
+            state.library = [current]
+            let count = state.restored.count
+            orchestrator.regressLibraryShuffle(for: screen)
+            for _ in 0 ..< 50 {
+                await Task.yield()
+            }
+            #expect(state.restored.count == count, "a removed history row played again")
+
+            state.library = [current, removed]
+            try await expectLand(removed.content) { orchestrator.advanceLibraryShuffle(for: screen) }
+            try await expectLand(drawn) { orchestrator.regressLibraryShuffle(for: screen) }
+            state.library = [current, replacement]
+            try await expectLand(replacement.content) { orchestrator.advanceLibraryShuffle(for: screen) }
+        }
     }
 
     @Test("Library shuffle has its own timer without needing a playlist")

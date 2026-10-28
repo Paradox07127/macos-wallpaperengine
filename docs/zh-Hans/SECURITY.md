@@ -14,7 +14,7 @@
 - **Steam Web API key** 新保存到登录钥匙串。旧版仅属主可读的 Application Support 文件在钥匙串写入并确认后迁移；迁移被拒时，旧文件可能继续可用。配置导出不含 key。
 - **Steam 登录**可在应用内完成，支持 Steam Guard。凭据经连接器交给 SteamCMD 的终端输入；Loomscreen 不保存密码/Guard code，不把它们放进命令参数或日志。SteamCMD 在逐账号 profile 中维护缓存登录。
 - **文件访问**通过用户选定目录和 security-scoped bookmark 授权媒体、项目/依赖与 Steam 库。应用还为启用的功能持有相应平台权限，访问范围不只是一个壁纸文件。
-- **音乐**使用 Spotify/Apple Music 通知，并以 Apple Events 控制和读取播放位置；封面与可选歌词有 HTTPS 域名白名单、大小限制和缓存，歌词默认关闭。
+- **音乐**使用 Spotify/Apple Music 通知，并以 Apple Events 控制和补充读取播放位置。Pro 还通过有资源限制的本地子进程使用 macOS 私有媒体桥接读取系统“正在播放”会话；可用元数据和指令取决于播放器及系统。封面与可选歌词有 HTTPS 域名白名单、大小限制和缓存，歌词默认关闭。
 - **Agent 会话**读取本地会话记录呈现状态。诊断在本地生成并脱敏，分享前请检查内容。
 
 ## 进程与内容边界

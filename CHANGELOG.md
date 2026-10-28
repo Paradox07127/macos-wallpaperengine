@@ -17,7 +17,7 @@ what shipped at that time; current behavior is documented in `docs/`.
 
 ### Added
 
-- The music layer can follow the system Now Playing source, including compatible
+- Pro: the music layer can follow the system Now Playing source, including compatible
   players beyond Spotify and Apple Music.
 - Drag one display onto another in Overview to copy its wallpaper setup.
 

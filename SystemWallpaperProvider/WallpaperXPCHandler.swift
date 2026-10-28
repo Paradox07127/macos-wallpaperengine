@@ -324,6 +324,11 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionNumberDownloadXPCPr
 
     // MARK: - Choices
 
+    func restoreSelectedChoices(for _: Any?, reply: @escaping @Sendable (Error?) -> Void) {
+        // Published choices are already local; acquire owns restoring their surfaces.
+        reply(nil)
+    }
+
     func selectedChoicesDidChange(for id: Any?, reply: @escaping @Sendable (Error?) -> Void) {
         // Deliberately no renderer work: the callback carries no display,
         // and the system follows with invalidate + acquire (contract §9 坑
