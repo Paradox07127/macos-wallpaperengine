@@ -1076,6 +1076,7 @@ struct WallpaperAutomationCoordinatorTests {
 
     @MainActor
     private struct LibraryShuffleHistoryScenario {
+
         @MainActor
         private final class State {
             var library = ["a", "b", "c", "d"].map {
