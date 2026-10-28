@@ -157,8 +157,8 @@ final actor NowPlayingSource: MonitorDataSource {
         generation &+= 1
         let id = subscriptionID
         subscriptionID = UUID()
-        let monitor = self.monitor
-        self.monitor = nil
+        let retiredMonitor = monitor
+        monitor = nil
         sink = nil
         stopPositionPolling()
         artworkTask?.cancel()
@@ -171,8 +171,8 @@ final actor NowPlayingSource: MonitorDataSource {
         // subscribe replay.
         lastForwardedOrdinal = nil
         await setAudioDemand(false)
-        guard let monitor else { return }
-        await MainActor.run { monitor.unsubscribe(id: id) }
+        guard let retiredMonitor else { return }
+        await MainActor.run { retiredMonitor.unsubscribe(id: id) }
     }
 
     private func push(_ state: MonitorNowPlayingState, ordinal: UInt64, sourceGeneration: UInt64) async {

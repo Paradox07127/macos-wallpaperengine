@@ -14,7 +14,9 @@ final class NowPlayingControllerTests: XCTestCase {
         let controller = NowPlayingController(systemExecutor: { command, _ in
             if command == 4 {
                 firstEntered.fulfill()
-                for await _ in releaseFirst.stream { break }
+                for await _ in releaseFirst.stream {
+                    break
+                }
             }
             submitted.mutate { $0.append(command) }
         })
