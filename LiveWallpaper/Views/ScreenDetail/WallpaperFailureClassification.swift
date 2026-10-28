@@ -55,9 +55,11 @@ enum WallpaperFailureRecovery: Equatable, Hashable {
     /// Re-point at content we can no longer open. Distinct from `.retry`:
     /// trying the same unreachable path again cannot succeed.
     case chooseSource
+    #if !MAS_BUILD
     case copyDependencyIDs([String])
     case openWorkshop(String)
     case configureEngineAssets
+    #endif
 }
 
 extension WallpaperFailureCause {
@@ -110,9 +112,11 @@ extension WallpaperFailureCause {
         workshopID: String?, canChooseSource: Bool, engineAssetsAuthorized: Bool = true
     ) -> [WallpaperFailureRecovery] {
         var actions: [WallpaperFailureRecovery] = []
+        #if !MAS_BUILD
         if !engineAssetsAuthorized, code == "graph.file_missing" || code == "scene.file_missing" {
             actions.append(.configureEngineAssets)
         }
+        #endif
         // `canRetry` is the producers' call but cannot outvote a fatal code:
         // `WPEImportCoordinator` emits `scene.windows_plugin` with `canRetry: true`.
         if failureClass != .fatal {
@@ -122,9 +126,11 @@ extension WallpaperFailureCause {
                 actions.append(.retry)
             }
         }
+        #if !MAS_BUILD
         if let workshopID, !workshopID.isEmpty, workshopID.allSatisfy(\.isNumber) {
             actions.append(.openWorkshop(workshopID))
         }
+        #endif
         return actions
     }
 }
@@ -166,6 +172,7 @@ struct WallpaperFailureRecoveryActions: View {
                     .accessibilityHint(Text("Opens a folder chooser to link and apply a local project in place"))
                 }
             }
+        #if !MAS_BUILD
         case let .copyDependencyIDs(ids):
             emphasised(isPrimary) {
                 Button {
@@ -215,6 +222,7 @@ struct WallpaperFailureRecoveryActions: View {
                 }
                 .accessibilityHint(Text("Opens the Workshop settings page to download or link Wallpaper Engine assets"))
             }
+        #endif
         }
     }
 
@@ -229,10 +237,12 @@ struct WallpaperFailureRecoveryActions: View {
         }
     }
 
+    #if !MAS_BUILD
     private func openWorkshop(workshopID: String) {
         var components = URLComponents(string: "https://steamcommunity.com/sharedfiles/filedetails/")
         components?.queryItems = [URLQueryItem(name: "id", value: workshopID)]
         guard let url = components?.url else { return }
         NSWorkspace.shared.open(url)
     }
+    #endif
 }

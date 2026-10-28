@@ -177,6 +177,7 @@ struct WallpaperModal: View {
                 title: Text(verbatim: notice)
             )
         }
+        #if !MAS_BUILD
         if content.isUnavailableOnSteam {
             InlineNoticeBanner(
                 tint: DesignTokens.Colors.Status.danger,
@@ -184,6 +185,7 @@ struct WallpaperModal: View {
                 title: Text("Unavailable — removed or hidden on Steam")
             )
         }
+        #endif
         #if !LITE_BUILD
         if let text = content.descriptionText {
             WallpaperDetailSection(title: Text("Description")) {

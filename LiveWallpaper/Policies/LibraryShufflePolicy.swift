@@ -54,11 +54,13 @@ enum LibraryShufflePolicy {
                 WallpaperQueueEntry(id: "bookmark:\(bookmark.id)", title: bookmark.label, content: bookmark.content, origin: bookmark.wpeOrigin)
             )
         }
+        #if !MAS_BUILD
         entries += AppleAerialsLibrary.shared.assets.map {
             LibraryShuffleCandidate(
                 WallpaperQueueEntry(id: "aerial:\($0.url.path)", title: $0.displayName, content: .video(bookmarkData: $0.bookmarkData))
             )
         }
+        #endif
         return entries.filter { $0.resolvedEntry.map { canRender($0.content.wallpaperType) } ?? true }
     }
 

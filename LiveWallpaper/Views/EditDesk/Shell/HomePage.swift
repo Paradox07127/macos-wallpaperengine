@@ -906,10 +906,26 @@ struct HomePage: View {
                 filterCount: countLibraryItems(for:),
                 onImport: promptLibraryImport,
                 keepsImportOnShelf: library?.items.isEmpty == true,
-                showsAerialsControls: library?.chip == .aerials && library?.aerialsStatus.isAuthorized == true
+                showsAerialsControls: showsAerialsControls
             )
             shelfEmptyHint
         }
+    }
+
+    private var showsAerialsControls: Bool {
+        #if MAS_BUILD
+        false
+        #else
+        library?.chip == .aerials && library?.aerialsStatus.isAuthorized == true
+        #endif
+    }
+
+    private static func showsAerialsStatus(_ library: SavedLibraryModel) -> Bool {
+        #if MAS_BUILD
+        false
+        #else
+        library.chip == .aerials && library.aerialsStatus.isEmpty
+        #endif
     }
 
     private func countLibraryItems(for filter: SavedLibraryModel.Filter) -> Int {
@@ -921,8 +937,10 @@ struct HomePage: View {
     @ViewBuilder
     private var shelfEmptyHint: some View {
         if router.page == .home, let library, library.visibleItems.isEmpty {
-            if library.chip == .aerials, library.aerialsStatus.isEmpty {
+            if Self.showsAerialsStatus(library) {
+                #if !MAS_BUILD
                 AerialsSourceStatusCard(presentation: .inline)
+                #endif
             } else {
                 Text(library.items.isEmpty ? "No wallpapers yet" : "No Results")
                     .font(DesignTokens.EditDesk.Typography.chip)
@@ -995,7 +1013,9 @@ struct HomePage: View {
         case .recent: "Recent"
         case .steam: "Steam"
         case .local: "Local"
+        #if !MAS_BUILD
         case .aerials: "Aerials"
+        #endif
         }
     }
 
@@ -1008,7 +1028,7 @@ struct HomePage: View {
     /// Which of `wallpaperGrid`'s branches is showing; nil without a library model.
     private var libraryGridContent: LibraryGridContent? {
         guard let library else { return nil }
-        if library.chip == .aerials, library.aerialsStatus.isEmpty {
+        if Self.showsAerialsStatus(library) {
             return .aerialsStatus
         }
         if library.visibleItems.isEmpty {
@@ -1026,9 +1046,11 @@ struct HomePage: View {
                         libraryTargetBanner(for: screen)
                             .transition(.opacity)
                     }
-                    if let library, library.chip == .aerials, library.aerialsStatus.isEmpty {
+                    if let library, Self.showsAerialsStatus(library) {
+                        #if !MAS_BUILD
                         AerialsSourceStatusCard()
                             .transition(.opacity)
+                        #endif
                     } else if let library, library.visibleItems.isEmpty {
                         if library.items.isEmpty {
                             LibraryGuideCard(

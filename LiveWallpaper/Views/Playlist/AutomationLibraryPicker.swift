@@ -64,7 +64,11 @@ struct AutomationLibraryPicker: View {
     /// nil shows every kind.
     @State private var kindName: String?
 
+    #if !MAS_BUILD
     private static let kinds: [LibraryItem.Kind] = [.video, .web, .scene, .aerial]
+    #else
+    private static let kinds: [LibraryItem.Kind] = [.video, .web, .scene]
+    #endif
 
     init(
         library: SavedLibraryModel, thumbnails: ShelfThumbnailCache, purpose: Purpose, width: CGFloat,

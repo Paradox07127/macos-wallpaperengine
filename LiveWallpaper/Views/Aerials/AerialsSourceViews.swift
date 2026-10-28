@@ -1,3 +1,4 @@
+#if !MAS_BUILD
 import AppKit
 import LiveWallpaperCore
 import SwiftUI
@@ -149,3 +150,4 @@ struct AerialsSourceControls: View {
         .confirmDestructive($pendingDestructive)
     }
 }
+#endif

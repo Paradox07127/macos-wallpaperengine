@@ -39,9 +39,11 @@ extension QAControlPlane {
 
     func libraryRefresh(_ arguments: [String: Any]) async throws -> Any {
         try QALibraryCatalog.validateKeys(arguments, allowed: [])
+        #if !MAS_BUILD
         if AppleAerialsLibrary.shared.isAuthorized {
             await AppleAerialsLibrary.shared.refresh()
         }
+        #endif
         return try libraryList([:])
     }
 

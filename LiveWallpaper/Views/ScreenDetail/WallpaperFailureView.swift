@@ -44,12 +44,16 @@ struct WallpaperFailureView: View {
             engineAssetsAuthorized: engineAssetsAuthorized
         )
         guard isCurrentAttempt else {
+            #if MAS_BUILD
+            return []
+            #else
             return actions.filter { action in
                 if case .openWorkshop = action {
                     return true
                 }
                 return false
             }
+            #endif
         }
         return actions
     }
@@ -99,6 +103,7 @@ struct WallpaperFailureView: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, DesignTokens.Spacing.md)
+                #if !MAS_BUILD
                 if recovery.contains(.configureEngineAssets) {
                     Text("Set up Wallpaper Engine assets in Settings › Workshop, then retry this wallpaper.")
                         .font(DesignTokens.Typography.body)
@@ -106,6 +111,7 @@ struct WallpaperFailureView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, DesignTokens.Spacing.md)
                 }
+                #endif
                 actionRow
                     .padding(.top, DesignTokens.Spacing.xl)
             }

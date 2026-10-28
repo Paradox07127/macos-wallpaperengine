@@ -111,7 +111,10 @@ struct WallpaperTagChip: Equatable, Identifiable {
 /// A title-row button of the detail modal: one "…" row that is not an apply.
 struct ModalHeaderAction: Identifiable {
     enum Kind: Hashable {
-        case showInFinder, copyLink, openInSteam, rename, removeFromLibrary, delete
+        case showInFinder, copyLink, rename, removeFromLibrary, delete
+        #if !MAS_BUILD
+        case openInSteam
+        #endif
         case bookmark(isBookmarked: Bool)
         case like(isLiked: Bool)
     }
@@ -131,7 +134,11 @@ struct ModalHeaderAction: Identifiable {
     var group: Int {
         switch kind {
         case .bookmark, .like, .rename: 0
+        #if !MAS_BUILD
         case .showInFinder, .openInSteam, .copyLink: 1
+        #else
+        case .showInFinder, .copyLink: 1
+        #endif
         case .removeFromLibrary, .delete: 2
         }
     }
@@ -145,7 +152,9 @@ struct ModalHeaderAction: Identifiable {
         switch kind {
         case .showInFinder: "folder"
         case .copyLink: "link"
+        #if !MAS_BUILD
         case .openInSteam: "arrow.up.forward.app"
+        #endif
         case .rename: "pencil"
         case .removeFromLibrary, .delete: "trash"
         case let .bookmark(isBookmarked): isBookmarked ? "bookmark.fill" : "bookmark"
@@ -166,7 +175,9 @@ struct ModalHeaderAction: Identifiable {
         switch kind {
         case .showInFinder: String(localized: "Show in Finder", bundle: .appLanguage)
         case .copyLink: String(localized: "Copy link", bundle: .appLanguage)
+        #if !MAS_BUILD
         case .openInSteam: String(localized: "Open in Steam", bundle: .appLanguage)
+        #endif
         case .rename:
             String(
                 localized: "Rename", bundle: .appLanguage,
@@ -230,7 +241,9 @@ struct WallpaperModalActions {
     var showDisplay: (@MainActor (CGDirectDisplayID) -> Void)?
     /// The context menus' rows and the modal's title-row buttons.
     var showInFinder: (@MainActor () -> Void)?
+    #if !MAS_BUILD
     var openInSteam: (@MainActor () -> Void)?
+    #endif
     var removeFromSaved: (@MainActor () -> Void)?
     /// Installed Workshop items with an available update only.
     var checkForUpdate: (@MainActor () -> Void)?
@@ -265,9 +278,11 @@ extension WallpaperModalActions {
         if let showInFinder {
             actions.append(ModalHeaderAction(kind: .showInFinder, perform: showInFinder))
         }
+        #if !MAS_BUILD
         if let openInSteam {
             actions.append(ModalHeaderAction(kind: .openInSteam, perform: openInSteam))
         }
+        #endif
         if let removeFromSaved {
             actions.append(ModalHeaderAction(kind: .removeFromLibrary, perform: removeFromSaved))
         }
@@ -348,11 +363,13 @@ extension WallpaperModalActions {
                 title: String(localized: "Show in Finder", bundle: .appLanguage), isEnabled: true, action: showInFinder
             ))
         }
+        #if !MAS_BUILD
         if let openInSteam {
             reveal.append(StageMenuItem(
                 title: String(localized: "Open in Steam", bundle: .appLanguage), isEnabled: true, action: openInSteam
             ))
         }
+        #endif
         var download: [StageMenuItem] = []
         if isUpdating, let cancelUpdate {
             download.append(StageMenuItem(

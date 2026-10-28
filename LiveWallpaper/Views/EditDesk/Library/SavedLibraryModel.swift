@@ -6,7 +6,13 @@ import Observation
 
 @MainActor @Observable
 final class SavedLibraryModel {
-    enum Chip: String, CaseIterable { case all, bookmarks, recent, steam, local, aerials }
+    enum Chip: String, CaseIterable {
+        case all, bookmarks, recent, steam, local
+        #if !MAS_BUILD
+        case aerials
+        #endif
+    }
+
     enum Sort: CaseIterable {
         case recentlyUsed, dateAdded, name, type, size
     }
@@ -27,6 +33,7 @@ final class SavedLibraryModel {
         }
     }
 
+    #if !MAS_BUILD
     struct AerialsState {
         var assets: [AerialAsset] = []
         var isAuthorized = false
@@ -36,10 +43,13 @@ final class SavedLibraryModel {
             assets.isEmpty
         }
     }
+    #endif
 
     struct Inputs {
         var bookmarks: @MainActor () -> [WallpaperBookmark] = { [] }
+        #if !MAS_BUILD
         var aerials: @MainActor () -> AerialsState = { AerialsState() }
+        #endif
         /// The row IDs the user marked as bookmarks.
         var libraryBookmarks: @MainActor () -> Set<LibraryItem.ID> = { [] }
         /// Moves a stored mark from the first row ID to the second.
@@ -64,8 +74,10 @@ final class SavedLibraryModel {
         var removeOrphanCovers: @MainActor (Set<String>) -> Void = { _ in }
         /// False when the file or folder behind a row is gone or no longer granted.
         var sourceAvailable: @MainActor (LibraryItem.Source) async -> Bool = { _ in true }
+        #if !MAS_BUILD
         /// Starts a scan when Apple Aerials is granted but lists nothing yet.
         var scanAerials: @MainActor () -> Void = {}
+        #endif
         /// What each configured display runs.
         var activeWallpapers: @MainActor () -> [(display: CGDirectDisplayID, content: WallpaperContent)] = { [] }
         /// The file a video bookmark resolves to; nil when it does not resolve.
@@ -81,6 +93,7 @@ final class SavedLibraryModel {
                 LibraryBookmarkStore.shared.merge([new])
                 LibraryBookmarkStore.shared.remove(old)
             }
+            #if !MAS_BUILD
             inputs.aerials = {
                 let library = AppleAerialsLibrary.shared
                 return AerialsState(
@@ -88,6 +101,7 @@ final class SavedLibraryModel {
                     lastScanError: library.lastScanError, isScanning: library.isScanning
                 )
             }
+            #endif
             #if !LITE_BUILD
             inputs.history = { SettingsManager.shared.loadGlobalSettings().recentWPEImports }
             inputs.workshopContent = { WPECachedContentResolver().content(for: $0.origin) }
@@ -128,12 +142,14 @@ final class SavedLibraryModel {
                 #endif
                 }
             }
+            #if !MAS_BUILD
             inputs.scanAerials = {
                 let library = AppleAerialsLibrary.shared
                 if library.isAuthorized, library.assets.isEmpty {
                     Task { await library.refresh() }
                 }
             }
+            #endif
             inputs.activeWallpapers = {
                 screenManager.screens.compactMap { screen in
                     screenManager.getConfiguration(for: screen).map { (screen.id, $0.activeWallpaper) }
@@ -160,7 +176,9 @@ final class SavedLibraryModel {
     var query = ""
     private(set) var items: [LibraryItem] = []
     private(set) var bookmarkedIDs: Set<LibraryItem.ID> = []
+    #if !MAS_BUILD
     private(set) var aerialsStatus = AerialsState()
+    #endif
     /// Each row's last use when the current browse began; nil while none is open.
     private var usageSnapshot: [LibraryItem.ID: Date]?
     #if !LITE_BUILD
@@ -297,8 +315,10 @@ final class SavedLibraryModel {
         withObservationTracking {
             _ = BookmarkStore.shared.bookmarks
             _ = LibraryBookmarkStore.shared.ids
+            #if !MAS_BUILD
             _ = AppleAerialsLibrary.shared.assets
             _ = AppleAerialsLibrary.shared.isAuthorized
+            #endif
         } onChange: { [weak self] in
             // The registrar belongs to app-wide singletons: a strong capture here outlives the
             // window and keeps the whole library, thumbnails included, in memory.
@@ -318,7 +338,9 @@ final class SavedLibraryModel {
             Array(items.filter { usage(of: $0) != nil }.sorted(by: recentlyUsed).prefix(14))
         case .steam: items.filter(\.isSteam)
         case .local: items.filter { !$0.isSteam && $0.kind != .aerial }
+        #if !MAS_BUILD
         case .aerials: items.filter { $0.kind == .aerial }
+        #endif
         }
     }
 
@@ -334,7 +356,11 @@ final class SavedLibraryModel {
             case .name: return Self.nameFirst(lhs, rhs)
             case .size: return Self.largerFileFirst(lhs, rhs)
             case .type:
+                #if !MAS_BUILD
                 let kinds: [LibraryItem.Kind] = [.video, .web, .scene, .aerial]
+                #else
+                let kinds: [LibraryItem.Kind] = [.video, .web, .scene]
+                #endif
                 if lhs.kind != rhs.kind {
                     return kinds.firstIndex(of: lhs.kind)! < kinds.firstIndex(of: rhs.kind)!
                 }
@@ -413,7 +439,9 @@ final class SavedLibraryModel {
     /// of entries that are gone but that undo can still bring back.
     func prepareLibrary(alsoKeeping kept: Set<String>) {
         inputs.removeOrphanCovers(inputs.savedCoverFileNames().union(kept))
+        #if !MAS_BUILD
         inputs.scanAerials()
+        #endif
     }
 
     /// Freezes "Recently Used" until `endBrowsing()`: a row used meanwhile keeps its place.
@@ -541,7 +569,9 @@ final class SavedLibraryModel {
                 isVariant: parentID != nil, parentID: parentID, isSupported: true
             ))
         }
+        #if !MAS_BUILD
         let aerialsStatus = inputs.aerials()
+        #endif
         var bookmarkedIDs = inputs.libraryBookmarks()
         var markMoves: [(from: LibraryItem.ID, to: LibraryItem.ID)] = []
         #if !LITE_BUILD
@@ -559,6 +589,7 @@ final class SavedLibraryModel {
             let path = inputs.filePath(data).map { Self.normalizedPath(URL(fileURLWithPath: $0)) }
             resolvedPaths[data] = .some(path)
         }
+        #if !MAS_BUILD
         let hasResolvedActivePath = resolvedPaths.values.contains { $0 != nil }
         merged += aerialsStatus.assets.map { asset in
             let source = LibraryItem.Source.aerial(asset)
@@ -577,12 +608,17 @@ final class SavedLibraryModel {
             )
         }
         return CatalogSnapshot(items: merged, bookmarkedIDs: bookmarkedIDs, aerials: aerialsStatus, markMoves: markMoves, filePaths: resolvedPaths)
+        #else
+        return CatalogSnapshot(items: merged, bookmarkedIDs: bookmarkedIDs, markMoves: markMoves, filePaths: resolvedPaths)
+        #endif
     }
 
     struct CatalogSnapshot {
         var items: [LibraryItem]
         var bookmarkedIDs: Set<LibraryItem.ID>
+        #if !MAS_BUILD
         var aerials: AerialsState
+        #endif
         var markMoves: [(from: LibraryItem.ID, to: LibraryItem.ID)]
         var filePaths: [Data: String?]
     }
@@ -593,7 +629,9 @@ final class SavedLibraryModel {
         let snapshot = Self.catalogSnapshot(inputs: inputs)
         filePaths = snapshot.filePaths
         var merged = snapshot.items
+        #if !MAS_BUILD
         aerialsStatus = snapshot.aerials
+        #endif
         bookmarkedIDs = snapshot.bookmarkedIDs
         for move in snapshot.markMoves {
             inputs.remapLibraryBookmark(move.from, move.to)

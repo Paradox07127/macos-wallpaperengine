@@ -12,6 +12,8 @@ struct AerialAsset: Identifiable, Hashable {
     let bookmarkData: Data
 }
 
+// `AerialAsset` stays outside the gate: `LibraryItem.Source.aerial` names it in every edition.
+#if !MAS_BUILD
 @MainActor
 @Observable
 final class AppleAerialsLibrary {
@@ -518,3 +520,4 @@ extension AppleAerialsLibrary {
         )) != nil
     }
 }
+#endif

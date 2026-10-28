@@ -39,7 +39,9 @@ struct LibraryChipsRow: View {
                 FilterChip(title: Text(chip.title), isSelected: selection == chip.id) {
                     selection = chip.id
                 }
+                #if !MAS_BUILD
                 .pageGuideTarget(chip.id == "aerials" ? .aerials : nil)
+                #endif
             }
         } search: {
             AdaptiveLibrarySearch(text: $searchText, prompt: searchPrompt, shortPrompt: searchShortPrompt, stage: stage)
@@ -56,9 +58,11 @@ struct LibraryChipsRow: View {
                 .id(stage.snappedIndex)
             }
         } actions: {
+            #if !MAS_BUILD
             if showsAerialsControls {
                 AerialsSourceControls()
             }
+            #endif
             LibraryOnlyControl(stage: stage, pinned: keepsImportOnShelf) { importButton }
         }
     }

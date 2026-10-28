@@ -558,6 +558,11 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 )
             ]
         case .storage:
+            #if MAS_BUILD
+            let steamCMDRows: [String] = []
+            #else
+            let steamCMDRows = ["SteamCMD Installation"]
+            #endif
             return [
                 SettingsNavigationSearchTarget(
                     label: "Storage",
@@ -565,7 +570,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     rows: ["Wallpapers", "Engine Assets", "System Wallpaper",
                            "Settings & Library", "Saved Covers", "Legacy Scene Files", "Scene Diagnostics",
                            "Runtime Logs", "Web Wallpaper Data", "App Preferences", "Other App Support",
-                           "Temporary Files", "System Wallpaper Metadata", "SteamCMD Installation", "Steam Sign-in Profiles",
+                           "Temporary Files", "System Wallpaper Metadata"] + steamCMDRows + ["Steam Sign-in Profiles",
                            "Linked Original Files", "Wallpaper Locations", "Workshop Wallpapers",
                            "Local Wallpaper Files", "Credential Files", "Application"],
                     keywords: [
