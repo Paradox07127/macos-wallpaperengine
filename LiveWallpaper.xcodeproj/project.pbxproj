@@ -11,6 +11,7 @@
 		0CA00000000000000000A303 /* LiveWallpaperProWPE in Frameworks */ = {isa = PBXBuildFile; productRef = 0CA00000000000000000A302 /* LiveWallpaperProWPE */; };
 		0CA00000000000000000B011 /* LiveWallpaperCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CA00000000000000000B020 /* LiveWallpaperCore */; };
 		0CA00000000000000000B012 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 0CA00000000000000000B021 /* Sparkle */; };
+		0CA00000000000000000C011 /* LiveWallpaperCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CA00000000000000000C020 /* LiveWallpaperCore */; };
 		B91800000000000000000009 /* WallpaperMaintenance.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = B91800000000000000000005 /* WallpaperMaintenance.xpc */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B91800000000000000000020 /* WallpaperMaintenance.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = B91800000000000000000005 /* WallpaperMaintenance.xpc */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C0D000000000000000000101 /* LiveWallpaperCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0D000000000000000000102 /* LiveWallpaperCore */; };
@@ -118,6 +119,7 @@
 		0C322BEF2D6950480033C48B /* Loomscreen Pro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Loomscreen Pro.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		0C322C002D6950490033C48B /* LiveWallpaperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiveWallpaperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CA00000000000000000B000 /* Loomscreen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Loomscreen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0CA00000000000000000C000 /* Loomscreen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Loomscreen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B91800000000000000000005 /* WallpaperMaintenance.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = WallpaperMaintenance.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5C1C0DC30351DA700FF0A00 /* SystemWallpaperProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = SystemWallpaperProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5C1C10C30352D6F00FF0A00 /* SystemWallpaperProviderLite.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = SystemWallpaperProviderLite.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -132,6 +134,13 @@
 				Runtime/Metal/WPEMetalBuiltins.metal,
 			);
 			target = 0CA00000000000000000B001 /* LiveWallpaperLite */;
+		};
+		0CA00000000000000000C030 /* Exceptions for "LiveWallpaper" folder in "LoomscreenAppStore" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Runtime/Metal/WPEMetalBuiltins.metal,
+			);
+			target = 0CA00000000000000000C001 /* LoomscreenAppStore */;
 		};
 		B9180000000000000000000D /* Exceptions for "WallpaperMaintenance" folder in "WallpaperMaintenance" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -319,6 +328,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				0CA00000000000000000B030 /* Exceptions for "LiveWallpaper" folder in "LiveWallpaperLite" target */,
+				0CA00000000000000000C030 /* Exceptions for "LiveWallpaper" folder in "LoomscreenAppStore" target */,
 				B91800000000000000000022 /* Exceptions for "LiveWallpaper" folder in "WallpaperMaintenance" target */,
 				F5C1C10630352D2A00FF0A00 /* Exceptions for "LiveWallpaper" folder in "SystemWallpaperProvider" target */,
 				F5C1C20030352D6F00FF0A00 /* Exceptions for "LiveWallpaper" folder in "SystemWallpaperProviderLite" target */,
@@ -387,6 +397,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0CA00000000000000000C003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0CA00000000000000000C011 /* LiveWallpaperCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B91800000000000000000002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -445,6 +463,7 @@
 			children = (
 				0C322BEF2D6950480033C48B /* Loomscreen Pro.app */,
 				0CA00000000000000000B000 /* Loomscreen.app */,
+				0CA00000000000000000C000 /* Loomscreen.app */,
 				0C322C002D6950490033C48B /* LiveWallpaperTests.xctest */,
 				F5C8FFA9301D663800D85832 /* SteamConnector.xpc */,
 				B91800000000000000000005 /* WallpaperMaintenance.xpc */,
@@ -536,6 +555,29 @@
 			);
 			productName = LiveWallpaperLite;
 			productReference = 0CA00000000000000000B000 /* Loomscreen.app */;
+			productType = "com.apple.product-type.application";
+		};
+		0CA00000000000000000C001 /* LoomscreenAppStore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0CA00000000000000000C005 /* Build configuration list for PBXNativeTarget "LoomscreenAppStore" */;
+			buildPhases = (
+				0CA00000000000000000C002 /* Sources */,
+				0CA00000000000000000C003 /* Frameworks */,
+				0CA00000000000000000C004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0C322BF12D6950480033C48B /* LiveWallpaper */,
+			);
+			name = LoomscreenAppStore;
+			packageProductDependencies = (
+				0CA00000000000000000C020 /* LiveWallpaperCore */,
+			);
+			productName = LoomscreenAppStore;
+			productReference = 0CA00000000000000000C000 /* Loomscreen.app */;
 			productType = "com.apple.product-type.application";
 		};
 		B91800000000000000000004 /* WallpaperMaintenance */ = {
@@ -671,6 +713,9 @@
 					0CA00000000000000000B001 = {
 						CreatedOnToolsVersion = 16.2;
 					};
+					0CA00000000000000000C001 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					F5C1C0DB30351DA700FF0A00 = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -711,6 +756,7 @@
 			targets = (
 				0C322BEE2D6950480033C48B /* LiveWallpaper */,
 				0CA00000000000000000B001 /* LiveWallpaperLite */,
+				0CA00000000000000000C001 /* LoomscreenAppStore */,
 				0C322BFF2D6950490033C48B /* LiveWallpaperTests */,
 				F5DF310930302C9100D5A3BC /* LiveWallpaperLiteTests */,
 				F5C8FFA8301D663800D85832 /* SteamConnector */,
@@ -737,6 +783,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0CA00000000000000000B004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CA00000000000000000C004 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -818,6 +871,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0CA00000000000000000B002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CA00000000000000000C002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1203,6 +1263,75 @@
 			};
 			name = Release;
 		};
+		0CA00000000000000000C006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperAppStore.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"LiveWallpaper/Preview Content\"";
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LoomscreenAppStoreInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 0.9.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.appstore;
+				PRODUCT_MODULE_NAME = LiveWallpaper;
+				PRODUCT_NAME = Loomscreen;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD MAS_BUILD";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		0CA00000000000000000C007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperAppStore.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"LiveWallpaper/Preview Content\"";
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LoomscreenAppStoreInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 0.9.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.appstore;
+				PRODUCT_MODULE_NAME = LiveWallpaper;
+				PRODUCT_NAME = Loomscreen;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD MAS_BUILD";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 		B9180000000000000000000B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1514,6 +1643,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		0CA00000000000000000C005 /* Build configuration list for PBXNativeTarget "LoomscreenAppStore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CA00000000000000000C006 /* Debug */,
+				0CA00000000000000000C007 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B9180000000000000000000E /* Build configuration list for PBXNativeTarget "WallpaperMaintenance" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1600,6 +1738,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F5EA859F303B3613009D91C4 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		0CA00000000000000000C020 /* LiveWallpaperCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LiveWallpaperCore;
 		};
 		C0D000000000000000000102 /* LiveWallpaperCore */ = {
 			isa = XCSwiftPackageProductDependency;
