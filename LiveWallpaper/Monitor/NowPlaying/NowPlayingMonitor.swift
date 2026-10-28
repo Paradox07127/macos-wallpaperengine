@@ -152,6 +152,12 @@ final class NowPlayingMonitor: NSObject {
         if wasSystemPlayer {
             systemState = nil
         }
+        if systemTask != nil {
+            systemGeneration &+= 1
+            systemTask?.cancel()
+            systemTask = nil
+            startSystemPollingIfNeeded()
+        }
         guard hadRecord || wasSystemPlayer else { return }
         ordinal &+= 1
         notifySubscribers()
@@ -220,11 +226,22 @@ final class NowPlayingMonitor: NSObject {
             let fallback = arbitratedRecord()?.state
             if systemState.phase == .playing || fallback?.phase != .playing {
                 if let fallback, fallback.playerBundleID == systemState.playerBundleID,
-                   fallback.title == systemState.title, fallback.artist == systemState.artist {
+                   fallback.title == systemState.title, fallback.artist == systemState.artist,
+                   fallback.album == nil || systemState.album == nil || fallback.album == systemState.album {
                     if systemState.playerBundleID == "com.spotify.client" {
                         systemState.trackID = fallback.trackID ?? systemState.trackID
                     }
                     systemState.artwork = systemState.artwork ?? fallback.artwork
+                    if systemState.duration == nil, let duration = fallback.duration,
+                       duration.isFinite, duration > 0, duration <= 604_800 {
+                        systemState.duration = duration
+                    }
+                    if systemState.position == nil, let position = fallback.position, position.isFinite, position >= 0,
+                       systemState.duration.map({ position <= $0 }) ?? true {
+                        systemState.position = position
+                        systemState.positionSampledAt = fallback.positionSampledAt
+                        systemState.playbackRate = systemState.playbackRate ?? fallback.playbackRate
+                    }
                 }
                 return systemState
             }

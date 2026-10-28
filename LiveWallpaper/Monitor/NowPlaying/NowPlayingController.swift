@@ -209,7 +209,7 @@ final class NowPlayingController: ObservableObject {
     }
 
     nonisolated static func supports(_ command: NowPlayingCommand, state: MonitorNowPlayingState) -> Bool {
-        if state.isSystemMedia == true, state.systemPlayerID != nil, state.systemCommands != nil {
+        if state.isSystemMedia == true, state.systemPlayerID != nil, state.systemCommands?.isEmpty == false {
             if case .seek = command {
                 return script(for: command, bundleID: state.playerBundleID, duration: state.duration) != nil
             }
@@ -333,9 +333,9 @@ final class NowPlayingController: ObservableObject {
         guard let script = Self.script(for: command, bundleID: bundleID, duration: duration) else {
             return .failure(.unsupportedPlayer)
         }
-        // A denied target never prompts again, so retrying would only burn a
-        // blocking round trip per click and hide the reason from the user. Read
-        // per target: the other player may be perfectly usable.
+        if authorization(for: bundleID) == .denied {
+            await refreshAuthorization(for: bundleID)
+        }
         guard authorization(for: bundleID) != .denied else { return .failure(.notAuthorized) }
 
         let key = Key(bundleID: bundleID, command: command)

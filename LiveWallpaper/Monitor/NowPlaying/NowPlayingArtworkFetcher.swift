@@ -35,6 +35,7 @@ actor NowPlayingArtworkFetcher {
     private let artworkURLProvider: ArtworkURLProvider
     private let now: @Sendable () -> Date
     private var memo = NowPlayingMemoCache<Data>(capacity: positiveCacheLimit, negativeTTL: negativeTTL)
+    private var consumers: [String: Set<UUID>] = [:]
 
     init(
         transport: @escaping Transport = NowPlayingNetwork.boundedTransport(byteCap: maxImageBytes),
@@ -141,7 +142,7 @@ actor NowPlayingArtworkFetcher {
     }
 
     func artwork(for state: MonitorNowPlayingState) async -> Data? {
-        guard let key = Self.trackKey(for: state),
+        guard !Task.isCancelled, let key = Self.trackKey(for: state),
               let route = NowPlayingArtworkRoute.all.first(where: { $0.bundleID == state.playerBundleID })
         else { return nil }
         if let data = memo.cached(key) {
@@ -150,20 +151,41 @@ actor NowPlayingArtworkFetcher {
         if memo.isNegative(key, now: now()) {
             return nil
         }
-        if let running = memo.inFlight[key] {
-            return await running.value
+        let consumer = UUID()
+        consumers[key, default: []].insert(consumer)
+        defer { releaseConsumer(consumer, for: key) }
+        let value = await withTaskCancellationHandler {
+            if let running = memo.inFlight[key] {
+                return await running.value
+            }
+            let task = Task<Data?, Never> {
+                let result = await self.runFetch(strategy: route.strategy, state: state)
+                self.memo.finish(key: key, result: result, cancelled: Task.isCancelled, now: self.now())
+                return result
+            }
+            memo.inFlight[key] = task
+            return await task.value
+        } onCancel: {
+            Task { await self.releaseConsumer(consumer, for: key) }
         }
-        let task = Task<Data?, Never> {
-            let result = await self.runFetch(strategy: route.strategy, state: state)
-            self.memo.finish(key: key, result: result, cancelled: Task.isCancelled, now: self.now())
-            return result
-        }
-        memo.inFlight[key] = task
-        return await task.value
+        return Task.isCancelled ? nil : value
     }
 
     func cancelInFlight(except key: String?) {
+        for running in consumers.keys where running != key {
+            consumers.removeValue(forKey: running)
+        }
         memo.cancelInFlight(except: key)
+    }
+
+    private func releaseConsumer(_ consumer: UUID, for key: String) {
+        guard var waiting = consumers[key], waiting.remove(consumer) != nil else { return }
+        if waiting.isEmpty {
+            consumers.removeValue(forKey: key)
+            memo.inFlight.removeValue(forKey: key)?.cancel()
+        } else {
+            consumers[key] = waiting
+        }
     }
 
     // MARK: - Network

@@ -79,6 +79,38 @@ final class NowPlayingAccentTests: XCTestCase {
     }
 
     @MainActor
+    func testArtworkDecodeRefreshesBytesForAStableTrack() async throws {
+        let store = NowPlayingArtworkStore()
+        let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), side: 24)
+        let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1), side: 48)
+        let firstResult = await store.image(for: "stable-track", data: red)
+        let first = try XCTUnwrap(firstResult)
+        XCTAssertEqual(first.width, 24)
+        let updatedResult = await store.image(for: "stable-track", data: blue)
+        let updated = try XCTUnwrap(updatedResult)
+        XCTAssertEqual(updated.width, 48, "The same track received a different valid cover payload")
+        XCTAssertFalse(first === updated)
+        let cached = await store.image(for: "stable-track", data: blue)
+        XCTAssertTrue(updated === cached, "Unchanged cover bytes must reuse the decoded image")
+    }
+
+    @MainActor
+    func testAccentRefreshesBytesForAStableTrack() async throws {
+        let store = NowPlayingAccentStore()
+        let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        let firstResult = await store.accent(for: "stable-track", data: red)
+        let first = try XCTUnwrap(firstResult)
+        XCTAssertGreaterThan(first.red, first.blue)
+        let updatedResult = await store.accent(for: "stable-track", data: blue)
+        let updated = try XCTUnwrap(updatedResult)
+        XCTAssertGreaterThan(updated.blue, updated.red, "A replacement cover must refresh its extracted accent")
+        let cached = await store.accent(for: "stable-track", data: blue)
+        XCTAssertEqual(cached, updated)
+        XCTAssertEqual(store.extractionCount, 2, "Unchanged bytes must remain cached")
+    }
+
+    @MainActor
     func testNilResultIsCachedToo() async {
         let store = NowPlayingAccentStore(extract: { _ in nil })
         _ = await store.accent(for: "gray", data: Data([0x01]))

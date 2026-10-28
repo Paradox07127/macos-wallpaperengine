@@ -26,12 +26,8 @@ struct NowPlayingMemoCache<Value: Sendable> {
     /// True while a failed lookup for `key` is inside its TTL; an expired
     /// entry is dropped on the way out.
     mutating func isNegative(_ key: String, now: Date) -> Bool {
-        guard let expiry = negative[key] else { return false }
-        if now < expiry {
-            return true
-        }
-        negative.removeValue(forKey: key)
-        return false
+        pruneNegative(now: now)
+        return negative[key] != nil
     }
 
     /// A cancelled task's nil is neither a hit nor a miss, and `cancelInFlight`
@@ -43,6 +39,7 @@ struct NowPlayingMemoCache<Value: Sendable> {
         }
         inFlight.removeValue(forKey: key)
         if let result {
+            negative.removeValue(forKey: key)
             cache[key] = result
             touch(key)
             while order.count > capacity {
@@ -50,6 +47,14 @@ struct NowPlayingMemoCache<Value: Sendable> {
             }
         } else {
             negative[key] = now.addingTimeInterval(negativeTTL)
+        }
+        pruneNegative(now: now)
+    }
+
+    private mutating func pruneNegative(now: Date) {
+        negative = negative.filter { $0.value > now }
+        while negative.count > capacity, let oldest = negative.min(by: { $0.value < $1.value })?.key {
+            negative.removeValue(forKey: oldest)
         }
     }
 

@@ -61,7 +61,7 @@ final actor NowPlayingSource: MonitorDataSource {
     /// already put the playhead in every notification, and asking twice would
     /// spend an Apple Event to learn what we were just told.
     private static func needsPositionPolling(_ state: MonitorNowPlayingState) -> Bool {
-        guard state.isSystemMedia != true,
+        guard state.isSystemMedia != true || state.position == nil,
               state.phase.hasTrack, let bundleID = state.playerBundleID,
               let mapping = NowPlayingMonitor.mappings.first(where: { $0.bundleID == bundleID }) else {
             return false
@@ -69,8 +69,8 @@ final actor NowPlayingSource: MonitorDataSource {
         return mapping.positionKey == nil
     }
 
-    private func syncPositionPolling(for state: MonitorNowPlayingState) {
-        guard Self.needsPositionPolling(state),
+    private func syncPositionPolling(for state: MonitorNowPlayingState, needed: Bool) {
+        guard needed,
               let bundleID = state.playerBundleID,
               let key = NowPlayingArtworkFetcher.trackKey(for: state)
         else {
@@ -162,7 +162,6 @@ final actor NowPlayingSource: MonitorDataSource {
         sink = nil
         stopPositionPolling()
         artworkTask?.cancel()
-        await fetcher.cancelInFlight(except: nil)
         artworkTask = nil
         artworkTaskKey = nil
         currentTrackKey = nil
@@ -196,10 +195,6 @@ final actor NowPlayingSource: MonitorDataSource {
             artworkTask?.cancel()
             artworkTask = nil
             artworkTaskKey = nil
-            // Cancelling our own task only drops the result; the merged fetch
-            // inside the actor keeps downloading until it is told to stop.
-            await fetcher.cancelInFlight(except: key)
-            guard stillCurrent() else { return }
         }
         if let key, state.artwork == nil,
            NowPlayingArtworkRoute.all.contains(where: { $0.bundleID == state.playerBundleID }) {
@@ -217,6 +212,7 @@ final actor NowPlayingSource: MonitorDataSource {
                 let pending = state
                 artworkTask = Task { [weak self] in
                     let data = await fetcher.artwork(for: pending)
+                    guard !Task.isCancelled else { return }
                     await self?.finishArtworkFetch(data, key: key)
                 }
             }
@@ -225,6 +221,7 @@ final actor NowPlayingSource: MonitorDataSource {
         // Carry the polled playhead across the notification that replaced it:
         // Music re-sends full metadata on a bare state change, and rebuilding
         // the state from it would blank the bar every time the user paused.
+        let needsPositionPolling = Self.needsPositionPolling(state)
         if state.position == nil,
            let key = NowPlayingArtworkFetcher.trackKey(for: state),
            positionPollKey == key,
@@ -237,7 +234,7 @@ final actor NowPlayingSource: MonitorDataSource {
         lastPublishedState = state
         await sink.updateNowPlaying(state)
         guard stillCurrent() else { return }
-        syncPositionPolling(for: state)
+        syncPositionPolling(for: state, needed: needsPositionPolling)
         await setAudioDemand(audioReactive && state.phase == .playing)
     }
 
@@ -297,6 +294,18 @@ struct NowPlayingSystemSnapshot: Decodable, Sendable {
         return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
 
+    private var stableTrackID: String {
+        if let trackID, !trackID.isEmpty, trackID.utf8.count <= 4096 {
+            if bundleID == "com.spotify.client", NowPlayingArtworkFetcher.spotifyOEmbedURL(trackID: trackID) != nil {
+                return trackID
+            }
+            return "system:\(bundleID ?? ""):\(trackID)"
+        }
+        let fields = [bundleID, title, artist, album].map { $0 ?? "" }
+        let bytes = (try? JSONEncoder().encode(fields)) ?? Data()
+        return "system:" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+
     func state(now: Double = Date().timeIntervalSince1970) -> MonitorNowPlayingState? {
         guard let bundleID, !bundleID.isEmpty, bundleID.utf8.count <= 512,
               let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -305,18 +314,19 @@ struct NowPlayingSystemSnapshot: Decodable, Sendable {
         state.playerBundleID = bundleID
         state.artist = artist?.isEmpty == false ? artist : nil
         state.album = album?.isEmpty == false ? album : nil
-        state.trackID = "system:\(bundleID):\(identity)"
+        state.trackID = stableTrackID
         state.isSystemMedia = true
         state.systemPlayerID = controlID.flatMap { !$0.isEmpty && $0.utf8.count <= 4096 ? $0 : nil }
         state.systemCommands = commands.map { Array(Set($0.filter { [0, 1, 2, 4, 5].contains($0) })).sorted() }
         state.mediaKind = mediaKind.flatMap(MonitorNowPlayingMediaKind.init(rawValue:))
         state.mediaOrigin = origin.flatMap(MonitorNowPlayingMediaOrigin.init(rawValue:))
         state.duration = duration.flatMap { $0.isFinite && $0 > 0 && $0 <= 604_800 ? $0 : nil }
+        state.playbackRate = rate.flatMap { $0.isFinite && $0 >= 0 && $0 <= 16 ? $0 : nil }
         if let position, position.isFinite, position >= 0 {
             state.position = state.duration.map { min(position, $0) } ?? position
             if let timestamp, timestamp.isFinite, timestamp <= now + 2,
                now - timestamp <= 86400 {
-                let speed = rate.flatMap { $0.isFinite && $0 > 0 && $0 <= 16 ? $0 : nil } ?? 1
+                let speed = state.effectivePlaybackRate
                 let advanced = position + (playing ? max(0, now - timestamp) * speed : 0)
                 if playing, let duration = state.duration, advanced > duration + 2 {
                     state.position = nil
@@ -324,6 +334,7 @@ struct NowPlayingSystemSnapshot: Decodable, Sendable {
                     state.positionSampledAt = timestamp
                 } else {
                     state.position = state.duration.map { min(advanced, $0) } ?? advanced
+                    state.positionSampledAt = now
                 }
             }
         }
@@ -425,7 +436,7 @@ actor NowPlayingSystemBridge {
         const asset=field('AssetURL');
         if(!nil(asset)) {
             const url=asset.respondsToSelector($.NSSelectorFromString('scheme'))?asset:$.NSURL.URLWithString(asset);
-            const scheme=nil(url)?null:text(url.scheme);
+            const scheme=nil(url)?null:(text(url.scheme)||'').toLowerCase();
             out.origin=scheme==='file'?'local':['http','https'].includes(scheme)?'web':null;
         }
         if(args[0]==='command') {

@@ -291,6 +291,7 @@ struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var position: Double?
     /// Epoch seconds when `position` was reported.
     var positionSampledAt: Double?
+    var playbackRate: Double?
     var trackID: String?
     var playerBundleID: String?
     var artwork: Data?
@@ -299,6 +300,11 @@ struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var systemCommands: [Int]?
     var mediaKind: MonitorNowPlayingMediaKind?
     var mediaOrigin: MonitorNowPlayingMediaOrigin?
+
+    var effectivePlaybackRate: Double {
+        guard let playbackRate, playbackRate.isFinite, playbackRate >= 0, playbackRate <= 16 else { return 1 }
+        return playbackRate
+    }
 }
 
 struct MonitorSourceHealth: Codable, Sendable, Equatable {

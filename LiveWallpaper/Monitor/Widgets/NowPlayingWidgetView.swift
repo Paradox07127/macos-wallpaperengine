@@ -145,7 +145,7 @@ struct NowPlayingWidgetLayout: Equatable {
         guard let position = state.position else { return nil }
         var value = position
         if state.phase == .playing, let sampledAt = state.positionSampledAt {
-            value += max(0, now.timeIntervalSince1970 - sampledAt)
+            value += max(0, now.timeIntervalSince1970 - sampledAt) * state.effectivePlaybackRate
         }
         if let duration = state.duration { value = min(value, duration) }
         return max(0, value)
@@ -166,7 +166,9 @@ struct NowPlayingWidgetLayout: Equatable {
             return interpolatedPosition(state: state, now: now)
         }
         var value = draft.seconds
-        if state.phase == .playing { value += max(0, now.timeIntervalSince(draft.landedAt)) }
+        if state.phase == .playing {
+            value += max(0, now.timeIntervalSince(draft.landedAt)) * state.effectivePlaybackRate
+        }
         if let duration = state.duration { value = min(value, duration) }
         return max(0, value)
     }
@@ -357,8 +359,8 @@ struct NowPlayingWidgetView: View {
 
     /// Accent must recompute when the artwork arrives on a later frame of the
     /// same track (the fetcher publishes text first, image afterwards).
-    private var accentTaskKey: String {
-        "\(trackKey)|\(state?.artwork == nil ? 0 : 1)"
+    private var accentTaskKey: Data? {
+        state?.artwork
     }
 
     /// Turning the switch on must fetch for the track already on screen, so the
@@ -531,8 +533,7 @@ struct NowPlayingWidgetView: View {
             return
         }
         let value = await NowPlayingAccentStore.shared.accent(for: trackKey, data: artwork)
-        // .task(id:) cancelled us if the track changed while extracting; a
-        // slow track-A extraction must not repaint track B's accent.
+        // A changed artwork payload cancels the old extraction's presentation.
         guard !Task.isCancelled else { return }
         accent = value
     }
@@ -575,7 +576,8 @@ struct NowPlayingWidgetView: View {
     private var lyricsPlayhead: NowPlayingLyricsView.Playhead? {
         guard let elapsed else { return nil }
         return NowPlayingLyricsView.Playhead(
-            position: elapsed, date: context.now, advancing: layout.motion && !suspended
+            position: elapsed, date: context.now, advancing: layout.motion && !suspended,
+            rate: state?.effectivePlaybackRate ?? 1
         )
     }
 
@@ -1255,27 +1257,40 @@ private extension View {
 final class NowPlayingArtworkStore {
     static let shared = NowPlayingArtworkStore()
 
-    private var cache: [String: CGImage] = [:]
+    private var cache: [String: (data: Data, image: CGImage)] = [:]
     private var order: [String] = []
-    private var inFlight: [String: Task<CGImage?, Never>] = [:]
+    private var inFlight: [String: (data: Data, task: Task<CGImage?, Never>)] = [:]
     private let capacity = 8
 
-    func cached(for key: String) -> CGImage? { cache[key] }
+    func cached(for key: String, data: Data) -> CGImage? {
+        guard let hit = cache[key], hit.data == data else { return nil }
+        return hit.image
+    }
 
     func image(for key: String, data: Data) async -> CGImage? {
-        if let hit = cache[key] { return hit }
-        if let pending = inFlight[key] { return await pending.value }
+        if let hit = cached(for: key, data: data) {
+            return hit
+        }
+        if let pending = inFlight[key], pending.data == data {
+            return await pending.task.value
+        }
         let task = Task.detached(priority: .utility) { Self.decode(data) }
-        inFlight[key] = task
+        inFlight[key] = (data, task)
         let image = await task.value
-        inFlight[key] = nil
-        if let image { store(image, for: key) }
+        if inFlight[key]?.data == data {
+            inFlight[key] = nil
+            if let image {
+                store(image, for: key, data: data)
+            }
+        }
         return image
     }
 
-    private func store(_ image: CGImage, for key: String) {
-        if cache[key] == nil { order.append(key) }
-        cache[key] = image
+    private func store(_ image: CGImage, for key: String, data: Data) {
+        if cache[key] == nil {
+            order.append(key)
+        }
+        cache[key] = (data, image)
         while order.count > capacity {
             cache[order.removeFirst()] = nil
         }
@@ -1321,10 +1336,12 @@ struct NowPlayingArtworkView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipShape(clipShape)
         }
-        .task(id: cacheKey) {
-            image = NowPlayingArtworkStore.shared.cached(for: cacheKey)
+        .task(id: data) {
+            image = NowPlayingArtworkStore.shared.cached(for: cacheKey, data: data)
             if image == nil {
-                image = await NowPlayingArtworkStore.shared.image(for: cacheKey, data: data)
+                let decoded = await NowPlayingArtworkStore.shared.image(for: cacheKey, data: data)
+                guard !Task.isCancelled else { return }
+                image = decoded
             }
         }
     }

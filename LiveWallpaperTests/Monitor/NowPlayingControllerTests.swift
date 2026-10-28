@@ -94,6 +94,55 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(controller.authorization(for: Self.spotify), .notDetermined)
     }
 
+    func testEmptySystemCapabilitiesFallBackOnlyForKnownPlayers() async {
+        let recorder = Recorder()
+        let systemCalls = Locked([Int]())
+        let controller = NowPlayingController(executor: recorder.executor, systemExecutor: { command, _ in
+            systemCalls.mutate { $0.append(command) }
+            throw URLError(.timedOut)
+        })
+        var state = MonitorNowPlayingState(phase: .playing, title: "Fixture")
+        state.isSystemMedia = true
+        state.systemPlayerID = "owned-player"
+        state.systemCommands = []
+        state.playerBundleID = Self.spotify
+        XCTAssertTrue(NowPlayingController.supports(.playPause, state: state))
+        let fallback = await controller.send(.playPause, for: state)
+        XCTAssertTrue(succeeded(fallback))
+        XCTAssertEqual(recorder.scripts.count, 1)
+        XCTAssertTrue(systemCalls.value.isEmpty)
+
+        state.playerBundleID = "com.example.unknown"
+        XCTAssertFalse(NowPlayingController.supports(.playPause, state: state))
+        let unsupported = await controller.send(.playPause, for: state)
+        XCTAssertEqual(failure(unsupported), .unsupportedPlayer)
+        XCTAssertEqual(recorder.scripts.count, 1)
+
+        state.playerBundleID = Self.spotify
+        state.systemCommands = [2]
+        let uncertain = await controller.send(.playPause, for: state)
+        XCTAssertEqual(failure(uncertain), .systemFailed)
+        XCTAssertEqual(systemCalls.value, [2])
+        XCTAssertEqual(recorder.scripts.count, 1, "An uncertain system toggle must never be repeated through AppleScript")
+    }
+
+    func testExplicitCommandRechecksDeniedAuthorization() async {
+        let recorder = Recorder()
+        let permission = Locked<OSStatus>(NowPlayingController.Status.notPermitted)
+        let controller = makeController(recorder, probe: { _ in permission.value })
+        recorder.fail(status: NowPlayingController.Status.notPermitted)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let denied = await controller.send(.playPause, to: Self.spotify, now: start)
+        XCTAssertEqual(failure(denied), .notAuthorized)
+
+        permission.mutate { $0 = noErr }
+        recorder.succeed()
+        let retried = await controller.send(.playPause, to: Self.spotify, now: start.addingTimeInterval(1))
+        XCTAssertTrue(succeeded(retried))
+        XCTAssertEqual(controller.authorization(for: Self.spotify), .authorized)
+        XCTAssertEqual(recorder.scripts.count, 2)
+    }
+
     private static let spotify = "com.spotify.client"
     private static let music = "com.apple.Music"
 
@@ -379,7 +428,7 @@ final class NowPlayingControllerTests: XCTestCase {
     func testDenialIsRememberedAndStopsFurtherSendsToThatTarget() async {
         let recorder = Recorder()
         recorder.fail(status: NowPlayingController.Status.notPermitted, message: "Not authorized")
-        let controller = makeController(recorder)
+        let controller = makeController(recorder, probe: { _ in NowPlayingController.Status.notPermitted })
         let start = Date(timeIntervalSince1970: 1_700_000_000)
 
         let first = await controller.send(.playPause, to: Self.spotify, now: start)
@@ -397,7 +446,7 @@ final class NowPlayingControllerTests: XCTestCase {
     func testDenialForOnePlayerDoesNotMuteTheOther() async {
         let recorder = Recorder()
         recorder.fail(status: NowPlayingController.Status.notPermitted, message: "Not authorized")
-        let controller = makeController(recorder)
+        let controller = makeController(recorder, probe: { _ in NowPlayingController.Status.notPermitted })
         let start = Date(timeIntervalSince1970: 1_700_000_000)
 
         _ = await controller.send(.playPause, to: Self.spotify, now: start)

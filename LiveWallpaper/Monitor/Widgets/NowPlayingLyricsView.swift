@@ -7,6 +7,7 @@ struct NowPlayingLyricsView: View {
         var position: Double
         var date: Date
         var advancing: Bool
+        var rate: Double = 1
     }
 
     let lines: [LyricLine]
@@ -24,7 +25,7 @@ struct NowPlayingLyricsView: View {
     var body: some View {
         if wordTimed, let playhead, playhead.advancing {
             TimelineView(.animation(minimumInterval: 1.0 / 10.0, paused: false)) { timeline in
-                rows(at: playhead.position + max(0, timeline.date.timeIntervalSince(playhead.date)))
+                rows(at: playhead.position + max(0, timeline.date.timeIntervalSince(playhead.date)) * playhead.rate)
             }
         } else if let playhead {
             // Line-level: the parent's 1 Hz tick already advances `date`.

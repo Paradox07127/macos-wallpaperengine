@@ -435,6 +435,7 @@ final class NowPlayingLyricsStore {
     func lyrics(for state: MonitorNowPlayingState) async -> [LyricLine] {
         guard NowPlayingLyrics.canFetch(for: state),
               let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return [] }
+        pruneMisses()
         if let hit = cache[key] { return hit }
         if let expiry = missExpiry[key] {
             if now() < expiry { return [] }
@@ -463,10 +464,19 @@ final class NowPlayingLyricsStore {
         inFlight[key] = nil
         if value.isEmpty {
             missExpiry[key] = now().addingTimeInterval(NowPlayingLyricsFetcher.negativeTTL)
+            pruneMisses()
         } else {
             store(value, for: key)
         }
         return value
+    }
+
+    private func pruneMisses() {
+        let current = now()
+        missExpiry = missExpiry.filter { $0.value > current }
+        while missExpiry.count > capacity, let oldest = missExpiry.min(by: { $0.value < $1.value })?.key {
+            missExpiry.removeValue(forKey: oldest)
+        }
     }
 
     private func store(_ value: [LyricLine], for key: String) {

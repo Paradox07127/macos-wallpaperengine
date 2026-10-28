@@ -528,6 +528,18 @@ struct NowPlayingLyricsTests {
     }
 
     @MainActor
+    @Test("Store misses obey the same eight-track retention budget as hits")
+    func storeMissCapacity() async {
+        let store = NowPlayingLyricsStore(load: { _ in nil }, cancelOthers: { _ in })
+        for index in 0 ..< 9 {
+            _ = await store.lyrics(for: trackState(title: "Miss \(index)"))
+        }
+        #expect(store.loadCount == 9)
+        _ = await store.lyrics(for: trackState(title: "Miss 0"))
+        #expect(store.loadCount == 10, "The oldest miss must leave the bounded store")
+    }
+
+    @MainActor
     @Test("A cancelled load is not cached as a miss")
     func storeCancelledLoadIsRetried() async {
         let calls = OSAllocatedUnfairLock(initialState: 0)

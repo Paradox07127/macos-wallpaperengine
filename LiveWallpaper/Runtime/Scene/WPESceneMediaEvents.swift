@@ -37,7 +37,7 @@ struct WPESceneMediaTimeline: Sendable, Equatable {
         var delivered = position
         // Only advance interpolated position while playing — a paused track's position is exact.
         if state.phase == .playing, let sampledAt = state.positionSampledAt {
-            delivered += max(0, now - sampledAt)
+            delivered += max(0, now - sampledAt) * state.effectivePlaybackRate
         }
         return WPESceneMediaTimeline(
             position: min(delivered, duration),

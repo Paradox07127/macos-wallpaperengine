@@ -115,6 +115,95 @@ struct NowPlayingSystemSourceTests {
         await source.stop()
     }
 
+    @MainActor
+    @Test("A matching legacy track fills missing system timeline fields without changing the source")
+    func matchingLegacyTimelineFillsSystemGaps() async throws {
+        var external = MonitorNowPlayingState(phase: .playing, title: "Same Track", artist: "Artist", album: "Album")
+        external.playerBundleID = "com.spotify.client"
+        external.isSystemMedia = true
+        let fixture = SystemMediaFixture(external)
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] },
+                                        systemProvider: { try await fixture.read() }, systemPollInterval: .milliseconds(10))
+        let source = NowPlayingSource(monitor: monitor, artworkFetcher: offlineFetcher(), audioReactive: false, audioDemand: { _ in })
+        let sink = RecordingNowPlayingSink()
+        await source.start(sink: sink)
+        let appeared = await waitUntil { monitor.currentState.isSystemMedia == true }
+        try #require(appeared)
+        monitor.ingest(name: Fixture.spotifyName, userInfo: [
+            "Name": "Same Track", "Artist": "Artist", "Album": "Album", "Player State": "Playing",
+            "Duration": 300_000, "Playback Position": 42.0, "Track ID": "spotify:track:shared",
+        ])
+        let filled = await waitUntil { sink.box.states.last?.duration == 300 && sink.box.states.last?.position == 42 }
+        #expect(filled)
+        #expect(monitor.currentState.isSystemMedia == true)
+        #expect(monitor.currentState.trackID == "spotify:track:shared")
+        external.album = "Other Album"
+        await fixture.set(external)
+        let changed = await waitUntil { monitor.currentState.album == "Other Album" }
+        try #require(changed)
+        #expect(monitor.currentState.duration == nil, "A different album must not inherit a same-titled track's timeline")
+        await source.stop()
+    }
+
+    @MainActor
+    @Test("Music queries its authorized playhead only while the selected system track has no position")
+    func missingSystemPositionUsesMusicFallback() async throws {
+        var external = MonitorNowPlayingState(phase: .playing, title: "Music Track", duration: 300)
+        external.playerBundleID = "com.apple.Music"
+        external.isSystemMedia = true
+        let fixture = SystemMediaFixture(external)
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] },
+                                        systemProvider: { try await fixture.read() }, systemPollInterval: .milliseconds(10))
+        let polls = OSAllocatedUnfairLock(initialState: 0)
+        let source = NowPlayingSource(
+            monitor: monitor, artworkFetcher: offlineFetcher(), audioReactive: false, audioDemand: { _ in },
+            positionProvider: { _ in polls.withLock { $0 += 1 }; return 25 }, positionPollInterval: .milliseconds(10)
+        )
+        let sink = RecordingNowPlayingSink()
+        await source.start(sink: sink)
+        let filled = await waitUntil { sink.box.states.last?.position == 25 }
+        #expect(filled)
+        #expect(sink.box.states.last?.isSystemMedia == true)
+        external.position = 45
+        await fixture.set(external)
+        let authoritative = await waitUntil { sink.box.states.last?.position == 45 }
+        try #require(authoritative)
+        let count = polls.withLock { $0 }
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(polls.withLock { $0 } == count, "A usable system position must stop legacy position polling")
+        await source.stop()
+    }
+
+    @MainActor
+    @Test("A system request issued before player termination cannot restore the departed track")
+    func playerTerminationRejectsInFlightSystemSnapshot() async throws {
+        let gate = Gate()
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        var external = MonitorNowPlayingState(phase: .playing, title: "Departed Track")
+        external.playerBundleID = "com.colliderli.iina"
+        external.isSystemMedia = true
+        let stale = external
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] }, systemProvider: {
+            let request = reads.withLock { $0 += 1; return $0 }
+            if request == 1 {
+                await gate.wait()
+                return stale
+            }
+            return nil
+        }, systemPollInterval: .milliseconds(10))
+        let box = NowPlayingStateBox()
+        let id = UUID()
+        monitor.subscribe(id: id) { _, state in box.append(state) }
+        defer { monitor.unsubscribe(id: id) }
+        let requested = await waitUntil { reads.withLock { $0 } == 1 }
+        try #require(requested)
+        monitor.playerDidTerminate(bundleID: "com.colliderli.iina")
+        await gate.open()
+        let settled = await waitUntil { reads.withLock { $0 } >= 2 }
+        try #require(settled)
+        #expect(!box.states.contains { $0.title == "Departed Track" })
+    }
+
     #if !LITE_BUILD
     @Test("System payload validation preserves usable timelines and rejects stale loop anchors")
     func payloadTimeline() async throws {
@@ -141,7 +230,9 @@ struct NowPlayingSystemSourceTests {
         payload.rate = 2
         let fast = try #require(payload.state(now: 1002))
         #expect(fast.position == 46)
-        #expect(fast.positionSampledAt == nil)
+        #expect(fast.positionSampledAt == 1002)
+        #expect(NowPlayingWidgetLayout.interpolatedPosition(state: fast, now: Date(timeIntervalSince1970: 1003)) == 48)
+        #expect(WPESceneMediaTimeline.interpolated(from: fast, now: 1003)?.position == 48)
         payload.rate = 1
         #expect(payload.state(now: 1200)?.position == nil)
         payload.title = "  "
@@ -156,6 +247,17 @@ struct NowPlayingSystemSourceTests {
         let withoutCover = try await bridge.snapshot()
         #expect(first?.title == "Track")
         #expect(withoutCover?.title == "Track", "A failed cover query must not discard valid system metadata")
+    }
+
+    @Test("System Spotify identity retains its provider track URI across artwork revisions")
+    func stableSystemTrackIdentity() throws {
+        let raw = Data(#"{"bundleID":"com.spotify.client","title":"Track","playing":true,"trackID":"spotify:track:abc123","artworkID":"cover-1"}"#.utf8)
+        var payload = try JSONDecoder().decode(NowPlayingSystemSnapshot.self, from: raw)
+        let first = try #require(payload.state())
+        #expect(first.trackID == "spotify:track:abc123")
+        #expect(first.trackID.flatMap(NowPlayingArtworkFetcher.spotifyOEmbedURL(trackID:)) != nil)
+        payload.artworkID = "cover-2"
+        #expect(payload.state()?.trackID == first.trackID)
     }
 
     @Test("The system subprocess is bounded and terminates on cancellation")

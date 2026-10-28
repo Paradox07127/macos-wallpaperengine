@@ -306,6 +306,21 @@ struct NowPlayingArtworkFetcherTests {
         #expect(counter.count("any") == 4)
     }
 
+    @Test("Distinct artwork misses cannot retain more than the existing 32-entry cache budget")
+    func negativeCacheCapacity() async {
+        let counter = RequestCounter()
+        let fetcher = NowPlayingArtworkFetcher(transport: { request in
+            counter.bump("metadata")
+            return ok(request, Data("{}".utf8))
+        }, artworkURLProvider: noPlayerArtworkURL)
+        for index in 0 ..< 33 {
+            _ = await fetcher.artwork(for: spotifyState(trackID: "spotify:track:miss\(index)"))
+        }
+        #expect(counter.count("metadata") == 33)
+        _ = await fetcher.artwork(for: spotifyState(trackID: "spotify:track:miss0"))
+        #expect(counter.count("metadata") == 34, "The oldest miss must leave the bounded negative cache")
+    }
+
     @Test("a cancelled fetch neither negative-caches nor evicts its replacement")
     func cancelledFetchLeavesNoTrace() async {
         let counter = RequestCounter()
@@ -454,15 +469,60 @@ struct NowPlayingArtworkFetcherTests {
     }
 
     @MainActor
-    @Test("a fetch completing after stop publishes nothing")
-    func fetchAfterStopPublishesNothing() async {
+    @Test("Closing one source cannot cancel the cover another source still awaits", .timeLimit(.minutes(1)))
+    func stoppingOneSourcePreservesSharedArtwork() async throws {
         let gate = Gate()
+        let counter = RequestCounter()
+        let image = Data(repeating: 9, count: 8)
+        let fetcher = NowPlayingArtworkFetcher(transport: { request in
+            if request.url!.absoluteString.contains("oembed") {
+                counter.bump("metadata")
+                await gate.wait()
+                try Task.checkCancellation()
+                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/shared"))
+            }
+            return okImage(request, image)
+        }, artworkURLProvider: noPlayerArtworkURL)
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] })
+        let first = NowPlayingSource(monitor: monitor, artworkFetcher: fetcher, audioReactive: false)
+        let second = NowPlayingSource(monitor: monitor, artworkFetcher: fetcher, audioReactive: false)
+        let firstSink = RecordingNowPlayingSink()
+        let secondSink = RecordingNowPlayingSink()
+        await first.start(sink: firstSink)
+        monitor.ingest(name: "com.spotify.client.PlaybackStateChanged", userInfo: [
+            "Name": "Shared Track", "Player State": "Playing", "Track ID": "spotify:track:shared",
+        ])
+        let requested = await waitUntil { counter.count("metadata") == 1 }
+        try #require(requested)
+        await second.start(sink: secondSink)
+        let replayed = await waitUntil { secondSink.box.states.last?.title == "Shared Track" }
+        try #require(replayed)
+        _ = await waitUntil(timeout: 0.1) { false }
+        await first.stop()
+        await gate.open()
+        let delivered = await waitUntil { secondSink.box.states.last?.artwork == image }
+        #expect(delivered, "Stopping the other source cancelled this consumer's shared download")
+        #expect(counter.count("metadata") == 1, "A surviving consumer must keep the original merged request")
+        #expect(!firstSink.box.states.contains { $0.artwork != nil })
+        await second.stop()
+    }
+
+    @MainActor
+    @Test("a fetch completing after stop publishes nothing")
+    func fetchAfterStopPublishesNothing() async throws {
+        let gate = Gate()
+        let counter = RequestCounter()
         let fetcher = NowPlayingArtworkFetcher(
             transport: { request in
                 let url = request.url!.absoluteString
                 if url.contains("oembed") {
-                    await gate.wait()
-                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
+                    counter.bump("started")
+                    return await withTaskCancellationHandler {
+                        await gate.wait()
+                        return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
+                    } onCancel: {
+                        counter.bump("cancelled")
+                    }
                 }
                 return okImage(request, Data(repeating: 9, count: 8))
             },
@@ -482,7 +542,11 @@ struct NowPlayingArtworkFetcherTests {
         )
         #expect(await waitUntil { sink.box.states.contains { $0.title == "Stopped Track" } })
 
+        let requested = await waitUntil { counter.count("started") == 1 }
+        try #require(requested)
         await source.stop()
+        let cancelled = await waitUntil { counter.count("cancelled") == 1 }
+        #expect(cancelled, "The final consumer's stop must cancel its pending transport")
         let countAtStop = sink.box.count
         await gate.open()
         _ = await waitUntil(timeout: 0.3) { false } // settle
