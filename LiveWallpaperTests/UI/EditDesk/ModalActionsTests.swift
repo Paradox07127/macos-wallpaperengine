@@ -889,7 +889,7 @@ struct ModalActionsTests {
         retry.action()
         #expect(updates == 2, "a failed transfer must not hide a known newer version's retry")
         let updateTitle = String(localized: "Update", bundle: .appLanguage)
-        let retryMenu = modal.menuItems(for: item, requestRename: {}, requestDelete: {}).flatMap { $0 }
+        let retryMenu = modal.menuItems(for: item, requestRename: {}, requestDelete: {}).flatMap(\.self)
         let retryItem = try #require(retryMenu.first { $0.title == updateTitle })
         retryItem.action()
         #expect(updates == 3)
