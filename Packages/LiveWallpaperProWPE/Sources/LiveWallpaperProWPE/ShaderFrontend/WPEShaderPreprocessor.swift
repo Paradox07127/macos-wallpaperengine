@@ -185,7 +185,7 @@ enum WPEShaderPreprocessor {
 }
 
 /// `#if`/`#elif` evaluation (FUN_140167e10 / FUN_140166a90): C precedence on 32-bit ints, macros expanded
-/// recursively, undefined identifiers are 0, division by zero is 0.
+/// recursively except inside their own expansion (as in C), undefined identifiers are 0, division by zero is 0.
 enum WPEShaderExpression {
     enum Token: Equatable {
         case number(Int)
@@ -200,14 +200,18 @@ enum WPEShaderExpression {
         ["||"], ["&&"], ["|"], ["^"], ["&"], ["==", "!="], ["<", "<=", ">", ">="], ["<<", ">>"], ["+", "-"],
         ["*", "/", "%"],
     ]
-    private static let maxExpansionDepth = 32
+    /// Replacement bytes one expression may expand; a chain of distinct doubling macros is exponential otherwise.
+    private static let maxExpandedBytes = 1 << 16
 
     static func evaluate(_ expression: [UInt8], defines: WPEShaderMacros) -> Int {
-        var parser = Parser(tokens: tokenize(expression, defines: defines, depth: 0))
+        var budget = maxExpandedBytes
+        var parser = Parser(tokens: tokenize(expression, defines: defines, expanding: [], budget: &budget))
         return parser.parse(level: 0, defines: defines)
     }
 
-    static func tokenize(_ s: [UInt8], defines: WPEShaderMacros, depth: Int) -> [Token] {
+    /// `expanding` holds the macros whose replacement text is being tokenized; they stay plain identifiers,
+    /// as does every macro once `budget` is spent.
+    static func tokenize(_ s: [UInt8], defines: WPEShaderMacros, expanding: Set<[UInt8]>, budget: inout Int) -> [Token] {
         var tokens: [Token] = []
         let n = s.count
         var i = 0
@@ -267,8 +271,9 @@ enum WPEShaderExpression {
                     afterDefined = 2
                     continue
                 }
-                if afterDefined == 0, let value = defines[ident], depth < maxExpansionDepth {
-                    tokens += tokenize(value, defines: defines, depth: depth + 1)
+                if afterDefined == 0, !expanding.contains(ident), let value = defines[ident], budget >= value.count {
+                    budget -= value.count
+                    tokens += tokenize(value, defines: defines, expanding: expanding.union([ident]), budget: &budget)
                 } else {
                     tokens.append(.identifier(ident))
                 }

@@ -136,6 +136,38 @@ final class WPEShaderFrontendRuleTests: XCTestCase {
         XCTAssertEqual(eval("!defined(LEVEL)", ["LEVEL": "0"]), 0)
     }
 
+    func testSelfReferencingMacroIsNotReexpandedInsideItsOwnExpansion() throws {
+        XCTAssertEqual(
+            try preprocess("#define X X+1\n#if X == 1\nkept\n#endif\n"),
+            "#define X X+1\n\(blank("#if X == 1"))\nkept\n      \n"
+        )
+    }
+
+    func testDoublingSelfReferenceExpandsOnceAndIsFalse() throws {
+        let start = ContinuousClock.now
+        XCTAssertEqual(
+            try preprocess("#define A A A\n#if A\ndropped\n#endif\n"),
+            "#define A A A\n\(blank("#if A"))\n\(blank("dropped"))\n      \n"
+        )
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(1))
+    }
+
+    func testMutuallyReferencingMacrosStopAtTheFirstRepeat() throws {
+        let start = ContinuousClock.now
+        XCTAssertEqual(
+            try preprocess("#define A B\n#define B A\n#if A\ndropped\n#endif\n"),
+            "#define A B\n#define B A\n\(blank("#if A"))\n\(blank("dropped"))\n      \n"
+        )
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(1))
+    }
+
+    func testDoublingChainOfDistinctMacrosStopsAtTheExpansionBudget() throws {
+        let chain = (0 ..< 40).map { "#define M\($0) M\($0 + 1) M\($0 + 1)\n" }.joined()
+        let start = ContinuousClock.now
+        XCTAssertTrue(try preprocess(chain + "#if M0\nx\n#endif\n").hasSuffix("\(blank("x"))\n      \n"))
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(1))
+    }
+
     func testShaderVersionIsPredefinedAndActiveDefinesStayInText() throws {
         XCTAssertEqual(
             try preprocess("#if SHADERVERSION == 69\nkept\n#endif\n#define M_X a_Position\n"),
