@@ -26,16 +26,8 @@ final class WeatherReactiveService {
         currentReading?.intensity ?? .moderate
     }
 
-    var currentIsFreezing: Bool {
-        currentReading?.isFreezing ?? false
-    }
-
     var currentWind: WeatherWind? {
         currentReading?.wind
-    }
-
-    var currentIsDaylight: Bool? {
-        currentReading?.isDaylight
     }
 
     private(set) var locationStatus: LocationStatus = .notDetermined
@@ -93,8 +85,6 @@ final class WeatherReactiveService {
         var condition: WeatherDescription
         /// How hard it is coming down, apart from *what*, so drizzle and downpour share one effect at two densities.
         var intensity: WeatherIntensity
-        /// Freezing drizzle / freezing rain.
-        var isFreezing: Bool
         /// `is_day` as the API reports it for this location; nil when unavailable.
         var isDaylight: Bool?
         /// Nil when the API omits wind speed or direction.
@@ -311,7 +301,6 @@ final class WeatherReactiveService {
                 locationLabel: resolution.displayName,
                 condition: description,
                 intensity: WeatherCodePolicy.intensity(forWMOCode: weatherCode),
-                isFreezing: isFreezing,
                 isDaylight: isDaylight,
                 wind: response.current.wind_direction_10m.flatMap { direction in
                     response.current.wind_speed_10m.map { speed in

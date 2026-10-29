@@ -348,11 +348,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SparkleUpdaterController.shared.start()
         }
         #endif
-        #if DEBUG
-        if runtimeOptions.isTesting, ProcessInfo.processInfo.arguments.contains("--nixie-overlay-preview") {
-            NixieOverlayPreview.present()
-        }
-        #endif
     }
 
     deinit {

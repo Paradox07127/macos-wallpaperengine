@@ -821,6 +821,7 @@ final class WallpaperVideoPlayer {
 
         let benignLooperCodes: Set<Int> = [-11847, -11858, -11878, -12504, -12509, -12784, -12823, -12852, -12860]
         NotificationCenter.default.publisher(for: .AVPlayerItemFailedToPlayToEndTime, object: nil)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 guard let self,
                       let item = notification.object as? AVPlayerItem,
