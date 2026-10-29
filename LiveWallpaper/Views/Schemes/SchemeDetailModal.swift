@@ -393,9 +393,11 @@ enum SchemeDetailRows {
         if overlay.clock.enabled {
             rows.append(Row(key: .clock, label: String(localized: "Clock", bundle: .appLanguage), value: layerName(overlay.clock.level)))
         }
+        #if !MAS_BUILD
         if overlay.music.enabled {
             rows.append(Row(key: .music, label: String(localized: "Music", bundle: .appLanguage), value: layerName(overlay.music.level)))
         }
+        #endif
         if overlay.enabled {
             rows.append(Row(
                 key: .board,

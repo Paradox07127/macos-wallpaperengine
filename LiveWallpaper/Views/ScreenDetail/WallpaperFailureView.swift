@@ -44,7 +44,7 @@ struct WallpaperFailureView: View {
             engineAssetsAuthorized: engineAssetsAuthorized
         )
         guard isCurrentAttempt else {
-            #if MAS_BUILD
+            #if LITE_BUILD
             return []
             #else
             return actions.filter { action in
@@ -103,7 +103,7 @@ struct WallpaperFailureView: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, DesignTokens.Spacing.md)
-                #if !MAS_BUILD
+                #if !LITE_BUILD
                 if recovery.contains(.configureEngineAssets) {
                     Text("Set up Wallpaper Engine assets in Settings › Workshop, then retry this wallpaper.")
                         .font(DesignTokens.Typography.body)
@@ -296,10 +296,13 @@ struct WallpaperAttemptPreview: View {
     /// remove a configuration this display does not have.
     private var clearDisplayAction: (() -> Void)? {
         guard screenManager.getConfiguration(for: screen) != nil else { return nil }
+        #if MAS_BUILD
+        let action = DestructiveAction.clearCurrentWallpaper(displayName: screen.name, mentionsMusicOverlay: false)
+        #else
+        let action = DestructiveAction.clearCurrentWallpaper(displayName: screen.name)
+        #endif
         return {
-            pendingDestructive = PendingDestructive(
-                .clearCurrentWallpaper(displayName: screen.name)
-            ) {
+            pendingDestructive = PendingDestructive(action) {
                 clearWallpaper()
                 // Drops the failed attempt too, otherwise the page the user just
                 // escaped from stays on screen describing a wallpaper that is

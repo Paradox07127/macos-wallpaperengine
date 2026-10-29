@@ -65,6 +65,11 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
     }
 
     public var displayDescriptionKey: LocalizedStringKey {
+        displayDescriptionKey(sceneCapable: true)
+    }
+
+    /// `sceneCapable` = the build renders scenes; false (Lite) drops scenes from the copy.
+    public func displayDescriptionKey(sceneCapable: Bool) -> LocalizedStringKey {
         switch self {
         case .togglePlayback:
             "Pause every active wallpaper, or resume them all."
@@ -73,9 +78,11 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
         case .previousWallpaper:
             "Step the playlist back on the display under the cursor."
         case .toggleMute:
-            "Mute or unmute video and scene wallpapers."
+            sceneCapable ? "Mute or unmute video and scene wallpapers." : "Mute or unmute video wallpapers."
         case .toggleMouseInteraction:
-            "Controls cursor tracking in scenes and mouse interaction on web pages."
+            sceneCapable
+                ? "Controls cursor tracking in scenes and mouse interaction on web pages."
+                : "Controls mouse interaction on web pages."
         case .toggleWallpapers:
             "Hide every wallpaper to reveal the desktop, or bring them back."
         case .reloadWallpapers:

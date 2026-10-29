@@ -248,11 +248,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             group: .playback,
             title: "Overlays",
             systemImage: "square.on.square.badge.person.crop",
-            keywords: [
-                "monitor", "widget", "tint", "opacity", "liquid glass",
-                "temperature", "celsius", "fahrenheit",
-                "组件", "浮层", "温度", "浮層", "溫度", "ウィジェット", "温度", "widget",
-            ]
+            keywords: overlaysKeywords
         ),
         SettingsNavigationItem(
             destination: .systemWallpaper,
@@ -313,6 +309,10 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     ]
     private static let aboutKeywords = ["version", "website", "privacy", "report bug", "welcome tour"]
     private static let aboutRows = ["Website", "Privacy Policy", "Report a Bug", "Welcome Tour"]
+    private static let overlaysKeywords = [
+        "monitor", "widget", "tint", "opacity", "liquid glass",
+        "组件", "浮层", "浮層", "ウィジェット", "widget",
+    ]
     #else
     private static let advancedKeywords = ["logs", "diagnostics", "privacy", "hardware", "analytics"]
     private static let advancedRows = [
@@ -321,6 +321,11 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     ]
     private static let aboutKeywords = ["version", "github", "report bug", "welcome tour"]
     private static let aboutRows = ["View on GitHub", "Discussions", "Report a Bug", "Welcome Tour"]
+    private static let overlaysKeywords = [
+        "monitor", "widget", "tint", "opacity", "liquid glass",
+        "temperature", "celsius", "fahrenheit",
+        "组件", "浮层", "温度", "浮層", "溫度", "ウィジェット", "温度", "widget",
+    ]
     #endif
 }
 
@@ -524,13 +529,17 @@ struct SettingsNavigationItem: Identifiable, Equatable {
             )
             return targets
         case .overlays:
+            let widgets = SettingsNavigationSearchTarget(
+                label: "Widgets",
+                anchor: .overlaysAppearance,
+                rows: ["Widget tint", "Widget opacity", "Liquid Glass"],
+                keywords: ["widget", "tint", "opacity", "liquid glass", "panel", "appearance"]
+            )
+            #if MAS_BUILD
+            return [widgets]
+            #else
             return [
-                SettingsNavigationSearchTarget(
-                    label: "Widgets",
-                    anchor: .overlaysAppearance,
-                    rows: ["Widget tint", "Widget opacity", "Liquid Glass"],
-                    keywords: ["widget", "tint", "opacity", "liquid glass", "panel", "appearance"]
-                ),
+                widgets,
                 SettingsNavigationSearchTarget(
                     label: "Units",
                     anchor: .overlaysUnits,
@@ -538,6 +547,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     keywords: ["temperature", "celsius", "fahrenheit", "unit"]
                 ),
             ]
+            #endif
         case .shortcuts:
             return [
                 SettingsNavigationSearchTarget(

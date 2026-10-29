@@ -4,7 +4,9 @@ import SwiftUI
 /// Appearance here is shared by every overlay panel on every display; the per-display
 /// parts of an overlay stay in the board's own inspector.
 struct OverlaysSettingsView: View {
+    #if !MAS_BUILD
     @AppStorage(MonitorTemperature.fahrenheitDefaultsKey, store: .appScoped()) private var temperatureFahrenheit = false
+    #endif
     @AppStorage(MonitorPanelAppearance.tintKey, store: .appScoped())
     private var widgetTintHex = MonitorPanelAppearance.defaultTintHex
     @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())
@@ -24,11 +26,13 @@ struct OverlaysSettingsView: View {
                 SettingsSearchSectionHeader("Widgets", anchor: .overlaysAppearance)
             }
 
+            #if !MAS_BUILD
             Section {
                 temperatureUnitRow
             } header: {
                 SettingsSearchSectionHeader("Units", anchor: .overlaysUnits)
             }
+            #endif
         }
         .settingsFormChrome()
     }
@@ -92,6 +96,7 @@ struct OverlaysSettingsView: View {
         }
     }
 
+    #if !MAS_BUILD
     private var temperatureUnitRow: some View {
         SettingRow(
             icon: "thermometer.variable.and.figure",
@@ -114,4 +119,5 @@ struct OverlaysSettingsView: View {
             .accessibilityLabel(Text("Temperature unit"))
         }
     }
+    #endif
 }

@@ -51,15 +51,19 @@ enum MonitorBoardPreviewFixture {
         ]
         system.netPath = MonitorNetworkPath(status: "satisfied", interfaceType: "wifi")
         system.powerSource = "battery"
+        #if !MAS_BUILD
         system.sensors = MonitorSensorReadings(cpuTempC: 53, gpuTempC: 49, fanRPM: [1200])
+        #endif
         system.aneFootprintPresent = true
         system.aneFootprintBytes = 240_000_000
         system.aneProcesses = [
             MonitorANEProcess(name: "Image Playground", footprintBytes: 240_000_000),
             MonitorANEProcess(name: "Photos", footprintBytes: 96_000_000),
         ]
+        #if !MAS_BUILD
         system.topProcesses = topProcesses()
         system.topIOProcesses = topProcesses()
+        #endif
         system.sampledAt = now
         system.metricSamples = Dictionary(
             uniqueKeysWithValues: MonitorWidgetKind.allCases.map {

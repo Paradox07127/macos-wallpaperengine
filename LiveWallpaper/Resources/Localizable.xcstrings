@@ -8870,6 +8870,42 @@
         }
       }
     },
+    "Applies to video wallpapers." : {
+      "comment" : "Scope of the global mute shortcut in an edition without scenes; HTML wallpaper mute is not changed by this action.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to video wallpapers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica a fondos de vídeo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画の壁紙に適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "适用于视频壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "適用於影片桌布。"
+          }
+        }
+      }
+    },
     "Applies to videos and live scenes. When the Mac is hot, in Low Power Mode or on battery, the frame rate drops or playback pauses." : {
       "comment" : "Info for the System Wallpaper playback setting.",
       "localizations" : {
@@ -17950,6 +17986,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "控制場景中的游標跟隨和網頁滑鼠互動。"
+          }
+        }
+      }
+    },
+    "Controls mouse interaction on web pages." : {
+      "comment" : "Global interaction shortcut in an edition without scenes; it toggles HTML allowMouseInteraction.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controls mouse interaction on web pages."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controla la interacción del ratón en páginas web."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webページのマウス操作を切り替えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制网页鼠标交互。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制網頁滑鼠互動。"
           }
         }
       }
@@ -35660,6 +35732,42 @@
         }
       }
     },
+    "Integrations controls weather location. Enable only the permissions needed by the features you use." : {
+      "comment" : "Welcome Tour settings walkthrough in an edition without audio response.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrations controls weather location. Enable only the permissions needed by the features you use."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integraciones controla la ubicación del tiempo. Activa solo los permisos necesarios para las funciones que uses."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連携では、天気の位置情報を設定できます。使う機能に必要な権限だけを許可してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统联动管理天气位置。请按所用功能的需要授予权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統聯動管理天氣位置。請依所用功能的需要授予權限。"
+          }
+        }
+      }
+    },
     "Intensity" : {
       "comment" : "Now Playing effects slider: one multiplier over every effect's amplitude.",
       "extractionState" : "manual",
@@ -43269,6 +43377,42 @@
         }
       }
     },
+    "Mute or unmute video wallpapers." : {
+      "comment" : "Global shortcut action description in an edition without scenes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mute or unmute video wallpapers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Silenciar o reactivar el audio de los fondos de vídeo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画の壁紙をミュートまたはミュート解除します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将视频壁纸静音或取消静音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將影片桌布靜音或取消靜音。"
+          }
+        }
+      }
+    },
     "Muted" : {
       "comment" : "Audio level display when the wallpaper is muted",
       "extractionState" : "manual",
@@ -49313,6 +49457,42 @@
         }
       }
     },
+    "Overlays add independent clocks, weather and widgets above the wallpaper. Switch back with the wallpaper button; the display tabs choose which screen you are editing." : {
+      "comment" : "Welcome Tour overlay step in an edition without the music overlay.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overlays add independent clocks, weather and widgets above the wallpaper. Switch back with the wallpaper button; the display tabs choose which screen you are editing."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las superposiciones añaden relojes, tiempo y widgets independientes. Vuelve con el botón de fondo y elige la pantalla con sus pestañas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙の上に独立した時計・天気・ウィジェットを追加します。壁紙ボタンで設定に戻り、タブで編集ディスプレイを選びます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "叠加层在壁纸上方添加独立的时钟、天气和小组件。壁纸按钮可切回配置层，显示器标签选择要编辑的显示器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "疊加層在桌布上方加入獨立的時鐘、天氣和小工具。桌布按鈕可切回設定層，顯示器標籤選擇要編輯的顯示器。"
+          }
+        }
+      }
+    },
     "Overlays add independent clocks, weather, music and widgets above the wallpaper. Switch back with the wallpaper button; the display tabs choose which screen you are editing." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -49379,6 +49559,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "疊加層設定管理小工具的共用外觀和單位。個別小工具的位置請在各顯示器的疊加層編輯器中調整。"
+          }
+        }
+      }
+    },
+    "Overlays changes shared widget appearance. Arrange individual widgets in each display's overlay editor." : {
+      "comment" : "Welcome Tour settings walkthrough in an edition without the temperature unit setting.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overlays changes shared widget appearance. Arrange individual widgets in each display's overlay editor."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Superposiciones cambia la apariencia compartida de los widgets. Organiza cada widget en el editor de superposiciones de su pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーバーレイでは、ウィジェット共通の外観を設定できます。個別の配置は各ディスプレイのオーバーレイエディタで調整してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "叠加层设置管理小组件的共用外观。单个小组件的位置请在各显示器的叠加层编辑器中调整。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "疊加層設定管理小工具的共用外觀。個別小工具的位置請在各顯示器的疊加層編輯器中調整。"
           }
         }
       }
@@ -55945,6 +56161,42 @@
         }
       }
     },
+    "Reloads the current wallpaper." : {
+      "comment" : "Accessibility hint for the retry action in an edition without scenes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reloads the current wallpaper."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a cargar el fondo de pantalla actual."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在の壁紙を再読み込みします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新加载当前壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新載入目前桌布。"
+          }
+        }
+      }
+    },
     "Reloads the wallpaper content for this screen" : {
       "localizations" : {
         "en" : {
@@ -56957,6 +57209,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將清除 %@ 可回收快取檔案。使用中的桌布保留來源指派，需要時會重建快取。"
+          }
+        }
+      }
+    },
+    "Removes everything saved for %@: the wallpaper, playlist, schedule, effect layer, and all other settings for this display. The wallpaper library, source files, and the widget and clock overlays are kept." : {
+      "comment" : "Destructive confirm message in an edition without the music overlay. Placeholder is the display name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removes everything saved for %@: the wallpaper, playlist, schedule, effect layer, and all other settings for this display. The wallpaper library, source files, and the widget and clock overlays are kept."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina todo lo guardado para %@: el fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de esta pantalla. Se conservan la biblioteca de fondos, los archivos de origen y las superposiciones de widgets y reloj."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に保存されている内容をすべて削除します：壁紙、プレイリスト、スケジュール、エフェクトレイヤー、およびこのディスプレイのその他すべての設定。壁紙ライブラリ、ソースファイル、ウィジェット・時計のオーバーレイは保持されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将移除为 %@ 保存的全部内容：壁纸、播放列表、计划、效果层，以及这台显示器的其他所有设置。壁纸库、源文件，以及小组件和时钟叠加层会保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將移除為 %@ 儲存的全部內容：桌布、播放列表、排程、效果層，以及這台顯示器的其他所有設定。桌布庫、來源檔案，以及小工具和時鐘疊加層會保留。"
           }
         }
       }
@@ -74657,6 +74945,42 @@
         }
       }
     },
+    "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations." : {
+      "comment" : "Welcome Tour overlay step in an edition without the music overlay.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El selector puede mostrar datos de ejemplo. Consulta valores reales en el escritorio. El tiempo necesita ubicación en Ajustes › Integraciones."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビューではサンプルを表示できます。実際の値はデスクトップで確認してください。天気は「設定 › 連携」の位置情報が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览选择器可显示示例数据，实时数值请查看实际桌面。天气需要在“设置 › 系统联动”配置位置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預覽選擇器可顯示範例資料，即時數值請查看實際桌面。天氣需要在「設定 › 系統整合」設定位置。"
+          }
+        }
+      }
+    },
     "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations; music needs a supported player." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -76160,6 +76484,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布錄製在完成前停止。"
+          }
+        }
+      }
+    },
+    "The wallpaper, playlist, schedule, effect layer, and all other settings on %lld other displays are replaced with this display's. Their widget and clock overlays are not changed." : {
+      "comment" : "Destructive confirm message in an edition without the music overlay. Placeholder is the number of other displays.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The wallpaper, playlist, schedule, effect layer, and all other settings on %lld other display are replaced with this display's. Its widget and clock overlays are not changed."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The wallpaper, playlist, schedule, effect layer, and all other settings on %lld other displays are replaced with this display's. Their widget and clock overlays are not changed."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "El fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de %lld pantalla más se sustituyen por los de esta. Sus superposiciones de widgets y reloj no cambian."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "El fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de otras %lld pantallas se sustituyen por los de esta. Sus superposiciones de widgets y reloj no cambian."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他の %lld 台のディスプレイの壁紙、プレイリスト、スケジュール、エフェクトレイヤー、その他すべての設定が、このディスプレイと同じ内容に置き換わります。それらのウィジェット・時計のオーバーレイは変わりません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另外 %lld 台显示器上的壁纸、播放列表、计划、效果层和其他所有设置，都将替换为与这台显示器相同的内容。它们的小组件和时钟叠加层保持不变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另外 %lld 台顯示器上的桌布、播放列表、排程、效果層和其他所有設定，都將取代為與這台顯示器相同的內容。它們的小工具和時鐘疊加層維持不變。"
           }
         }
       }

@@ -617,9 +617,14 @@ struct HomePage: View {
                         StageMenuItem(title: target.name, isEnabled: true) { applyConfiguration(from: screen, to: target) }
                     },
                     [StageMenuItem(title: String(localized: "All Displays", bundle: .appLanguage), isEnabled: others.count > 1) {
-                        pendingDestructive = PendingDestructive(
-                            .applyConfigurationToAllDisplays(otherCount: others.count)
-                        ) {
+                        #if MAS_BUILD
+                        let action = DestructiveAction.applyConfigurationToAllDisplays(
+                            otherCount: others.count, mentionsMusicOverlay: false
+                        )
+                        #else
+                        let action = DestructiveAction.applyConfigurationToAllDisplays(otherCount: others.count)
+                        #endif
+                        pendingDestructive = PendingDestructive(action) {
                             applyConfigurationToAllDisplays(from: screen)
                         }
                     }],
@@ -658,7 +663,12 @@ struct HomePage: View {
     }
 
     private func requestClearWallpaper(on screen: Screen) {
-        pendingDestructive = PendingDestructive(.clearCurrentWallpaper(displayName: screen.name)) {
+        #if MAS_BUILD
+        let action = DestructiveAction.clearCurrentWallpaper(displayName: screen.name, mentionsMusicOverlay: false)
+        #else
+        let action = DestructiveAction.clearCurrentWallpaper(displayName: screen.name)
+        #endif
+        pendingDestructive = PendingDestructive(action) {
             clearWallpaper(on: screen)
         }
     }

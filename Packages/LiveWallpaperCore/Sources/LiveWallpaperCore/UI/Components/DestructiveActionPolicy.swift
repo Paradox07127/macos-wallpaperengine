@@ -7,8 +7,10 @@ public enum DestructiveAction: Identifiable, Equatable {
     case replaceScheme(schemeName: String, displayName: String)
     case replaceLocalCopy(title: String)
     case clearAllStorageCaches(byteSize: String)
-    case applyConfigurationToAllDisplays(otherCount: Int)
-    case clearCurrentWallpaper(displayName: String)
+    /// `mentionsMusicOverlay` = false drops the music overlay from the list of overlays left untouched.
+    case applyConfigurationToAllDisplays(otherCount: Int, mentionsMusicOverlay: Bool = true)
+    /// `mentionsMusicOverlay` = false drops the music overlay from the list of overlays kept.
+    case clearCurrentWallpaper(displayName: String, mentionsMusicOverlay: Bool = true)
     /// `sceneCapable` = the build renders scenes; false (Lite) omits scene settings from the copy.
     case resetDisplaySettings(displayName: String, sceneCapable: Bool)
     /// `sceneCapable` = the build renders scenes; false (Lite) omits presets and Wallpaper Engine assets.
@@ -35,8 +37,8 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
         case .clearSystemWallpaperLibrary(let n, let b): return "clearSystemWallpaperLibrary-\(n)-\(b)"
         case let .clearLegacySystemWallpapers(n, b, p, _): return "clearLegacySystemWallpapers-\(n)-\(b)-\(p.joined(separator: "|"))"
-        case .applyConfigurationToAllDisplays(let c): return "applyConfigurationToAllDisplays-\(c)"
-        case .clearCurrentWallpaper(let n): return "clearCurrentWallpaper-\(n)"
+        case let .applyConfigurationToAllDisplays(c, _): return "applyConfigurationToAllDisplays-\(c)"
+        case let .clearCurrentWallpaper(n, _): return "clearCurrentWallpaper-\(n)"
         case let .resetDisplaySettings(n, _): return "resetDisplaySettings-\(n)"
         case .resetAllSettings: return "resetAllSettings"
         case .disconnectAerialsLibrary: return "disconnectAerialsLibrary"
@@ -124,16 +126,26 @@ public enum DestructiveAction: Identifiable, Equatable {
                 localized: "Removes \(byteSize) of reclaimable cache files. Active wallpapers keep their source assignments and rebuild cached files when needed.",
                 bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is a formatted byte size."
             )
-        case .applyConfigurationToAllDisplays(let count):
-            return String(
-                localized: "The wallpaper, playlist, schedule, effect layer, and all other settings on \(count) other displays are replaced with this display's. Their widget, music, and clock overlays are not changed.",
-                bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholder is the number of other displays."
-            )
-        case .clearCurrentWallpaper(let displayName):
-            return String(
-                localized: "Removes everything saved for \(displayName): the wallpaper, playlist, schedule, effect layer, and all other settings for this display. The wallpaper library, source files, and the widget, music, and clock overlays are kept.",
-                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
-            )
+        case let .applyConfigurationToAllDisplays(count, mentionsMusicOverlay):
+            return mentionsMusicOverlay
+                ? String(
+                    localized: "The wallpaper, playlist, schedule, effect layer, and all other settings on \(count) other displays are replaced with this display's. Their widget, music, and clock overlays are not changed.",
+                    bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message. Placeholder is the number of other displays."
+                )
+                : String(
+                    localized: "The wallpaper, playlist, schedule, effect layer, and all other settings on \(count) other displays are replaced with this display's. Their widget and clock overlays are not changed.",
+                    bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Destructive confirm message in an edition without the music overlay. Placeholder is the number of other displays."
+                )
+        case let .clearCurrentWallpaper(displayName, mentionsMusicOverlay):
+            return mentionsMusicOverlay
+                ? String(
+                    localized: "Removes everything saved for \(displayName): the wallpaper, playlist, schedule, effect layer, and all other settings for this display. The wallpaper library, source files, and the widget, music, and clock overlays are kept.",
+                    bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
+                )
+                : String(
+                    localized: "Removes everything saved for \(displayName): the wallpaper, playlist, schedule, effect layer, and all other settings for this display. The wallpaper library, source files, and the widget and clock overlays are kept.",
+                    bundle: .appLanguage, comment: "Destructive confirm message in an edition without the music overlay. Placeholder is the display name."
+                )
         case let .resetDisplaySettings(displayName, sceneCapable):
             return sceneCapable
                 ? String(

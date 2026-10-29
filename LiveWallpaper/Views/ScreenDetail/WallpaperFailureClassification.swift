@@ -55,7 +55,7 @@ enum WallpaperFailureRecovery: Equatable, Hashable {
     /// Re-point at content we can no longer open. Distinct from `.retry`:
     /// trying the same unreachable path again cannot succeed.
     case chooseSource
-    #if !MAS_BUILD
+    #if !LITE_BUILD
     case copyDependencyIDs([String])
     case openWorkshop(String)
     case configureEngineAssets
@@ -112,7 +112,7 @@ extension WallpaperFailureCause {
         workshopID: String?, canChooseSource: Bool, engineAssetsAuthorized: Bool = true
     ) -> [WallpaperFailureRecovery] {
         var actions: [WallpaperFailureRecovery] = []
-        #if !MAS_BUILD
+        #if !LITE_BUILD
         if !engineAssetsAuthorized, code == "graph.file_missing" || code == "scene.file_missing" {
             actions.append(.configureEngineAssets)
         }
@@ -160,7 +160,11 @@ struct WallpaperFailureRecoveryActions: View {
                     Button(action: onRetry) {
                         Label("Retry", systemImage: "arrow.clockwise")
                     }
+                    #if LITE_BUILD
+                    .accessibilityHint(Text("Reloads the current wallpaper."))
+                    #else
                     .accessibilityHint(Text("Reloads the current scene."))
+                    #endif
                 }
             }
         case .chooseSource:
@@ -172,7 +176,7 @@ struct WallpaperFailureRecoveryActions: View {
                     .accessibilityHint(Text("Opens a folder chooser to link and apply a local project in place"))
                 }
             }
-        #if !MAS_BUILD
+        #if !LITE_BUILD
         case let .copyDependencyIDs(ids):
             emphasised(isPrimary) {
                 Button {
@@ -237,7 +241,7 @@ struct WallpaperFailureRecoveryActions: View {
         }
     }
 
-    #if !MAS_BUILD
+    #if !LITE_BUILD
     private func openWorkshop(workshopID: String) {
         var components = URLComponents(string: "https://steamcommunity.com/sharedfiles/filedetails/")
         components?.queryItems = [URLQueryItem(name: "id", value: workshopID)]

@@ -258,17 +258,28 @@ private struct ShortcutRow: View {
                 .accessibilityLabel(Text("More options for \(action.displayName)", comment: "Shortcut row menu a11y label. The placeholder is the shortcut action name."))
             }
         }
+        #if LITE_BUILD
+        .accessibilityHint(Text(action.displayDescriptionKey(sceneCapable: false)))
+        #else
         .accessibilityHint(Text(action.displayDescriptionKey))
+        #endif
     }
 
     private var scopeInfo: String.LocalizationValue? {
         switch action {
         case .nextWallpaper, .previousWallpaper:
             "Targets the playlist on the display under the pointer."
+        #if LITE_BUILD
+        case .toggleMute:
+            "Applies to video wallpapers."
+        case .toggleMouseInteraction:
+            "Controls mouse interaction on web pages."
+        #else
         case .toggleMute:
             "Applies to video and scene wallpapers."
         case .toggleMouseInteraction:
             "Controls cursor tracking in scenes and mouse interaction on web pages."
+        #endif
         default:
             nil
         }

@@ -299,8 +299,12 @@ struct MemoryWidgetView: View {
     }
 
     private var showsTopProcesses: Bool {
+        #if MAS_BUILD
+        false
+        #else
         MemoryWidgetView.showsTopProcesses(
             context.placement.options["showTopProcesses"]?.boolValue)
+        #endif
     }
 
     private var breakdownCompact: Bool {

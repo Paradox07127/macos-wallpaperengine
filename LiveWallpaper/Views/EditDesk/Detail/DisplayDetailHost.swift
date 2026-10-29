@@ -623,7 +623,12 @@ struct DisplayDetailHost: View {
     }
 
     private func requestClearWallpaper(for screen: Screen) {
-        pendingDestructive = PendingDestructive(.clearCurrentWallpaper(displayName: screen.name)) {
+        #if MAS_BUILD
+        let action = DestructiveAction.clearCurrentWallpaper(displayName: screen.name, mentionsMusicOverlay: false)
+        #else
+        let action = DestructiveAction.clearCurrentWallpaper(displayName: screen.name)
+        #endif
+        pendingDestructive = PendingDestructive(action) {
             clearWallpaper(screen)
             // Clearing only bumps the session version; the draft would keep the old wallpaper's panel.
             reloadDraft(for: screen)
@@ -638,7 +643,14 @@ struct DisplayDetailHost: View {
     }
 
     private func requestApplyToAll(from screen: Screen) {
-        pendingDestructive = PendingDestructive(.applyConfigurationToAllDisplays(otherCount: screenManager.screens.count - 1)) {
+        #if MAS_BUILD
+        let action = DestructiveAction.applyConfigurationToAllDisplays(
+            otherCount: screenManager.screens.count - 1, mentionsMusicOverlay: false
+        )
+        #else
+        let action = DestructiveAction.applyConfigurationToAllDisplays(otherCount: screenManager.screens.count - 1)
+        #endif
+        pendingDestructive = PendingDestructive(action) {
             applyToAllDisplays(screen)
         }
     }

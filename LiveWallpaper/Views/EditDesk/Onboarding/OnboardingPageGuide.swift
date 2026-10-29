@@ -178,6 +178,55 @@ enum PageGuideContext: CaseIterable {
         #endif
     }
 
+    private static var workshopSteps: [PageGuideStep] {
+        #if LITE_BUILD
+        []
+        #else
+        [
+            .init(.page, "Browse before connecting", "Use search, filters, sort and time range to find wallpapers. Click a result for details. A Steam Web API key is optional; its settings explain the extra information it enables.", settingsAnchor: .workshopSetup),
+            .init(.steamMenu, "Connect or import locally", "Use the Steam menu to connect your account, sync subscriptions or add a link. Downloads need SteamCMD and ownership of Wallpaper Engine. Import a Local Folder works without signing in."),
+            .init(.steamMenu, "Install the download component", "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD.", settingsAnchor: .workshopConnection),
+            .init(.steamMenu, "Authorize your Steam library", "In Steam connection, choose or authorize your Steam library folder. This grants Loomscreen access to local Workshop files; it does not sign you in. Follow the folder picker's instructions, then check the library status.", settingsAnchor: .workshopConnection),
+            .init(.steamMenu, "Sign in and confirm Steam Guard", "Use the Steam account that owns Wallpaper Engine. Enter its account name and password, then approve Steam Guard on your phone or enter the requested email or authenticator code. Signing into the Steam app alone does not connect Loomscreen.", settingsAnchor: .workshopConnection),
+            .init(.steamMenu, "API key is optional", "You can continue without a Steam Web API key. To add one, open Get a key in Workshop settings, sign in on Steam's official website, then paste your own key back here and wait for validation before saving. A key adds metadata and faster search; it does not replace SteamCMD sign-in.", settingsAnchor: .workshopSetup),
+            .init(.steamMenu, "Prepare scene resources", "Before using scene wallpapers, set up shared Wallpaper Engine assets in Settings › Workshop › Scene resources. Download them with your connected Steam account or choose an existing assets folder. Missing assets can leave textures and effects absent even when a scene plays. Video wallpapers do not need these assets.", settingsAnchor: .workshopAssets),
+            .init(.page, "Download and apply", "The detail panel lets you download and choose a display. Watch the download status and any setup or compatibility message; downloaded items appear in Wallpaper Library."),
+        ]
+        #endif
+    }
+
+    private static var integrationsStep: PageGuideStep {
+        #if LITE_BUILD
+        .init(.settingsItem(.integrations), "Integrations", "Integrations controls weather location. Enable only the permissions needed by the features you use.")
+        #else
+        .init(.settingsItem(.integrations), "Integrations", "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use.")
+        #endif
+    }
+
+    private static var overlaysSettingsStep: PageGuideStep {
+        #if MAS_BUILD
+        .init(.settingsItem(.overlays), "Overlays", "Overlays changes shared widget appearance. Arrange individual widgets in each display's overlay editor.")
+        #else
+        .init(.settingsItem(.overlays), "Overlays", "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor.")
+        #endif
+    }
+
+    private static var overlayLayerStep: PageGuideStep {
+        #if MAS_BUILD
+        .init(.detailLayers, "Your overlay layer", "Overlays add independent clocks, weather and widgets above the wallpaper. Switch back with the wallpaper button; the display tabs choose which screen you are editing.")
+        #else
+        .init(.detailLayers, "Your overlay layer", "Overlays add independent clocks, weather, music and widgets above the wallpaper. Switch back with the wallpaper button; the display tabs choose which screen you are editing.")
+        #endif
+    }
+
+    private static var overlayPreviewStep: PageGuideStep {
+        #if MAS_BUILD
+        .init(.overlayCanvas, "Preview and desktop", "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations.")
+        #else
+        .init(.overlayCanvas, "Preview and desktop", "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations; music needs a supported player.")
+        #endif
+    }
+
     var steps: [PageGuideStep] {
         switch self {
         case .overview:
@@ -204,25 +253,16 @@ enum PageGuideContext: CaseIterable {
                 .init(.page, "Manage system copies", "The item menu reveals or removes the macOS copy. Removing a system copy is different from clearing a display's live wallpaper; review the confirmation before removing it."),
             ]
         case .workshop:
-            [
-                .init(.page, "Browse before connecting", "Use search, filters, sort and time range to find wallpapers. Click a result for details. A Steam Web API key is optional; its settings explain the extra information it enables.", settingsAnchor: .workshopSetup),
-                .init(.steamMenu, "Connect or import locally", "Use the Steam menu to connect your account, sync subscriptions or add a link. Downloads need SteamCMD and ownership of Wallpaper Engine. Import a Local Folder works without signing in."),
-                .init(.steamMenu, "Install the download component", "Open Settings › Workshop › Steam connection and choose Set up SteamCMD. Loomscreen shows the download size and location before installing. Already installed it? Use Locate automatically or Choose SteamCMD.", settingsAnchor: .workshopConnection),
-                .init(.steamMenu, "Authorize your Steam library", "In Steam connection, choose or authorize your Steam library folder. This grants Loomscreen access to local Workshop files; it does not sign you in. Follow the folder picker's instructions, then check the library status.", settingsAnchor: .workshopConnection),
-                .init(.steamMenu, "Sign in and confirm Steam Guard", "Use the Steam account that owns Wallpaper Engine. Enter its account name and password, then approve Steam Guard on your phone or enter the requested email or authenticator code. Signing into the Steam app alone does not connect Loomscreen.", settingsAnchor: .workshopConnection),
-                .init(.steamMenu, "API key is optional", "You can continue without a Steam Web API key. To add one, open Get a key in Workshop settings, sign in on Steam's official website, then paste your own key back here and wait for validation before saving. A key adds metadata and faster search; it does not replace SteamCMD sign-in.", settingsAnchor: .workshopSetup),
-                .init(.steamMenu, "Prepare scene resources", "Before using scene wallpapers, set up shared Wallpaper Engine assets in Settings › Workshop › Scene resources. Download them with your connected Steam account or choose an existing assets folder. Missing assets can leave textures and effects absent even when a scene plays. Video wallpapers do not need these assets.", settingsAnchor: .workshopAssets),
-                .init(.page, "Download and apply", "The detail panel lets you download and choose a display. Watch the download status and any setup or compatibility message; downloaded items appear in Wallpaper Library."),
-            ]
+            Self.workshopSteps
         case .settings:
             [
                 .init(.settingsSidebar, "Search for a setting", "The sidebar groups settings by task. Search finds both pages and individual settings; the information buttons explain their scope and effects."),
                 .init(.settingsItem(.general), "Startup and transitions", "General controls language, login startup, the Dock, and the wallpaper transition and opening animation."),
                 .init(.settingsItem(.displayDefaults), "Defaults for new wallpapers", "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer."),
                 .init(.settingsItem(.performancePower), "Performance", "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac."),
-                .init(.settingsItem(.integrations), "Integrations", "Integrations controls weather location and supported audio response. Enable only the permissions needed by the features you use."),
+                Self.integrationsStep,
                 .init(.settingsItem(.shortcuts), "Shortcuts", "Shortcuts configures keyboard actions for playback, wallpapers and the app window."),
-                .init(.settingsItem(.overlays), "Overlays", "Overlays changes shared widget appearance and units. Arrange individual widgets in each display's overlay editor."),
+                Self.overlaysSettingsStep,
                 .init(.settingsItem(.backupRestore), "Backup & Restore", "Backup & Restore saves settings without wallpaper files. Review the confirmation before importing a backup."),
                 .init(.settingsItem(.advanced), "Advanced", "Advanced provides diagnostics and reset. Review each confirmation before resetting settings or deleting content."),
                 .init(.settingsItem(.about), "About", "About shows the app version, support links and Welcome Tour. You can replay this tour here anytime."),
@@ -237,10 +277,10 @@ enum PageGuideContext: CaseIterable {
             ]
         case .overlays:
             [
-                .init(.detailLayers, "Your overlay layer", "Overlays add independent clocks, weather, music and widgets above the wallpaper. Switch back with the wallpaper button; the display tabs choose which screen you are editing."),
+                Self.overlayLayerStep,
                 .init(.overlayAdd, "Add a widget", "Choose an item in Add Widget below. Click to add it, or drag it onto the canvas; select it to edit its appearance."),
                 .init(.overlayCanvas, "Arrange and configure", "Drag an object to move it. Select it and open Settings to adjust its appearance. The layer list shows or hides individual objects; Alignment Snapping helps position them."),
-                .init(.overlayCanvas, "Preview and desktop", "The preview selector can show sample data. Check the actual desktop for live values. Weather needs a location in Settings › Integrations; music needs a supported player."),
+                Self.overlayPreviewStep,
                 .init(.detailShared, "Copy or remove overlays", "Copy to Other Displays asks for confirmation, then replaces overlays on every other connected display. Remove affects the selected overlay; Remove All affects this display's overlay objects. These controls are separate from Clear Wallpaper."),
             ]
         case .automation:
