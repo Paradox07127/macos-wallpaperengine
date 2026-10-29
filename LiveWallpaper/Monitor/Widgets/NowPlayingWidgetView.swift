@@ -295,6 +295,10 @@ struct NowPlayingWidgetView: View {
     @State private var discAngle: Double = 0
     @State private var glowBoost = false
     @State private var hovering = false
+    /// A direct touch stands in for hover, which touch never produces.
+    @State private var touchRevealed = false
+    /// Discriminates overlapping auto-hide timers for `touchRevealed`.
+    @State private var touchRevealToken = 0
     /// Non-nil only while a scrub is under the pointer.
     @State private var scrubFraction: Double?
     /// Non-nil after a scrub landed, until the player reports a fresher position.
@@ -339,9 +343,13 @@ struct NowPlayingWidgetView: View {
             reduceMotion: context.reduceMotion,
             canControl: canControl,
             canSeek: state.map { NowPlayingController.supports(.seek(seconds: 0), state: $0) } ?? false,
-            hovering: hovering,
+            hovering: controlsRevealed,
             hasLyrics: !lyrics.isEmpty
         )
+    }
+
+    private var controlsRevealed: Bool {
+        hovering || touchRevealed
     }
 
     private var canControl: Bool {
@@ -460,8 +468,27 @@ struct NowPlayingWidgetView: View {
             .opacity(visibility.layer)
             .contentShape(Rectangle())
             .onHover { inside in
-                withAnimation(.easeInOut(duration: 0.2)) { hovering = inside }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    hovering = inside
+                    if inside, touchRevealed {
+                        touchRevealed = false
+                    }
+                }
             }
+            .modifier(DirectTouchTap(action: revealForTouch))
+        }
+    }
+
+    private static let touchRevealDuration: Duration = .seconds(3)
+
+    private func revealForTouch() {
+        touchRevealToken &+= 1
+        let token = touchRevealToken
+        withAnimation(.easeInOut(duration: 0.2)) { touchRevealed = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: Self.touchRevealDuration)
+            guard token == touchRevealToken else { return }
+            withAnimation(.easeInOut(duration: 0.2)) { touchRevealed = false }
         }
     }
 
@@ -713,7 +740,7 @@ struct NowPlayingWidgetView: View {
                     .animation(liveProgressAnimation, value: progressFraction)
             }
             .overlay(alignment: .leading) {
-                if layout.seekable, hovering {
+                if layout.seekable, controlsRevealed {
                     let knob = max(7.0, height * 3.5)
                     Circle()
                         .fill(.white)
@@ -1121,6 +1148,19 @@ struct NowPlayingWidgetView: View {
                 }
         }
         .nowPlayingTextShadow()
+    }
+}
+
+/// Runs alongside the tile's own gestures, so a touch on a button or the scrub line still reaches it.
+private struct DirectTouchTap: ViewModifier {
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(macOS 27, *) {
+            content.simultaneousGesture(TapGesture(count: 1, inputKinds: .directTouch).onEnded(action))
+        } else {
+            content
+        }
     }
 }
 

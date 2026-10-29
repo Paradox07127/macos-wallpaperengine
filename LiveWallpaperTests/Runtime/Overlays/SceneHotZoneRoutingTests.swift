@@ -197,5 +197,92 @@ struct SceneHotZoneRoutingTests {
         #expect(edges.last?.frame.position == SIMD2(1, 0))
         #expect(edges.map(\.fromDesktop) == [false, false])
     }
+
+    private func sceneView() -> WPEInteractiveMTKView {
+        WPEInteractiveMTKView(frame: CGRect(x: 0, y: 0, width: 200, height: 100), device: nil)
+    }
+
+    private func mouseEvent(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+        try #require(NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: [], timestamp: 1,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+    }
+
+    @Test("A touch pan on the scene view writes the same pointer frames as a mouse press, drag and release")
+    func sceneViewTouchPanMatchesMouse() throws {
+        let mouseView = sceneView()
+        let touchView = sceneView()
+        var mouseFrames: [WPEPointerFrame] = []
+        var touchFrames: [WPEPointerFrame] = []
+        mouseView.onPointerFrameChange = { mouseFrames.append($0) }
+        touchView.onPointerFrameChange = { touchFrames.append($0) }
+        mouseView.clickCaptureEnabled = true
+        touchView.clickCaptureEnabled = true
+        let start = CGPoint(x: 50, y: 25)
+        let end = CGPoint(x: 150, y: 75)
+
+        try mouseView.mouseDown(with: mouseEvent(.leftMouseDown, at: start))
+        try mouseView.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end))
+        try mouseView.mouseUp(with: mouseEvent(.leftMouseUp, at: end))
+        touchView.touchPan(.began, atWindowLocation: start)
+        #expect(touchView.pointerFrame.isDown, "a touch press would not hold the scene's button down")
+        touchView.touchPan(.changed, atWindowLocation: end)
+        touchView.touchPan(.ended, atWindowLocation: end)
+
+        let ungestured = { (frames: [WPEPointerFrame]) in
+            frames.map { frame in
+                var copy = frame
+                copy.gesture = 0
+                return copy
+            }
+        }
+        #expect(ungestured(touchFrames) == ungestured(mouseFrames), "a touch drag would land somewhere a mouse drag does not")
+        #expect(touchFrames.map(\.position) == [SIMD2(0.25, 0.75), SIMD2(0.75, 0.25), SIMD2(0.75, 0.25)])
+        #expect(touchFrames.first?.gesture != 0 && touchFrames.first?.gesture == touchFrames.last?.gesture)
+        #expect(touchView.pointerIsInsideView == mouseView.pointerIsInsideView)
+    }
+
+    @Test("With Interaction off the scene view's touch pan neither begins nor moves the pointer")
+    func sceneViewTouchPanRespectsInteraction() throws {
+        let view = sceneView()
+        view.touchPan(.began, atWindowLocation: CGPoint(x: 50, y: 25))
+        view.touchPan(.changed, atWindowLocation: CGPoint(x: 150, y: 75))
+        #expect(view.pointerFrame == .neutral, "a touch would reach a scene whose Interaction is off")
+
+        guard #available(macOS 27, *) else { return }
+        let pan = try #require(view.gestureRecognizers.compactMap { $0 as? NSPanGestureRecognizer }.first)
+        #expect(pan.maximumNumberOfTouches == 1)
+        let click = try mouseEvent(.leftMouseDown, at: .zero)
+        #expect(!view.gestureRecognizer(pan, shouldAttemptToRecognizeWith: click), "the pan would compete with mouse drags")
+        #expect(!view.gestureRecognizerShouldBegin(pan), "the pan would swallow touches while Interaction is off")
+        view.clickCaptureEnabled = true
+        #expect(view.gestureRecognizerShouldBegin(pan))
+    }
+
+    @Test("A scene-view touch drag reaches the pointer publisher only while its monitors are installed")
+    func sceneViewTouchDragFeedsPublisher() {
+        let view = sceneView()
+        view.clickCaptureEnabled = true
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.borderless],
+                              backing: .buffered, defer: true)
+        window.contentView = view
+        let mailbox = WPEPointerMailbox()
+        let publisher = WPEPointerPublisher(mailbox: mailbox, view: view, throttleFPS: 0)
+        publisher.start()
+        defer { publisher.stop() }
+
+        view.touchPan(.began, atWindowLocation: CGPoint(x: 50, y: 25))
+        #expect(mailbox.read().pointerSample.position == SIMD2(0.25, 0.75), "the follow pointer would ignore the finger")
+        view.touchPan(.changed, atWindowLocation: CGPoint(x: 150, y: 75))
+        #expect(mailbox.read().pointerSample.position == SIMD2(0.75, 0.25))
+
+        publisher.setMouseMonitoringEnabled(false)
+        #expect(view.onTouchDragLocation == nil, "a gated-off publisher would still feed touches")
+        publisher.setMouseMonitoringEnabled(true)
+        #expect(view.onTouchDragLocation != nil)
+        publisher.stop()
+        #expect(view.onTouchDragLocation == nil)
+    }
 }
 #endif

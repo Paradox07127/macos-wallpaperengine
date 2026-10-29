@@ -39,23 +39,43 @@ final class WPEInteractiveMTKView: MTKView {
         trackingArea = area
     }
 
-    /// Top-left-origin normalized UV of an event, matching the scene's UV
+    /// Screen location of each touch-drag sample. Touches never reach the pointer publisher's NSEvent monitors, so it listens here instead.
+    var onTouchDragLocation: (@MainActor (CGPoint) -> Void)?
+
+    override init(frame frameRect: CGRect, device: MTLDevice?) {
+        super.init(frame: frameRect, device: device)
+        if #available(macOS 27, *) {
+            let pan = NSPanGestureRecognizer(target: self, action: #selector(handleTouchPan(_:)))
+            pan.maximumNumberOfTouches = 1
+            pan.delegate = self
+            addGestureRecognizer(pan)
+        }
+    }
+
+    required init(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    /// Top-left-origin normalized UV of a window-coordinate point, matching the scene's UV
     /// convention (same flip as `WPEMetalPointerSampler.normalizedSceneUV`).
-    private func uv(for event: NSEvent) -> SIMD2<Double> {
+    private func uv(atWindowLocation location: CGPoint) -> SIMD2<Double> {
         guard bounds.width > 0, bounds.height > 0 else {
             pointerIsInsideView = false
             return SIMD2<Double>(0.5, 0.5)
         }
-        let local = convert(event.locationInWindow, from: nil)
+        let local = convert(location, from: nil)
         pointerIsInsideView = bounds.contains(local)
         let x = Double(local.x / bounds.width)
         let y = 1.0 - Double(local.y / bounds.height)
         return SIMD2<Double>(min(max(x, 0), 1), min(max(y, 0), 1))
     }
 
-    override func mouseDown(with event: NSEvent) {
-        guard clickCaptureEnabled else { super.mouseDown(with: event); return }
-        let position = uv(for: event)
+    private func uv(for event: NSEvent) -> SIMD2<Double> {
+        uv(atWindowLocation: event.locationInWindow)
+    }
+
+    func pointerDown(atWindowLocation location: CGPoint) {
+        let position = uv(atWindowLocation: location)
         var frame = pointerFrame
         frame.position = position
         frame.clickPosition = position
@@ -64,17 +84,53 @@ final class WPEInteractiveMTKView: MTKView {
         pointerFrame = frame
     }
 
+    func pointerDragged(atWindowLocation location: CGPoint) {
+        pointerFrame.position = uv(atWindowLocation: location)
+    }
+
+    func pointerUp(atWindowLocation location: CGPoint) {
+        var frame = pointerFrame
+        frame.position = uv(atWindowLocation: location)
+        frame.isDown = false
+        pointerFrame = frame
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard clickCaptureEnabled else { super.mouseDown(with: event); return }
+        pointerDown(atWindowLocation: event.locationInWindow)
+    }
+
     override func mouseDragged(with event: NSEvent) {
         guard clickCaptureEnabled else { super.mouseDragged(with: event); return }
-        pointerFrame.position = uv(for: event)
+        pointerDragged(atWindowLocation: event.locationInWindow)
     }
 
     override func mouseUp(with event: NSEvent) {
         guard clickCaptureEnabled else { super.mouseUp(with: event); return }
-        var frame = pointerFrame
-        frame.position = uv(for: event)
-        frame.isDown = false
-        pointerFrame = frame
+        pointerUp(atWindowLocation: event.locationInWindow)
+    }
+
+    @objc private func handleTouchPan(_ recognizer: NSPanGestureRecognizer) {
+        touchPan(recognizer.state, atWindowLocation: recognizer.location(in: nil))
+    }
+
+    /// The touch counterpart of mouseDown/Dragged/Up; `location` is in window coordinates.
+    func touchPan(_ state: NSGestureRecognizer.State, atWindowLocation location: CGPoint) {
+        guard clickCaptureEnabled else { return }
+        switch state {
+        case .began:
+            pointerDown(atWindowLocation: location)
+        case .changed:
+            pointerDragged(atWindowLocation: location)
+        case .ended, .cancelled:
+            pointerUp(atWindowLocation: location)
+            return
+        default:
+            return
+        }
+        if let window {
+            onTouchDragLocation?(window.convertPoint(toScreen: location))
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -103,6 +159,17 @@ final class WPEInteractiveMTKView: MTKView {
     override func rightMouseDragged(with event: NSEvent) {
         guard clickCaptureEnabled else { super.rightMouseDragged(with: event); return }
         pointerFrame.position = uv(for: event)
+    }
+}
+
+extension WPEInteractiveMTKView: NSGestureRecognizerDelegate {
+    /// AppKit asks this only for mouse events, so returning false leaves the pan to touches.
+    func gestureRecognizer(_: NSGestureRecognizer, shouldAttemptToRecognizeWith _: NSEvent) -> Bool {
+        false
+    }
+
+    func gestureRecognizerShouldBegin(_: NSGestureRecognizer) -> Bool {
+        clickCaptureEnabled
     }
 }
 

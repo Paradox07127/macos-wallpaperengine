@@ -84,6 +84,9 @@ final class WPEPointerPublisher {
             self?.handleMouseEvent()
             return event
         }
+        (view as? WPEInteractiveMTKView)?.onTouchDragLocation = { [weak self] location in
+            self?.ingestPointerLocation(location)
+        }
         // Seed the cursor: before any mouse event arrives (and after a gated-off stretch) the mailbox must report the real cursor, not the off-screen sentinel, or the first frames freeze parallax at center.
         ingestPointerLocation(NSEvent.mouseLocation, at: now())
     }
@@ -97,6 +100,7 @@ final class WPEPointerPublisher {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
+        (view as? WPEInteractiveMTKView)?.onTouchDragLocation = nil
         lastSampleWasInside = false
     }
 

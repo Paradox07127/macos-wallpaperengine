@@ -127,5 +127,66 @@ struct SceneHotZoneControllerTests {
             SceneHotZoneEvent(kind: $0, screenLocation: expected, timestamp: 42)
         })
     }
+
+    @Test func touchPanFollowsTheMousePressPath() throws {
+        let (controller, recorder) = makeController()
+        defer { controller.tearDown() }
+        controller.update(zones: [zoneA, zoneB])
+        let panel = try #require(controller.panelsForTesting.last as? SceneHotZonePanel)
+        let view = try #require(panel.contentView)
+        let start = CGPoint(x: 7, y: 3)
+        let end = CGPoint(x: 40, y: 12)
+        let untimed = { (events: [SceneHotZoneEvent]) in
+            events.map { SceneHotZoneEvent(kind: $0.kind, screenLocation: $0.screenLocation, timestamp: 0) }
+        }
+
+        try view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: panel))
+        try view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: panel))
+        try view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: panel))
+        let mouse = untimed(recorder.events)
+        recorder.events = []
+
+        controller.touchPan(.began, atWindowLocation: start, from: panel)
+        #expect(controller.isPressed, "a touch press would not hold its panel like a mouse press")
+        controller.touchPan(.changed, atWindowLocation: end, from: panel)
+        controller.touchPan(.ended, atWindowLocation: end, from: panel)
+        #expect(!controller.isPressed)
+
+        let touch = untimed(recorder.events)
+        #expect(touch.filter { $0.kind != .moved } == mouse, "a touch drag would land somewhere a mouse drag does not")
+        let startOnScreen = CGPoint(x: zoneB.minX + start.x, y: zoneB.minY + start.y)
+        let endOnScreen = CGPoint(x: zoneB.minX + end.x, y: zoneB.minY + end.y)
+        #expect(touch.filter { $0.kind == .moved }.map(\.screenLocation) == [startOnScreen, endOnScreen],
+                "the scene's follow pointer would not track the finger")
+    }
+
+    @Test func cancelledTouchPanReleasesThePress() throws {
+        let (controller, recorder) = makeController()
+        defer { controller.tearDown() }
+        controller.update(zones: [zoneA])
+        let panel = try #require(controller.panelsForTesting.first as? SceneHotZonePanel)
+
+        controller.touchPan(.began, atWindowLocation: CGPoint(x: 5, y: 5), from: panel)
+        controller.touchPan(.cancelled, atWindowLocation: CGPoint(x: 9, y: 5), from: panel)
+
+        #expect(!controller.isPressed, "the scene would keep the button down after an interrupted touch")
+        #expect(recorder.events.last?.kind == .up)
+    }
+
+    @Test func panelViewCarriesATouchOnlySingleFingerPan() throws {
+        guard #available(macOS 27, *) else { return }
+        let (controller, _) = makeController()
+        defer { controller.tearDown() }
+        controller.update(zones: [zoneA])
+        let panel = try #require(controller.panelsForTesting.first)
+        let view = try #require(panel.contentView)
+        let pan = try #require(view.gestureRecognizers.compactMap { $0 as? NSPanGestureRecognizer }.first)
+        let delegate = try #require(pan.delegate)
+
+        #expect(pan.maximumNumberOfTouches == 1)
+        let click = try mouseEvent(.leftMouseDown, at: CGPoint(x: 5, y: 5), in: panel)
+        #expect(delegate.gestureRecognizer?(pan, shouldAttemptToRecognizeWith: click) == false,
+                "the pan would compete with mouse drags")
+    }
 }
 #endif

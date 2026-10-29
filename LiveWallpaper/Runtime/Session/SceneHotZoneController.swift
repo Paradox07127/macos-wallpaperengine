@@ -91,12 +91,36 @@ final class SceneHotZoneController {
             guard let self, let panel else { return }
             handle(kind, event, from: panel)
         }
+        view.onTouchPan = { [weak self, weak panel] state, location in
+            guard let self, let panel else { return }
+            touchPan(state, atWindowLocation: location, from: panel)
+        }
         panel.contentView = view
         return panel
     }
 
+    /// The touch counterpart of a mouse press, drag and release on `panel`; `location` is in its window coordinates.
+    /// Each sample also emits `.moved`, standing in for the pointer publisher's drag monitor, which touches never reach.
+    func touchPan(_ state: NSGestureRecognizer.State, atWindowLocation location: CGPoint, from panel: SceneHotZonePanel) {
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        let kinds: [SceneHotZoneEvent.Kind] = switch state {
+        case .began: [.moved, .down]
+        case .changed: [.moved, .dragged]
+        case .ended, .cancelled: [.up]
+        default: []
+        }
+        for kind in kinds {
+            handle(kind, windowLocation: location, timestamp: timestamp, from: panel)
+        }
+    }
+
     private func handle(_ kind: SceneHotZoneEvent.Kind, _ event: NSEvent, from panel: SceneHotZonePanel) {
-        let location = screenLocation(of: event, in: panel)
+        handle(kind, windowLocation: event.locationInWindow, timestamp: event.timestamp, from: panel)
+    }
+
+    private func handle(_ kind: SceneHotZoneEvent.Kind, windowLocation: CGPoint, timestamp: TimeInterval,
+                        from panel: SceneHotZonePanel) {
+        let location = screenLocation(ofWindowPoint: windowLocation, in: panel)
         lastLocation = location
         var released = false
         switch kind {
@@ -114,7 +138,7 @@ final class SceneHotZoneController {
         case .dragged, .moved, .entered, .exited:
             break
         }
-        onEvent(SceneHotZoneEvent(kind: kind, screenLocation: location, timestamp: event.timestamp))
+        onEvent(SceneHotZoneEvent(kind: kind, screenLocation: location, timestamp: timestamp))
         if released, updatedWhilePressed {
             layout()
             updatedWhilePressed = false
@@ -137,15 +161,15 @@ final class SceneHotZoneController {
         }
     }
 
-    private func screenLocation(of event: NSEvent, in panel: NSPanel) -> CGPoint {
-        let parked = panel.convertPoint(toScreen: event.locationInWindow)
+    private func screenLocation(ofWindowPoint windowLocation: CGPoint, in panel: NSPanel) -> CGPoint {
+        let parked = panel.convertPoint(toScreen: windowLocation)
         // Undo test-host parking so callers see the zone's real screen position.
         let logical = TestHostWindowParking.logicalFrame(panel).origin
         return CGPoint(x: parked.x - panel.frame.minX + logical.x, y: parked.y - panel.frame.minY + logical.y)
     }
 }
 
-private final class SceneHotZonePanel: NSPanel {
+final class SceneHotZonePanel: NSPanel {
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
@@ -184,6 +208,8 @@ private final class SceneHotZonePanel: NSPanel {
 
 private final class SceneHotZoneView: NSView {
     var onMouse: ((SceneHotZoneEvent.Kind, NSEvent) -> Void)?
+    /// The location is in window coordinates.
+    var onTouchPan: ((NSGestureRecognizer.State, CGPoint) -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -192,6 +218,16 @@ private final class SceneHotZoneView: NSView {
             options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
             owner: self
         ))
+        if #available(macOS 27, *) {
+            let pan = NSPanGestureRecognizer(target: self, action: #selector(handleTouchPan(_:)))
+            pan.maximumNumberOfTouches = 1
+            pan.delegate = self
+            addGestureRecognizer(pan)
+        }
+    }
+
+    @objc private func handleTouchPan(_ recognizer: NSPanGestureRecognizer) {
+        onTouchPan?(recognizer.state, recognizer.location(in: nil))
     }
 
     required init?(coder _: NSCoder) {
@@ -233,6 +269,13 @@ private final class SceneHotZoneView: NSView {
 
     override func mouseExited(with event: NSEvent) {
         onMouse?(.exited, event)
+    }
+}
+
+extension SceneHotZoneView: NSGestureRecognizerDelegate {
+    /// AppKit asks this only for mouse events, so returning false leaves the pan to touches.
+    func gestureRecognizer(_: NSGestureRecognizer, shouldAttemptToRecognizeWith _: NSEvent) -> Bool {
+        false
     }
 }
 #endif
