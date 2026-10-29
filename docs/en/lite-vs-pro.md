@@ -35,6 +35,20 @@ stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 | **Storage management** (projects, engine assets, caches) | — | ✅ |
 | **Runs on Intel Macs** | ⚠️ untested | — |
 
+## Mac App Store edition
+
+The App Store target is maintained in the same source tree and is prepared separately from the DMG releases. It is a subset of Lite: video and web wallpapers, playlists, schedules, display schemes, shortcuts, clock, weather and basic system monitoring remain available.
+
+It excludes Apple Aerials, the system wallpaper provider and repair helper, music/lyrics/transport controls, temperature and fan sensors, process and AI-agent cards, and automatic desktop-picture snapshots. Transparent web pages use WebKit's opaque background in this edition. Updates come only from the Mac App Store.
+
+| Build | Scheme | Bundle ID | Conditions | Architectures |
+|---|---|---|---|---|
+| Pro DMG | `LiveWallpaper` | `com.loomscreen.pro` | neither edition flag | arm64 |
+| Lite DMG | `LiveWallpaperLite` | `com.loomscreen` | `LITE_BUILD` | arm64 + x86_64 |
+| Mac App Store | `LoomscreenAppStore` | `com.loomscreen.appstore` | `LITE_BUILD MAS_BUILD` | arm64 + x86_64 |
+
+Settings and file grants are separate between editions. Use a `.lwconfig` backup to transfer configuration; reselect files if macOS requires a new grant. All three builds accept each other's configuration format, while unsupported features stay inactive. See [App Store release](app-store.md) for the submission workflow.
+
 ## How the split is implemented
 
 Pro-only code is gated with `#if !LITE_BUILD`. The Lite scheme

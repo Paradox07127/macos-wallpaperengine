@@ -53,6 +53,7 @@ open LiveWallpaper.xcodeproj
 | Scheme | Edition | Notes |
 |---|---|---|
 | `LiveWallpaperLite` | Lite | Sets `LITE_BUILD`; Pro-only sources (`#if !LITE_BUILD`) are excluded. Produces `Loomscreen.app` (`com.loomscreen`). |
+| `LoomscreenAppStore` | Mac App Store | `LITE_BUILD MAS_BUILD`; `com.loomscreen.appstore`; no Sparkle, XPC helpers or system wallpaper extension. |
 | `LiveWallpaper` | Pro | Full build. Produces `Loomscreen Pro.app` (`com.loomscreen.pro`). |
 
 Pick a scheme and `⌘R`.

@@ -9,6 +9,8 @@ stapled notarization ticket, so Gatekeeper opens a downloaded copy without a
 Terminal step. Releases up to 0.9.3 used Apple Development signing
 and were not notarized.
 
+The following DMG workflow applies to Pro and Lite. The third target, `LoomscreenAppStore`, uses a separate [App Store release workflow](app-store.md); increment its `CURRENT_PROJECT_VERSION` for every upload.
+
 ## Current updater boundary
 
 Installed copies check a per-SKU Sparkle appcast (`appcast-lite.xml` /
@@ -22,8 +24,8 @@ directly because it is notarized.
    `LiveWallpaper` and `LiveWallpaperLite`. `CFBundleVersion` tracks that
    value (Sparkle compares `CFBundleVersion`, so a frozen build number would
    hide every release).
-2. Leave `CURRENT_PROJECT_VERSION` in the Xcode project alone; the app plists
-   no longer read it.
+2. Leave `CURRENT_PROJECT_VERSION` unchanged for these two DMG targets; their plists
+   use the marketing version. The App Store plist reads its own build number.
 3. Update `CHANGELOG.md` with `## [X.Y.Z] — YYYY-MM-DD`. It carries no footer
    compare links; adding some for one version only would leave the rest dangling.
 4. Make sure `LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`

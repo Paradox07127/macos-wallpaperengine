@@ -49,6 +49,7 @@ open LiveWallpaper.xcodeproj
 | Scheme | 版本 | 说明 |
 |---|---|---|
 | `LiveWallpaperLite` | Lite | 设置 `LITE_BUILD`；Pro 独有的源码（`#if !LITE_BUILD`）被排除。产物是 `Loomscreen.app`（`com.loomscreen`）。 |
+| `LoomscreenAppStore` | Mac App Store | `LITE_BUILD MAS_BUILD`；`com.loomscreen.appstore`；不含 Sparkle、XPC 助手或系统壁纸扩展。 |
 | `LiveWallpaper` | Pro | 完整构建。产物是 `Loomscreen Pro.app`（`com.loomscreen.pro`）。 |
 
 选一个 scheme 然后 `⌘R`。

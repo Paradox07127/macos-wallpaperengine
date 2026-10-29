@@ -14,6 +14,7 @@ Wallpaper Engine scenes and Workshop. Everyday control stays in the menu bar.
 - [install.md](en/install.md) — install, permission prompts, and updates.
 - [troubleshooting.md](en/troubleshooting.md) — common failures and fixes.
 - [lite-vs-pro.md](en/lite-vs-pro.md) — edition capability matrix.
+- [app-store.md](en/app-store.md) — Store target boundary, local preflight and submission workflow.
 
 ## For contributors
 

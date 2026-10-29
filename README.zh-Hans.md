@@ -84,6 +84,9 @@
 
 两个版本均免费开源。Lite 保留完整工作台及视频、网页、航拍体验，去掉 WPE 渲染器与创意工坊栈。完整对照：[docs/zh-Hans/lite-vs-pro.md](docs/zh-Hans/lite-vs-pro.md)。
 
+独立的 Mac App Store target 正在以 Lite 子集准备上架。
+版本身份、删减范围和发布流程见 [App Store 发布](docs/zh-Hans/app-store.md)。
+
 ## 安装
 
 1. 从 [Releases](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest) 下载最新 `Loomscreen-x.y.z.dmg`。

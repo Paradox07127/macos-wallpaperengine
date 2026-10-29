@@ -6,6 +6,8 @@
 经过公证，以 DMG 形式从 GitHub Releases 分发。app 和 DMG 都装订了公证票据，所以 Gatekeeper
 直接放行下载的副本，不需要终端命令。0.9.3 及更早的版本用 Apple Development 签名，没有公证。
 
+以下 DMG 流程适用于 Pro 与 Lite。第三个 target `LoomscreenAppStore` 使用独立的 [App Store 发布流程](app-store.md)；每次上传都递增它的 `CURRENT_PROJECT_VERSION`。
+
 ## 当前的更新器边界
 
 已安装的副本去拉 `main` 上按 SKU 分开的 Sparkle appcast（`appcast-lite.xml` /
@@ -17,7 +19,7 @@
 1. 把两个应用 target（`LiveWallpaper` 和 `LiveWallpaperLite`）的 `MARKETING_VERSION`
    设为 `X.Y.Z`。`CFBundleVersion` 跟这个值走（Sparkle 比的是 `CFBundleVersion`，
    构建号冻在 `1` 会让每一版看起来都一样）。
-2. Xcode 工程里的 `CURRENT_PROJECT_VERSION` 不用动；应用 plist 已经不读它。
+2. 这两个 DMG target 的 `CURRENT_PROJECT_VERSION` 不用动；它们的 plist 读取营销版本号。App Store target 仍读取独立构建号。
 3. 更新 `CHANGELOG.md`，加上 `## [X.Y.Z] — YYYY-MM-DD`。这个文件没有页脚 compare
    链接，只给某一个版本补一条会让其余版本显得缺失。
 4. Swift 包的 pin 有变动时，确保带上

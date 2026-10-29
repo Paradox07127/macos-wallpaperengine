@@ -34,6 +34,20 @@ Lite 是轻量运行时，不是被阉割的界面。视频 / 网页 / Apple 航
 | **存储管理**（工程、引擎资源、缓存） | — | ✅ |
 | **可在 Intel Mac 上运行** | ⚠️ 未测试 | — |
 
+## Mac App Store 版
+
+App Store target 与 DMG 两版共用源码，单独准备上架。它是 Lite 的子集：保留视频与网页壁纸、播放列表、计划、显示器方案、快捷键、时钟、天气和基本系统监控。
+
+不包含 Apple 航拍、系统壁纸 provider 与修复助手、音乐/歌词/播放控制、温度与风扇传感器、进程与 AI Agent 卡片，以及自动桌面图片快照。此版本的透明网页使用 WebKit 的不透明底色。更新只通过 Mac App Store 分发。
+
+| 构建 | Scheme | Bundle ID | 编译条件 | 架构 |
+|---|---|---|---|---|
+| Pro DMG | `LiveWallpaper` | `com.loomscreen.pro` | 无版本标志 | arm64 |
+| Lite DMG | `LiveWallpaperLite` | `com.loomscreen` | `LITE_BUILD` | arm64 + x86_64 |
+| Mac App Store | `LoomscreenAppStore` | `com.loomscreen.appstore` | `LITE_BUILD MAS_BUILD` | arm64 + x86_64 |
+
+各版本的设置和文件授权相互独立。迁移配置使用 `.lwconfig` 备份；macOS 要求时重新选择文件以授权。三版互认配置格式，无法运行的功能保持不活动。提交流程见 [App Store 发布](app-store.md)。
+
 ## 这个划分是怎么实现的
 
 Pro 独有的代码用 `#if !LITE_BUILD` 圈起来。Lite 的 scheme（`LiveWallpaperLite`）
