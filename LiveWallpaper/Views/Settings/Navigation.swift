@@ -436,9 +436,13 @@ struct SettingsNavigationItem: Identifiable, Equatable {
             #if MAS_BUILD
             let startupRows = ["Start at login", "Show in Dock"]
             let startupKeywords = ["login", "start", "launch", "dock", "menu bar"]
+            let wallpaperRows = ["Show wallpaper in screen captures", "Opening animation", "Wallpaper transition"]
+            let wallpaperKeywords = ["capture", "screenshot", "screen capture", "recording", "sharing", "transition", "animation", "crossfade"]
             #else
             let startupRows = ["Start at login", "Check for updates automatically", "Update channel", "Show in Dock"]
             let startupKeywords = ["login", "start", "launch", "update", "beta", "channel", "dock", "menu bar"]
+            let wallpaperRows = ["Keep a video frame as the desktop picture", "Show wallpaper in screen captures", "Opening animation", "Wallpaper transition"]
+            let wallpaperKeywords = ["lock", "lock screen", "capture", "screenshot", "screen capture", "recording", "sharing", "desktop picture", "transition", "animation", "crossfade"]
             #endif
             return [
                 SettingsNavigationSearchTarget(
@@ -456,11 +460,8 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Wallpaper",
                     anchor: .generalWallpaper,
-                    rows: ["Keep a video frame as the desktop picture", "Show wallpaper in screen captures", "Opening animation", "Wallpaper transition"],
-                    keywords: [
-                        "lock", "lock screen", "capture", "screenshot", "screen capture",
-                        "recording", "sharing", "desktop picture", "transition", "animation", "crossfade",
-                    ]
+                    rows: wallpaperRows,
+                    keywords: wallpaperKeywords
                 ),
             ]
         case .appearance:

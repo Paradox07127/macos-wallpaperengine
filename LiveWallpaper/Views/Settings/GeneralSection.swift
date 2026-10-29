@@ -122,6 +122,7 @@ extension GeneralSettingsView {
         }
 
         Section {
+            #if !MAS_BUILD
             SettingRow(
                 icon: "lock.display",
                 iconColor: .blue,
@@ -135,6 +136,7 @@ extension GeneralSettingsView {
                     .accessibilityLabel(Text("Keep a video frame as the desktop picture"))
                     .accessibilityHint(Text("While your Mac is unlocked, the current frame of a playing video becomes the macOS desktop picture every minute on displays with On Lock turned on. The last frame stays after you lock, pause or quit; it isn't restored automatically."))
             }
+            #endif
 
             SettingRow(
                 icon: "camera.viewfinder",

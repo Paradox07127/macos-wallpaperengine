@@ -14,6 +14,7 @@ public struct ConfigurationBundle: Codable, Sendable {
         "com.loomscreen.pro",
         "com.taijia.livewallpaper",
         "com.loomscreen",
+        "com.loomscreen.appstore",
     ]
 
     public static let contentType: UTType = {

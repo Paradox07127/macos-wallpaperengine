@@ -77,7 +77,7 @@ struct ConfigurationPorterTests {
 
     @Test(
         "Accepts exports from every Loomscreen product-family bundle ID",
-        arguments: ["com.loomscreen.pro", "com.loomscreen", "com.taijia.livewallpaper"]
+        arguments: ["com.loomscreen.pro", "com.loomscreen", "com.loomscreen.appstore", "com.taijia.livewallpaper"]
     )
     func acceptsProductFamilyBundleIDs(exporterID: String) throws {
         let directory = try makeTempDirectory()

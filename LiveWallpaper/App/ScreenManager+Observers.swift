@@ -105,6 +105,7 @@ extension ScreenManager {
             }
             .store(in: &cleanupTasks)
 
+        #if !MAS_BUILD
         DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.screenIsLocked"))
             .sink { [weak self] _ in
                 self?.handleScreenLocked()
@@ -116,6 +117,7 @@ extension ScreenManager {
                 self?.handleScreenUnlocked()
             }
             .store(in: &cleanupTasks)
+        #endif
 
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)
             .sink { [weak self] _ in
@@ -243,8 +245,8 @@ extension ScreenManager {
         }
     }
 
-    /// Asks an independent truth source whether the user is in fact back, and only ever clears reasons — it can never invent an absence.
-    /// CGDisplayIsAsleep is an unambiguous boolean, while a missing CGSSessionScreenIsLocked key cannot be told apart from a failed read, so unlocking demands corroboration from an active display.
+    /// Clears stale reasons only after the probe corroborates a return.
+    /// Direct builds require an unlocked session and an active display before clearing lock absence.
     func revalidateUserAbsence() {
         guard !userAbsenceReasons.isEmpty else { return }
 
@@ -621,6 +623,7 @@ extension ScreenManager {
     }
 
     func captureDesktopSnapshotsForLockIfNeeded() {
+        guard featureCatalog.isEnabled(.lockScreenSnapshots) else { return }
         guard !isTerminating else { return }
         guard userPresenceProbe.screenLockState() == .unlocked else { return }
         let globalSettings = SettingsManager.shared.loadGlobalSettings()

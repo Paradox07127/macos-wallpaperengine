@@ -48,7 +48,8 @@ struct AppStartupPlan: Equatable {
         #if LITE_BUILD
         #if MAS_BUILD
         let capabilities = ProductCapabilities(
-            sku: .lite, enabledFeatures: ProductCapabilities.lite.enabledFeatures.subtracting([.appleAerials])
+            sku: .lite,
+            enabledFeatures: ProductCapabilities.lite.enabledFeatures.subtracting([.appleAerials, .lockScreenSnapshots])
         )
         #else
         let capabilities = ProductCapabilities.lite

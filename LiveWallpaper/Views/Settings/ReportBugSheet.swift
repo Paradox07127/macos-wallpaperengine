@@ -40,11 +40,7 @@ struct ReportBugSheet: View {
     }
 
     private var header: some View {
-        #if MAS_BUILD
-        let subtitle: LocalizedStringKey = "Continuing opens a prefilled issue in your browser. Review it first; published issues are public."
-        #else
         let subtitle: LocalizedStringKey = "Continuing sends the prefilled diagnostics to GitHub. Review them first; published issues are public."
-        #endif
         return SteamSheetHeader(
             icon: "ladybug.fill",
             title: "Report a Bug",

@@ -6,3 +6,5 @@ PRODUCT_NAME = Loomscreen
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) LITE_BUILD MAS_BUILD
 // Only Pro syncs the shared Localizable.xcstrings; keys used only by this edition are marked manual there.
 SWIFT_EMIT_LOC_STRINGS = NO
+// This edition does not consume generated string symbols from the shared catalog.
+STRING_CATALOG_GENERATE_SYMBOLS = NO

@@ -78,6 +78,7 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
+					<string>lwconfig</string>
 					<string>loomscreen</string>
 				</array>
 				<key>public.mime-type</key>

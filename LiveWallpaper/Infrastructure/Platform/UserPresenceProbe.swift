@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// `CGSessionCopyCurrentDictionary()` omits `CGSSessionScreenIsLocked` while unlocked. Treat `.unknown` as "keep the current belief".
+/// Treat `.unknown` as "keep the current belief"; the App Store edition cannot probe screen locking.
 enum ScreenLockState: Equatable, Sendable {
     case locked
     case unlocked
@@ -31,10 +31,14 @@ struct SystemUserPresenceProbe: UserPresenceProbing {
     }
 
     func screenLockState() -> ScreenLockState {
+        #if MAS_BUILD
+        return .unknown
+        #else
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return .unknown }
         guard let locked = session["CGSSessionScreenIsLocked"] else { return .unlocked }
         if let flag = locked as? Bool { return flag ? .locked : .unlocked }
         if let number = locked as? NSNumber { return number.boolValue ? .locked : .unlocked }
         return .unknown
+        #endif
     }
 }

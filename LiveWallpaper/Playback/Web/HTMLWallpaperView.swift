@@ -158,7 +158,11 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     private func configureWebView() {
         webView.wantsLayer = true
         webView.layer?.backgroundColor = NSColor.clear.cgColor
+        #if MAS_BUILD
+        webView.underPageBackgroundColor = .black
+        #else
         webView.setValue(false, forKey: "drawsBackground")
+        #endif
 
         webView.allowsMagnification = false
         webView.allowsBackForwardNavigationGestures = false
