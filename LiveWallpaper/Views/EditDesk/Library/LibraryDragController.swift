@@ -225,8 +225,17 @@ private struct LibraryDragSource: ViewModifier {
             }
     }
 
+    /// A finger pan stays the grid's scroll; only the mouse or trackpad button drags a tile.
+    private var pointerDrag: DragGesture {
+        if #available(macOS 27, *) {
+            DragGesture(minimumDistance: 6, coordinateSpace: .named(EditDeskCoordinateSpace.name), inputKinds: .pointer)
+        } else {
+            DragGesture(minimumDistance: 6, coordinateSpace: .named(EditDeskCoordinateSpace.name))
+        }
+    }
+
     private var gesture: some Gesture {
-        DragGesture(minimumDistance: 6, coordinateSpace: .named(EditDeskCoordinateSpace.name))
+        pointerDrag
             .onChanged { value in
                 if isDragging {
                     drag.move(to: value.location)

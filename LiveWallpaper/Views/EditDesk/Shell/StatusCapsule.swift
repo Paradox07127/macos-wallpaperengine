@@ -539,6 +539,7 @@ private struct StatusPanelDismissMonitor: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private var clickMonitor: Any?
+        private var touchObserver: TouchObserver?
         private var observers: [any NSObjectProtocol] = []
 
         func start(
@@ -561,6 +562,17 @@ private struct StatusPanelDismissMonitor: NSViewRepresentable {
                 // Handed back untouched: swallowing it would cost the user a second click.
                 return event
             }
+            touchObserver = TouchObserver.install(in: window) { [weak window] point in
+                guard let window else { return }
+                if StatusCapsuleDismissal.shouldDismiss(
+                    clickInWindow: point,
+                    panelFrameFromTop: panelFrame,
+                    capsuleFrameFromTop: capsuleFrame,
+                    windowHeight: window.contentView?.bounds.height ?? 0
+                ) {
+                    dismiss()
+                }
+            }
             let center = NotificationCenter.default
             observers = [
                 center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
@@ -582,6 +594,8 @@ private struct StatusPanelDismissMonitor: NSViewRepresentable {
                 NSEvent.removeMonitor(clickMonitor)
                 self.clickMonitor = nil
             }
+            touchObserver?.remove()
+            touchObserver = nil
             observers.forEach(NotificationCenter.default.removeObserver)
             observers = []
         }

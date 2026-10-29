@@ -207,6 +207,38 @@ struct ClickOutsideEndsEditingTests {
         #expect(Self.isEditing(field, in: host.window), "the clear button took the keyboard away from the settings search")
     }
 
+    // MARK: Decision shared by mouse clicks and touches
+
+    @Test("A point on blank space names the editing field's window", .timeLimit(.minutes(1)))
+    func blankPointNamesTheWindow() async throws {
+        let host = Host(Page(record: Record()))
+        defer { host.close() }
+        let field = try await Self.focus(Self.field(holding: "typed", in: host.window), in: host.window)
+        let point = try Self.blankPoint(in: host.window, avoiding: field)
+        #expect(ClickOutsideEndsEditing.windowEndingEditing(onClickAt: point, in: host.window) === host.window)
+        #expect(Self.isEditing(field, in: host.window), "deciding alone took the keyboard away")
+    }
+
+    @Test("A point inside the field being edited names no window", .timeLimit(.minutes(1)))
+    func pointInsideFieldNamesNothing() async throws {
+        let host = Host(Page(record: Record()))
+        defer { host.close() }
+        let field = try await Self.focus(Self.field(holding: "typed", in: host.window), in: host.window)
+        let decision = ClickOutsideEndsEditing.windowEndingEditing(onClickAt: Self.center(of: field), in: host.window)
+        #expect(decision == nil, "a click inside the field would end its own editing")
+    }
+
+    @Test("A point in a window with nothing being edited names no window", .timeLimit(.minutes(1)))
+    func nothingEditingNamesNothing() async throws {
+        let host = Host(Page(record: Record()))
+        defer { host.close() }
+        let field = try await Self.field(holding: "typed", in: host.window)
+        host.window.makeFirstResponder(nil)
+        let point = try Self.blankPoint(in: host.window, avoiding: field)
+        #expect(ClickOutsideEndsEditing.windowEndingEditing(onClickAt: point, in: host.window) == nil)
+        #expect(ClickOutsideEndsEditing.windowEndingEditing(onClickAt: point, in: nil) == nil)
+    }
+
     // MARK: Helpers
 
     private static func endsEditingOnBlankClick(in window: NSWindow) async throws {
