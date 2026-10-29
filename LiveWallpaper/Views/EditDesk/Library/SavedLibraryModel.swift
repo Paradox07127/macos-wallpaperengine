@@ -11,6 +11,16 @@ final class SavedLibraryModel {
         #if !MAS_BUILD
         case aerials
         #endif
+
+        static func displayed(in catalog: FeatureCatalog) -> [Chip] {
+            allCases.filter { $0 != .steam || catalog.isEnabled(.wpeImport) }
+        }
+
+        /// A chip this edition does not show selects All.
+        static func selection(_ id: String, in catalog: FeatureCatalog) -> Chip {
+            guard let chip = Chip(rawValue: id), displayed(in: catalog).contains(chip) else { return .all }
+            return chip
+        }
     }
 
     enum Sort: CaseIterable {
@@ -816,8 +826,12 @@ final class SavedLibraryModel {
     }
 
     private static func isSteam(_ id: String?) -> Bool {
+        #if LITE_BUILD
+        false
+        #else
         guard let id, !id.isEmpty else { return false }
         return id.allSatisfy(\.isNumber)
+        #endif
     }
 
     private func recentlyUsed(_ lhs: LibraryItem, _ rhs: LibraryItem) -> Bool {

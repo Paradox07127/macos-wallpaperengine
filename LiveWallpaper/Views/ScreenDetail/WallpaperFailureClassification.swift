@@ -126,7 +126,7 @@ extension WallpaperFailureCause {
                 actions.append(.retry)
             }
         }
-        #if !MAS_BUILD
+        #if !LITE_BUILD
         if let workshopID, !workshopID.isEmpty, workshopID.allSatisfy(\.isNumber) {
             actions.append(.openWorkshop(workshopID))
         }

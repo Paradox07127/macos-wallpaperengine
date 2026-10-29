@@ -161,10 +161,20 @@ enum PageGuideContext: CaseIterable {
     }
 
     private static var importHint: LocalizedStringKey {
-        #if LITE_BUILD
+        #if MAS_BUILD
+        "Drag a video or a web folder onto a display"
+        #elseif LITE_BUILD
         "Drag a video or a web folder onto a display, or set up Apple Aerials"
         #else
         "Drag a video, a web folder or a Wallpaper Engine project onto a display, or set up Apple Aerials"
+        #endif
+    }
+
+    private static var aerialsSteps: [PageGuideStep] {
+        #if MAS_BUILD
+        []
+        #else
+        [.init(.aerials, "Apple Aerials", "Choose Aerials to connect the local aerial folder. Download videos first in macOS System Settings › Wallpaper if the list is empty.")]
         #endif
     }
 
@@ -182,8 +192,7 @@ enum PageGuideContext: CaseIterable {
             [
                 .init(.libraryTools, "Import, filter and sort", "Add to Library imports files without changing a display. Filter by source, search by name or tag, and choose a sort order. Local files stay in their original location; keep them available."),
                 .init(.page, "Apply a wallpaper", "Click a wallpaper to see its details and choose a target display, or drag it onto a display. Bookmark keeps the source; a scheme also keeps a display's settings and overlays."),
-                .init(.aerials, "Apple Aerials", "Choose Aerials to connect the local aerial folder. Download videos first in macOS System Settings › Wallpaper if the list is empty."),
-            ]
+            ] + Self.aerialsSteps
         case .saved:
             [
                 .init(.page, "Display setups you saved", "A scheme recalls one display's wallpaper, playback settings and overlays. Choose a display on a scheme's card to apply it there. Bookmarked wallpapers are in Wallpaper Library under the Bookmarks filter."),

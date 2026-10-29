@@ -170,10 +170,17 @@ extension GeneralSettingsView {
             ))
         }
         if bundle.globalSettings != nil {
+            #if MAS_BUILD
+            replaced.append(String(
+                localized: "• Preferences, shortcuts, display defaults, display names, and widget and clock overlays",
+                bundle: .appLanguage, comment: "Import confirmation bullet under Replaces: parts of the global settings."
+            ))
+            #else
             replaced.append(String(
                 localized: "• Preferences, shortcuts, display defaults, display names, and widget, music, and clock overlays",
                 bundle: .appLanguage, comment: "Import confirmation bullet under Replaces: parts of the global settings."
             ))
+            #endif
             #if !LITE_BUILD
             replaced.append(String(
                 localized: "• Presets and the Workshop items in the wallpaper library",

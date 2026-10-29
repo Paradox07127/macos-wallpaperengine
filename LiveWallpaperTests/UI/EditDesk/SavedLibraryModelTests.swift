@@ -333,6 +333,17 @@ struct SavedLibraryModelTests {
         #expect(SavedLibraryModel.Chip.allCases == [.all, .bookmarks, .recent, .steam, .local, .aerials])
     }
 
+    @Test("Steam is a chip only with Workshop import, and selecting it without falls back to All")
+    func steamChipNeedsWorkshopImport() {
+        let pro = FeatureCatalog(capabilities: .pro)
+        let lite = FeatureCatalog(capabilities: .lite)
+        #expect(SavedLibraryModel.Chip.displayed(in: pro) == [.all, .bookmarks, .recent, .steam, .local, .aerials])
+        #expect(SavedLibraryModel.Chip.displayed(in: lite) == [.all, .bookmarks, .recent, .local, .aerials])
+        #expect(SavedLibraryModel.Chip.selection("steam", in: pro) == .steam)
+        #expect(SavedLibraryModel.Chip.selection("steam", in: lite) == .all)
+        #expect(SavedLibraryModel.Chip.selection("local", in: lite) == .local)
+    }
+
     @Test("Bookmarks keeps only the marked rows, and follows a mark added or taken off")
     func bookmarksChipKeepsOnlyMarkedRows() {
         let marked = bookmark("Marked")

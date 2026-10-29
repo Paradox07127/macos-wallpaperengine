@@ -883,7 +883,10 @@ struct HomePage: View {
     }
 
     private var chipBinding: Binding<String> {
-        Binding(get: { Self.chipID(library?.chip ?? .all) }, set: { library?.chip = Self.chip(for: $0) })
+        Binding(
+            get: { Self.chipID(library?.chip ?? .all) },
+            set: { library?.chip = SavedLibraryModel.Chip.selection($0, in: featureCatalog) }
+        )
     }
 
     /// Writing `router.page` straight from the pill skips `select`, which is what records the page
@@ -895,7 +898,7 @@ struct HomePage: View {
     private var chipsRow: some View {
         VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s12) {
             LibraryChipsRow(
-                chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
+                chips: SavedLibraryModel.Chip.displayed(in: featureCatalog).map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
                 selection: chipBinding,
                 searchText: queryBinding,
                 searchPrompt: featureCatalog.isEnabled(.wpeImport) ? "Search by name or tag" : "Search by name",
@@ -1000,10 +1003,6 @@ struct HomePage: View {
 
     private static func chipID(_ chip: SavedLibraryModel.Chip) -> String {
         chip.rawValue
-    }
-
-    private static func chip(for id: String) -> SavedLibraryModel.Chip {
-        SavedLibraryModel.Chip(rawValue: id) ?? .all
     }
 
     static func chipTitle(_ chip: SavedLibraryModel.Chip) -> LocalizedStringKey {

@@ -3904,6 +3904,41 @@
         }
       }
     },
+    "• Preferences, shortcuts, display defaults, display names, and widget and clock overlays" : {
+      "comment" : "Import confirmation bullet under Replaces: parts of the global settings.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• Preferences, shortcuts, display defaults, display names, and widget and clock overlays"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• Las preferencias, los atajos, los valores predeterminados de pantalla, los nombres de pantalla y las superposiciones de widgets y reloj"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• 環境設定、ショートカット、ディスプレイのデフォルト、ディスプレイ名、ウィジェット・時計のオーバーレイ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• 偏好设置、快捷键、显示器默认值、显示器名称，以及小组件和时钟叠加层"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• 偏好設定、快速鍵、顯示器預設值、顯示器名稱，以及小工具和時鐘疊加層"
+          }
+        }
+      }
+    },
     "• Preferences, shortcuts, display defaults, display names, and widget, music, and clock overlays" : {
       "comment" : "Import confirmation bullet under Replaces: parts of the global settings.",
       "localizations" : {
@@ -25498,6 +25533,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載時使用 Steam 帳號，Loomscreen 不儲存密碼。"
+          }
+        }
+      }
+    },
+    "Drag a video or a web folder onto a display" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag a video or a web folder onto a display"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra un vídeo o una carpeta web a una pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画・Web フォルダをディスプレイにドラッグしてください"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将视频或网页文件夹拖到显示器上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將影片或網頁資料夾拖到顯示器上"
           }
         }
       }

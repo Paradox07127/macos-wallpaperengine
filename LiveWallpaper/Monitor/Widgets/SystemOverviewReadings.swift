@@ -5,7 +5,11 @@ enum SystemOverviewOptions {
     static let defaultHistoryWindow = 60
 
     static func showsSensors(_ placement: MonitorWidgetPlacement) -> Bool {
+        #if MAS_BUILD
+        false
+        #else
         placement.size == .large && (placement.options[MonitorWidgetDraft.showSensorsKey]?.boolValue ?? true)
+        #endif
     }
 
     static func showsHistory(_ placement: MonitorWidgetPlacement) -> Bool {
