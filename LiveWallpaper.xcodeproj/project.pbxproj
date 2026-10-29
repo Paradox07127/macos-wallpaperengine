@@ -151,9 +151,301 @@
 		0CA00000000000000000C030 /* Exceptions for "LiveWallpaper" folder in "LoomscreenAppStore" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				App/DesktopClickObserver.swift,
+				"App/ScreenManager+SceneMirror.swift",
+				"App/ScreenManager+SceneSpan.swift",
+				"App/ScreenManager+WorkshopRepository.swift",
+				"App/ScreenManager+WPESupersede.swift",
+				Application/Workshop/WorkshopDownloadCoordinator.swift,
+				Application/Workshop/WorkshopFolderImportCoordinator.swift,
+				Application/Workshop/WorkshopRepositoryCoordinator.swift,
+				Infrastructure/Assets/SceneFailureCause.swift,
+				Infrastructure/Assets/SceneResourceResolver.swift,
+				Infrastructure/Assets/WallpaperEngineProject.swift,
+				Infrastructure/Assets/WallpaperEngineProjectPackage.swift,
+				Infrastructure/Assets/WPEAssetMount.swift,
+				Infrastructure/Assets/WPEDependencyMountResolver.swift,
+				Infrastructure/Assets/WPEDirectorySceneAssetProvider.swift,
+				Infrastructure/Assets/WPEEngineAssetsLibrary.swift,
+				Infrastructure/Assets/WPEMetalTextureFormatMapper.swift,
+				Infrastructure/Assets/WPEMultiRootResourceResolver.swift,
+				Infrastructure/Assets/WPEPackageSceneAssetProvider.swift,
+				Infrastructure/Assets/WPEProjectCustomSettingsSchemaLoader.swift,
+				Infrastructure/Assets/WPEProjectError.swift,
+				Infrastructure/Assets/WPERasterImageAlpha.swift,
+				Infrastructure/Assets/WPESceneAssetProvider.swift,
+				Infrastructure/Assets/WPESceneCapabilityClassifier.swift,
+				Infrastructure/Assets/WPEScenePreflight.swift,
+				Infrastructure/Assets/WPESceneProjectSchemaLoader.swift,
+				Infrastructure/Assets/WPESceneReachability.swift,
+				Infrastructure/Assets/WPETexByteReader.swift,
+				Infrastructure/Assets/WPETexDecoder.swift,
+				Infrastructure/Assets/WPETexMipValidation.swift,
+				Infrastructure/Assets/WPEVideoTextureDiskCache.swift,
+				Infrastructure/Diagnostics/WPEMetalTextureSnapshotter.swift,
+				Infrastructure/Persistence/WallpaperNameTranslationCache.swift,
+				Infrastructure/Platform/AppStorageInventory.swift,
+				Infrastructure/Platform/StorageLinkedSources.swift,
+				Infrastructure/Platform/WebCacheMaintenance.swift,
+				Infrastructure/Platform/WPEFolderPicker.swift,
+				Infrastructure/Platform/WPEStorageInventory.swift,
+				Infrastructure/Platform/WPEStoragePaths.swift,
+				Infrastructure/Services/SparkleUpdaterController.swift,
+				Infrastructure/SystemWallpaper/SystemWallpaperMaintenanceClient.swift,
+				Infrastructure/SystemWallpaper/SystemWallpaperMaintenanceController.swift,
+				Infrastructure/SystemWallpaper/SystemWallpaperMovieWriter.swift,
+				Infrastructure/SystemWallpaper/SystemWallpaperSceneBundle.swift,
+				Infrastructure/SystemWallpaper/SystemWallpaperScenePreparation.swift,
+				Infrastructure/SystemWallpaper/SystemWallpaperWebRecording.swift,
+				Infrastructure/UserShortcuts/UserShortcutBinding.swift,
+				Infrastructure/UserShortcuts/UserShortcutBindingStore.swift,
+				Infrastructure/UserShortcuts/UserShortcutExecutor.swift,
+				Infrastructure/UserShortcuts/UserShortcutIconRenderer.swift,
+				Infrastructure/UserShortcuts/UserShortcutRendererLink.swift,
+				Infrastructure/Workshop/Doctor/SteamCMDDoctorDiagnostics.swift,
+				Infrastructure/Workshop/Doctor/SteamCMDDoctorOperationCoordinator.swift,
+				Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift,
+				Infrastructure/Workshop/Doctor/SteamCMDDoctorWorkshopProbes.swift,
+				Infrastructure/Workshop/Doctor/SteamCMDScriptWriter.swift,
+				Infrastructure/Workshop/Doctor/SteamCMDWorkshopFileInventory.swift,
+				Infrastructure/Workshop/SteamCMDFailureCodeCopy.swift,
+				Infrastructure/Workshop/SteamCMDManagedInstallCoordinator.swift,
+				Infrastructure/Workshop/SteamConnectorClient.swift,
+				Infrastructure/Workshop/SteamWorkshopMetadata.swift,
+				Infrastructure/Workshop/WallpaperEngineImportService.swift,
+				Infrastructure/Workshop/WorkshopAnimatedGIF.swift,
+				Infrastructure/Workshop/WorkshopAPIKeyOwnershipInfo.swift,
+				Infrastructure/Workshop/WorkshopCDNHostAllowList.swift,
+				Infrastructure/Workshop/WorkshopCommunityURL.swift,
+				Infrastructure/Workshop/WorkshopDependencyResolver.swift,
+				Infrastructure/Workshop/WorkshopDiagnosticPayload.swift,
+				Infrastructure/Workshop/WorkshopDiskCacheStore.swift,
+				Infrastructure/Workshop/WorkshopDownloadOutcome.swift,
+				Infrastructure/Workshop/WorkshopDownloadQueue.swift,
+				Infrastructure/Workshop/WorkshopItemDetailsLoader.swift,
+				Infrastructure/Workshop/WorkshopKeychainStore.swift,
+				Infrastructure/Workshop/WorkshopPasteQueueModel.swift,
+				Infrastructure/Workshop/WorkshopPreviewDiskCache.swift,
+				Infrastructure/Workshop/WorkshopPreviewImageLoader.swift,
+				Infrastructure/Workshop/WorkshopPublicBrowsePayload.swift,
+				Infrastructure/Workshop/WorkshopPublicSearchSource.swift,
+				Infrastructure/Workshop/WorkshopQueryCache.swift,
+				Infrastructure/Workshop/WorkshopQueryErrorText.swift,
+				Infrastructure/Workshop/WorkshopQueryService.swift,
+				Infrastructure/Workshop/WorkshopRetryPolicy.swift,
+				Infrastructure/Workshop/WorkshopServices.swift,
+				Infrastructure/Workshop/WorkshopSubscriptionSync.swift,
+				Infrastructure/Workshop/WorkshopToastCenter.swift,
+				Infrastructure/Workshop/WorkshopURLParser.swift,
+				Infrastructure/Workshop/WPECachedContentResolver.swift,
+				Infrastructure/Workshop/WPEEngineAssetsInstaller.swift,
+				Models/SystemWallpaperDisplayStatus.swift,
+				Models/SystemWallpaperFollowPreferences.swift,
+				Models/SystemWallpaperFollowState.swift,
+				Models/SystemWallpaperHealth.swift,
+				Models/SystemWallpaperMaintenanceProtocol.swift,
+				Models/SystemWallpaperPlaybackPolicy.swift,
+				Models/SystemWallpaperPreparationOptions.swift,
+				Models/SystemWallpaperSceneConfiguration.swift,
+				Monitor/NowPlaying/NowPlayingArtworkFetcher.swift,
+				Monitor/NowPlaying/NowPlayingController.swift,
+				Monitor/NowPlaying/NowPlayingLyricsFetcher.swift,
+				Monitor/NowPlaying/NowPlayingMemoCache.swift,
+				Monitor/NowPlaying/NowPlayingMonitor.swift,
+				Monitor/NowPlaying/NowPlayingNetwork.swift,
+				Monitor/NowPlaying/NowPlayingSource.swift,
+				Monitor/Overlay/MusicHostView.swift,
+				Monitor/Sources/ClaudeAgentSource.swift,
+				Monitor/Sources/CodexAgentSource.swift,
+				Monitor/Sources/ProcessResourceUsage.swift,
+				Monitor/Sources/SensorSampler.swift,
+				Monitor/Widgets/MusicOverlayContext.swift,
+				Monitor/Widgets/NowPlayingAccent.swift,
+				Monitor/Widgets/NowPlayingAudioLayer.swift,
+				Monitor/Widgets/NowPlayingLyricsView.swift,
+				Monitor/Widgets/NowPlayingOptions.swift,
+				Monitor/Widgets/NowPlayingWidgetView.swift,
 				Resources/InfoPlist.xcstrings,
 				Resources/Lite/InfoPlist.xcstrings,
+				Resources/Sparkle-LICENSE.txt,
+				Runtime/Assets/SystemWallpaperFramePool.swift,
+				Runtime/Assets/WPEVideoPlaybackSnapshot.swift,
+				Runtime/Assets/WPEVideoTextureSource.swift,
+				Runtime/Audio/SystemAudioCaptureManager.swift,
+				Runtime/Audio/SystemAudioCaptureService.swift,
+				Runtime/Coordinators/WPEImportCoordinator.swift,
+				Runtime/Coordinators/WPEImportTracker.swift,
+				Runtime/Diagnostics/SceneRendererDiagnostics.swift,
+				Runtime/Diagnostics/WPERenderDiagnosticReport.swift,
+				Runtime/Diagnostics/WPESceneTestingReports.swift,
+				Runtime/Metal/Parity/Assets/WPEParitySceneAssets.swift,
+				Runtime/Metal/Parity/Execution/WPEParityDrawEncoder.swift,
+				Runtime/Metal/Parity/Execution/WPEParityFrameArena.swift,
+				Runtime/Metal/Parity/Execution/WPEParityGeometryEmulation.swift,
+				Runtime/Metal/Parity/Execution/WPEParityGraphExecutor.swift,
+				Runtime/Metal/Parity/Execution/WPEParityPipelineFactory.swift,
+				Runtime/Metal/Parity/Frame/WPEParityFrameDrawPlan.swift,
+				Runtime/Metal/Parity/Frame/WPEParityFrameDrawPlanner.swift,
+				"Runtime/Metal/Parity/Frame/WPEParityFrameDrawPlanner+StateGeometry.swift",
+				"Runtime/Metal/Parity/Frame/WPEParityFrameDrawPlanner+Textures.swift",
+				Runtime/Metal/Parity/Frame/WPEParityFrameParticles.swift,
+				Runtime/Metal/Parity/Frame/WPEParityFramePlan.swift,
+				Runtime/Metal/Parity/Frame/WPEParityFrameRenderer.swift,
+				"Runtime/Metal/Parity/Frame/WPEParityFrameRenderer+Graphs.swift",
+				"Runtime/Metal/Parity/Frame/WPEParityFrameRenderer+Script.swift",
+				"Runtime/Metal/Parity/Frame/WPEParityFrameRenderer+Text.swift",
+				"Runtime/Metal/Parity/Frame/WPEParityFrameRenderer+Video.swift",
+				Runtime/Metal/Parity/Frame/WPEParityModelDataLayerAdmission.swift,
+				Runtime/Metal/Parity/Frame/WPEParityModelDataMetalShape.swift,
+				Runtime/Metal/Parity/Frame/WPEParityParticleGraph.swift,
+				Runtime/Metal/Parity/Frame/WPEParityTextAtlasTextures.swift,
+				Runtime/Metal/Parity/Frame/WPEParityVideoTextures.swift,
+				Runtime/Metal/Parity/Product/WPEParityAudioFeed.swift,
+				"Runtime/Metal/Parity/Product/WPEParityColorCorrection+Preset.swift",
+				Runtime/Metal/Parity/Product/WPEParityProductSettings.swift,
+				Runtime/Metal/Parity/Product/WPEParityResourceSaverFlags.swift,
+				Runtime/Metal/Parity/Product/WPEParitySceneDriver.swift,
+				Runtime/Metal/Parity/Product/WPEParityShaderToolchain.swift,
+				Runtime/Metal/Parity/Resources/WPEParityCompressedTextureCache.swift,
+				Runtime/Metal/Parity/Resources/WPEParityTextureCompressor.swift,
+				Runtime/Metal/Parity/Resources/WPEParityTextureLoader.swift,
+				Runtime/Metal/Parity/Script/WPEParitySceneScript.swift,
+				Runtime/Metal/Parity/Script/WPEParityTextFields.swift,
+				Runtime/Metal/Parity/Shaders/WPEParityHelperShaderCompiler.swift,
+				Runtime/Metal/Parity/Shaders/WPEParityShaderArtifact.swift,
+				Runtime/Metal/Parity/Shaders/WPEParityShaderCompiling.swift,
+				Runtime/Metal/Parity/Shaders/WPEParityShaderDiskCache.swift,
+				Runtime/Metal/Parity/Shaders/WPEParityShaderStore.swift,
+				Runtime/Metal/Parity/State/WPEParityMetalStateMapping.swift,
+				Runtime/Metal/RenderThread/WPEDisplayLinkFrameDriver.swift,
+				Runtime/Metal/RenderThread/WPERenderSurface.swift,
+				Runtime/Metal/RenderThread/WPERenderSurfaceClientShim.swift,
+				Runtime/Metal/WPEFrameOccupancyMeter.swift,
+				Runtime/Metal/WPEFrameReadiness.swift,
+				Runtime/Metal/WPEInteractiveMTKView.swift,
 				Runtime/Metal/WPEMetalBuiltins.metal,
+				Runtime/Metal/WPEMetalColorOutput.swift,
+				Runtime/Metal/WPEMetalFrameSubmission.swift,
+				Runtime/Metal/WPEMetalFXSpatialUpscaler.swift,
+				Runtime/Metal/WPEMetalPassGPUProfiler.swift,
+				Runtime/Metal/WPEMetalPipelineCache.swift,
+				Runtime/Metal/WPEMetalPointerSample.swift,
+				Runtime/Metal/WPEMetalPresenter.swift,
+				"Runtime/Metal/WPEMetalPresenter+DisplayedFrameCapture.swift",
+				"Runtime/Metal/WPEMetalPresenter+Present.swift",
+				Runtime/Metal/WPEMetalSharedTypes.swift,
+				Runtime/Metal/WPEMetalUpscalePlan.swift,
+				Runtime/Metal/WPEPointerMailbox.swift,
+				Runtime/Metal/WPEPointerPublisher.swift,
+				Runtime/Metal/WPESceneSpanFrames.swift,
+				Runtime/Metal/WPESceneSpanPresenter.swift,
+				Runtime/Scene/SystemWallpaperSceneRuntime.swift,
+				Runtime/Scene/WPEEnrichedNowPlayingFeed.swift,
+				Runtime/Scene/WPEMediaArtworkPalette.swift,
+				Runtime/Scene/WPEMediaTextureProvider.swift,
+				Runtime/Scene/WPESceneMediaEvents.swift,
+				Runtime/Scene/WPESceneParallaxBindingInference.swift,
+				Runtime/Scene/WPESceneRenderPolicy.swift,
+				Runtime/Scene/WPESceneRuntimeActivity.swift,
+				Runtime/Scene/WPESoundRuntime.swift,
+				Runtime/Scene/WPEUserShortcutIconStore.swift,
+				Runtime/Scene/WPEUserShortcutScriptBridge.swift,
+				Runtime/Session/SceneDesktopClickReceiving.swift,
+				Runtime/Session/SceneHotZoneController.swift,
+				Runtime/Session/SceneHotZoneRouting.swift,
+				Runtime/Session/ScenePropertyPosterCommitGate.swift,
+				Runtime/Session/SceneSpanWallpaperSession.swift,
+				Runtime/Session/SceneWallpaperRuntime.swift,
+				Runtime/Session/SceneWallpaperSession.swift,
+				Runtime/WPEMemoryTier.swift,
+				Views/Aerials/AerialsSourceViews.swift,
+				Views/EditDesk/Detail/Console/SceneSettingsOwner.swift,
+				Views/EditDesk/Detail/DetailSceneStatus.swift,
+				Views/EditDesk/Library/WorkshopSavedRecords.swift,
+				Views/EditDesk/Onboarding/SteamWizard.swift,
+				Views/EditDesk/Workshop/BookmarkStorageErrorToast.swift,
+				Views/EditDesk/Workshop/DeferredApplyCoordinator.swift,
+				Views/EditDesk/Workshop/DeferredApplyToasts.swift,
+				Views/EditDesk/Workshop/MatureRevealState.swift,
+				Views/EditDesk/Workshop/WorkshopModal.swift,
+				Views/EditDesk/Workshop/WorkshopModalContract.swift,
+				Views/EditDesk/Workshop/WorkshopModalHost.swift,
+				Views/EditDesk/Workshop/WorkshopPage.swift,
+				Views/EditDesk/Workshop/WorkshopSession.swift,
+				Views/EditDesk/Workshop/WorkshopSteamMenu.swift,
+				Views/Monitor/MusicOverlaySection.swift,
+				Views/ScreenDetail/AttemptSceneProperties.swift,
+				Views/ScreenDetail/EngineAssetsBanner.swift,
+				Views/ScreenDetail/ProjectPresentation.swift,
+				Views/ScreenDetail/ProjectSettingsCard.swift,
+				Views/ScreenDetail/ProjectSettingWidgets.swift,
+				Views/ScreenDetail/PropertyValueLogic.swift,
+				Views/ScreenDetail/SceneDetailView.swift,
+				Views/ScreenDetail/SceneFailurePresentation.swift,
+				Views/ScreenDetail/ScenePresetBar.swift,
+				Views/ScreenDetail/ScenePreview.swift,
+				Views/ScreenDetail/SceneSettingsCard.swift,
+				Views/ScreenDetail/SceneTextureBindingRow.swift,
+				Views/ScreenDetail/UserShortcutBindingRow.swift,
+				Views/Settings/CacheView.swift,
+				"Views/Settings/CacheView+Actions.swift",
+				"Views/Settings/CacheView+Artifacts.swift",
+				"Views/Settings/CacheView+Dashboard.swift",
+				"Views/Settings/CacheView+Disks.swift",
+				"Views/Settings/CacheView+Locations.swift",
+				Views/Settings/SetupComponents.swift,
+				Views/Settings/StorageDashboard.swift,
+				Views/Settings/StorageDiskPanel.swift,
+				Views/Settings/SystemWallpaperMaintenanceSection.swift,
+				Views/Settings/SystemWallpaperRegistrationSheet.swift,
+				Views/Settings/UpdateStatusLine.swift,
+				Views/Settings/WorkshopAPIKeySection.swift,
+				Views/Settings/WorkshopConnectionSetup.swift,
+				Views/Settings/WorkshopDiagnosticsSection.swift,
+				Views/Settings/WorkshopEngineAssetsSection.swift,
+				Views/Settings/WorkshopLegalSection.swift,
+				Views/Settings/WorkshopProbeRow.swift,
+				Views/Settings/WorkshopSettingsView.swift,
+				Views/Settings/WorkshopSetupOverview.swift,
+				Views/SystemWallpaper/SystemWallpaperAddSheet.swift,
+				Views/SystemWallpaper/SystemWallpaperCandidate.swift,
+				Views/SystemWallpaper/SystemWallpaperDisplayList.swift,
+				Views/SystemWallpaper/SystemWallpaperLibraryView.swift,
+				Views/SystemWallpaper/SystemWallpaperStatusCard.swift,
+				Views/Workshop/AnimatedGIFThumbnail.swift,
+				Views/Workshop/APIKeyEntryModel.swift,
+				Views/Workshop/APIKeySheet.swift,
+				Views/Workshop/BrowseCard.swift,
+				Views/Workshop/BrowseFilterRibbon.swift,
+				Views/Workshop/BrowsePagination.swift,
+				Views/Workshop/BrowsePane.swift,
+				Views/Workshop/BrowseViewModel.swift,
+				Views/Workshop/CollapsibleDescription.swift,
+				Views/Workshop/DetailPresetsSection.swift,
+				Views/Workshop/DetailRequiredItemsSection.swift,
+				Views/Workshop/DownloadToast.swift,
+				Views/Workshop/ExportToast.swift,
+				Views/Workshop/FilterControls.swift,
+				Views/Workshop/GIFCoordinator.swift,
+				Views/Workshop/InstalledFilters.swift,
+				Views/Workshop/InstalledLibrary.swift,
+				Views/Workshop/InstalledLifecycle.swift,
+				Views/Workshop/LocalProjectInfo.swift,
+				Views/Workshop/PaneView.swift,
+				Views/Workshop/PasteRowCard.swift,
+				Views/Workshop/PasteSheet.swift,
+				Views/Workshop/Setup/WorkshopSetupController.swift,
+				Views/Workshop/Setup/WorkshopSetupRoutes.swift,
+				Views/Workshop/SteamAccountMenu.swift,
+				Views/Workshop/SteamCMDSheet.swift,
+				Views/Workshop/SteamSignInSheet.swift,
+				Views/Workshop/SubscriptionSyncSheet.swift,
+				Views/Workshop/TerminalCommandPanel.swift,
+				Views/Workshop/WorkshopBookmarkActions.swift,
+				Views/Workshop/WorkshopChipFlow.swift,
+				Views/Workshop/WorkshopDownloadsSheet.swift,
+				Views/Workshop/WorkshopTagLocalization.swift,
+				Views/Workshop/WorkshopTagTaxonomy.swift,
 			);
 			target = 0CA00000000000000000C001 /* LoomscreenAppStore */;
 		};
@@ -1121,7 +1413,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaper.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1139,7 +1430,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -1151,7 +1441,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaper.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1170,7 +1459,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -1220,7 +1508,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1238,7 +1525,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -1250,7 +1536,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1269,7 +1554,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -1281,7 +1565,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1299,7 +1582,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD MAS_BUILD";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -1311,7 +1593,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperAppStore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1330,7 +1611,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD MAS_BUILD";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -1473,7 +1753,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
@@ -1503,7 +1783,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};

@@ -97,6 +97,41 @@
         }
       }
     },
+    "NSAudioCaptureUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio response analyzes the audio currently playing on your Mac, on-device, to make wallpapers move with the music. No audio is recorded, saved, or sent anywhere."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La respuesta de audio analiza en tu Mac, sin salir del dispositivo, el audio que se está reproduciendo para que los fondos de pantalla se muevan con la música. No se graba, guarda ni envía ningún audio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーディオ反応は、Mac で再生中のオーディオをデバイス上で解析し、壁紙を音楽に合わせて動かします。オーディオが録音・保存・送信されることはありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音频响应在本机分析 Mac 上正在播放的音频，使壁纸随音乐律动。音频不会被录制、保存或发送至任何地方。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音訊反應在本機分析 Mac 上正在播放的音訊，讓桌布隨音樂律動。音訊不會被錄製、儲存或傳送至任何地方。"
+          }
+        }
+      }
+    },
     "NSLocationWhenInUseUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {

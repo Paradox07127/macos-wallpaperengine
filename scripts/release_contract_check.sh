@@ -238,8 +238,26 @@ grep -q '<key>com.apple.security.app-sandbox</key>' LiveWallpaper/LiveWallpaper.
 grep -q '<key>com.apple.security.app-sandbox</key>' LiveWallpaper/LiveWallpaperLite.entitlements
 
 project_file="LiveWallpaper.xcodeproj/project.pbxproj"
-[[ "$(grep -c 'CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaper.entitlements;' "$project_file")" == "2" ]]
-[[ "$(grep -c 'CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;' "$project_file")" == "2" ]]
+# Each app plist must sign exactly the Debug and Release configurations of its target,
+# whether the configuration sets it or inherits it from its edition xcconfig.
+python3 - "$project_file" <<'PYENT' || exit 1
+import re, sys
+from pathlib import Path
+source = open(sys.argv[1]).read()
+config_dir = Path(sys.argv[1]).resolve().parents[1] / "Config"
+counts = {}
+for block in re.finditer(r"isa = XCBuildConfiguration;(.*?)\n\t\t\};", source, re.S):
+    body = block.group(1)
+    value = re.search(r"CODE_SIGN_ENTITLEMENTS = ([^;]+);", body)
+    xcconfig = re.search(r"baseConfigurationReference = \w+ /\* (\S+\.xcconfig) \*/;", body)
+    if not value and xcconfig:
+        value = re.search(r"^CODE_SIGN_ENTITLEMENTS = (\S+)$", (config_dir / xcconfig.group(1)).read_text(), re.M)
+    if value:
+        counts[value.group(1)] = counts.get(value.group(1), 0) + 1
+for plist in ("LiveWallpaper/LiveWallpaper.entitlements", "LiveWallpaper/LiveWallpaperLite.entitlements"):
+    if counts.get(plist, 0) != 2:
+        sys.exit(f"ERROR: {plist} signs {counts.get(plist, 0)} build configurations; it must sign exactly its app's Debug and Release.")
+PYENT
 
 
 # Sparkle is shipped deliberately as of 2026-08-23, so the gate asserts it is

@@ -1,6 +1,8 @@
 ARCHS = $(ARCHS_STANDARD)
+CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperAppStore.entitlements
 INFOPLIST_FILE = LoomscreenAppStoreInfo.plist
 PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.appstore
 PRODUCT_NAME = Loomscreen
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) LITE_BUILD MAS_BUILD
 // Only Pro syncs the shared Localizable.xcstrings; keys used only by this edition are marked manual there.
 SWIFT_EMIT_LOC_STRINGS = NO

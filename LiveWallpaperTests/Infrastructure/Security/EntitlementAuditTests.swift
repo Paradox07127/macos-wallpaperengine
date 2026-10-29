@@ -111,14 +111,14 @@ struct EntitlementAuditTests {
     func projectMapsEachSKUToItsOwnPlist() throws {
         let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
         for objectID in ["0C322C152D6950490033C48B", "0C322C162D6950490033C48B"] {
-            let configuration = try Self.projectConfiguration(objectID, in: project)
-            #expect(configuration.contains("CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaper.entitlements;"))
-            #expect(!configuration.contains("LiveWallpaperLite.entitlements"))
+            let entitlements = try Self.resolvedSetting("CODE_SIGN_ENTITLEMENTS", configuration: objectID, in: project)
+            #expect(entitlements == "LiveWallpaper/LiveWallpaper.entitlements")
         }
         for objectID in ["0CA00000000000000000B006", "0CA00000000000000000B007"] {
-            let configuration = try Self.projectConfiguration(objectID, in: project)
-            #expect(configuration.contains("CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;"))
-            #expect(configuration.contains("LITE_BUILD"))
+            let entitlements = try Self.resolvedSetting("CODE_SIGN_ENTITLEMENTS", configuration: objectID, in: project)
+            let conditions = try Self.resolvedSetting("SWIFT_ACTIVE_COMPILATION_CONDITIONS", configuration: objectID, in: project)
+            #expect(entitlements == "LiveWallpaper/LiveWallpaperLite.entitlements")
+            #expect(conditions?.split(separator: " ").contains("LITE_BUILD") == true)
         }
     }
 
@@ -193,5 +193,33 @@ struct EntitlementAuditTests {
             throw AuditError.missingProjectConfiguration(objectID)
         }
         return source[start.lowerBound ..< end.upperBound]
+    }
+
+    /// The configuration's own value, else the one from the xcconfig it is based on; nil = set in neither.
+    private static func resolvedSetting(_ key: String, configuration objectID: String, in project: String) throws -> String? {
+        let configuration = try projectConfiguration(objectID, in: project)
+        if let value = settingValue(key, in: configuration) {
+            return value
+        }
+        guard let reference = configuration.split(separator: "\n").first(where: { $0.contains("baseConfigurationReference = ") }),
+              let open = reference.range(of: "/* "),
+              let close = reference.range(of: " */") else {
+            return nil
+        }
+        let xcconfig = try RepositoryRoot.source("Config/\(reference[open.upperBound ..< close.lowerBound])")
+        return settingValue(key, in: Substring(xcconfig))
+    }
+
+    private static func settingValue(_ key: String, in settings: Substring) -> String? {
+        for line in settings.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("\(key) = ") else { continue }
+            var value = trimmed.dropFirst(key.count + 3)
+            if value.hasSuffix(";") {
+                value = value.dropLast()
+            }
+            return value.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        }
+        return nil
     }
 }
