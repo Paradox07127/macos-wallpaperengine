@@ -1,0 +1,137 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "Bundle display name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Loomscreen"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "CFBundleName" : {
+      "comment" : "Bundle name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Loomscreen"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Loomscreen Configuration" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen Configuration"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración de Loomscreen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 構成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 配置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 設定"
+          }
+        }
+      }
+    },
+    "NSAppleEventsUsageDescription" : {
+      "comment" : "Privacy - AppleEvents Sending Usage Description",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play, pause, skip and seek buttons on the Now Playing wallpaper layer use this to control the music player you are listening to."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los botones de reproducción, pausa, salto y búsqueda de la capa En reproducción usan este permiso para controlar el reproductor de música que estás escuchando."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生中レイヤーの再生・一時停止・スキップ・シーク操作が、この許可を使って再生中の音楽アプリを操作します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸上“正在播放”图层的播放、暂停、切歌和进度控制，通过此权限操作你正在听的音乐播放器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布上「正在播放」圖層的播放、暫停、切歌與進度控制，透過此權限操作你正在聽的音樂播放程式。"
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location is used to fetch local weather for weather-reactive effects."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ubicación se usa para consultar el tiempo local y aplicar efectos que reaccionan a él."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置情報は、天気に反応するエフェクト用にローカルの天気を取得するために使われます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "定位用于获取本地天气，以驱动随天气变化的效果。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置資訊用來取得本地天氣，驅動會隨天氣變化的效果。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

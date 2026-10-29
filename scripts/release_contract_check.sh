@@ -461,7 +461,9 @@ done
 # Derived, never hardcoded: pinning a number here would go red on every release.
 python3 - "$project_file" <<'PYGATE' || exit 1
 import re, sys
+from pathlib import Path
 source = open(sys.argv[1]).read()
+config_dir = Path(sys.argv[1]).resolve().parents[1] / "Config"
 wanted = {
     "com.loomscreen.pro": "Pro app",
     "com.loomscreen": "Lite app",
@@ -472,6 +474,10 @@ found = {}
 for block in re.finditer(r"isa = XCBuildConfiguration;(.*?)\n\t\t\};", source, re.S):
     body = block.group(1)
     ident = re.search(r"PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);", body)
+    xcconfig = re.search(r"baseConfigurationReference = \w+ /\* (\S+\.xcconfig) \*/;", body)
+    if not ident and xcconfig:
+        # App targets take their bundle ID from their edition's xcconfig.
+        ident = re.search(r"^PRODUCT_BUNDLE_IDENTIFIER = (\S+)$", (config_dir / xcconfig.group(1)).read_text(), re.M)
     version = re.search(r"MARKETING_VERSION = ([^;]+);", body)
     if ident and version and ident.group(1) in wanted:
         found.setdefault(ident.group(1), set()).add(version.group(1))

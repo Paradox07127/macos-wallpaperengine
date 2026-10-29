@@ -1,0 +1,6 @@
+ARCHS = $(ARCHS_STANDARD)
+INFOPLIST_FILE = LoomscreenAppStoreInfo.plist
+PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.appstore
+PRODUCT_NAME = Loomscreen
+// Only Pro syncs the shared Localizable.xcstrings; keys used only by this edition are marked manual there.
+SWIFT_EMIT_LOC_STRINGS = NO

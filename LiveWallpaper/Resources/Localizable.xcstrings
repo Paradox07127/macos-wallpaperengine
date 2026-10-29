@@ -3906,6 +3906,7 @@
     },
     "• Preferences, shortcuts, display defaults, display names, and widget and clock overlays" : {
       "comment" : "Import confirmation bullet under Replaces: parts of the global settings.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25610,6 +25611,7 @@
       }
     },
     "Drag a video or a web folder onto a display" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25644,6 +25646,7 @@
       }
     },
     "Drag a video or a web folder onto a display, or set up Apple Aerials" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -78089,6 +78092,7 @@
     },
     "This version can’t record web wallpapers" : {
       "comment" : "System Wallpaper display list, Lite: this display shows a web wallpaper, and Lite cannot record it as a video copy.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {

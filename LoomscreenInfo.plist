@@ -34,14 +34,6 @@
 	<string>AccentColor</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Play, pause, skip and seek buttons on the Now Playing wallpaper layer use this to control the music player you are listening to.</string>
-	<key>NSAudioCaptureUsageDescription</key>
-	<string>Audio response analyzes the audio currently playing on your Mac, on-device, to make wallpapers move with the music. No audio is recorded, saved, or sent anywhere.</string>
-	<key>NSDesktopFolderUsageDescription</key>
-	<string>Access to Desktop is needed to play wallpaper files stored there.</string>
-	<key>NSDocumentsFolderUsageDescription</key>
-	<string>Access to Documents is needed to play wallpaper files stored there.</string>
-	<key>NSDownloadsFolderUsageDescription</key>
-	<string>Access to Downloads is needed to play wallpaper files stored there.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is used to fetch local weather for weather-reactive effects.</string>
 	<!--
