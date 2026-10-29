@@ -324,6 +324,11 @@ struct WallpaperAutomationSheet: View {
         .overlayPreferenceValue(PageGuideAnchorKey.self) { PageGuideHost(session: guide, anchors: $0) }
         // On the container, not `panel`: the panel reappears after each pick, and reloading then would drop the draft.
         .onAppear(perform: load)
+        // Switching displays, opening Settings and closing the window all unmount the page without Cancel.
+        .onDisappear {
+            Self.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
+            shownBeforeTrial = nil
+        }
         .onChange(of: screen.configurationRevision) {
             let mark = manager.automaticSwitchMark(for: screen.displayFingerprint)
             Self.endTrialIfSwitched(&preview, shownBeforeTrial: &shownBeforeTrial, currentSerial: mark?.serial)
@@ -601,6 +606,7 @@ struct WallpaperAutomationSheet: View {
     private func discardAndClose() {
         preview = nil
         Self.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
+        shownBeforeTrial = nil
         presentation.close()
     }
 
@@ -1660,6 +1666,7 @@ struct WallpaperAutomationSheet: View {
             rotationMinutes: rotation, autoAdvance: autoAdvance, loops: loops, shuffle: shuffle,
             libraryShuffleRotationMinutes: libraryRotation, libraryShuffleExcludedIDs: excludedIDs.sorted(), previewedEntryID: preview?.entryID, for: screen
         )
+        shownBeforeTrial = nil
     }
 }
 
