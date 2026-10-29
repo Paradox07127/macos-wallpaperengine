@@ -674,7 +674,7 @@ actor WorkshopQueryService {
             var map: [String: String] = [:]
             for player in envelope.response.players {
                 if let name = player.personaname?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
-                    map[player.steamid] = WorkshopDiagnosticRedactor.redact(name)
+                    map[player.steamid] = name
                 }
             }
             return map
@@ -875,13 +875,9 @@ actor WorkshopQueryService {
         }
 
         let rawTitle = payload.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyWorkshopQuery
-            .map(WorkshopDiagnosticRedactor.redact)
-        let shortDescription = WorkshopDiagnosticRedactor.redact(
-            payload.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        )
+        let shortDescription = payload.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let tags = (payload.tags ?? [])
             .compactMap { $0.displayName }
-            .map(WorkshopDiagnosticRedactor.redact)
             .filter { !$0.isEmpty }
 
         let communityURL = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!

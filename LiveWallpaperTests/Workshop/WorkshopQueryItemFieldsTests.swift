@@ -194,6 +194,58 @@ struct WorkshopQueryItemFieldsTests {
         #expect(page.items.dropFirst().flatMap(\.requiredItemIDs).isEmpty)
     }
 
+    private static let authorTitle = "Digital Clock 12:34:56"
+    private static let authorDescription = "Watch it at https://example.com/watch?v=abc"
+    private static let authorText = "Basic Shapes"
+
+    @Test("Keyed items and persona names keep the author's text verbatim")
+    func keyedAuthorTextIsVerbatim() async throws {
+        let (service, serviceDirectory) = Self.makeService()
+        defer { try? FileManager.default.removeItem(at: serviceDirectory) }
+        let request = WorkshopQueryRequest(sort: .mostPopular, searchText: "fields")
+        let page = try await service.fetch(request)
+
+        let item = try #require(page.items.first { $0.id == 444 })
+        #expect(item.rawTitle == Self.authorTitle)
+        #expect(item.shortDescription == Self.authorDescription)
+        #expect(item.tags == [Self.authorText])
+        let names = await service.resolveCreatorNames(for: page, request: request)
+        #expect(names["76561190000000004"] == Self.authorText)
+    }
+
+    @Test("Keyless SSR items and persona names keep the author's text verbatim")
+    func keylessAuthorTextIsVerbatim() throws {
+        let result = #"{"publishedfileid":"42","consumer_appid":431960,"creator":"76561190000000004","title":"\#(Self.authorTitle)","short_description":"\#(Self.authorDescription)","tags":[{"tag":"\#(Self.authorText)"}]}"#
+        let persona = #"{"public_data":{"steamid":"76561190000000004","persona_name":"\#(Self.authorText)"}}"#
+        let queryData = #"{"queries":[{"queryKey":["workshop_browse",{"appid":431960,"browse_sort":"toprated","page":1,"search_text":""},1],"state":{"data":{"eresult":1,"total_count":1,"total_pages":1,"results":[\#(result)],"creator_player_link_details":[\#(persona)]}}}]}"#
+        let renderContext = try JSONSerialization.data(withJSONObject: ["queryData": queryData])
+        let renderContextJSON = try #require(String(data: renderContext, encoding: .utf8))
+        let literal = try JSONSerialization.data(withJSONObject: renderContextJSON, options: .fragmentsAllowed)
+        let quoted = try #require(String(data: literal, encoding: .utf8))
+        let html = "<script>window.SSR={};window.SSR.renderContext=JSON.parse(\(quoted)); </script>"
+
+        let page = try WorkshopPublicBrowsePayload.page(
+            fromHTML: html,
+            matching: WorkshopQueryRequest(sort: .topRated, page: 1, numPerPage: 30),
+            appID: WorkshopQueryService.wallpaperEngineAppID
+        )
+        let item = try #require(page.items.first)
+        #expect(item.rawTitle == Self.authorTitle)
+        #expect(item.shortDescription == Self.authorDescription)
+        #expect(item.tags == [Self.authorText])
+        #expect(item.creatorPersonaName == Self.authorText)
+    }
+
+    @Test("GetPublishedFileDetails keeps the author's text verbatim")
+    func detailsAuthorTextIsVerbatim() throws {
+        let entry = #"{"publishedfileid":"555","result":1,"consumer_app_id":431960,"title":"\#(Self.authorTitle)","short_description":"\#(Self.authorDescription)","visibility":0,"banned":0,"tags":[{"tag":"\#(Self.authorText)"}]}"#
+        let body = Data(#"{"response":{"result":1,"resultcount":1,"publishedfiledetails":[\#(entry)]}}"#.utf8)
+        let metadata = try #require(SteamWorkshopMetadataService.decodeBatch(data: body, requestedIDs: [555])[555]).get()
+        #expect(metadata.title == Self.authorTitle)
+        #expect(metadata.shortDescription == Self.authorDescription)
+        #expect(metadata.tags == [Self.authorText])
+    }
+
     private static func makeService() -> (service: WorkshopQueryService, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-query-fields-\(UUID().uuidString)", isDirectory: true)
@@ -210,7 +262,7 @@ struct WorkshopQueryItemFieldsTests {
 
 private final class WorkshopQueryFieldsStub: URLProtocol, @unchecked Sendable {
     private static let body = Data("""
-    {"response":{"total":3,"publishedfiledetails":[\
+    {"response":{"total":4,"publishedfiledetails":[\
     {"result":1,"publishedfileid":"1858166341","creator":"76561198172313010","title":"Anime beat collection 16:9",\
     "short_description":"Collection with the best images of Wacho 16:9",\
     "preview_url":"https://images.steamusercontent.com/ugc/9356512157826750130/DE7E0D22306572671C64DDB73827616EAD60744D/",\
@@ -222,7 +274,14 @@ private final class WorkshopQueryFieldsStub: URLProtocol, @unchecked Sendable {
     "vote_data":{"score":0.9151081442832947,"votes_up":6213,"votes_down":531}},\
     {"result":1,"publishedfileid":"222","title":"Plain","visibility":0,"banned":false,"time_updated":1},\
     {"result":1,"publishedfileid":"333","title":"Two children","visibility":0,"banned":false,"num_children":2,\
-    "children":[{"publishedfileid":"1081733658","sortorder":2,"file_type":0},{"publishedfileid":"42","sortorder":1,"file_type":0}]}]}}
+    "children":[{"publishedfileid":"1081733658","sortorder":2,"file_type":0},{"publishedfileid":"42","sortorder":1,"file_type":0}]},\
+    {"result":1,"publishedfileid":"444","creator":"76561190000000004","title":"Digital Clock 12:34:56",\
+    "short_description":"Watch it at https://example.com/watch?v=abc","visibility":0,"banned":false,\
+    "tags":[{"tag":"Basic Shapes","display_name":"Basic Shapes"}]}]}}
+    """.utf8)
+
+    private static let personaBody = Data("""
+    {"response":{"players":[{"steamid":"76561190000000004","personaname":"Basic Shapes"}]}}
     """.utf8)
 
     override static func canInit(with _: URLRequest) -> Bool {
@@ -238,7 +297,8 @@ private final class WorkshopQueryFieldsStub: URLProtocol, @unchecked Sendable {
             url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Self.body)
+        let isPersona = request.url!.absoluteString.contains("GetPlayerSummaries")
+        client?.urlProtocol(self, didLoad: isPersona ? Self.personaBody : Self.body)
         client?.urlProtocolDidFinishLoading(self)
     }
 

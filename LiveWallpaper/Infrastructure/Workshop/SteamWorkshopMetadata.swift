@@ -242,9 +242,7 @@ final class SteamWorkshopMetadataService {
         return .success(SteamWorkshopMetadata(
             publishedFileID: id,
             title: payload.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            shortDescription: WorkshopDiagnosticRedactor.redact(
-                payload.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            ),
+            shortDescription: payload.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             creatorID: creatorID.flatMap { $0.isEmpty ? nil : $0 },
             creatorPersonaName: nil,
             previewImageURL: preview,

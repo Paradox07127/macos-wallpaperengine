@@ -60,7 +60,7 @@ enum WorkshopPublicBrowsePayload {
                       let name = details.public_data?.persona_name?.trimmingCharacters(in: .whitespacesAndNewlines),
                       !name.isEmpty
                 else { return nil }
-                return (steamID, WorkshopDiagnosticRedactor.redact(name))
+                return (steamID, name)
             },
             uniquingKeysWith: { first, _ in first }
         )
@@ -110,10 +110,8 @@ enum WorkshopPublicBrowsePayload {
         let title = result.title?.trimmingCharacters(in: .whitespacesAndNewlines)
         return WorkshopQueryItem(
             id: id,
-            rawTitle: title.flatMap { $0.isEmpty ? nil : WorkshopDiagnosticRedactor.redact($0) },
-            shortDescription: WorkshopDiagnosticRedactor.redact(
-                result.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            ),
+            rawTitle: title.flatMap { $0.isEmpty ? nil : $0 },
+            shortDescription: result.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             creatorID: creatorID.flatMap { $0.isEmpty ? nil : $0 },
             creatorPersonaName: creatorID.flatMap { personaNames[$0] },
             previewImageURL: previewURL,
@@ -130,7 +128,6 @@ enum WorkshopPublicBrowsePayload {
                 .compactMap { $0.publishedfileid.flatMap { UInt64($0) } },
             tags: (result.tags ?? [])
                 .compactMap { ($0.display_name ?? $0.tag)?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .map(WorkshopDiagnosticRedactor.redact)
                 .filter { !$0.isEmpty },
             visibility: visibility,
             isBanned: false,
