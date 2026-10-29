@@ -181,19 +181,44 @@ struct SteamWizard: View {
     /// Built here rather than with `SheetFooterBar`: that bar's secondary slot owns Escape, and
     /// Escape must close the wizard, not open a folder picker.
     private var footer: some View {
-        HStack(spacing: DesignTokens.Spacing.md) {
-            Button("Close", action: onDismiss)
-                .buttonStyle(.bordered)
-                .keyboardShortcut(.cancelAction)
-            Spacer(minLength: 0)
-            Button("Import a Local Folder", action: importLocalFolder)
-                .buttonStyle(.bordered)
-            Button(primaryTitle, action: primaryAction)
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(setupController.isSteamCMDBusy || doctor.accountStepState == .working)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DesignTokens.Spacing.md) {
+                closeButton
+                Spacer(minLength: 0)
+                importButton
+                primaryButton
+            }
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                importButton
+                HStack(spacing: DesignTokens.Spacing.md) {
+                    closeButton
+                    Spacer(minLength: 0)
+                    primaryButton
+                }
+            }
         }
         .padding(DesignTokens.Spacing.lg)
+    }
+
+    private var closeButton: some View {
+        Button("Close", action: onDismiss)
+            .buttonStyle(.bordered)
+            .keyboardShortcut(.cancelAction)
+            .fixedSize()
+    }
+
+    private var importButton: some View {
+        Button("Import a Local Folder", action: importLocalFolder)
+            .buttonStyle(.bordered)
+            .fixedSize()
+    }
+
+    private var primaryButton: some View {
+        Button(primaryTitle, action: primaryAction)
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(setupController.isSteamCMDBusy || doctor.accountStepState == .working)
+            .fixedSize()
     }
 
     private var step: SteamWizardStep {

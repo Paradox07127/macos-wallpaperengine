@@ -333,7 +333,7 @@ final class WorkshopDownloadCoordinator {
                 result = try await withSteamCMDRun(workshopID: String(itemID)) { [weak self] in
                     guard let self else {
                         return .failed(reason: String(
-                            localized: "The Workshop download stopped because its owner was released.",
+                            localized: "The Workshop download stopped because its session ended.",
                             bundle: .appLanguage, comment: "Workshop download failed because its app-lifetime coordinator was unexpectedly released."
                         ))
                     }
@@ -777,7 +777,7 @@ final class WorkshopDownloadCoordinator {
             result = try await withSteamCMDRun(workshopID: String(itemID)) { [weak self] in
                 guard let self else {
                     return .failed(reason: String(
-                        localized: "The Workshop download stopped because its owner was released.",
+                        localized: "The Workshop download stopped because its session ended.",
                         bundle: .appLanguage, comment: "Workshop download failed because its app-lifetime coordinator was unexpectedly released."
                     ))
                 }

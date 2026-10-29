@@ -109,7 +109,7 @@ extension GeneralSettingsView {
                     .fixedSize()
                     .onChange(of: metalFXRenderScale) { _, _ in screenManager.reloadAllScreens() }
                     .accessibilityLabel(Text("MetalFX upscaling"))
-                    .accessibilityHint(Text("Reduces scene resolution; may use more power on light scenes. Changes reload wallpapers."))
+                    .accessibilityHint(Text("Reduces scene resolution; may use more power in lightweight scenes. Changes reload wallpapers."))
                 }
             }
 

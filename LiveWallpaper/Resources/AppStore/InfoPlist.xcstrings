@@ -91,55 +91,55 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Location is used to fetch local weather for weather-reactive effects."
+            "value" : "Your location is used to get local weather for weather widgets and effects."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La ubicación se usa para consultar el tiempo local y aplicar efectos que reaccionan a él."
+            "value" : "Tu ubicación se usa para obtener el tiempo local para los widgets y efectos meteorológicos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "位置情報は、天気に反応するエフェクト用にローカルの天気を取得するために使われます。"
+            "value" : "位置情報は、天気ウィジェットやエフェクトに使う現地の天気を取得するために使用します。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "定位用于获取本地天气，以驱动随天气变化的效果。"
+            "value" : "定位用于获取当地天气，供天气小组件和天气效果使用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "位置資訊用來取得本地天氣，驅動會隨天氣變化的效果。"
+            "value" : "位置資訊用來取得當地天氣，供天氣小工具和天氣效果使用。"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ihr Standort wird verwendet, um das lokale Wetter für wetterabhängige Effekte abzurufen."
+            "value" : "Ihr Standort wird verwendet, um das lokale Wetter für Wetter-Widgets und wetterabhängige Effekte abzurufen."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Votre position sert à obtenir la météo locale pour les effets qui réagissent au temps."
+            "value" : "Votre position sert à obtenir la météo locale pour les widgets et les effets météo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "날씨에 반응하는 효과에 사용할 현지 날씨를 가져오기 위해 위치를 사용합니다."
+            "value" : "날씨 위젯과 효과에 사용할 현지 날씨를 가져오기 위해 위치를 사용합니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sua localização é usada para obter o clima local para efeitos que reagem ao tempo."
+            "value" : "Sua localização é usada para obter as condições meteorológicas locais para widgets e efeitos meteorológicos."
           }
         }
       }

@@ -1507,15 +1507,15 @@ extension LocalizedStringKey {
     }
 }
 
-// MARK: - S9 onboarding, five languages
+// MARK: - S9 onboarding, nine languages
 
 /// The S9 / S8b / 6.1c strings are all new this milestone, so nothing has measured them outside
 /// English. Same method as `S8bLocalizationWidthTests`: lay the translation out in the font and
 /// box the view actually gives it, and fail on the ones that do not fit.
-@Suite("Fidelity S9 five-language onboarding", .serialized)
+@Suite("Fidelity S9 nine-language onboarding", .serialized)
 @MainActor
 struct S9LocalizationWidthTests {
-    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es"]
+    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"]
 
     private func bundle(_ language: String) throws -> Bundle {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"), "no \(language).lproj")
@@ -1541,10 +1541,19 @@ struct S9LocalizationWidthTests {
         return Int((height(boxWidth) / single).rounded())
     }
 
-    @Test("Guide copy fits a compact floating panel in all five languages")
+    @Test("Guide copy fits a compact floating panel in all nine languages")
     func cardChromeFits() throws {
         for language in Self.languages {
             let localized = try bundle(language)
+            let back = NSLocalizedString("Back", bundle: localized, comment: "")
+            let counter = String(format: NSLocalizedString("Step %lld of %lld", bundle: localized, comment: ""), 37, 37)
+            for primaryKey in ["Next Step", "Finish Tour", "Done"] {
+                let primary = NSLocalizedString(primaryKey, bundle: localized, comment: "")
+                let footerWidth = width(back, size: 13) + width(primary, size: 13)
+                    + width(counter, size: 11) * 0.85 + 48 + 2 * DesignTokens.Spacing.sm
+                #expect(footerWidth <= PageGuideLayout.preferredWidth - 32,
+                        Comment(rawValue: "\(language)/\(primaryKey): footer needs \(footerWidth)pt"))
+            }
             for context in PageGuideContext.allCases {
                 for step in context.steps {
                     let message = NSLocalizedString(step.message.probeKey, bundle: localized, comment: "")
@@ -1556,7 +1565,7 @@ struct S9LocalizationWidthTests {
     }
 
     /// The wizard is a fixed 446×526 sheet, so a longer translation has nowhere to go.
-    @Test("The Steam wizard's column and footer fit 446×526 in all five languages")
+    @Test("The Steam wizard's column and footer fit 446×526 in all nine languages")
     func wizardFits() throws {
         let column = SteamWizardMetrics.size.width - 2 * DesignTokens.Spacing.xl
         let footerRow = SteamWizardMetrics.size.width - 2 * DesignTokens.Spacing.lg
@@ -1585,9 +1594,13 @@ struct S9LocalizationWidthTests {
             let primary = ["Install SteamCMD", "Choose folder", "Sign In →", "Done"]
                 .map { width(localizedString($0), size: 13) + 24 }
                 .max() ?? 0
-            let footer = ["← Back", "Import a Local Folder"]
+            let footer = ["Close", "Import a Local Folder"]
                 .map { width(localizedString($0), size: 13) + 24 } + [primary]
             let footerWidth = footer.reduce(0, +) + 2 * DesignTokens.Spacing.md
+            let wrapsFooter = footerWidth > footerRow
+            let widestFooterRow = wrapsFooter
+                ? max(footer[1], footer[0] + primary + DesignTokens.Spacing.md)
+                : footerWidth
             let rows = ["SteamCMD", "Steam Library access", "Steam Account", "Steam Token (2FA)"].map { key -> CGFloat in
                 width(localizedString(key), size: 13) + 2 * DesignTokens.EditDesk.Spacing.s8 + 12
             }
@@ -1597,11 +1610,12 @@ struct S9LocalizationWidthTests {
                 + 4 * (SteamWizardMetrics.fieldRowHeight + DesignTokens.Spacing.md)
                 + 2 * 14 + DesignTokens.Spacing.sm
                 + 4 * DesignTokens.Spacing.md + 2 * DesignTokens.Spacing.xl + 56
+                + (wrapsFooter ? 32 : 0)
             ProbeRenderer.report(
                 "S9.wizard.\(language)",
-                "titleLines=\(title) bodyLines=\(body) noteLines=\(note) footer=\(footerWidth) widestRow=\(widestRow) column≈\(columnHeight)"
+                "titleLines=\(title) bodyLines=\(body) noteLines=\(note) footer=\(widestFooterRow) wraps=\(wrapsFooter) widestRow=\(widestRow) column≈\(columnHeight)"
             )
-            if footerWidth > footerRow || widestRow > rowBox || columnHeight > SteamWizardMetrics.size.height {
+            if widestFooterRow > footerRow || widestRow > rowBox || columnHeight > SteamWizardMetrics.size.height {
                 overflowing.append(language)
             }
         }

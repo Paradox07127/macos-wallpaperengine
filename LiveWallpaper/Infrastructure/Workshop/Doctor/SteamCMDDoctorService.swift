@@ -1069,7 +1069,7 @@ final class SteamCMDDoctorService {
         do {
             return try await operationCoordinator.withOperation(.workshopDownload) { [weak self] _ in
                 guard let self else {
-                    return .failed(reason: String(localized: "Workshop download owner was released.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
+                    return .failed(reason: String(localized: "Workshop download session ended.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
                 }
                 return await performDownloadWorkshopItem(
                     itemID,

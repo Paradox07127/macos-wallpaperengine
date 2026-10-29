@@ -65,7 +65,7 @@ The menu bar keeps everyday controls close. Closing the management window keeps 
 - **Power-aware playback** — configurable full-screen, occlusion, battery and Low Power Mode rules; lock/sleep and resource-pressure handling preserve your play/pause intent.
 - **Global shortcuts** — eight bindable actions, from play/pause-all to reload.
 - **Bookmarks, likes and schemes** — mark favorite wallpapers with a yellow bookmark and filter the library by it; Pro likes Workshop items with a pink heart to download later; schemes restore a display's full setup. `.lwconfig` backs up settings and references; media files and machine-specific file grants are not portable with it.
-- **Five interface languages** — English, 简体中文, 繁體中文, 日本語 and Español.
+- **Nine interface languages** — English, 简体中文, 繁體中文, 日本語, Español, Deutsch, Français, 한국어 and Português (Brasil).
 - **Private by design** — no Loomscreen account or usage telemetry. Optional online features contact their respective services.
 
 ## Editions

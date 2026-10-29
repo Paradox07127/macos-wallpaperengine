@@ -122,19 +122,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Tasten für Wiedergabe, Pause, Titelsprung und Positionssuche in der Hintergrundebene „Aktuelle Wiedergabe“ steuern damit den Musikplayer, den Sie gerade verwendest."
+            "value" : "Die Tasten für Wiedergabe, Pause, Titelsprung und Positionssuche in der Ebene „Aktuelle Wiedergabe“ verwenden diese Berechtigung, um Ihren Musikplayer zu steuern."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les boutons de lecture, de pause, de changement de piste et de recherche de position du calque musical utilisent cette autorisation pour contrôler votre lecteur de musique."
+            "value" : "Les boutons de lecture, de pause, de changement de piste et de position du calque « À l’écoute » utilisent cette autorisation pour contrôler votre lecteur de musique."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "지금 재생 중인 음악 플레이어를 제어하기 위해 음악 배경화면 레이어의 재생, 일시 정지, 트랙 이동 및 탐색 버튼에서 이 권한을 사용합니다."
+            "value" : "‘지금 재생 중’ 배경화면 레이어의 재생, 일시 정지, 트랙 건너뛰기 및 재생 위치 이동 버튼에서 음악 플레이어를 제어하기 위해 이 권한을 사용합니다."
           }
         },
         "pt-BR" : {
@@ -151,55 +151,55 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Location is used to fetch local weather for weather-reactive effects."
+            "value" : "Your location is used to get local weather for weather widgets and effects."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La ubicación se usa para consultar el tiempo local y aplicar efectos que reaccionan a él."
+            "value" : "Tu ubicación se usa para obtener el tiempo local para los widgets y efectos meteorológicos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "位置情報は、天気に反応するエフェクト用にローカルの天気を取得するために使われます。"
+            "value" : "位置情報は、天気ウィジェットやエフェクトに使う現地の天気を取得するために使用します。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "定位用于获取本地天气，以驱动随天气变化的效果。"
+            "value" : "定位用于获取当地天气，供天气小组件和天气效果使用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "位置資訊用來取得本地天氣，驅動會隨天氣變化的效果。"
+            "value" : "位置資訊用來取得當地天氣，供天氣小工具和天氣效果使用。"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ihr Standort wird verwendet, um das lokale Wetter für wetterabhängige Effekte abzurufen."
+            "value" : "Ihr Standort wird verwendet, um das lokale Wetter für Wetter-Widgets und wetterabhängige Effekte abzurufen."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Votre position sert à obtenir la météo locale pour les effets qui réagissent au temps."
+            "value" : "Votre position sert à obtenir la météo locale pour les widgets et les effets météo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "날씨에 반응하는 효과에 사용할 현지 날씨를 가져오기 위해 위치를 사용합니다."
+            "value" : "날씨 위젯과 효과에 사용할 현지 날씨를 가져오기 위해 위치를 사용합니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sua localização é usada para obter o clima local para efeitos que reagem ao tempo."
+            "value" : "Sua localização é usada para obter as condições meteorológicas locais para widgets e efeitos meteorológicos."
           }
         }
       }

@@ -106,7 +106,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "장면 패키지 진입이 사용 가능한 데이터를 넘어서 확장됩니다: %@"
+            "value" : "장면 패키지 항목이 데이터 범위를 벗어납니다: %@"
           }
         },
         "pt-BR" : {
@@ -158,19 +158,19 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une entrée de paquet de scène fait référence en dehors du projet : %@."
+            "value" : "Une entrée du paquet de scène pointe en dehors du projet : %@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "씬 패키지 진입은 프로젝트 외부를 참조합니다: %@"
+            "value" : "장면 패키지 항목이 프로젝트 외부를 참조합니다: %@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A entrada do pacote de cena refere-se fora do projeto: %@"
+            "value" : "Uma entrada do pacote de cena aponta para fora do projeto: %@"
           }
         }
       }
@@ -275,7 +275,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Je n'ai pas pu obtenir un accès exclusif à la bibliothèque d'habillages d'écran du système."
+            "value" : "Impossible d’obtenir l’accès exclusif à la bibliothèque des fonds d’écran système."
           }
         },
         "ko" : {
@@ -387,7 +387,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metal Befehlswarteschlange ist nicht verfügbar."
+            "value" : "Die Metal-Befehlswarteschlange ist nicht verfügbar."
           }
         },
         "fr" : {
@@ -399,7 +399,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metal 명령 대기열이 사용할 수 없습니다."
+            "value" : "Metal 명령 대기열을 사용할 수 없습니다."
           }
         },
         "pt-BR" : {
@@ -458,7 +458,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WPE Metal 내장 샤더 라이브러리가 사용할 수 없습니다."
+            "value" : "WPE Metal 내장 셰이더 라이브러리를 사용할 수 없습니다."
           }
         },
         "pt-BR" : {
@@ -511,7 +511,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le pipeline WPE Metal ne contient aucun passe de rendu."
+            "value" : "Le pipeline WPE Metal ne contient aucune passe de rendu."
           }
         },
         "ko" : {
@@ -564,13 +564,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metal Pipeline-Build fehlgeschlagen für '%1$@': %2$@"
+            "value" : "Metal-Pipeline für „%1$@“ konnte nicht erstellt werden: %2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metal le build de la chaîne d'approvisionnement a échoué pour '%1$@' : %2$@."
+            "value" : "Échec de la création du pipeline Metal pour « %1$@ » : %2$@"
           }
         },
         "ko" : {
@@ -582,7 +582,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metal construção de pipeline falhou para '%1$@': %2$@"
+            "value" : "Falha ao criar o pipeline Metal de '%1$@': %2$@"
           }
         }
       }
@@ -629,7 +629,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La chaîne d'approvisionnement WPE Metal n'est pas disponible pour %@."
+            "value" : "Le pipeline WPE Metal est indisponible pour %@."
           }
         },
         "ko" : {
@@ -688,7 +688,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le chargement de texture WPE Metal est mal formaté : %@."
+            "value" : "Les données de texture WPE Metal sont mal formées : %@"
           }
         },
         "ko" : {
@@ -747,7 +747,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metal l'allocation de la texture a échoué."
+            "value" : "Échec de l’allocation de la texture Metal."
           }
         },
         "ko" : {
@@ -759,7 +759,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metal a alocação de textura falhou."
+            "value" : "Falha na alocação da textura Metal."
           }
         }
       }
@@ -1154,7 +1154,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bereitung der Renderpipeline"
+            "value" : "Renderpipeline wird vorbereitet"
           }
         },
         "fr" : {
@@ -1213,25 +1213,25 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leseszene"
+            "value" : "Szene wird gelesen"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scène de lecture"
+            "value" : "Lecture de la scène"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "읽는 장면"
+            "value" : "장면 읽는 중"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cena de leitura"
+            "value" : "Lendo cena"
           }
         }
       }
@@ -1514,7 +1514,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La page a tenté de se charger depuis un port réseau, le système bloque."
+            "value" : "La page a tenté de charger du contenu depuis un port réseau bloqué par le système."
           }
         },
         "ko" : {
@@ -1526,7 +1526,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A página tentou carregar a partir de um porta de rede, o sistema bloqueia."
+            "value" : "A página tentou carregar conteúdo de uma porta de rede bloqueada pelo sistema."
           }
         }
       }
@@ -1684,19 +1684,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Pfad der Projekteinstellungen ist nicht sicher zu öffnen."
+            "value" : "Der Pfad der Projekteinstellungen kann nicht sicher geöffnet werden."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le chemin des paramètres du projet n'est pas sûr pour être ouvert."
+            "value" : "Impossible d’ouvrir le chemin des réglages du projet en toute sécurité."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "프로젝트 설정 경로는 열기 안전하지 않습니다."
+            "value" : "프로젝트 설정 경로를 안전하게 열 수 없습니다."
           }
         },
         "pt-BR" : {
@@ -1748,19 +1748,19 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La source des paramètres du projet n'est pas disponible. Choisissez à nouveau le dossier du projet."
+            "value" : "La source des réglages du projet n'est pas disponible. Choisissez à nouveau le dossier du projet."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "프로젝트 설정 소스가 사용할 수 없습니다. 프로젝트 폴더를 다시 선택하십시오."
+            "value" : "프로젝트 설정 소스를 사용할 수 없습니다. 프로젝트 폴더를 다시 선택하세요."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A fonte de configurações do projeto não está disponível. Escolha novamente a pasta do projeto."
+            "value" : "A fonte de ajustes do projeto não está disponível. Escolha novamente a pasta do projeto."
           }
         }
       }
@@ -1858,7 +1858,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das Szenenpaket überschreitet eine unterstützte Ressourcenlimit: %@"
+            "value" : "Das Szenenpaket überschreitet eine unterstützte Ressourcengrenze: %@"
           }
         },
         "fr" : {
@@ -1986,7 +1986,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "씬 패키지에서 인덱스 %lld에서 유효하지 않은 항목 이름이 있습니다."
+            "value" : "장면 패키지의 인덱스 %lld에 있는 항목 이름이 잘못되었습니다."
           }
         },
         "pt-BR" : {
@@ -2044,7 +2044,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "씬 패키지 헤더가 잘립니다."
+            "value" : "장면 패키지 헤더가 불완전합니다."
           }
         },
         "pt-BR" : {
@@ -2102,7 +2102,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "씬 리소스가 읽을 수 없습니다: %@"
+            "value" : "장면 리소스를 읽을 수 없습니다: %@"
           }
         },
         "pt-BR" : {
@@ -2148,7 +2148,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Pfad der Szenenressourcen ist nicht sicher zu öffnen: %@"
+            "value" : "Der Szenenressourcenpfad kann nicht sicher geöffnet werden: %@"
           }
         },
         "fr" : {
@@ -2160,7 +2160,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "장면 리소스 경로는 열기 안전하지 않습니다: %@"
+            "value" : "장면 리소스 경로를 안전하게 열 수 없습니다: %@"
           }
         },
         "pt-BR" : {
@@ -2218,7 +2218,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "장면의 모델 데이터가 읽을 수 없었습니다."
+            "value" : "장면 모델 데이터를 읽지 못했습니다."
           }
         },
         "pt-BR" : {
@@ -2276,7 +2276,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "구체적인 원인은 아직 알려지지 않았다."
+            "value" : "구체적인 원인은 아직 알려지지 않았습니다."
           }
         },
         "pt-BR" : {
@@ -2329,13 +2329,13 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La page d'entrée du fond d'écran manque de son dossier."
+            "value" : "La page d’entrée du fond d’écran manque dans son dossier."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "배경화면의 항목 페이지가 폴더에서 누락되었습니다."
+            "value" : "배경화면 폴더에 시작 페이지가 없습니다."
           }
         },
         "pt-BR" : {

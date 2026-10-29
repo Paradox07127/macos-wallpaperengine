@@ -125,7 +125,7 @@ struct SecurityInspector: View {
             return "Built-in trust for the platform's official embed surface — cannot be revoked."
         }
         if origin.isLoopback {
-            return "Local development server. Loopback addresses never leave this Mac, so they run JavaScript automatically — there is nothing to revoke."
+            return "Local development origin. JavaScript is allowed automatically for loopback addresses and cannot be revoked here. Pages may still make external network requests."
         }
         if isTrusted {
             return "JavaScript runs on this origin. Revoke to disable script execution."

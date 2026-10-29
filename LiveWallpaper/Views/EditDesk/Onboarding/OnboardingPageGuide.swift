@@ -195,6 +195,22 @@ enum PageGuideContext: CaseIterable {
         #endif
     }
 
+    private static var performanceStep: PageGuideStep {
+        #if LITE_BUILD
+        .init(.settingsItem(.performancePower), "Performance", "Performance controls automatic pausing and memory use. Adjust these options to suit your Mac.")
+        #else
+        .init(.settingsItem(.performancePower), "Performance", "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac.")
+        #endif
+    }
+
+    private static var playbackStep: PageGuideStep {
+        #if LITE_BUILD
+        .init(.playback, "Audio, scaling and frame rate", "Hover over the preview for audio, scaling and frame-rate controls. Frame rate caps rendering, not playback speed. For web wallpapers, Interaction sends desktop clicks to the page; turn it off to use desktop icons. Controls vary by wallpaper type.")
+        #else
+        .init(.playback, "Audio, scaling and frame rate", "Hover over the preview for audio, scaling and frame-rate controls. Frame rate caps rendering, not playback speed. For web wallpapers, Interaction sends desktop clicks to the page; turn it off to use desktop icons. Scene buttons receive clicks only in their own areas. Controls vary by wallpaper type.")
+        #endif
+    }
+
     private static var integrationsStep: PageGuideStep {
         #if LITE_BUILD
         .init(.settingsItem(.integrations), "Integrations", "Integrations controls weather location. Enable only the permissions needed by the features you use.")
@@ -240,7 +256,7 @@ enum PageGuideContext: CaseIterable {
         case .library:
             [
                 .init(.libraryTools, "Import, filter and sort", "Add to Library imports files without changing a display. Filter by source, search by name or tag, and choose a sort order. Local files stay in their original location; keep them available."),
-                .init(.page, "Apply a wallpaper", "Click a wallpaper to see its details and choose a target display, or drag it onto a display. Bookmark keeps the source; a scheme also keeps a display's settings and overlays."),
+                .init(.page, "Apply a wallpaper", "Click a wallpaper for details and choose a display, or drag it onto a display. Bookmark marks it for the Bookmarks filter; a scheme saves the display's settings and overlays too. Source files stay in their original location."),
             ] + Self.aerialsSteps
         case .saved:
             [
@@ -249,7 +265,7 @@ enum PageGuideContext: CaseIterable {
             ]
         case .systemWallpaper:
             [
-                .init(.page, "Let macOS follow Loomscreen", "In System Settings › Wallpaper, choose the Loomscreen tile for each display. macOS then plays what that display shows in Loomscreen, even with Loomscreen closed."),
+                .init(.page, "Let macOS follow Loomscreen", "Prepare compatible wallpapers here, then choose the Loomscreen tile for each display in System Settings › Wallpaper. macOS can play the prepared content with Loomscreen closed. App effects, overlays and playback controls do not apply to system copies."),
                 .init(.page, "Manage system copies", "The item menu reveals or removes the macOS copy. Removing a system copy is different from clearing a display's live wallpaper; review the confirmation before removing it."),
             ]
         case .workshop:
@@ -259,7 +275,7 @@ enum PageGuideContext: CaseIterable {
                 .init(.settingsSidebar, "Search for a setting", "The sidebar groups settings by task. Search finds both pages and individual settings; the information buttons explain their scope and effects."),
                 .init(.settingsItem(.general), "Startup and transitions", "General controls language, login startup, the Dock, and the wallpaper transition and opening animation."),
                 .init(.settingsItem(.displayDefaults), "Defaults for new wallpapers", "Display Defaults seed a display's first wallpaper. Adjust an existing wallpaper in that display's configuration layer."),
-                .init(.settingsItem(.performancePower), "Performance", "Performance controls automatic pausing, adaptive frame rate and memory use. Adjust these options to suit your Mac."),
+                Self.performanceStep,
                 Self.integrationsStep,
                 .init(.settingsItem(.shortcuts), "Shortcuts", "Shortcuts configures keyboard actions for playback, wallpapers and the app window."),
                 Self.overlaysSettingsStep,
@@ -270,10 +286,10 @@ enum PageGuideContext: CaseIterable {
         case .configuration:
             [
                 .init(.detailLayers, "Configuration and overlay layers", "The wallpaper button opens this display's configuration layer. The stacked-layers button opens its overlay editor. Display tabs switch the target; the back arrow returns to Overview."),
-                .init(.playback, "Audio, scaling and frame rate", "Move over the wallpaper preview to reveal its controls. Audio adjusts mute and volume; scaling fills, fits or stretches the image. Frame rate limits animation. Interaction sends desktop clicks to the wallpaper; turn it off to use desktop icons again. Available controls depend on the wallpaper type."),
+                Self.playbackStep,
                 .init(.inspector, "Wallpaper properties", "The Settings button opens the right panel with this wallpaper's properties. Changes affect the selected display."),
                 .init(.detailActions, "Change, reload or clear", "Change Wallpaper selects another source. Reload restarts this display's content. Clear removes its wallpaper configuration without deleting the source file."),
-                .init(.detailShared, "Save, automate or share", "Wallpaper Automation changes this display's wallpaper by playlist, daily schedule or library shuffle. Bookmark saves the source; Scheme saves the full display setup. Apply to All Displays affects every connected display—check the target before using it."),
+                .init(.detailShared, "Save, automate or share", "Wallpaper Automation switches this display by playlist, daily schedule or library shuffle. Bookmark marks the wallpaper; Scheme saves the display setup without copying source files. Apply to All Displays affects every connected display—check the target first."),
             ]
         case .overlays:
             [

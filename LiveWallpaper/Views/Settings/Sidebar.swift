@@ -212,7 +212,8 @@ private struct SettingsSidebarRow: View {
 
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
                 Text(LocalizedStringKey(result.title))
-                    .marqueeOnHover(truncationMode: .tail)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let matchHint = result.matchHint {
                     Text("Matched: \(matchHint)")

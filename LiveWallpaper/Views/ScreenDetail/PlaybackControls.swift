@@ -255,7 +255,7 @@ struct PlaybackControls: View {
                     isOn: htmlConfig.wrappedValue.allowMouseInteraction,
                     binding: webInteractionBinding(htmlConfig),
                     label: Text("Interaction"),
-                    help: Text("Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks.")
+                    help: Text("Clicks and scrolls go to the web page instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
                 )
             }
         }

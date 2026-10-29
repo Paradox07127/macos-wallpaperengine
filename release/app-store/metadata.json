@@ -24,7 +24,7 @@
       "name": "Loomscreen",
       "subtitle": "動画とウェブの壁紙",
       "keywords": "壁紙,動画,ウェブ,時計,天気,画面,スケジュール",
-      "description": "動画やウェブページで、Mac のデスクトップを自分らしく。ディスプレイごとに壁紙を選び、プレイリストや時間帯による切り替えを設定できます。ディスプレイの設定は構成として保存し、再利用できます。時計、天気のエフェクト、基本的なシステム情報も追加できます。メニューバーから再生を操作し、フルスクリーン、デスクトップの遮蔽、省電力の条件に合わせて自動停止できます。\n\nお持ちのローカル動画やウェブコンテンツを使用します。天気は任意で、システムの位置情報、手動で選んだ都市、オフから選べます。アカウントは不要で、広告はありません。設定のバックアップにはメディアファイルは含まれません。\n\nApp Store 版は動画とウェブ壁紙に対応します。システム壁紙の拡張機能、音楽操作、ダウンロード用の壁紙カタログは含まれません。"
+      "description": "動画やウェブページで、Mac のデスクトップを自分らしく。ディスプレイごとに壁紙を選び、プレイリストや時間帯による切り替えを設定できます。ディスプレイの設定は構成として保存し、再利用できます。時計、天気のエフェクト、基本的なシステム情報も追加できます。メニューバーから再生を操作し、フルスクリーン、ほかのウインドウによるデスクトップの遮蔽、省電力の条件に合わせて自動的に一時停止できます。\n\nお持ちのローカル動画やウェブコンテンツを使用します。天気は任意で、システムの位置情報、手動で選んだ都市、オフから選べます。アカウントは不要で、広告はありません。設定のバックアップにはメディアファイルは含まれません。\n\nApp Store 版は動画とウェブ壁紙に対応します。システム壁紙の拡張機能、音楽操作、ダウンロード用の壁紙カタログは含まれません。"
     },
     "es-ES": {
       "name": "Loomscreen",
@@ -36,7 +36,7 @@
       "name": "Loomscreen",
       "subtitle": "Video- und Web-Hintergründe",
       "keywords": "Desktop,Video,Web,Hintergrund,Wiedergabeliste,Zeitplan,Uhr,Wetter,Monitor",
-      "description": "Gestalte deinen Mac-Schreibtisch mit Videos und Webseiten. Wähle für jeden Monitor einen eigenen Hintergrund, erstelle Wiedergabelisten und wechsle Hintergründe nach Tageszeit. Speichere Monitoreinstellungen als wiederverwendbare Konfigurationen. Ergänze eine Uhr, Wettereffekte oder grundlegende Systeminformationen. Steuere die Wiedergabe über die Menüleiste. Bei Vollbild-Apps, verdecktem Schreibtisch und Energiesparbedingungen lässt sich die Wiedergabe automatisch pausieren.\n\nVerwende eigene lokale Videos und Webinhalte. Das Wetter ist optional: Nutze den Systemstandort, wähle eine Stadt oder schalte es aus. Loomscreen erfordert kein Konto und enthält keine Werbung. Sicherungen helfen beim Übertragen deiner Einstellungen; Mediendateien sind darin nicht enthalten.\n\nDiese App Store-Version bietet Video- und Web-Hintergründe. Eine Systemhintergrunderweiterung, Musiksteuerung und ein Katalog zum Herunterladen von Hintergründen sind nicht enthalten."
+      "description": "Gestalten Sie Ihren Mac-Schreibtisch mit Videos und Webseiten. Wählen Sie für jeden Monitor einen eigenen Hintergrund, erstellen Sie Wiedergabelisten und wechseln Sie Hintergründe nach Tageszeit. Sichern Sie Monitoreinstellungen als wiederverwendbare Profile. Ergänzen Sie eine Uhr, Wettereffekte oder grundlegende Systeminformationen. Steuern Sie die Wiedergabe über die Menüleiste. Bei Vollbild-Apps, verdecktem Schreibtisch und Energiesparbedingungen lässt sich die Wiedergabe automatisch pausieren.\n\nVerwenden Sie eigene lokale Videos und Webinhalte. Das Wetter ist optional: Nutzen Sie den Systemstandort, wählen Sie eine Stadt oder schalten Sie es aus. Loomscreen erfordert kein Konto und enthält keine Werbung. Sicherungen helfen beim Übertragen Ihrer Einstellungen; Mediendateien sind darin nicht enthalten.\n\nDiese App Store-Version bietet Video- und Web-Hintergründe. Eine Systemhintergrunderweiterung, Musiksteuerung und ein Katalog zum Herunterladen von Hintergründen sind nicht enthalten."
     },
     "fr-FR": {
       "name": "Loomscreen",
@@ -54,7 +54,7 @@
       "name": "Loomscreen",
       "subtitle": "Papéis de parede: vídeo e web",
       "keywords": "mesa,vídeo,web,papel de parede,lista,programação,relógio,clima,tela",
-      "description": "Personalize a mesa do seu Mac com vídeos e páginas da web. Escolha um papel de parede para cada monitor, crie listas de reprodução e alterne os papéis de parede conforme o horário. Salve os ajustes dos monitores como configurações reutilizáveis. Adicione um relógio, efeitos de clima ou informações básicas do sistema. Controle a reprodução pela barra de menus, com pausa automática para apps em tela cheia, mesa encoberta e condições de economia de energia.\n\nUse seus próprios vídeos locais e conteúdos da web. O clima é opcional: use a localização do sistema, escolha uma cidade ou desative o recurso. O Loomscreen não exige conta e não contém anúncios. Os backups ajudam a transferir seus ajustes, mas não incluem arquivos de mídia.\n\nEsta versão da App Store oferece papéis de parede em vídeo e web. Ela não inclui extensão de papel de parede do sistema, controles de música nem catálogo de papéis de parede para download."
+      "description": "Personalize a mesa do seu Mac com vídeos e páginas da web. Escolha um papel de parede para cada monitor, crie listas de reprodução e alterne os papéis de parede conforme o horário. Salve os ajustes dos monitores como configurações reutilizáveis. Adicione um relógio, efeitos meteorológicos ou informações básicas do sistema. Controle a reprodução pela barra de menus, com pausa automática para apps em tela cheia, mesa encoberta e condições de economia de energia.\n\nUse seus próprios vídeos locais e conteúdos da web. O clima é opcional: use a localização do sistema, escolha uma cidade ou desative o recurso. O Loomscreen não exige conta e não contém anúncios. Os backups ajudam a transferir seus ajustes, mas não incluem arquivos de mídia.\n\nEsta versão da App Store oferece papéis de parede em vídeo e da web. Ela não inclui extensão de papel de parede do sistema, controles de música nem catálogo de papéis de parede para download."
     }
   }
 }

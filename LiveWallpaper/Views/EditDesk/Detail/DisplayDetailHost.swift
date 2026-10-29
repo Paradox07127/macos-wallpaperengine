@@ -615,7 +615,7 @@ struct DisplayDetailHost: View {
         manager.resetDisplaySettings(for: screen)
         recording?.announce(
             String(
-                localized: "Reset the settings of \(screen.name)", bundle: .appLanguage,
+                localized: "Settings reset for \(screen.name)", bundle: .appLanguage,
                 comment: "Toast after a display's settings went back to the defaults in the Edit Desk; it offers Undo. Placeholder is a display name."
             ),
             showing: content, to: toasts
