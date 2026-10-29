@@ -7,6 +7,39 @@ cd "$ROOT"
 DERIVED_DATA="${DERIVED_DATA:-${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/LiveWallpaperReleaseCandidateCheck}"
 DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 export DEVELOPER_DIR
+
+# MAS is a separate shipping boundary; it needs neither the Pro shader SDK nor Sparkle.
+if [[ "${1:-}" == "--appstore" ]]; then
+  shift
+  MAS_ARCHIVE="${ARCHIVE_PATH:-$DERIVED_DATA/LoomscreenAppStore.xcarchive}"
+  case "$DERIVED_DATA" in
+    /*) ;;
+    *) echo "ERROR: DERIVED_DATA must be absolute." >&2; exit 64 ;;
+  esac
+  case "$DERIVED_DATA" in
+    "$ROOT"|"$ROOT"/*) echo "ERROR: Keep DerivedData outside the repository." >&2; exit 64 ;;
+  esac
+  case "$MAS_ARCHIVE" in
+    "$ROOT"|"$ROOT"/*) echo "ERROR: Keep the archive outside the repository." >&2; exit 64 ;;
+    /*.xcarchive) ;;
+    *) echo "ERROR: ARCHIVE_PATH must be an absolute .xcarchive path." >&2; exit 64 ;;
+  esac
+  [[ ! -e "$MAS_ARCHIVE" ]] || { echo "ERROR: Choose a fresh ARCHIVE_PATH." >&2; exit 64; }
+  bash scripts/check_entitlements.sh --sku appstore --source
+  I18N_GUARD_SCOPE=all bash scripts/i18n_guard.sh
+  python3 scripts/check_localization_drift.py
+  mkdir -p "$DERIVED_DATA"
+  xcodebuild archive -project LiveWallpaper.xcodeproj -scheme LoomscreenAppStore \
+    -configuration Release -destination 'generic/platform=macOS' \
+    -derivedDataPath "$DERIVED_DATA" -archivePath "$MAS_ARCHIVE" \
+    SWIFT_EMIT_LOC_STRINGS=NO "$@" >"$DERIVED_DATA/appstore-archive.log" 2>&1 || {
+      tail -60 "$DERIVED_DATA/appstore-archive.log" >&2; exit 1;
+    }
+  python3 scripts/check_appstore_bundle.py "$MAS_ARCHIVE/Products/Applications/Loomscreen.app"
+  echo "Archive: $MAS_ARCHIVE (local checks only; export and Apple validation still required)"
+  exit 0
+fi
+
 WPE_SHADER_TOOLCHAIN_ROOT="${WPE_SHADER_TOOLCHAIN_ROOT:-$ROOT/build/wpe-shader-toolchain-inputs}"
 [[ "$WPE_SHADER_TOOLCHAIN_ROOT" == /* ]] || WPE_SHADER_TOOLCHAIN_ROOT="$ROOT/$WPE_SHADER_TOOLCHAIN_ROOT"
 export WPE_SHADER_TOOLCHAIN_ROOT

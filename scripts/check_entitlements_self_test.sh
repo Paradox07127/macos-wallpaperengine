@@ -96,6 +96,15 @@ sign_app "$LITE_APP" "$ROOT/LiveWallpaper/LiveWallpaperLite.entitlements"
 expect_pass "Lite ad-hoc app matches exact source baseline" \
   bash "$CHECKER" --sku lite --app "$LITE_APP"
 
+MAS_APP="$TMP/App Store/Loomscreen.app"
+create_app "$MAS_APP" "com.loomscreen.appstore" "Loomscreen"
+sign_app "$MAS_APP" "$ROOT/LiveWallpaper/LiveWallpaperAppStore.entitlements"
+expect_pass "App Store app matches its narrower entitlement baseline" \
+  bash "$CHECKER" --sku appstore --app "$MAS_APP"
+sign_app "$MAS_APP" "$ROOT/LiveWallpaper/LiveWallpaperLite.entitlements"
+expect_fail "App Store rejects direct-edition sandbox exceptions" "differ from the reviewed baseline" \
+  bash "$CHECKER" --sku appstore --app "$MAS_APP"
+
 plutil -replace CFBundleIdentifier -string com.example.wrong-sku "$PRO_APP/Contents/Info.plist"
 sign_app "$PRO_APP" "$ROOT/LiveWallpaper/LiveWallpaper.entitlements"
 expect_fail "SKU is bound to its exact bundle identifier" "pro app must use bundle id" \

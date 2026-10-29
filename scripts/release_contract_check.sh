@@ -114,6 +114,7 @@ done
 python3 scripts/xcode_test_runner_self_test.py
 bash scripts/check_entitlements.sh --sku pro --source
 bash scripts/check_entitlements.sh --sku lite --source
+bash scripts/check_entitlements.sh --sku appstore --source
 bash scripts/check_entitlements_self_test.sh
 
 app_test_script="scripts/app_tests.sh"

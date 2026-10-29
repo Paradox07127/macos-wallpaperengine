@@ -1,0 +1,5 @@
+bool	com.apple.security.app-sandbox	true
+bool	com.apple.security.files.bookmarks.app-scope	true
+bool	com.apple.security.files.user-selected.read-write	true
+bool	com.apple.security.network.client	true
+bool	com.apple.security.personal-information.location	true

@@ -5,6 +5,7 @@
 # Usage:
 #   scripts/check_entitlements.sh --sku pro  --source
 #   scripts/check_entitlements.sh --sku lite --app <path.app>
+#   scripts/check_entitlements.sh --sku appstore --source
 #   scripts/check_entitlements.sh --sku pro  --update-baseline
 #
 set -euo pipefail
@@ -68,7 +69,7 @@ SKU=""
 APP_PATH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --sku)             SKU="${2:?--sku needs pro or lite}"; shift 2 ;;
+    --sku)             SKU="${2:?--sku needs pro, lite or appstore}"; shift 2 ;;
     --source)          MODE="source"; shift ;;
     --app)             MODE="app"; APP_PATH="${2:?--app needs a .app path}"; shift 2 ;;
     --update-baseline) MODE="update"; shift ;;
@@ -90,8 +91,14 @@ case "$SKU" in
     EXPECTED_BUNDLE_ID="com.loomscreen"
     EXPECTED_TEAM_ID="FWJP4B62U7"
     ;;
+  appstore)
+    SOURCE_ENTITLEMENTS="$ROOT/LiveWallpaper/LiveWallpaperAppStore.entitlements"
+    BASELINE="$ROOT/scripts/release-baselines/entitlements-appstore.fingerprint"
+    EXPECTED_BUNDLE_ID="com.loomscreen.appstore"
+    EXPECTED_TEAM_ID="FWJP4B62U7"
+    ;;
   *)
-    echo "ERROR: --sku must be 'pro' or 'lite' (got: ${SKU:-<missing>})" >&2
+    echo "ERROR: --sku must be 'pro', 'lite' or 'appstore' (got: ${SKU:-<missing>})" >&2
     exit 64
     ;;
 esac
