@@ -89,6 +89,8 @@ public enum WPEHLSLRewriteError: Error, Equatable, Sendable {
     case missingDefine(String)
     /// An array-size define whose value is not an integer.
     case nonIntegerDefine(name: String, value: String)
+    /// An array length outside `0...65535`; `name` is the declared variable.
+    case arraySizeOutOfRange(name: String, size: Int)
 }
 
 /// Wallpaper Engine 2.8.42 GLSL-dialect to HLSL rewrite (FUN_140162ac0 -> FUN_1400d5070).

@@ -273,6 +273,27 @@ final class WPEShaderFrontendRuleTests: XCTestCase {
         }
     }
 
+    func testOversizedArrayLengthThrows() {
+        let cases: [(decl: String, name: String, size: Int)] = [
+            ("uniform float g_x[9223372036854775807];", "g_x", Int.max),
+            ("varying vec2 v_x[5000000000000000000];", "v_x", 5_000_000_000_000_000_000),
+        ]
+        for (decl, name, size) in cases {
+            let files = ["shaders/a.vert": decl + "\nvoid main() {\n}\n"]
+            XCTAssertThrowsError(try rewrite(files, .init(vertex: "shaders/a.vert"))) { error in
+                XCTAssertEqual(error as? WPEHLSLRewriteError, .arraySizeOutOfRange(name: name, size: size))
+            }
+        }
+    }
+
+    func testArrayLengthAtUpperBoundRewrites() throws {
+        let files = ["shaders/a.vert": "uniform float g_x[65535];\nvarying vec2 v_x[65535];\nvoid main() {\n}\n"]
+        let vs = try text(rewrite(files, .init(vertex: "shaders/a.vert")).vertex)
+        XCTAssertTrue(vs.contains("float4 v_x[32768] : TEXCOORD0;\n"))
+        XCTAssertTrue(vs.contains("const float4 g_x[16384];\n"))
+        XCTAssertTrue(vs.contains("float2 accessArrayv_x[65536] = (float2[65536])0;\n"))
+    }
+
     // MARK: - R: VS recompile
 
     func testPruningRemovesUnreadInputsExceptBlendIndices() {

@@ -111,6 +111,10 @@ enum WPEHLSLStageRewriter {
                     }
                     decl.arraySize = size
                 }
+                // Lengths past this would overflow the access/packed-count arithmetic and trap the process.
+                guard (0 ... 65535).contains(decl.arraySize) else {
+                    throw WPEHLSLRewriteError.arraySizeOutOfRange(name: Latin1.string(decl.name), size: decl.arraySize)
+                }
                 if WPEHLSLTables.packableTypes.contains(type) {
                     decl.packedFlag = true
                 }
