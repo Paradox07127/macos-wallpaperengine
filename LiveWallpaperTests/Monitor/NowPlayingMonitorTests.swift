@@ -171,6 +171,28 @@ struct NowPlayingSystemSourceTests {
     }
 
     @MainActor
+    @Test("A player's Paused notification for the paused system track keeps it paused")
+    func pausedNotificationForPausedSystemTrackStaysPaused() async throws {
+        var external = MonitorNowPlayingState(phase: .paused, title: "ENDROLL", artist: "Yoohei Kawakami", album: "ENDROLL")
+        external.playerBundleID = "com.apple.Music"
+        external.isSystemMedia = true
+        let fixture = SystemMediaFixture(external)
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] },
+                                        systemProvider: { try await fixture.read() }, systemPollInterval: .seconds(30))
+        let source = NowPlayingSource(monitor: monitor, artworkFetcher: offlineFetcher(), audioReactive: false, audioDemand: { _ in })
+        let sink = RecordingNowPlayingSink()
+        await source.start(sink: sink)
+        let appeared = await waitUntil { monitor.currentState.isSystemMedia == true }
+        try #require(appeared)
+
+        var paused = Fixture.musicPlaying
+        paused["Player State"] = "Paused"
+        monitor.ingest(name: Fixture.musicName, userInfo: paused)
+        #expect(monitor.currentState.phase == .paused, "A paused notification must not promote the paused system track to playing")
+        await source.stop()
+    }
+
+    @MainActor
     @Test("Music queries its authorized playhead only while the selected system track has no position")
     func missingSystemPositionUsesMusicFallback() async throws {
         var external = MonitorNowPlayingState(phase: .playing, title: "Music Track", duration: 300)
@@ -740,6 +762,17 @@ struct NowPlayingArbitrationTests {
 
 @Suite("Now Playing source")
 struct NowPlayingSourceTests {
+
+    #if !LITE_BUILD
+    @Test("a paused system snapshot maps to the same state on every poll")
+    func pausedSnapshotStateIsStableAcrossPolls() throws {
+        let raw = Data(#"{"bundleID":"com.apple.Music","title":"Track","playing":false,"duration":120,"position":42,"timestamp":1000,"rate":0}"#.utf8)
+        let payload = try JSONDecoder().decode(NowPlayingSystemSnapshot.self, from: raw)
+        let first = try #require(payload.state(now: 1002))
+        let second = try #require(payload.state(now: 1004))
+        #expect(first == second, "A paused snapshot re-anchored to each poll's clock defeats change detection")
+    }
+    #endif
 
     @MainActor
     @Test("a player whose notification omits the position gets it polled in")

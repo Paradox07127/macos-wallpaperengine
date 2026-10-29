@@ -232,7 +232,7 @@ final class NowPlayingMonitor: NSObject {
             } ?? false
             if systemState.phase == .playing || fallback?.phase != .playing || sameTrack {
                 // The player's own notification is newer than a paused system poll of the same track.
-                if let fallback, sameTrack, systemState.phase != .playing {
+                if let fallback, sameTrack, fallback.phase == .playing, systemState.phase != .playing {
                     systemState.phase = .playing
                     if fallback.position != nil {
                         systemState.position = fallback.position

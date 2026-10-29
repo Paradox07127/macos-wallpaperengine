@@ -331,7 +331,7 @@ struct NowPlayingSystemSnapshot: Decodable, Sendable {
                 let advanced = position + (playing ? max(0, now - timestamp) * speed : 0)
                 if playing, let duration = state.duration, advanced > duration + 2 {
                     state.position = nil
-                } else if speed == 1 {
+                } else if speed == 1 || !playing {
                     state.positionSampledAt = timestamp
                 } else {
                     state.position = state.duration.map { min(advanced, $0) } ?? advanced
