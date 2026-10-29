@@ -5,13 +5,50 @@ tracked here. Format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-While Loomscreen is on the `0.x` line the public surface is considered
-unstable — any `0.y` → `0.(y+1)` bump may introduce breaking changes to
-the configuration schema, UI layout, or feature gating. A `1.0.0` tag
-will be cut once the surface has stabilized through real-world use.
+Releases before `1.0.0` were on the unstable `0.x` line, where any
+`0.y` → `0.(y+1)` bump could introduce breaking changes to the configuration
+schema, UI layout, or feature gating.
 
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
+
+## [1.0.0] — 2026-10-29
+
+### Added
+
+- The app is available in German, French, Korean and Brazilian Portuguese, for
+  nine languages in total.
+- On macOS 27, touch input can drag library and stage cards, drag in scenes
+  (Pro), finish editing with a tap outside, and use display and Now Playing
+  controls.
+
+### Changed
+
+- Releases are signed with Developer ID and notarized, so new downloads open
+  without the quarantine workaround.
+- Configuration backups import across editions. Lite exports `.lwconfig` files
+  and still reads `.loomscreen` backups.
+- Lite no longer shows Steam, music or sensor leftovers, its settings search
+  skips Pro-only terms, and its copy describes only the features Lite ships.
+- Switch rows show their icon grey when off and in color when on.
+
+### Fixed
+
+- Leaving Wallpaper Automation while a wallpaper is previewed restores the
+  display's own wallpaper instead of keeping the preview.
+- A wallpaper selection or clear is kept when a later cleanup step fails, and
+  the cleanup error is reported.
+- Display drags start only from saved setups and cancel when a display
+  disconnects; particle input stays centered when cursor following is off.
+- A video playback failure reported off the main thread no longer risks a crash.
+- Pro: Workshop titles, descriptions, tags and author names show exactly as
+  written. Browsing keeps pagination and the sort fallback, and pending
+  searches and retries are clearer.
+- Pro: a wallpaper with an oversized shader array or a self-referencing shader
+  macro fails to load instead of crashing or hanging the app.
+- Pro: Now Playing retries explicit permission, keeps partial and rate-aware
+  timelines, refreshes changed artwork, and keeps artwork and titles stable
+  when the source changes.
 
 ## [0.9.3] — 2026-10-28
 
@@ -1525,6 +1562,8 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[1.0.0]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.3...loomscreen-v1.0.0
+[0.9.3]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.2...loomscreen-v0.9.3
 [0.9.2]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.1...loomscreen-v0.9.2
 [0.9.1]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.0...loomscreen-v0.9.1
 [0.9.0]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.8.9...loomscreen-v0.9.0

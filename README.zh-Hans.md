@@ -84,7 +84,7 @@
 
 两个版本均免费开源。Lite 保留完整工作台及视频、网页、航拍体验，去掉 WPE 渲染器与创意工坊栈。完整对照：[docs/zh-Hans/lite-vs-pro.md](docs/zh-Hans/lite-vs-pro.md)。
 
-独立的 Mac App Store target 正在以 Lite 子集准备上架。
+**Mac App Store 版：** 沙盒版本，功能是 Lite 的子集，通过 App Store 更新。商店链接：即将提供。
 版本身份、删减范围和发布流程见 [App Store 发布](docs/zh-Hans/app-store.md)。
 
 ## 安装

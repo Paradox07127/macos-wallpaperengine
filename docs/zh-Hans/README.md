@@ -14,6 +14,7 @@ Pro 另有 Metal 原生渲染的 Wallpaper Engine 场景与创意工坊；日常
 - [troubleshooting.md](troubleshooting.md) —— 常见故障与处理办法。
 - [lite-vs-pro.md](lite-vs-pro.md) —— DMG 两版与 Mac App Store 版的能力对照。
 - [app-store.md](app-store.md) —— 商店 target 边界、本地预检与提交流程。
+- [privacy.md](privacy.md) —— 隐私政策：哪些数据留在本机，各在线功能发送什么。
 
 ## 面向贡献者
 

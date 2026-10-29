@@ -84,7 +84,7 @@ The menu bar keeps everyday controls close. Closing the management window keeps 
 
 Both editions are free and open source. Lite keeps the complete workspace and video, web and Aerials experience while excluding the WPE renderer and Workshop stack. Full matrix: [docs/en/lite-vs-pro.md](docs/en/lite-vs-pro.md).
 
-A separate Mac App Store target is being prepared from a smaller Lite feature set.
+**Mac App Store edition:** a sandboxed version with a smaller Lite feature set, updated through the App Store. Store link: coming soon.
 Its identity, exclusions and release workflow are documented in [App Store release](docs/en/app-store.md).
 
 ## Install

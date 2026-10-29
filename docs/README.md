@@ -15,6 +15,7 @@ Wallpaper Engine scenes and Workshop. Everyday control stays in the menu bar.
 - [troubleshooting.md](en/troubleshooting.md) — common failures and fixes.
 - [lite-vs-pro.md](en/lite-vs-pro.md) — edition capability matrix.
 - [app-store.md](en/app-store.md) — Store target boundary, local preflight and submission workflow.
+- [privacy.md](en/privacy.md) — privacy policy: what stays on your Mac and what each online feature sends.
 
 ## For contributors
 

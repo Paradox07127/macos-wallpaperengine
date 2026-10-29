@@ -267,7 +267,7 @@
 				Monitor/Widgets/NowPlayingWidgetView.swift,
 				Resources/InfoPlist.xcstrings,
 				Resources/Lite/InfoPlist.xcstrings,
-				Resources/Sparkle-LICENSE.txt,
+				"Resources/Sparkle-LICENSE.txt",
 				Runtime/Assets/SystemWallpaperFramePool.swift,
 				Runtime/Assets/WPEVideoPlaybackSnapshot.swift,
 				Runtime/Assets/WPEVideoTextureSource.swift,
@@ -1432,7 +1432,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				SWIFT_VERSION = 6.0;
 			};
@@ -1461,7 +1461,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				SWIFT_VERSION = 6.0;
 			};
@@ -1527,7 +1527,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				SWIFT_VERSION = 6.0;
 			};
@@ -1556,7 +1556,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				SWIFT_VERSION = 6.0;
 			};
@@ -1584,7 +1584,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				SWIFT_VERSION = 6.0;
 			};
@@ -1613,7 +1613,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				SWIFT_VERSION = 6.0;
 			};
@@ -1691,7 +1691,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1720,7 +1720,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1750,7 +1750,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1780,7 +1780,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.9.3;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.wallpaper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
