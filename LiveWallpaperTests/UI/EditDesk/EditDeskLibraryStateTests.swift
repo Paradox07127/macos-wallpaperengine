@@ -35,7 +35,7 @@ struct EditDeskLibraryStateTests {
             let opened = await Self.settle(window) { Self.stage(in: window)?.progress == 2 && Self.searchField(in: window) != nil }
             try #require(opened, "the window never opened on the library")
             let field = try #require(Self.searchField(in: window))
-            Self.click(Self.chipCenter(.recent, after: field, bundle: bundle), in: window)
+            Self.click(Self.chipCenter(.recent, after: field, bundle: bundle, catalog: .unconfigured), in: window)
             try #require(window.makeFirstResponder(field))
             let editor = try #require(field.currentEditor() as? NSTextView)
             editor.insertText("S4b", replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -467,8 +467,11 @@ struct EditDeskLibraryStateTests {
     }
 
     /// Filters are centred independently of search; measure the actual localized chips.
-    private static func chipCenter(_ chip: SavedLibraryModel.Chip, after field: NSTextField, bundle: Bundle) -> NSPoint {
-        let chips = SavedLibraryModel.Chip.allCases
+    /// `catalog` is the one `withLibraryWindow` hands the manager; it decides which chips the row shows.
+    private static func chipCenter(
+        _ chip: SavedLibraryModel.Chip, after field: NSTextField, bundle: Bundle, catalog: FeatureCatalog
+    ) -> NSPoint {
+        let chips = SavedLibraryModel.Chip.displayed(in: catalog)
         let widths = chips.map { chip in
             NSHostingView(rootView: FilterChip(title: Text(HomePage.chipTitle(chip), bundle: bundle), isSelected: false) {}).fittingSize.width
         }

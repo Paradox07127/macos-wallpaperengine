@@ -22058,7 +22058,6 @@
     },
     "Build %@, %@ ago" : {
       "comment" : "Extension registration sheet: build number of the last connected extension and how long ago it reported. Second placeholder is a relative duration.",
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -124165,7 +124164,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SYSTÈME"
+            "value" : "SYST."
           }
         },
         "ja" : {
@@ -141865,7 +141864,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "BENUTZER"
+            "value" : "USER"
           }
         },
         "en" : {
@@ -141883,7 +141882,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilisateur"
+            "value" : "UTIL."
           }
         },
         "ja" : {
@@ -141901,7 +141900,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usuário"
+            "value" : "USU."
           }
         },
         "zh-Hans" : {
