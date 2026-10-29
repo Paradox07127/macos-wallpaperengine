@@ -7,33 +7,33 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 0.9.3</title>
-      <pubDate>Wed, 28 Oct 2026 05:16:37 +0000</pubDate>
-      <sparkle:version>0.9.3</sparkle:version>
-      <sparkle:shortVersionString>0.9.3</sparkle:shortVersionString>
+      <title>Version 1.0.0</title>
+      <pubDate>Thu, 29 Oct 2026 21:14:04 +0000</pubDate>
+      <sparkle:version>1.0.0</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Pro: follow the system Now Playing source in the music layer, including compatible players beyond Spotify and Apple Music.</li>
-<li>Drag one display onto another in Overview to copy its wallpaper setup.</li>
+<li>The app is now available in German, French, Korean and Brazilian Portuguese.</li>
+<li>On macOS 27, use touch to drag cards and scenes, finish editing and use display and Now Playing controls.</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Library pages scroll beneath their filter and count bars, with clearer filters, empty results and context menus.</li>
-<li>Rename displays from the arrangement or Settings, and apply schemes and Workshop items to a named display from their menus.</li>
-<li>Simplify music visuals and process-widget sizing; put wallpaper updates in the detail header.</li>
+<li>Releases are signed and notarized, so new downloads open without the quarantine workaround.</li>
+<li>Configuration backups import across editions.</li>
+<li>Lite hides Pro-only leftovers in menus, settings search and copy.</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Keep cancelled display drags cancelled until mouse-up, and keep covered display controls from handling input.</li>
-<li>Retry failed cover captures safely and improve persistence, export cleanup and variable-font handling.</li>
-<li>Keep system media commands ordered and stop polling when the music source closes.</li>
-<li>Verify update archives against the app's existing Sparkle public key before publishing them.</li>
+<li>Leaving Wallpaper Automation during a preview restores the display's own wallpaper.</li>
+<li>Keep a wallpaper change when a later cleanup step fails, and fix a possible video playback crash.</li>
+<li>Pro: show Workshop text exactly as written, and stop crafted shaders from crashing or hanging the app.</li>
+<li>Pro: improve Now Playing permission retries, timelines and artwork refresh.</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.3">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.9.3">完整发布说明</a></small></p>
+<p><small><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.0">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.0">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.3/Loomscreen-0.9.3.dmg" type="application/octet-stream" sparkle:edSignature="v2hBI6qsC+XTujycufW8F7LaHS2RzcZP2cQhoAjn9+7l5ZwAsfUreSXTC2czHWII2dtCP34H9XdjbC6erQCtDA==" length="16950933" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v1.0.0/Loomscreen-1.0.0.dmg" type="application/octet-stream" sparkle:edSignature="+N+bHps3mkUamelAlj+FEXbQPkS9eUMBoBLFJCSSlLfBKjjhaC54M2irvBsS4rw1RfzeprKoqaAiVbGSgsAmBQ==" length="17001667" />
     </item>
   </channel>
 </rss>
