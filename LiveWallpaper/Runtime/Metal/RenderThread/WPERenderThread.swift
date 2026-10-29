@@ -40,18 +40,6 @@ final class WPERenderThread: @unchecked Sendable {
         /// Recursive because an inline job may itself re-enqueue synchronously. Mutual exclusion is the `SerialExecutor` contract — not same-thread.
         let postShutdownLock = NSRecursiveLock()
 
-        #if DEBUG
-        static let liveCount = OSAllocatedUnfairLock(initialState: 0)
-
-        init() {
-            Self.liveCount.withLock { $0 += 1 }
-        }
-
-        deinit {
-            Self.liveCount.withLock { $0 -= 1 }
-        }
-        #endif
-
         func takeJobs() -> [@Sendable () -> Void] {
             condition.lock()
             defer { condition.unlock() }
@@ -229,9 +217,9 @@ final class WPERenderThread: @unchecked Sendable {
     var isCurrent: Bool { Thread.current === backingThread }
 
     #if DEBUG
-    /// Lifecycle objects still alive process-wide; a stopped, released thread must not keep one.
-    static var liveLifecycleCountForTesting: Int {
-        Lifecycle.liveCount.withLock { $0 }
+    /// Lets tests observe this thread's lifecycle weakly, independently of other threads.
+    var lifecycleForTesting: AnyObject {
+        lifecycle
     }
     #endif
 

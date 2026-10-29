@@ -452,17 +452,23 @@ struct WPERenderThreadTests {
 
     @Test("a stopped and released render thread frees its lifecycle state (no source/context cycle)")
     func stoppedThreadFreesLifecycle() async {
-        let baseline = WPERenderThread.liveLifecycleCountForTesting
         var thread: WPERenderThread? = WPERenderThread(label: "test.lifecycle.release")
+        weak var lifecycle = thread?.lifecycleForTesting
         let ran = Counter()
         thread?.perform { ran.increment() }
         #expect(await eventually { ran.count == 1 })
         #expect(thread?.stopAndJoin() == true)
-        #expect(WPERenderThread.liveLifecycleCountForTesting == baseline + 1)
+        withExtendedLifetime(thread) {
+            #expect(lifecycle != nil)
+        }
 
         thread = nil
-        let released = await eventually { WPERenderThread.liveLifecycleCountForTesting == baseline }
-        #expect(released, "lifecycle state leaked after the thread exited and its owner was released")
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while lifecycle != nil, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(lifecycle == nil, "lifecycle state leaked after the thread exited and its owner was released")
     }
 
     @Test("checkIsolated passes on the render thread (bare callback, no task executor)")
