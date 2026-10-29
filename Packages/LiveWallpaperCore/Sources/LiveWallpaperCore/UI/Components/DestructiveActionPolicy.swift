@@ -12,7 +12,8 @@ public enum DestructiveAction: Identifiable, Equatable {
     /// `mentionsMusicOverlay` = false drops the music overlay from the list of overlays kept.
     case clearCurrentWallpaper(displayName: String, mentionsMusicOverlay: Bool = true)
     /// `sceneCapable` = the build renders scenes; false (Lite) omits scene settings from the copy.
-    case resetDisplaySettings(displayName: String, sceneCapable: Bool)
+    /// `mentionsOnLock` = false drops On Lock from the scene-free copy.
+    case resetDisplaySettings(displayName: String, sceneCapable: Bool, mentionsOnLock: Bool)
     /// `sceneCapable` = the build renders scenes; false (Lite) omits presets and Wallpaper Engine assets.
     /// `mentionsAerialsAndAI` = false drops Apple Aerials and AI session history from the scene-free copy.
     case resetAllSettings(sceneCapable: Bool, mentionsAerialsAndAI: Bool = true)
@@ -39,7 +40,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case let .clearLegacySystemWallpapers(n, b, p, _): return "clearLegacySystemWallpapers-\(n)-\(b)-\(p.joined(separator: "|"))"
         case let .applyConfigurationToAllDisplays(c, _): return "applyConfigurationToAllDisplays-\(c)"
         case let .clearCurrentWallpaper(n, _): return "clearCurrentWallpaper-\(n)"
-        case let .resetDisplaySettings(n, _): return "resetDisplaySettings-\(n)"
+        case let .resetDisplaySettings(n, _, _): return "resetDisplaySettings-\(n)"
         case .resetAllSettings: return "resetAllSettings"
         case .disconnectAerialsLibrary: return "disconnectAerialsLibrary"
         case .forgetSteamWebAPIKey: return "forgetSteamWebAPIKey"
@@ -146,15 +147,21 @@ public enum DestructiveAction: Identifiable, Equatable {
                     localized: "Removes everything saved for \(displayName): the wallpaper, playlist, schedule, effect layer, and all other settings for this display. The wallpaper library, source files, and the widget and clock overlays are kept.",
                     bundle: .appLanguage, comment: "Destructive confirm message in an edition without the music overlay. Placeholder is the display name."
                 )
-        case let .resetDisplaySettings(displayName, sceneCapable):
-            return sceneCapable
-                ? String(
+        case let .resetDisplaySettings(displayName, sceneCapable, mentionsOnLock):
+            if sceneCapable {
+                return String(
                     localized: "On \(displayName), this:\n• Resets playback settings, web wallpaper settings, and blur, brightness, saturation, warmth, vignette, and auto warm tint\n• Turns off the effect layer and returns its Density, Match local weather, Match density to weather, and Follow wind direction to their defaults\n• Turns off On Lock, shuffle, and rotation\n• Clears the schedule and switches back to the playlist\nThe wallpaper, playlist items, and scene custom settings are kept.",
                     bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name. Capitalized names are control labels."
                 )
-                : String(
+            }
+            return mentionsOnLock
+                ? String(
                     localized: "On \(displayName), this:\n• Resets playback settings, web wallpaper settings, and blur, brightness, saturation, warmth, vignette, and auto warm tint\n• Turns off the effect layer and returns its Density, Match local weather, Match density to weather, and Follow wind direction to their defaults\n• Turns off On Lock, shuffle, and rotation\n• Clears the schedule and switches back to the playlist\nThe wallpaper and playlist items are kept.",
                     bundle: .appLanguage, comment: "Destructive confirm message in a build without scenes. Placeholder is the display name. Capitalized names are control labels."
+                )
+                : String(
+                    localized: "On \(displayName), this:\n• Resets playback settings, web wallpaper settings, and blur, brightness, saturation, warmth, vignette, and auto warm tint\n• Turns off the effect layer and returns its Density, Match local weather, Match density to weather, and Follow wind direction to their defaults\n• Turns off shuffle and rotation\n• Clears the schedule and switches back to the playlist\nThe wallpaper and playlist items are kept.",
+                    bundle: .appLanguage, comment: "Destructive confirm message in an edition without scenes or On Lock. Placeholder is the display name. Capitalized names are control labels."
                 )
         case let .resetAllSettings(sceneCapable, mentionsAerialsAndAI):
             if sceneCapable {

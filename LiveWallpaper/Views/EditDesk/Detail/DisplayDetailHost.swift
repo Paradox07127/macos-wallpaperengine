@@ -600,7 +600,11 @@ struct DisplayDetailHost: View {
 
     private func requestResetDisplaySettings(for screen: Screen) {
         pendingDestructive = PendingDestructive(
-            .resetDisplaySettings(displayName: screen.name, sceneCapable: featureCatalog.isEnabled(.scene))
+            .resetDisplaySettings(
+                displayName: screen.name,
+                sceneCapable: featureCatalog.isEnabled(.scene),
+                mentionsOnLock: featureCatalog.isEnabled(.lockScreenSnapshots)
+            )
         ) {
             Self.resetDisplaySettings(for: screen, manager: screenManager, undo: undo, toasts: toasts)
         }

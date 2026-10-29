@@ -81532,6 +81532,66 @@
         }
       }
     },
+    "On %@, this:\n• Resets playback settings, web wallpaper settings, and blur, brightness, saturation, warmth, vignette, and auto warm tint\n• Turns off the effect layer and returns its Density, Match local weather, Match density to weather, and Follow wind direction to their defaults\n• Turns off shuffle and rotation\n• Clears the schedule and switches back to the playlist\nThe wallpaper and playlist items are kept." : {
+      "comment" : "Destructive confirm message in an edition without scenes or On Lock. Placeholder is the display name. Capitalized names are control labels.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On %@, this:\n• Resets playback settings, web wallpaper settings, and blur, brightness, saturation, warmth, vignette, and auto warm tint\n• Turns off the effect layer and returns its Density, Match local weather, Match density to weather, and Follow wind direction to their defaults\n• Turns off shuffle and rotation\n• Clears the schedule and switches back to the playlist\nThe wallpaper and playlist items are kept."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En %@, esto:\n• Restablece los ajustes de reproducción, los ajustes del fondo web y el desenfoque, el brillo, la saturación, la calidez, la viñeta y el tinte cálido automático\n• Desactiva la capa de efectos y devuelve sus opciones “Densidad”, “Seguir el tiempo local”, “Ajustar la densidad al tiempo” y “Seguir la dirección del viento” a sus valores predeterminados\n• Desactiva la reproducción aleatoria y la rotación\n• Borra la programación y vuelve a la playlist\nSe conservan el fondo de pantalla y los elementos de la playlist."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で次の操作を行います：\n• 再生設定、Web 壁紙の設定、およびぼかし・明るさ・彩度・暖かさ・ビネット・自動ウォームティントをデフォルトに戻す\n• エフェクトレイヤーをオフにし、「密度」「現地の天気に合わせる」「天気に密度を合わせる」「風向きに追従」をデフォルトに戻す\n• シャッフル、ローテーションをオフにする\n• スケジュールを消去し、プレイリストに戻す\n壁紙とプレイリストの項目は保持されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将对 %@ 执行以下操作：\n• 恢复播放设置、网页壁纸设置，以及模糊、亮度、饱和度、色温、暗角和自动暖色调的默认值\n• 关闭效果层，并将其“密度”“跟随当地天气”“随天气调整粒子密度”“跟随风向”恢复为默认值\n• 关闭随机播放和轮播\n• 清空计划，改回按播放列表播放\n壁纸和播放列表中的项目会保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將對 %@ 執行以下操作：\n• 恢復播放設定、網頁桌布設定，以及模糊、亮度、飽和度、色溫、暈影和自動暖色調的預設值\n• 關閉效果層，並將其「密度」「跟隨當地天氣」「隨天氣調整粒子密度」「跟隨風向」恢復為預設值\n• 關閉隨機播放和輪播\n• 清除排程，改回依播放列表播放\n桌布和播放列表中的項目會保留。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf %@ geschieht Folgendes:\n• Wiedergabe- und Webhintergrund-Einstellungen sowie Weichzeichnung, Helligkeit, Sättigung, Wärme, Vignette und automatische Warmtönung werden zurückgesetzt\n• Die Effektebene wird ausgeschaltet; Dichte, Wetteranpassung, wetterabhängige Dichte und Windrichtung werden auf die Standardwerte zurückgesetzt\n• Zufällige Wiedergabe und automatischer Wechsel werden ausgeschaltet\n• Der Zeitplan wird gelöscht und zur Wiedergabeliste zurückgekehrt\nHintergrund und Einträge der Wiedergabeliste bleiben erhalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur %@, cette action :\n• Réinitialise les réglages de lecture et des fonds d’écran web, ainsi que le flou, la luminosité, la saturation, la chaleur, le vignettage et la teinte chaude automatique\n• Désactive le calque d’effets et rétablit les valeurs par défaut de sa densité, de l’adaptation à la météo locale, de la densité selon la météo et du suivi du vent\n• Désactive la lecture aléatoire et la rotation\n• Efface la programmation et revient à la liste de lecture\nLe fond d’écran et les éléments de la liste de lecture sont conservés."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에서 다음을 수행합니다.\n• 재생 설정, 웹 배경화면 설정, 흐림, 밝기, 채도, 따뜻함, 비네트 및 자동 따뜻한 색조를 초기화합니다\n• 효과 레이어를 끄고 밀도, 현지 날씨에 맞추기, 날씨에 따라 밀도 조절 및 풍향 따르기를 기본값으로 되돌립니다\n• 임의 재생 및 순환 재생을 끕니다\n• 일정을 지우고 재생목록으로 돌아갑니다\n배경화면과 재생목록 항목은 유지됩니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No monitor %@, esta ação:\n• Redefine os ajustes de reprodução e de papéis de parede da web, além de desfoque, brilho, saturação, calor, vinheta e tom quente automático\n• Desativa a camada de efeitos e restaura os padrões de densidade, adaptação ao tempo local, densidade conforme o tempo e direção do vento\n• Desativa reprodução aleatória e alternância\n• Limpa a programação e volta à lista de reprodução\nO papel de parede e os itens da lista de reprodução são mantidos."
+          }
+        }
+      }
+    },
     "On Canvas" : {
       "localizations" : {
         "en" : {
