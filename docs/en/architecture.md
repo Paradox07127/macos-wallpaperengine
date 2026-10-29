@@ -212,7 +212,7 @@ source references retain their normal backup behavior.
 
 Shared components and tokens live under Core's `UI/`; the contract is
 [DESIGN.md](../../Packages/LiveWallpaperCore/DESIGN.md). User-facing changes
-preserve five-language coverage and accessibility behavior.
+preserve nine-language coverage and accessibility behavior.
 
 `make verify` orders structure/localization, tooling contracts, changed-line
 lint, package tests, the app contract shard and signed WPE/transition Metal suites.

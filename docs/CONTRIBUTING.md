@@ -44,15 +44,16 @@ unrelated formatting out of the PR. Quality exclusions are tracked by owner
 and budget in `scripts/check_quality_exclusions.py`; advisory size warnings
 are still debt even when the command exits successfully.
 
-User-facing strings belong in the String Catalog for all five languages:
-English, Simplified Chinese, Traditional Chinese, Japanese and Spanish.
+User-facing strings belong in the String Catalog for all nine languages:
+English, Simplified Chinese, Traditional Chinese, Japanese, Spanish, German,
+French, Korean and Brazilian Portuguese.
 UI changes use the existing [Core design system](../Packages/LiveWallpaperCore/DESIGN.md).
 Update English and Simplified Chinese documentation together.
 
 ## Code and review boundaries
 
-- Both app editions must build when changing SKU conditions. `LITE_BUILD` is an
-  app-target flag; it does not propagate into Swift packages.
+- All three app editions must build when changing SKU conditions. `LITE_BUILD` and
+  `MAS_BUILD` are app-target flags; they do not propagate into Swift packages.
 - Project/workspace files are maintainer-edited. Create source files on disk
   and identify any required target registration in the PR.
 - Entitlement or Info.plist permission changes require explicit review of the

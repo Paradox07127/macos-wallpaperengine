@@ -28,6 +28,32 @@ struct AppLanguageRuntimeProbeTests {
         }
     }
 
+    @Test("New languages resolve the selected bundle and locale-aware plurals", arguments: [
+        (AppLanguagePreference.german, "Alles bereit", "1 Hintergrundbild", "2 Hintergrundbilder"),
+        (.french, "Tout est prêt", "1 fond d’écran", "2 fonds d’écran"),
+        (.korean, "준비 완료", "배경화면 1개", "배경화면 2개"),
+        (.brazilianPortuguese, "Tudo pronto", "1 papel de parede", "2 papéis de parede"),
+    ])
+    func newLanguageRoutingAndPlurals(
+        language: AppLanguagePreference, ready: String, one: String, other: String
+    ) {
+        AppLanguageOverride.with(language) {
+            #expect(String(localized: "All set", bundle: .appLanguage) == ready)
+            let locale = language.locale
+            let zero = ["de": "0 Hintergrundbilder", "fr": "0 fond d’écran",
+                        "ko": "배경화면 0개", "pt-BR": "0 papel de parede"]
+            #expect(String(localized: "\(0) wallpapers", bundle: .appLanguage, locale: locale) == zero[language.rawValue])
+            #expect(String(localized: "\(1) wallpapers", bundle: .appLanguage, locale: locale) == one)
+            #expect(String(localized: "\(2) wallpapers", bundle: .appLanguage, locale: locale) == other)
+        }
+    }
+
+    @Test("Korean explicitly reorders the copied and total arguments")
+    func koreanArgumentOrder() {
+        let format = String(localized: "Copied to %lld / %lld displays", bundle: AppLanguagePreference.korean.localizationBundle())
+        #expect(String(format: format, Int64(2), Int64(7)) == "디스플레이 7대 중 2대에 복사됨")
+    }
+
     /// Can't live in the package's own tests: that process's `Bundle.main` does not carry
     /// the app target's compiled `Localizable.xcstrings`, so routing is only observable here.
     @Test("Inline HTML source display name follows the app language preference")

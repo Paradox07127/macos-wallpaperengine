@@ -68,7 +68,7 @@ struct EditDeskPreferencesTests {
     /// The `.flat` shell is 2pt of padding round equal segments with no gap and no inner padding, so
     /// a title fits when its one-line width is at most an equal share of what is left.
     @MainActor
-    @Test("The shelf style picker fits every title, selected or not, in all five languages")
+    @Test("The shelf style picker fits every title, selected or not, in all nine languages")
     func shelfStylePickerFitsEveryTitle() throws {
         let keys: [ShelfStyle: String] = [
             .facingIn: "Facing In", .crate: "Crate", .folders: "Folders", .fan: "Fan", .focusRow: "Focus Row",
@@ -80,7 +80,7 @@ struct EditDeskPreferencesTests {
         }
         let segment = (ShelfSettingsRows.shelfStylePickerWidth - 4) / CGFloat(ShelfStyle.allCases.count)
         var widest: (width: CGFloat, title: String) = (0, "")
-        for language in ["en", "zh-Hans", "zh-Hant", "ja", "es"] {
+        for language in ["en", "zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"] {
             let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
             let bundle = try #require(Bundle(path: path))
             for key in keys.values.sorted() {

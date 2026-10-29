@@ -163,7 +163,7 @@ macOS 壁纸。应用内已有的壁纸设置与源引用仍按原方式备份�
 ## 设计与验证
 
 共享组件与 token 位于 Core 的 `UI/`，契约见
-[DESIGN.md](../../Packages/LiveWallpaperCore/DESIGN.md)。用户可见改动保持五语与无障碍行为。
+[DESIGN.md](../../Packages/LiveWallpaperCore/DESIGN.md)。用户可见改动保持九语与无障碍行为。
 
 `make verify` 按顺序执行结构/本地化、工具契约、改动行 lint、包测试、应用契约分片与签名 WPE/转场 Metal 套件。
 完整签名 Pro 套件、Lite/archive 发版检查是范围更广的独立门禁；分片通过不等于全量应用测试。

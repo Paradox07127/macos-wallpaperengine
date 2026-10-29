@@ -175,6 +175,10 @@ enum SystemWallpaperProviderStaleness {
             "zh-Hant": "（舊版本）",
             "ja": "（旧バージョン）",
             "es": " (copia obsoleta)",
+            "de": " (veraltete Kopie)",
+            "fr": " (copie obsolète)",
+            "ko": " (오래된 사본)",
+            "pt-BR": " (cópia desatualizada)",
         ]
         for (prefix, marker) in markers where preferredLanguage.hasPrefix(prefix) {
             return title + marker

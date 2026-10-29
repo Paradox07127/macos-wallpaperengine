@@ -5,7 +5,7 @@ import Testing
 
 @Suite("Localization coverage")
 struct LocalizationCoverageTests {
-    private static let requiredLocales = ["zh-Hans", "zh-Hant", "ja", "es"]
+    private static let requiredLocales = ["zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"]
 
     /// Every file `projectSwiftFiles` sweeps, read and comment-blanked once per test process.
     private static let projectSources = Result {
@@ -138,7 +138,7 @@ struct LocalizationCoverageTests {
 
     @Test("String catalogs include supported localizations for every entry")
     func catalogsIncludeSupportedTranslations() throws {
-        for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
+        for catalogName in StringCatalog.paths.keys.sorted() {
             let catalog = try StringCatalog.load(named: catalogName)
             for locale in Self.requiredLocales {
                 let missing = catalog.keysMissingLocalization(locale)
@@ -245,7 +245,7 @@ struct LocalizationCoverageTests {
 
     @Test("Supported translations preserve string format placeholders")
     func supportedTranslationsPreservePlaceholders() throws {
-        for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
+        for catalogName in StringCatalog.paths.keys.sorted() {
             let catalog = try StringCatalog.load(named: catalogName)
             // English too: each of its plural forms has to consume the same arguments.
             for locale in [catalog.sourceLanguage] + Self.requiredLocales {
@@ -265,6 +265,10 @@ struct LocalizationCoverageTests {
         let plural = catalog.pluralKeys
         #expect(!plural.isEmpty, "No key varies by plural — the catalog decode stopped seeing variations")
 
+        for locale in ["de", "fr", "pt-BR"] {
+            let flat = plural.filter { catalog.strings[$0]?.localizations?[locale]?.variesByPlural != true }
+            #expect(flat.isEmpty, "\(locale) lost plural variants: \(flat)")
+        }
         let english = plural.filter { catalog.strings[$0]?.localizations?[catalog.sourceLanguage]?.isComplete(for: catalog.sourceLanguage) != true }
         let oneForm = catalog.pluralMismatches
         #expect(english.isEmpty, "English plural with a form missing, blank or never used: \(english.prefix(20).joined(separator: ", "))")
@@ -316,7 +320,7 @@ struct LocalizationCoverageTests {
 
     @Test("String catalogs do not localize literal percent signs")
     func stringCatalogsDoNotLocalizeLiteralPercentSigns() throws {
-        for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
+        for catalogName in StringCatalog.paths.keys.sorted() {
             let catalog = try StringCatalog.load(named: catalogName)
             let issues = catalog.literalPercentIssues()
 
@@ -329,7 +333,7 @@ struct LocalizationCoverageTests {
 
     @Test("String catalogs do not keep stale extraction entries")
     func stringCatalogsDoNotKeepStaleEntries() throws {
-        for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
+        for catalogName in StringCatalog.paths.keys.sorted() {
             let catalog = try StringCatalog.load(named: catalogName)
             let stale = catalog.staleKeys()
 
@@ -715,8 +719,15 @@ private struct StringCatalog: Decodable {
     let strings: [String: Entry]
 
     /// Decoded once per test process; every test here reads the same value.
-    private static let decoded = Dictionary(uniqueKeysWithValues: ["Localizable.xcstrings", "InfoPlist.xcstrings"].map { name in
-        (name, Result { try JSONDecoder().decode(StringCatalog.self, from: RepositoryRoot.data("LiveWallpaper/Resources/\(name)")) })
+    static let paths = [
+        "Localizable.xcstrings": "LiveWallpaper/Resources/Localizable.xcstrings",
+        "InfoPlist.xcstrings": "LiveWallpaper/Resources/InfoPlist.xcstrings",
+        "Lite/InfoPlist.xcstrings": "LiveWallpaper/Resources/Lite/InfoPlist.xcstrings",
+        "AppStore/InfoPlist.xcstrings": "LiveWallpaper/Resources/AppStore/InfoPlist.xcstrings",
+        "Provider/Localizable.xcstrings": "SystemWallpaperProvider/Localizable.xcstrings",
+    ]
+    private static let decoded = Dictionary(uniqueKeysWithValues: paths.map { name, path in
+        (name, Result { try JSONDecoder().decode(StringCatalog.self, from: RepositoryRoot.data(path)) })
     })
 
     static func load(named name: String) throws -> StringCatalog {
@@ -799,10 +810,15 @@ private struct StringCatalog: Decodable {
     }
 
     private static func placeholdersMatch(_ source: [String], _ localized: [String]) -> Bool {
-        let usesExplicitPositions = source.allSatisfy {
-            $0.range(of: #"%\d+\$"#, options: .regularExpression) != nil
+        func positioned(_ values: [String]) -> [String] {
+            values.enumerated().map { index, value in
+                if value.range(of: #"%\d+\$"#, options: .regularExpression) != nil {
+                    return value
+                }
+                return "%\(index + 1)$" + value.dropFirst()
+            }.sorted()
         }
-        return usesExplicitPositions ? source.sorted() == localized.sorted() : source == localized
+        return positioned(source) == positioned(localized)
     }
 
     private static func containsLiteralPercent(in value: String) -> Bool {
@@ -821,7 +837,9 @@ private struct StringCatalog: Decodable {
     }
 
     /// CLDR plural categories a language cannot do without; a missing `many` in es falls back to `other`.
-    static let pluralCategories = ["en": ["one", "other"], "es": ["one", "other"]]
+    static let pluralCategories = ["en": ["one", "other"], "es": ["one", "other"],
+                                   "de": ["one", "other"], "fr": ["one", "other"],
+                                   "pt-BR": ["one", "other"], "ko": ["other"]]
 
     struct Localization: Decodable {
         let stringUnit: StringUnit?

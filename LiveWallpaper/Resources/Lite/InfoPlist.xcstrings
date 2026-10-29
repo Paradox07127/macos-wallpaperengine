@@ -58,6 +58,30 @@
             "state" : "translated",
             "value" : "Loomscreen 設定"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen-Konfiguration"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuration Loomscreen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 구성"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuração do Loomscreen"
+          }
         }
       }
     },
@@ -94,6 +118,30 @@
             "state" : "translated",
             "value" : "桌布上「正在播放」圖層的播放、暫停、切歌與進度控制，透過此權限操作你正在聽的音樂播放程式。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Tasten für Wiedergabe, Pause, Titelsprung und Positionssuche in der Hintergrundebene „Aktuelle Wiedergabe“ steuern damit den Musikplayer, den Sie gerade verwendest."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les boutons de lecture, de pause, de changement de piste et de recherche de position du calque musical utilisent cette autorisation pour contrôler votre lecteur de musique."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지금 재생 중인 음악 플레이어를 제어하기 위해 음악 배경화면 레이어의 재생, 일시 정지, 트랙 이동 및 탐색 버튼에서 이 권한을 사용합니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os botões de reproduzir, pausar, pular faixas e buscar posições na camada de música usam esta permissão para controlar o reprodutor que você está ouvindo."
+          }
         }
       }
     },
@@ -128,6 +176,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "位置資訊用來取得本地天氣，驅動會隨天氣變化的效果。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ihr Standort wird verwendet, um das lokale Wetter für wetterabhängige Effekte abzurufen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre position sert à obtenir la météo locale pour les effets qui réagissent au temps."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날씨에 반응하는 효과에 사용할 현지 날씨를 가져오기 위해 위치를 사용합니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sua localização é usada para obter o clima local para efeitos que reagem ao tempo."
           }
         }
       }

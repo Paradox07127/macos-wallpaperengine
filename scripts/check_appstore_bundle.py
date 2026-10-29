@@ -40,12 +40,41 @@ def inspect(app, require_distribution=False):
     if require_distribution and not re.search(r'Authority=(Apple Distribution:|3rd Party Mac Developer Application:)', signature):
         errors.append('A Mac App Store distribution signature is required for submission.')
     resources = app / 'Contents/Resources'
-    for language in ('en', 'es', 'ja', 'zh-Hans', 'zh-Hant'):
+    catalogs = {
+        'Localizable.strings': json.loads((ROOT / 'LiveWallpaper/Resources/Localizable.xcstrings').read_text()),
+        'InfoPlist.strings': json.loads((ROOT / 'LiveWallpaper/Resources/AppStore/InfoPlist.xcstrings').read_text()),
+    }
+    for language in ('de', 'en', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'zh-Hans', 'zh-Hant'):
         directory = resources / f'{language}.lproj'
-        for name in ('Localizable.strings', 'InfoPlist.strings'):
+        for name, catalog in catalogs.items():
             path = directory / name
-            if not path.is_file() or not json.loads(run('plutil', '-convert', 'json', '-o', '-', str(path))):
-                errors.append(f'Missing/empty compiled localization: {language}/{name}')
+            if not path.is_file():
+                errors.append(f'Missing compiled localization: {language}/{name}')
+                continue
+            compiled = json.loads(run('plutil', '-convert', 'json', '-o', '-', str(path)))
+            if not compiled:
+                errors.append(f'Empty compiled localization: {language}/{name}')
+            # Compare every flat translation to the source, catching stale/English
+            # resources even when a nonempty .lproj exists.
+            for key, entry in catalog['strings'].items():
+                if entry.get('shouldTranslate') is False:
+                    continue
+                unit = entry.get('localizations', {}).get(language, {}).get('stringUnit')
+                if unit and unit.get('state') == 'translated' and 'substitutions' not in entry.get('localizations', {}).get(language, {}):
+                    if compiled.get(key) != unit['value']:
+                        errors.append(f'Stale compiled translation: {language}/{name}/{key}')
+        plural_keys = {
+            key for key, entry in catalogs['Localizable.strings']['strings'].items()
+            if any(field in entry.get('localizations', {}).get(language, {})
+                   for field in ('variations', 'substitutions'))
+        }
+        plural_path = directory / 'Localizable.stringsdict'
+        if plural_keys and not plural_path.is_file():
+            errors.append(f'Missing compiled plurals: {language}')
+        elif plural_keys:
+            plurals = json.loads(run('plutil', '-convert', 'json', '-o', '-', str(plural_path)))
+            for key in sorted(plural_keys - plurals.keys()):
+                errors.append(f'Missing compiled plural: {language}/{key}')
     privacy = plistlib.loads((resources / 'PrivacyInfo.xcprivacy').read_bytes())
     if privacy.get('NSPrivacyTracking') is not False:
         errors.append('Tracking must remain disabled.')

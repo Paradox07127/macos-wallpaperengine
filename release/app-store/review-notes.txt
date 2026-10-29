@@ -1,0 +1,13 @@
+Loomscreen is a native macOS menu-bar wallpaper utility. No Loomscreen account, sign-in, purchases or subscriptions are required in this build.
+
+First use: the main window opens on first launch. Choose a display in Overview. Import a local video, or select Web and enter a web address. The Wallpaper Library retains user-authorized sources; it does not download or distribute a wallpaper catalogue. The menu bar reopens the main window and controls playback. Quit is available from the app/menu-bar menu.
+
+The app draws public AppKit desktop-level windows and uses AVFoundation and WKWebView. It supports separate settings per display, playlists, time-of-day automation, saved display schemes, clocks/weather layers and basic monitoring. These workflows distinguish it from a static wallpaper catalogue. It does not install a system wallpaper extension or background executable.
+
+Optional weather uses Open-Meteo and Apple Maps manual-city search. System location is requested only through a user action, and a manual city or Off is available. Open-Meteo attribution is shown in Settings > Integrations. User-selected web pages make their own network requests. Web content is rendered by WebKit; external content is supplied by the user.
+
+The App Store edition excludes the DMG editions' updater, helpers, system wallpaper extension, Apple Aerials, music controls/lyrics/artwork requests, temperature/fan/process/AI-agent cards, scene renderer and Workshop downloader. It uses App Store updates only.
+
+Settings > About provides Website, Privacy Policy and Report a Bug. The bug-report sheet previews sanitized diagnostics. Continuing sends the prefilled text to GitHub in a browser; publishing an issue is a separate user action. The historical support repository name contains "wallpaperengine"; that is the support repository, not an enabled feature in this build.
+
+Before submission, add the actual tested Mac models/macOS versions, a processed TestFlight acceptance result, reviewer contact details and the final screenshot set. Do not submit this draft with uncompleted validation.

@@ -5,13 +5,13 @@ import SwiftUI
 import Testing
 
 /// R-28 / 6.1b: the nav pill is centred in the window and sized by its own titles, and the trailing
-/// cluster gets what is left beside it. These pin that cluster at 1040 and 1280 in all five languages.
+/// cluster gets what is left beside it. These pin that cluster at 1040 and 1280 in all nine languages.
 @Suite("Edit Desk top bar budget")
 struct TopBarBudgetTests {
     /// `StatusCapsule`'s collapsed frame.
     private static let status: CGFloat = 118
 
-    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es"]
+    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"]
 
     /// Pro on macOS 26 carries six pages; Pro before 26 and Lite on 26 five; Lite before 26 four.
     /// `pages` is how many dots the onboarding capsule draws: Lite has no Workshop step.
@@ -56,7 +56,7 @@ struct TopBarBudgetTests {
     }
 
     @MainActor
-    @Test("The trailing cluster clears the pill at 1040 and 1280 in all five languages, for Pro and Lite, on macOS 26 and before")
+    @Test("The trailing cluster clears the pill at 1040 and 1280 in all nine languages, for Pro and Lite, on macOS 26 and before")
     func clusterClearsEveryPill() throws {
         for configuration in Self.configurations {
             for language in Self.languages {
@@ -103,7 +103,7 @@ struct TopBarBudgetTests {
     }
 
     @MainActor
-    @Test("At 1040 the compact filter row fits its chips, search button, filters, sort, and add in all five languages")
+    @Test("At 1040 the compact filter row fits its chips, search button, filters, sort, and add in all nine languages")
     func filterRowFitsAt1040() throws {
         let available = StageGeometry.minimumWindow.width - 2 * DesignTokens.EditDesk.Spacing.gutter
         #expect(
@@ -269,7 +269,7 @@ struct TopBarBudgetTests {
     }
 
     /// The width the budget is fed has to be the box the capsule actually draws.
-    @Test("The asked-for capsule width is the drawn box in all five languages")
+    @Test("The asked-for capsule width is the drawn box in all nine languages")
     func capsuleWidthMatchesItsBox() throws {
         for language in Self.languages {
             let text = try NSLocalizedString("Get Started", bundle: Self.bundle(language), comment: "")

@@ -36,12 +36,12 @@ scripts/format-changed.sh
 格式化辅助脚本作用于改动文件，运行后应检查 diff，剔除无关格式变化。
 `scripts/check_quality_exclusions.py` 按 owner 和预算跟踪排除项；规模 advisory 即使不阻断退出码，也仍是技术债。
 
-用户文本写入 String Catalog，覆盖英语、简体中文、繁体中文、日语、西班牙语五种语言。
+用户文本写入 String Catalog，覆盖英语、简体中文、繁体中文、日语、西班牙语、德语、法语、韩语和巴西葡萄牙语九种语言。
 UI 复用 [Core 设计系统](../../Packages/LiveWallpaperCore/DESIGN.md)。英文与简体中文文档同步更新。
 
 ## 代码与审查边界
 
-- 修改 SKU 条件后，两个应用版本都要构建。`LITE_BUILD` 是应用 target 标志，不传入 Swift 包。
+- 修改 SKU 条件后，三个应用版本都要构建。`LITE_BUILD`、`MAS_BUILD` 是应用 target 标志，不传入 Swift 包。
 - 工程/workspace 文件由维护者修改。源文件先写到磁盘，在 PR 中说明需要的 target 注册。
 - entitlement 或 Info.plist 权限改动须明确审查功能与签名运行时边界，新增依赖先讨论。
 - 渲染改动需要定点测试与相应抓帧/trace，单元测试不能证明 Windows parity。RNG、字体和浮点输出不以像素完全相同为验收标准。

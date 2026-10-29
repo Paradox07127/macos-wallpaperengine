@@ -45,11 +45,11 @@ struct WorkshopTagTaxonomyTests {
         #expect(WorkshopTagTaxonomy.grouped(tags: []).isEmpty)
     }
 
-    @Test("Group names exist in all five languages")
+    @Test("Group names exist in all nine languages")
     func groupNamesAreLocalized() throws {
         let strings = try Self.catalogStrings()
         for key in ["Type", "Age Rating", "Genre", "Resolution", "Category", "Miscellaneous", "Other"] {
-            for locale in ["en", "zh-Hans", "zh-Hant", "ja", "es"] {
+            for locale in ["en", "zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"] {
                 let value = Self.value(strings, key: key, locale: locale) ?? ""
                 #expect(!value.isEmpty, "\(key) [\(locale)]")
             }
@@ -61,7 +61,7 @@ struct WorkshopTagTaxonomyTests {
     func groupNamesAreDistinctInEveryLanguage() throws {
         let strings = try Self.catalogStrings()
         let keys = ["Type", "Age Rating", "Genre", "Resolution", "Category", "Miscellaneous", "Other"]
-        for locale in ["en", "zh-Hans", "zh-Hant", "ja", "es"] {
+        for locale in ["en", "zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"] {
             let names = keys.map { Self.value(strings, key: $0, locale: locale) ?? $0 }
             #expect(Set(names).count == names.count, "\(locale): \(names)")
         }

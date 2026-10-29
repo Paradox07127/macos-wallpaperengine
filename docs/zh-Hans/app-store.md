@@ -13,7 +13,7 @@
 - 商店 target 只链接 Core，有独立的 Info.plist、entitlements 和 InfoPlist catalog。
   Sparkle、外部助手和系统壁纸扩展必须留在它的 target membership 与依赖图之外。
 - 共享 Localizable catalog 只由 Pro 自动抽取。保留手工管理的版本专用 key，以及
-  en、es、ja、zh-Hans、zh-Hant 五语。Xcode 构建后检查 catalog 差异；MAS 不生成字符串符号。
+  de、en、es、fr、ja、ko、pt-BR、zh-Hans、zh-Hant 九语。Xcode 构建后检查 catalog 差异；MAS 不生成字符串符号。
 - Pro/Lite 的构建版本跟随 `MARKETING_VERSION`，供 Sparkle 比较；MAS 读取
   `CURRENT_PROJECT_VERSION`，每次上传（包括重传）都要递增。
 - Lite 与 MAS 都生成 `Loomscreen.app`。使用独立 DerivedData/archive 路径，
@@ -33,7 +33,7 @@ DERIVED_DATA="$(mktemp -d -t LoomscreenMAS)" \
 路径；`--appstore` 后的额外参数传给 `xcodebuild archive`，供签名机器配置。
 脚本先检查源码权限和本地化，再归档 universal Release，并用
 `scripts/check_appstore_bundle.py` 检查真实签名包：架构、签名有效性、权限基线、
-已知禁用 API/端点/组件、五语编译资源和隐私清单。
+已知禁用 API/端点/组件、九语编译资源和隐私清单。
 这是有限范围的本地审计，不能替代完整私有 API 检测或苹果审核。
 
 ## 分发与苹果校验
@@ -50,6 +50,19 @@ DERIVED_DATA="$(mktemp -d -t LoomscreenMAS)" \
    保存校验收据。本地构建不能证明苹果服务端检查通过。
 5. 核对版本/构建号、元数据、隐私答案和截图都对应商店版后再上传，
    并通过 TestFlight 验证处理后的构建。
+
+## 本地化提交文案
+
+商店文案的版本源是 [release/app-store/metadata.json](../../release/app-store/metadata.json)，
+包含九种语言。App 资源使用 `de`、`fr`，Connect 使用 `de-DE`、`fr-FR`；
+巴西葡语两边均为 `pt-BR`。三个版本共用 App 与 provider 的翻译目录，
+各 Target 保留自己的权限目录和产品名称。系统权限提示遵循 macOS 为 App 选择的语言；
+App 内语言选择器影响 App 文案，不会改写已显示的系统提示。
+
+复制到 Connect 前运行 `python3 scripts/check_appstore_metadata.py`，检查语言集合、
+必填文本、字符上限和关键词 UTF-8 字节数。
+[审核备注](../../release/app-store/review-notes.txt)在设备、TestFlight 和联系信息补齐前仍为草稿。
+截图、公开 URL 和账号字段须另行做最终提交检查。此目录不会自动上传内容。
 
 ## 提交清单
 

@@ -9,13 +9,17 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
     case traditionalChinese = "zh-Hant"
     case japanese = "ja"
     case spanish = "es"
+    case german = "de"
+    case french = "fr"
+    case korean = "ko"
+    case brazilianPortuguese = "pt-BR"
 
     public static let storageKey = "AppLanguage.Preference"
 
-    /// Follow System first, then languages by locale identifier (en, es, ja,
-    /// zh-Hans, zh-Hant): Latin scripts together, the two Chinese variants adjacent.
+    /// Follow System first, then languages by locale identifier; Chinese variants stay adjacent.
     public static let menuCases: [AppLanguagePreference] = [
-        .system, .english, .spanish, .japanese, .simplifiedChinese, .traditionalChinese,
+        .system, .german, .english, .spanish, .french, .japanese, .korean,
+        .brazilianPortuguese, .simplifiedChinese, .traditionalChinese,
     ]
 
     public var id: String { rawValue }
@@ -24,7 +28,8 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
         switch self {
         case .system:
             return nil
-        case .english, .simplifiedChinese, .traditionalChinese, .japanese, .spanish:
+        case .english, .simplifiedChinese, .traditionalChinese, .japanese, .spanish,
+             .german, .french, .korean, .brazilianPortuguese:
             return rawValue
         }
     }
@@ -51,6 +56,11 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
         }
         if normalized == "es" || normalized.hasPrefix("es-") {
             return "es-es"
+        }
+        for (language, code) in [("de", "de-de"), ("fr", "fr-fr"), ("ko", "ko-kr"), ("pt", "pt-br")] {
+            if normalized == language || normalized.hasPrefix(language + "-") {
+                return code
+            }
         }
         // English is both an explicit choice and the bundle's development-region
         // fallback for any system language Loomscreen does not localize.
@@ -82,6 +92,14 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
             "日本語"
         case .spanish:
             "Español"
+        case .german:
+            "Deutsch"
+        case .french:
+            "Français"
+        case .korean:
+            "한국어"
+        case .brazilianPortuguese:
+            "Português (Brasil)"
         }
     }
 

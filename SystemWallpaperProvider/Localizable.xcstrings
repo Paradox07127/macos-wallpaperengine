@@ -32,6 +32,30 @@
             "state" : "translated",
             "value" : "缺少必要的場景檔案：%@"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine erforderliche Szenendatei fehlt: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un fichier de scène requis manque : %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "필수 장면 파일이 누락되었습니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um arquivo de cena obrigatório está faltando: %@"
+          }
         }
       }
     },
@@ -65,6 +89,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景套件項目超出可用資料範圍：%@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Szenenpaket-Eintrag geht über die verfügbaren Daten hinaus: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'entrée du paquet de scène s'étend au-delà des données disponibles : %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "장면 패키지 진입이 사용 가능한 데이터를 넘어서 확장됩니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A entrada do pacote de cena se estende além dos dados disponíveis: %@"
           }
         }
       }
@@ -100,6 +148,30 @@
             "state" : "translated",
             "value" : "場景套件項目指向專案外部：%@"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Eintrag im Szenenpaket verweist außerhalb des Projekts: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une entrée de paquet de scène fait référence en dehors du projet : %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "씬 패키지 진입은 프로젝트 외부를 참조합니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A entrada do pacote de cena refere-se fora do projeto: %@"
+          }
         }
       }
     },
@@ -133,6 +205,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法準備暫存場景資源：%@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine vorübergehende Szenenressource konnte nicht vorbereitet werden: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une ressource de scène temporaire n'a pas pu être préparée : %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "임시 장면 리소스가 준비되지 않았습니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um recurso de cena temporário não pôde ser preparado: %@"
           }
         }
       }
@@ -169,6 +265,30 @@
             "state" : "translated",
             "value" : "無法取得系統桌布庫的獨佔存取權限。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte keinen exklusiven Zugriff auf die Systemhintergrundbild-Bibliothek erhalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je n'ai pas pu obtenir un accès exclusif à la bibliothèque d'habillages d'écran du système."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시스템 배경화면 라이브러리에 대한 독점적인 액세스를 얻을 수 없었습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não consegui obter acesso exclusivo à biblioteca de Papel de Parede do Sistema."
+          }
         }
       }
     },
@@ -203,6 +323,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "WPE Metal 命令緩衝區失敗。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal Befehls-Puffer fehlgeschlagen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le tampon de commande WPE Metal a échoué."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 명령 버퍼가 실패했습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O buffer de comandos WPE Metal falhou."
           }
         }
       }
@@ -239,6 +383,30 @@
             "state" : "translated",
             "value" : "Metal 命令佇列無法使用。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal Befehlswarteschlange ist nicht verfügbar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La file d'attente des commandes Metal n'est pas disponible."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 명령 대기열이 사용할 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A fila de comandos Metal está indisponível."
+          }
         }
       }
     },
@@ -273,6 +441,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "WPE Metal 內建著色器程式庫無法使用。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die integrierte Shader-Bibliothek von WPE Metal ist nicht verfügbar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bibliothèque de shaders intégrée WPE Metal n'est pas disponible."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 내장 샤더 라이브러리가 사용할 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A biblioteca de shaders integrada WPE Metal não está disponível."
           }
         }
       }
@@ -309,6 +501,30 @@
             "state" : "translated",
             "value" : "WPE Metal 管線沒有可渲染的通道。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die WPE Metal-Pipeline hat keine renderbaren Pässe."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le pipeline WPE Metal ne contient aucun passe de rendu."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 파이프라인에는 렌더 가능한 패스가 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O pipeline WPE Metal não tem passes renderizáveis."
+          }
         }
       }
     },
@@ -343,6 +559,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為「%1$@」建構 Metal 管線失敗：%2$@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal Pipeline-Build fehlgeschlagen für '%1$@': %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal le build de la chaîne d'approvisionnement a échoué pour '%1$@' : %2$@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 파이프라인 빌드가 '%1$@'에 대해 실패했습니다: %2$@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal construção de pipeline falhou para '%1$@': %2$@"
           }
         }
       }
@@ -379,6 +619,30 @@
             "state" : "translated",
             "value" : "WPE Metal 管線無法用於 %@。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die WPE Metal-Pipeline ist für %@ nicht verfügbar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La chaîne d'approvisionnement WPE Metal n'est pas disponible pour %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 파이프라인은 %@에 사용할 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pipeline WPE Metal não está disponível para %@."
+          }
         }
       }
     },
@@ -413,6 +677,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "WPE Metal 紋理承載資料格式錯誤：%@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal Textur-Payload ist fehlerhaft: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chargement de texture WPE Metal est mal formaté : %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 텍스처 페이로드가 불완전합니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O payload de textura WPE Metal está mal formatado: %@."
           }
         }
       }
@@ -449,6 +737,30 @@
             "state" : "translated",
             "value" : "Metal 紋理配置失敗。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal Texturzuweisung fehlgeschlagen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal l'allocation de la texture a échoué."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 텍스처 할당이 실패했습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal a alocação de textura falhou."
+          }
         }
       }
     },
@@ -483,6 +795,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此 Metal 裝置無法取樣 %@ 紋理。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Metal Gerät kann keine %@ Texturen beproben."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet appareil Metal ne peut pas échantillonner les textures %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 Metal 장치는 %@ 텍스처를 샘플링할 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo Metal não pode amostrar texturas %@."
           }
         }
       }
@@ -519,6 +855,30 @@
             "state" : "translated",
             "value" : "不支援 WPE Metal 紋理格式：%@"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das WPE Metal-Texturformat ist nicht unterstützt: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le format de texture WPE Metal n'est pas pris en charge : %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WPE Metal 텍스처 형식은 지원되지 않습니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O formato de textura WPE Metal não é suportado: %@."
+          }
         }
       }
     },
@@ -553,6 +913,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跟隨 Loomscreen 內選擇的桌布"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folgt dem in Loomscreen ausgewählten Hintergrund"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suit le fond d’écran choisi dans Loomscreen"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen에서 선택한 배경화면과 연동"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acompanha o papel de parede selecionado no Loomscreen"
           }
         }
       }
@@ -589,6 +973,30 @@
             "state" : "translated",
             "value" : "它不是 Wallpaper Engine 專案"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "es ist kein Wallpaper Engine-Projekt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ce n'est pas un projet Wallpaper Engine"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그것은 Wallpaper Engine 프로젝트가 아니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "não é um projeto Wallpaper Engine"
+          }
         }
       }
     },
@@ -623,6 +1031,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取它的專案資訊"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Projektinformationen können nicht gelesen werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "les informations de son projet ne peuvent pas être lues"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그 프로젝트 정보는 읽을 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "as informações do projeto não podem ser lidas"
           }
         }
       }
@@ -659,6 +1091,30 @@
             "state" : "translated",
             "value" : "它的專案資訊已損毀"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Projektinformationen sind beschädigt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "les informations de son projet sont endommagées"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "그 프로젝트 정보가 손상되었습니다"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "as informações do projeto estão danificadas"
+          }
         }
       }
     },
@@ -693,6 +1149,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在準備渲染管線"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bereitung der Renderpipeline"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Préparation de la chaîne de rendu"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "렌더 파이프라인 준비"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparando a pipeline de renderização"
           }
         }
       }
@@ -729,6 +1209,30 @@
             "state" : "translated",
             "value" : "正在讀取場景"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leseszene"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scène de lecture"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "읽는 장면"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cena de leitura"
+          }
         }
       }
     },
@@ -763,6 +1267,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在渲染場景"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szene wird gerendert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendu de la scène"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "장면 렌더링 중"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renderizando cena"
           }
         }
       }
@@ -799,6 +1327,30 @@
             "state" : "translated",
             "value" : "所選桌布"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgewählter Hintergrund"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fond d’écran sélectionné"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택한 배경화면"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Papel de parede selecionado"
+          }
         }
       }
     },
@@ -833,6 +1385,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "網路似乎已離線。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Netzwerk scheint offline zu sein."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le réseau semble être hors ligne."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "네트워크가 오프라인인 것 같습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A rede parece estar offline."
           }
         }
       }
@@ -869,6 +1445,30 @@
             "state" : "translated",
             "value" : "頁面在載入完成前中斷了。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Seite hat mit dem Laden aufgehört, bevor sie fertig war."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La page a arrêté de se charger avant de se terminer."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "페이지가 완료되기 전에 로딩이 중단되었습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A página parou de carregar antes de terminar."
+          }
         }
       }
     },
@@ -903,6 +1503,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "頁面試圖從系統封鎖的網路連接埠載入內容。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Seite versuchte, von einem Netzwerkport zu laden, der vom System blockiert ist."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La page a tenté de se charger depuis un port réseau, le système bloque."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "페이지가 시스템이 차단한 네트워크 포트에서 로드하려고 시도했습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A página tentou carregar a partir de um porta de rede, o sistema bloqueia."
           }
         }
       }
@@ -939,6 +1563,30 @@
             "state" : "translated",
             "value" : "頁面所在的伺服器傳回了錯誤 %lld。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server der Seite antwortete mit dem Fehler %lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur de la page a répondu avec une erreur %lld."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "페이지의 서버가 오류 %lld으로 응답했습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O servidor da página respondeu com erro %lld."
+          }
         }
       }
     },
@@ -974,6 +1622,30 @@
             "state" : "translated",
             "value" : "無法連線到頁面所在的伺服器。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server der Seite konnte nicht erreicht werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur de la page n'a pas pu être atteint."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "페이지의 서버에 접속할 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O servidor da página não pôde ser alcançado."
+          }
         }
       }
     },
@@ -1007,6 +1679,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "專案設定路徑不安全，無法開啟。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Pfad der Projekteinstellungen ist nicht sicher zu öffnen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chemin des paramètres du projet n'est pas sûr pour être ouvert."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로젝트 설정 경로는 열기 안전하지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O caminho de configuração do projeto não é seguro para abrir."
           }
         }
       }
@@ -1042,6 +1738,30 @@
             "state" : "translated",
             "value" : "專案設定來源無法使用。請重新選擇專案資料夾。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Quelle der Projekteinstellungen ist nicht verfügbar. Wählen Sie den Projektordner erneut aus."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La source des paramètres du projet n'est pas disponible. Choisissez à nouveau le dossier du projet."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로젝트 설정 소스가 사용할 수 없습니다. 프로젝트 폴더를 다시 선택하십시오."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A fonte de configurações do projeto não está disponível. Escolha novamente a pasta do projeto."
+          }
         }
       }
     },
@@ -1075,6 +1795,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景套件包含重複項目：%@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Szenenpaket enthält einen doppelten Eintrag: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le paquet de scène contient une entrée dupliquée : %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "씬 패키지에는 중복된 항목이 포함되어 있습니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O pacote de cena contém uma entrada duplicada: %@"
           }
         }
       }
@@ -1110,6 +1854,30 @@
             "state" : "translated",
             "value" : "場景套件超出支援的資源限制：%@"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Szenenpaket überschreitet eine unterstützte Ressourcenlimit: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le package de scène dépasse une limite de ressources prise en charge : %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "씬 패키지가 지원되는 리소스 제한을 초과합니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O pacote de cena excede um limite de recurso suportado: %@"
+          }
         }
       }
     },
@@ -1143,6 +1911,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法識別場景套件格式：%@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Szenenpaketformat wird nicht erkannt: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le format du package de scène n'est pas reconnu : %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "씬 패키지 형식이 인식되지 않습니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O formato do pacote de cena não é reconhecido: %@"
           }
         }
       }
@@ -1178,6 +1970,30 @@
             "state" : "translated",
             "value" : "場景套件中索引 %lld 的項目名稱無效。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Szenenpaket hat einen ungültigen Eintragnamen am Index %lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le paquetage de scène a un nom d'entrée invalide à l'index %lld."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "씬 패키지에서 인덱스 %lld에서 유효하지 않은 항목 이름이 있습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O pacote da cena tem um nome de entrada inválido no índice %lld."
+          }
         }
       }
     },
@@ -1211,6 +2027,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景套件的檔案標頭不完整。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Header des Szenenpakets ist gekürzt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'en-tête du paquet de scène est tronqué."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "씬 패키지 헤더가 잘립니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O cabeçalho do pacote da cena está truncado."
           }
         }
       }
@@ -1246,6 +2086,30 @@
             "state" : "translated",
             "value" : "無法讀取場景資源：%@"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Szenenressource konnte nicht gelesen werden: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ressource de la scène n'a pas pu être lue : %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "씬 리소스가 읽을 수 없습니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O recurso da cena não pôde ser lido: %@"
+          }
         }
       }
     },
@@ -1279,6 +2143,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "場景資源路徑不安全，無法開啟：%@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Pfad der Szenenressourcen ist nicht sicher zu öffnen: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chemin de ressource de la scène n'est pas sûr pour être ouvert : %@."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "장면 리소스 경로는 열기 안전하지 않습니다: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O caminho do recurso da cena não é seguro para abrir: %@"
           }
         }
       }
@@ -1314,6 +2202,30 @@
             "state" : "translated",
             "value" : "無法讀取場景的模型資料。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Modelldaten der Szene konnten nicht gelesen werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données du modèle de la scène n'ont pas pu être lues."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "장면의 모델 데이터가 읽을 수 없었습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os dados do modelo da cena não puderam ser lidos."
+          }
         }
       }
     },
@@ -1347,6 +2259,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未確定具體原因。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die spezifische Ursache ist noch nicht bekannt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cause spécifique n'est pas encore connue."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "구체적인 원인은 아직 알려지지 않았다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A causa específica ainda não é conhecida."
           }
         }
       }
@@ -1383,6 +2319,30 @@
             "state" : "translated",
             "value" : "桌布資料夾裡缺少進入頁面。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Startseite des Hintergrundbildes fehlt in seinem Ordner."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La page d'entrée du fond d'écran manque de son dossier."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "배경화면의 항목 페이지가 폴더에서 누락되었습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A página de entrada da imagem de fundo está faltando em sua pasta."
+          }
         }
       }
     },
@@ -1418,6 +2378,30 @@
             "state" : "translated",
             "value" : "無法讀取桌布資料夾。重新選擇來源以恢復存取權限。"
           }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Ordnerverzeichnis des Hintergrundbildes konnte nicht gelesen werden. Wählen Sie die Quelle erneut aus, um die Berechtigungen wiederherzustellen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dossier d'arrière-plan n'a pas pu être lu. Choisissez à nouveau la source pour restaurer les autorisations."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "배경화면 폴더를 읽을 수 없습니다. 권한을 복원하려면 출처를 다시 선택하십시오."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pasta da imagem de fundo não pôde ser lida. Escolha novamente a fonte para restaurar a permissão."
+          }
         }
       }
     },
@@ -1446,6 +2430,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "網頁渲染處理程序反覆當機。"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Web-Renderer-Prozess ist wiederholt abgestürzt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le processus de rendu web a planté à plusieurs reprises."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "웹 렌더러 프로세스가 반복적으로 충돌했습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O processo de renderização da web travou repetidamente."
           }
         }
       }
@@ -1481,6 +2489,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hintergrundbilder"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fonds d’écran"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "배경화면"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Papéis de parede"
           }
         }
       }

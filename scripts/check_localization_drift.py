@@ -42,12 +42,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / 'LiveWallpaper/Resources/Localizable.xcstrings'
-REQUIRED = ('ja', 'zh-Hans', 'zh-Hant', 'es')
-# CLDR plural categories a language cannot do without; a missing `many` in es falls back to `other`
-PLURAL_CATEGORIES = {'en': ('one', 'other'), 'es': ('one', 'other')}
+REQUIRED = ('ja', 'zh-Hans', 'zh-Hant', 'es', 'de', 'fr', 'ko', 'pt-BR')
+CATALOGS = (CATALOG, ROOT / 'LiveWallpaper/Resources/InfoPlist.xcstrings',
+            ROOT / 'LiveWallpaper/Resources/Lite/InfoPlist.xcstrings',
+            ROOT / 'LiveWallpaper/Resources/AppStore/InfoPlist.xcstrings',
+            ROOT / 'SystemWallpaperProvider/Localizable.xcstrings')
+# CLDR categories required here; optional `many` falls back to `other`.
+PLURAL_CATEGORIES = {lang: ('one', 'other') for lang in ('en', 'es', 'de', 'fr', 'pt-BR')}
 
 # %@  %1$@  %lld  %2$lld  %.2f  %03d
-PLACEHOLDER = re.compile(r'%(?:\d+\$)?[-+ #0]*[\d.*]*(?:@|lld|ld|d|u|f|s)')
+PLACEHOLDER = re.compile(r'%(?:\d+\$)?[-+ #0]*[\d.*]*(?:hh|ll|[hlLzjtq])?[diuoxXfFeEgGaAcCsSp@]')
 # %#@name@  %2$#@name@ — where substitution `name` puts its plural variant
 SUBSTITUTION = re.compile(r'%(\d+\$)?#@(\w+)@')
 
@@ -55,6 +59,12 @@ CJK = r'[\u3400-\u9fff\uf900-\ufaff]'
 
 # (rule id, language, banned regex, allowed compounds blanked out first, use instead)
 TERMS = [
+    ('scheme', 'de', r'\b(?:Schema|Schemata|Schemas|Pläne|Plänen)\b', None, 'Profil'),
+    ('scheme', 'fr', r'(?i:\bschémas?\b)', None, 'configuration'),
+    ('scheme', 'ko', r'스키마|계획', None, '구성'),
+    ('scheme', 'pt-BR', r'(?i:\besquemas?\b)', None, 'configuração'),
+    ('wallpaper', 'de', r'Hintergrundbildschirm|\bTapete[n]?\b', None, 'Hintergrundbild'),
+    ('wallpaper', 'fr', r'(?i:papier peint)', None, 'fond d’écran'),
     # display: the device is 显示器, classifier 台
     ('display', 'zh-Hans', r'屏幕|屏', r'锁屏|全屏|截屏|录屏|黑屏|超宽屏|屏幕保护程序|屏幕使用时间|(填满|填充|适合于?)屏幕|显示在屏幕上|屏幕上', '显示器'),
     ('display-cl', 'zh-Hans', r'(这|那|每|哪|一|第一|几|两|三|%lld|%\d\$lld|\d) ?块(?=显示器|屏幕|屏)', None, '台'),
@@ -115,6 +125,12 @@ TERMS = [
 ]
 # rules that only apply when the English names the concept
 EN_SCOPE = {
+    ('scheme', 'de'): r'\bschemes?\b',
+    ('scheme', 'fr'): r'\bschemes?\b',
+    ('scheme', 'ko'): r'\bschemes?\b',
+    ('scheme', 'pt-BR'): r'\bschemes?\b',
+    ('wallpaper', 'de'): r'\bwallpapers?\b',
+    ('wallpaper', 'fr'): r'\bwallpapers?\b',
     ('subscribe', 'ja'): r'subscri',
     ('schedule', 'es'): r'schedul',
     ('display', 'ja'): r'\bdisplays?\b',
@@ -146,7 +162,7 @@ PUNCT = [
     ('cjk-latin-nospace', r'(?<=' + CJK + r')[A-Za-z]|[A-Za-z](?=' + CJK + r')', '中文与英文之间加一个空格'),
 ]
 PUNCT_LANGS = ('zh-Hans', 'zh-Hant')
-# UI paths, all four languages: separator ' › ', the whole path inside one pair of quotes
+# UI paths, all supported translations: separator ' › ', the whole path inside one pair of quotes
 PATH_RULES = [
     ('path-arrow', r'[^\s（(←]\s*→\s*[^\s)）]', '路径分隔符写 › （前后各一个空格）'),
     ('path-quote', r'[”」]\s*[›→]\s*[“「]', '整条路径只加一对引号'),
@@ -167,17 +183,18 @@ CODE_SPAN = re.compile(r'`[^`]*`|\]\([^)]*\)|' + PLACEHOLDER.pattern + r'|https?
 
 
 def signature(text):
-    """Conversion types only, sorted, so `%@ %@` and `%1$@ %2$@` compare equal.
+    """Argument identity and full format, allowing an explicit positional reorder.
 
-    Position is deliberately discarded: a translation is expected to reorder
-    its placeholders, and a reorder is correct as long as the same set of
-    values is consumed.
+    `%lld %@` equals `%2$@ %1$lld`, but never `%1$@ %2$lld` or a
+    duplicated argument. An implicit position follows printf's argument order.
     """
-    kinds = []
-    for match in PLACEHOLDER.finditer(text):
-        raw = match.group(0).lstrip('%').split('$')[-1]
-        kinds.append(raw.lstrip('-+ #0123456789.*'))
-    return sorted(kinds)
+    result = []
+    for index, match in enumerate(PLACEHOLDER.finditer(text), 1):
+        token = match.group(0)
+        position = re.match(r'%(\d+)\$', token)
+        result.append((int(position.group(1)), token[position.end():]) if position
+                      else (index, token[1:]))
+    return sorted(result)
 
 
 def forms(localization, lang):
@@ -231,16 +248,18 @@ def english_text(localizations, key):
     return next((text for chosen, text in texts.items() if set(chosen) <= {'other'}), next(iter(texts.values()), key))
 
 
-def audit(catalog):
+def audit(catalog, languages=REQUIRED):
     mismatch, missing, untranslated, empty, plural = [], [], [], [], []
     for key, entry in catalog.get('strings', {}).items():
         localizations = entry.get('localizations') or {}
+        if entry.get('shouldTranslate') is False or not key:
+            continue
         if not localizations:
             continue
         english = english_text(localizations, key)
         base = signature(english)
 
-        for lang in (['en'] if varies(localizations.get('en')) else []) + list(REQUIRED):
+        for lang in (['en'] if varies(localizations.get('en')) else []) + list(languages):
             localization = localizations.get(lang)
             if not written(localization):
                 missing.append((key, lang))
@@ -255,8 +274,8 @@ def audit(catalog):
                 plural.append((key, lang, 'no ' + ', '.join(absent) + ' form'))
             if unused:
                 plural.append((key, lang, 'substitution ' + ', '.join(unused) + ' is never used'))
-            if lang == 'es' and varies(localizations.get('en')) and not varies(localization):
-                plural.append((key, lang, 'en varies by plural, es does not'))
+            if lang in ('es', 'de', 'fr', 'pt-BR') and varies(localizations.get('en')) and not varies(localization):
+                plural.append((key, lang, f'en varies by plural, {lang} does not'))
             if lang == 'es' and varies(localization) and not varies(localizations.get('en')):
                 plural.append((key, 'en', 'es varies by plural, en does not'))
             found = next((signature(text) for text in texts.values() if signature(text) != base), None)
@@ -270,15 +289,17 @@ def blank(text, pattern):
     return re.sub(pattern, lambda m: '\u2003' * len(m.group(0)), text) if pattern else text
 
 
-def copy_audit(catalog):
+def copy_audit(catalog, languages=REQUIRED):
     terms, punct, ellipsis = [], [], []
     for key, entry in catalog.get('strings', {}).items():
         localizations = entry.get('localizations') or {}
+        if entry.get('shouldTranslate') is False or not key:
+            continue
         if not localizations:
             continue
         english = english_text(localizations, key)
         values = {lang: [text for text in forms(localizations[lang], lang)[0].values() if text.strip()]
-                  if written(localizations.get(lang)) else [] for lang in REQUIRED}
+                  if written(localizations.get(lang)) else [] for lang in languages}
 
         for rule, lang, bad, allow, use in TERMS:
             scope = EN_SCOPE.get((rule, lang))
@@ -286,7 +307,7 @@ def copy_audit(catalog):
                 continue
             if scope and not re.search(scope, english, re.I):
                 continue
-            found = next((m for m in (re.search(bad, blank(value, allow)) for value in values[lang]) if m), None)
+            found = next((m for m in (re.search(bad, blank(value, allow)) for value in values.get(lang, [])) if m), None)
             if found:
                 terms.append((key, lang, rule, found.group(0), use))
 
@@ -294,25 +315,27 @@ def copy_audit(catalog):
             for lang in PUNCT_LANGS:
                 if (rule, lang) in PUNCT_SKIP or (rule, lang, key) in PUNCT_SKIP:
                     continue
-                found = next((m for m in (re.search(pattern, blank(value, CODE_SPAN)) for value in values[lang]) if m), None)
+                found = next((m for m in (re.search(pattern, blank(value, CODE_SPAN)) for value in values.get(lang, [])) if m), None)
                 if found:
                     punct.append((key, lang, rule, found.group(0), use))
         for rule, pattern, use in PATH_RULES:
-            for lang in REQUIRED:
+            for lang in languages:
                 # '← →' is the arrow-key legend, not a path
-                found = next((m for m in (re.search(pattern, value.replace('← →', '')) for value in values[lang]) if m), None)
+                found = next((m for m in (re.search(pattern, value.replace('← →', '')) for value in values.get(lang, [])) if m), None)
                 if found:
                     punct.append((key, lang, rule, found.group(0), use))
 
         trails = english.rstrip().endswith(('…', '...'))
-        for lang in REQUIRED:
-            if any(value.rstrip().endswith(('…', '...')) != trails for value in values[lang]):
+        for lang in languages:
+            if any(value.rstrip().endswith(('…', '...')) != trails for value in values.get(lang, [])):
                 ellipsis.append((key, lang, trails))
     return terms, punct, ellipsis
 
 
 def self_test():
     """The guard has to fail on a drifted catalog, or it guards nothing."""
+    legacy = ('ja', 'zh-Hans', 'zh-Hant', 'es')
+
     def unit(value, state='translated'):
         return {'stringUnit': {'state': state, 'value': value}}
 
@@ -359,7 +382,7 @@ def self_test():
             'es': unit(''),
         }},
     }}
-    mismatch, missing, untranslated, empty, plural = audit(drifted)
+    mismatch, missing, untranslated, empty, plural = audit(drifted, legacy)
     assert [m[0] for m in mismatch] == ['Linked %lld of %lld'], mismatch
     assert missing == [('Absent language', 'zh-Hant')], missing
     assert [u[0] for u in untranslated] == ['Still a stub'], untranslated
@@ -371,8 +394,8 @@ def self_test():
         'zh-Hans': unit('没问题 %@'), 'zh-Hant': unit('沒問題 %@'),
         'es': unit('Todo bien %@'),
     }}}}
-    assert audit(clean) == ([], [], [], [], []), audit(clean)
-    assert copy_audit(clean) == ([], [], []), copy_audit(clean)
+    assert audit(clean, legacy) == ([], [], [], [], []), audit(clean, legacy)
+    assert copy_audit(clean, legacy) == ([], [], []), copy_audit(clean, legacy)
 
     def plural_of(**variants):
         return {'variations': {'plural': {category: unit(value) for category, value in variants.items()}}}
@@ -393,8 +416,8 @@ def self_test():
             'es': substituted('Copiado a %1$lld / %2$#@displays@', '%arg pantalla', '%arg pantallas'),
             **cjk('%1$lld / %2$lld 台')}},
     }}
-    assert audit(plurals) == ([], [], [], [], []), audit(plurals)
-    assert copy_audit(plurals) == ([], [], []), copy_audit(plurals)
+    assert audit(plurals, legacy) == ([], [], [], [], []), audit(plurals, legacy)
+    assert copy_audit(plurals, legacy) == ([], [], []), copy_audit(plurals, legacy)
 
     broken = {'strings': {
         'es lacks one': {'localizations': {
@@ -424,7 +447,7 @@ def self_test():
         '%lld items, en flat': {'localizations': {
             'en': unit('%lld items'), 'es': plural_of(one='%lld fondo', other='%lld fondos'), **cjk('%lld')}},
     }}
-    mismatch, missing, untranslated, empty, plural = audit(broken)
+    mismatch, missing, untranslated, empty, plural = audit(broken, legacy)
     assert [m[:2] for m in mismatch] == [('es variant blank', 'es'), ('es variant drops the count', 'es')], mismatch
     assert (missing, untranslated) == ([], []), (missing, untranslated)
     assert empty == [('es variant blank', 'es')], empty
@@ -437,7 +460,7 @@ def self_test():
         ('%lld items, en absent', 'en', 'es varies by plural, en does not'),
         ('%lld items, en flat', 'en', 'es varies by plural, en does not'),
     ], plural
-    assert [t[:3] for t in copy_audit(broken)[0]] == [('Playlist of %lld', 'es', 'playlist')], copy_audit(broken)
+    assert [t[:3] for t in copy_audit(broken, legacy)[0]] == [('Playlist of %lld', 'es', 'playlist')], copy_audit(broken, legacy)
 
     copy = {'strings': {
         'Copy to Other Displays': {'localizations': {
@@ -475,7 +498,7 @@ def self_test():
         'URL with a query string': {'localizations': {
             'zh-Hans': unit('打开 https://example.com/?id=1 查看')}},
     }}
-    terms, punct, ellipsis = copy_audit(copy)
+    terms, punct, ellipsis = copy_audit(copy, legacy)
     assert sorted(t[:3] for t in terms) == sorted([
         ('Copy to Other Displays', 'zh-Hans', 'display'),
         ('Workshop', 'zh-Hant', 'workshop'),
@@ -495,6 +518,22 @@ def self_test():
     url = 'https://example.com/?id=1'
     assert CODE_SPAN.match(url).group(0) == url, CODE_SPAN.match(url)  # no rule sees inside a URL, so check the span itself
     assert [e[:2] for e in ellipsis] == [('Connecting…', 'zh-Hans')], ellipsis
+    assert signature('%lld %@') == signature('%2$@ %1$lld')
+    assert signature('%lld %@') != signature('%1$@ %2$lld')
+    assert signature('%@ %@') != signature('%1$@ %1$@')
+    assert signature('%.2f') != signature('%f')
+    assert signature('%llu') == [(1, 'llu')]
+    assert signature('%llu') != signature('')
+    nine = {'strings': {'%lld wallpapers': {'localizations': {
+        lang: plural_of(one='%lld item', other='%lld items')
+        if lang in PLURAL_CATEGORIES else plural_of(other='%lld item')
+        for lang in ('en', *REQUIRED)
+    }}}}
+    assert audit(nine) == ([], [], [], [], [])
+    del nine['strings']['%lld wallpapers']['localizations']['ko']
+    assert audit(nine)[1] == [('%lld wallpapers', 'ko')]
+    nine['strings']['%lld wallpapers']['localizations']['de'] = plural_of(other='%lld items')
+    assert ('%lld wallpapers', 'de', 'no one form') in audit(nine)[4]
     print('Localization drift self-test passed.')
 
 
@@ -503,7 +542,17 @@ def main():
         self_test()
         return 0
 
-    catalog = json.loads(CATALOG.read_text())
+    # Prefix only diagnostic keys so identical permission keys in different SKUs
+    # remain independently checked. English fallback must keep the original key.
+    catalog = {'strings': {}}
+    for path in CATALOGS:
+        for key, entry in json.loads(path.read_text())['strings'].items():
+            if not key or entry.get('shouldTranslate') is False:
+                continue
+            entry.setdefault('localizations', {}).setdefault('en', {
+                'stringUnit': {'state': 'translated', 'value': key}})
+            diagnostic_key = key if path == CATALOG else f'{path.relative_to(ROOT)}: {key}'
+            catalog['strings'][diagnostic_key] = entry
     mismatch, missing, untranslated, empty, plural = audit(catalog)
     terms, punct, ellipsis = copy_audit(catalog)
 

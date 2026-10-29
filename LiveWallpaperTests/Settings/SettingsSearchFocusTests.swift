@@ -6,7 +6,7 @@ import Testing
 @Suite("Settings search lands on the row it found")
 struct SettingsSearchFocusTests {
     private static let capabilities = ProductCapabilities.pro.withWorkshopOnline()
-    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es"]
+    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"]
 
     private static func focus(_ page: SettingsNavigation, _ query: String) throws -> SettingsSearchFocus? {
         let item = try #require(SettingsNavigation.allItems.first { $0.destination == page })

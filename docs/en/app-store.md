@@ -15,7 +15,7 @@ source and the three `Config/*.xcconfig` files define the editions. See the
   and InfoPlist catalog. Keep Sparkle, external helpers and the system wallpaper
   extension outside its target membership and dependency graph.
 - Pro owns automatic extraction of the shared Localizable catalog. Preserve
-  manual edition-only keys and all five languages: en, es, ja, zh-Hans, zh-Hant.
+  manual edition-only keys and all nine languages: de, en, es, fr, ja, ko, pt-BR, zh-Hans, zh-Hant.
   Review catalog changes after Xcode builds; generated symbols are disabled for MAS.
 - Pro and Lite use `MARKETING_VERSION` for Sparkle's build version. MAS reads
   `CURRENT_PROJECT_VERSION`: increment it for every upload, including retries.
@@ -39,7 +39,7 @@ absolute `.xcarchive` outside the checkout. Additional arguments after
 The lane checks source entitlements and localization, archives universal Release,
 and inspects the actual signed bundle with `scripts/check_appstore_bundle.py`.
 It checks architecture, signature validity, entitlement baseline, known excluded
-APIs/endpoints/components, five compiled localizations and the privacy manifest.
+APIs/endpoints/components, nine compiled localizations and the privacy manifest.
 This is a bounded local audit, not a complete private-API detector or Apple approval.
 
 ## Distribution and Apple validation
@@ -56,6 +56,21 @@ This is a bounded local audit, not a complete private-API detector or Apple appr
    Keep the validation receipt. Local builds cannot certify Apple's server checks.
 5. Upload only after version/build, metadata, privacy answers and screenshots
    describe this Store edition. Test the processed build through TestFlight.
+
+## Localized submission text
+
+The versioned source for Store text is [release/app-store/metadata.json](../../release/app-store/metadata.json).
+It holds nine locales. App bundles use `de` and `fr`; Connect uses `de-DE` and `fr-FR`.
+Brazilian Portuguese is `pt-BR` in both. The shared App catalog and provider catalog
+serve all editions; each target retains its own permission catalog and product name.
+Permission prompts follow the app language selected by macOS; the in-app language
+picker affects app content, not already displayed system prompts.
+
+Run `python3 scripts/check_appstore_metadata.py` before copying the text into Connect.
+It checks required locales, text fields, character limits and keyword UTF-8 byte limits.
+[Review notes](../../release/app-store/review-notes.txt) remain a draft until device,
+TestFlight and contact details are filled in. Screenshots, public URLs and account
+fields require separate final submission checks. Nothing in this directory uploads automatically.
 
 ## Submission checklist
 

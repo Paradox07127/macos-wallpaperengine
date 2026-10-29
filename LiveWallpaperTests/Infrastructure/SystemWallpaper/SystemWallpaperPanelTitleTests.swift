@@ -8,7 +8,7 @@ struct SystemWallpaperPanelTitleTests {
 
     @Test("The current, declared copy shows the plain title")
     func currentCopyKeepsTitle() {
-        for language in ["en-US", "zh-Hans-CN", "zh-Hant-TW", "ja-JP", "es-ES"] {
+        for language in ["en-US", "zh-Hans-CN", "zh-Hant-TW", "ja-JP", "es-ES", "de-DE", "fr-FR", "ko-KR", "pt-BR"] {
             #expect(
                 SystemWallpaperProviderStaleness.panelGroupTitle(title, verdict: .current, preferredLanguage: language)
                     == title,
@@ -40,7 +40,11 @@ struct SystemWallpaperPanelTitleTests {
             "zh-Hant-TW": "\(title)（舊版本）",
             "ja-JP": "\(title)（旧バージョン）",
             "es-ES": "\(title) (copia obsoleta)",
-            "fr-FR": "\(title) (outdated copy)",
+            "de-DE": "\(title) (veraltete Kopie)",
+            "fr-FR": "\(title) (copie obsolète)",
+            "ko-KR": "\(title) (오래된 사본)",
+            "pt-BR": "\(title) (cópia desatualizada)",
+            "nl-NL": "\(title) (outdated copy)",
         ]
         for (language, marked) in expected {
             #expect(

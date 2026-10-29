@@ -7,7 +7,7 @@ import Testing
 /// language, which is global state shared with other suites.
 @Suite("Settings search indexes every supported language")
 struct SettingsSearchLocalizationTests {
-    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es"]
+    private static let languages = AppLanguagePreference.allCases.compactMap(\.localeIdentifier)
 
     private func bundle(for language: String) throws -> Bundle {
         let path = try #require(
@@ -45,7 +45,7 @@ struct SettingsSearchLocalizationTests {
     }
 
     /// Without this, the suite would pass against an index that never localized anything.
-    @Test("Non-English catalogs really do translate the titles", arguments: ["zh-Hans", "zh-Hant", "ja", "es"])
+    @Test("Non-English catalogs really do translate the titles", arguments: languages.filter { $0 != "en" })
     func nonEnglishTitlesDifferFromKeys(language: String) throws {
         let bundle = try bundle(for: language)
         let translated = SettingsNavigation.allItems.filter { item in
@@ -93,7 +93,7 @@ struct SettingsSearchLocalizationTests {
         }
     }
 
-    /// The style keywords are hand-written strings; this is what keeps them equal to the catalog's names.
+    /// Search must accept the style names users actually see in the picker.
     @Test("The shelf's current style names reach the Shelf style section", arguments: languages)
     func shelfStyleNamesReachTheShelfSection(language: String) throws {
         let bundle = try bundle(for: language)

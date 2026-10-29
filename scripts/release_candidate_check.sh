@@ -28,6 +28,8 @@ if [[ "${1:-}" == "--appstore" ]]; then
   bash scripts/check_entitlements.sh --sku appstore --source
   I18N_GUARD_SCOPE=all bash scripts/i18n_guard.sh
   python3 scripts/check_localization_drift.py
+  python3 scripts/check_appstore_metadata.py --self-test
+  python3 scripts/check_appstore_metadata.py
   mkdir -p "$DERIVED_DATA"
   xcodebuild archive -project LiveWallpaper.xcodeproj -scheme LoomscreenAppStore \
     -configuration Release -destination 'generic/platform=macOS' \

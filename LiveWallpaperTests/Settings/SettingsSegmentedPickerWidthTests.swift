@@ -20,11 +20,11 @@ struct SettingsSegmentedPickerWidthTests {
     /// The `.flat` shell is 2pt of padding round equal segments with no gap, so a picker fits when
     /// each segment holds its widest title in the selected (semibold) weight.
     @MainActor
-    @Test("The shared width fits every title of every picker in all five languages")
+    @Test("The shared width fits every title of every picker in all nine languages")
     func sharedWidthFitsEveryTitle() throws {
         var needed: (width: CGFloat, title: String) = (0, "")
         for picker in Self.pickers {
-            for language in ["en", "zh-Hans", "zh-Hant", "ja", "es"] {
+            for language in ["en", "zh-Hans", "zh-Hant", "ja", "es", "de", "fr", "ko", "pt-BR"] {
                 let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
                 let bundle = try #require(Bundle(path: path))
                 for key in picker.keys {

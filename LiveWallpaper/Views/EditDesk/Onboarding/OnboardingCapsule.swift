@@ -8,9 +8,9 @@ enum OnboardingCapsuleModel {
     }
 
     /// Pages completed or skipped, never the step the guide card is on: the card already counts steps.
-    static func progressValue(dots: [Bool]) -> String {
+    static func progressValue(dots: [Bool], locale: Locale = AppLanguagePreference.current.locale) -> String {
         String(
-            localized: "Completed \(dots.filter(\.self).count) of \(dots.count)", bundle: .appLanguage,
+            localized: "Completed \(dots.filter(\.self).count) of \(dots.count)", bundle: .appLanguage, locale: locale,
             comment: "Accessibility value of the Get Started capsule. Placeholders are the welcome tour pages completed or skipped and the total pages."
         )
     }
@@ -48,6 +48,7 @@ struct OnboardingCapsule: View {
     @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
     @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     private static let height: CGFloat = 22
 
@@ -58,7 +59,7 @@ struct OnboardingCapsule: View {
                 .onHover { isHovering = $0 }
                 .help(Text("Welcome Tour"))
                 .accessibilityLabel(Text("Get Started"))
-                .accessibilityValue(Text(OnboardingCapsuleModel.progressValue(dots: dots)))
+                .accessibilityValue(Text(OnboardingCapsuleModel.progressValue(dots: dots, locale: locale)))
         }
     }
 

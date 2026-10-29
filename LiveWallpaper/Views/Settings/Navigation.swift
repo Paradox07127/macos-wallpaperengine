@@ -486,7 +486,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                         "架子样式", "两侧朝中", "木箱", "文件夹", "扇形", "焦点横排", "状态胶囊", "主界面默认态",
                         "兩側朝中", "資料夾", "焦點橫排", "内向き", "クレート", "フォルダ", "フォーカス",
                         "hacia dentro", "cajón", "carpetas", "abanico", "fila con foco",
-                    ]
+                    ] + ["Facing In", "Crate", "Folders", "Fan", "Focus Row"].flatMap(\.localizedInEveryLanguage)
                 ),
             ]
         case .performancePower:
