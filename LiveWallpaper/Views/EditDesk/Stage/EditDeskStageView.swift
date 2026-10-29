@@ -85,6 +85,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// A wallpapered display pressed where a drag may lift it; nil over its chrome or when there is nowhere to drop it.
     private var pressedDisplay: StageDisplay.ID?
     private var mousePressCancelled = false
+    private var touchObserver: TouchObserver?
+    /// Written only by the touch observer, so with a mouse it stays nil and every click is a plain click.
+    private var lastTouch: StageTouch?
+    private var touchReveal = StageTouchReveal()
     /// The display whose name is being edited in place, and the field doing it.
     private var renaming: (id: StageDisplay.ID, field: StageRenameField)?
     private var dragging = false
@@ -188,6 +192,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         progress.jump(to: model.progress)
         model.engine = self
         setAccessibilityElement(false)
+        if #available(macOS 27, *) {
+            let press = NSPressGestureRecognizer(target: self, action: #selector(handleTouchPress(_:)))
+            press.delegate = self
+            addGestureRecognizer(press)
+        }
         observeInputs()
     }
 
@@ -662,15 +671,18 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         model.report(hoveredCardRect: StageGeometry.hitRect(placement, style: style, hover: model.reduceMotion ? 0 : 1))
     }
 
-    /// The chrome's buttons do not ride the stage's springs, so they are offered only over a display at rest.
     private func reportHoveredPlayback() {
+        model.report(hoveredPlayback: (touchReveal.display ?? model.hoveredDisplay).flatMap(playbackOverlay))
+    }
+
+    /// The chrome's buttons do not ride the stage's springs, so they are offered only over a display at rest.
+    private func playbackOverlay(for id: StageDisplay.ID) -> StagePlaybackOverlay? {
         // A tracked swipe jumps the spring every frame, so a settled spring alone can still sit between two states.
         guard !model.interactionBlocked, flights.isEmpty, !dragging, arrangementInset.isSettled,
               progress.isSettled, progress.value == progress.value.rounded(),
-              let id = model.hoveredDisplay, let display = displays.first(where: { $0.id == id }), display.state != .empty,
+              let display = displays.first(where: { $0.id == id }), display.state != .empty,
               let shell = displayLayers[id], !shell.isShaking, let root = layer else {
-            model.report(hoveredPlayback: nil)
-            return
+            return nil
         }
         let layout = StageGeometry.playbackLayout(
             content: shell.content.bounds.size, showsPlaylistControls: display.showsPlaylistControls
@@ -678,12 +690,12 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         let row = layout.buttons.reduce(CGRect.null) { $0.union($1) }
             .offsetBy(dx: layout.container.minX, dy: layout.container.minY)
         let clear = StageGeometry.clearButtonRect(content: shell.content.bounds.size, below: shell.trailingStateChipFrame)
-        model.report(hoveredPlayback: StagePlaybackOverlay(
+        return StagePlaybackOverlay(
             displayID: id, rect: shell.content.convert(row, to: root), clearRect: shell.content.convert(clear, to: root),
             intendsToPlay: display.intendsToPlay,
             glyph: display.playbackGlyph, showsPlaylistControls: display.showsPlaylistControls,
             canToggle: display.canTogglePlayback, canChangeEntry: display.canChangePlaylistEntry
-        ))
+        )
     }
 
     /// Builds and drops card layers as the row scrolls, so the shelf can be as long as the
@@ -1189,10 +1201,17 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         screenObserver.map(NotificationCenter.default.removeObserver)
         screenObserver = nil
         removeGridScrollMonitor()
+        touchObserver?.remove()
+        touchObserver = nil
         if let window {
             gridScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
                 guard let self, let window = self.window, event.window === window else { return event }
                 return forwardGridScroll(event)
+            }
+            if #available(macOS 27, *) {
+                touchObserver = TouchObserver.install(in: window) { [weak self] location in
+                    self?.touchLanded(atWindowLocation: location)
+                }
             }
             // The link is bound to one screen's refresh rate; dragged from a 60Hz panel onto
             // ProMotion it would keep stepping the springs at 60Hz.
@@ -1222,6 +1241,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     func detach() {
         attached = false
         removeGridScrollMonitor()
+        touchObserver?.remove()
+        touchObserver = nil
         previewPlayer.stop()
         withoutActions {
             if dragging {
@@ -1616,6 +1637,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     override func mouseMoved(with event: NSEvent) {
         guard !model.interactionBlocked, flights.isEmpty else { return }
+        touchReveal.hoverBegan()
         pointer = convert(event.locationInWindow, from: nil)
         resolveHover()
         withoutActions { render() }
@@ -1677,11 +1699,78 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             || renaming?.field.frame.contains(point) == true
     }
 
+    /// Window coordinates, from the touch observer; mouse clicks never come through here.
+    func touchLanded(atWindowLocation location: NSPoint) {
+        let point = convert(location, from: nil)
+        lastTouch = StageTouch(point: point, time: CACurrentMediaTime())
+        let revealed = touchReveal.display
+        touchReveal.touchLanded(on: displayID(at: point))
+        if touchReveal.display != revealed {
+            withoutActions { render() }
+        }
+    }
+
+    /// A finger's tap arrives as a click; on a display whose controls are hidden it shows them instead of opening it.
+    private func revealsTouchControls(at point: CGPoint) -> Bool {
+        let byTouch = StageTouchReveal.isSimulatedClick(at: point, time: CACurrentMediaTime(), touch: lastTouch)
+        lastTouch = nil
+        guard byTouch, cardIndex(at: point) == nil, let id = displayID(at: point),
+              touchReveal.reveal(
+                  id, offersControls: playbackOverlay(for: id) != nil, controlsShowing: model.hoveredPlayback?.displayID == id
+              ) else { return false }
+        let generation = touchReveal.generation
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: StageTouchReveal.duration)
+            guard let self else { return }
+            let revealed = touchReveal.display
+            touchReveal.expire(generation: generation)
+            if touchReveal.display != revealed {
+                withoutActions { render() }
+            }
+        }
+        withoutActions { render() }
+        return true
+    }
+
+    @objc private func handleTouchPress(_ recognizer: NSPressGestureRecognizer) {
+        touchPress(recognizer.state, at: recognizer.location(in: self))
+    }
+
+    /// The touch counterpart of mouseDown/Dragged/Up; `point` is in the stage's coordinates.
+    func touchPress(_ state: NSGestureRecognizer.State, at point: CGPoint) {
+        switch state {
+        case .began:
+            beginPress(at: point)
+        case .changed:
+            movePress(to: point)
+        case .ended:
+            finishPress(at: point, clicks: false, applies: false)
+        case .cancelled:
+            if dragging {
+                withoutActions { endDrag(cancelled: true) }
+            }
+            releasePress()
+        default:
+            break
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
+        beginPress(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        movePress(to: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        finishPress(at: convert(event.locationInWindow, from: nil), clicks: true, applies: event.modifierFlags.contains(.option))
+    }
+
+    private func beginPress(at point: CGPoint) {
         guard !model.interactionBlocked else { return }
         mousePressCancelled = false
         window?.makeFirstResponder(self)
-        let point = convert(event.locationInWindow, from: nil)
         gesture.mouseDown(at: point)
         if let index = cardIndex(at: point) {
             focusCard(at: index, reveal: false)
@@ -1719,9 +1808,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         return id.map(DragGhostLayer.Source.display) == ghost.source ? nil : id
     }
 
-    override func mouseDragged(with event: NSEvent) {
+    private func movePress(to point: CGPoint) {
         guard !model.interactionBlocked, !mousePressCancelled else { return }
-        let point = convert(event.locationInWindow, from: nil)
         withoutActions {
             if !dragging, gesture.shouldStartDrag(at: point), let pressed = pressedDragSource {
                 // A snap still flying to the grid hands the page to SwiftUI when it lands, which
@@ -1755,22 +1843,23 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         startDisplayLinkIfNeeded()
     }
 
-    override func mouseUp(with event: NSEvent) {
+    /// `clicks`: a release short of a drag is a click. A finger's still press is not; AppKit makes it the long-press menu.
+    private func finishPress(at point: CGPoint, clicks: Bool, applies: Bool) {
         guard !model.interactionBlocked else { return }
         if dragging {
             // The pointer can leave the display after the last drag event, and the arrangement can
             // change mid-drag: the release point is the only thing that decides the target.
-            let point = convert(event.locationInWindow, from: nil)
             model.report(dropTarget: dropTargetID(at: point))
             withoutActions { endDrag(cancelled: false) }
-        } else {
-            let point = convert(event.locationInWindow, from: nil)
-            // A display drag cancelled with Esc must not turn into a click on whichever display it is released over.
-            if !mousePressCancelled, pressedCard == cardIndex(at: point).map({ cards[$0].id }),
-               pressedDisplay == nil || pressedDisplay == displayID(at: point) {
-                tap(at: point, applies: event.modifierFlags.contains(.option))
-            }
+        } else if clicks, !mousePressCancelled, pressedCard == cardIndex(at: point).map({ cards[$0].id }),
+                  // A display drag cancelled with Esc must not turn into a click on whichever display it is released over.
+                  pressedDisplay == nil || pressedDisplay == displayID(at: point), !revealsTouchControls(at: point) {
+            tap(at: point, applies: applies)
         }
+        releasePress()
+    }
+
+    private func releasePress() {
         gesture.mouseUp()
         pressedCard = nil
         pressedDisplay = nil
@@ -2322,6 +2411,19 @@ extension EditDeskStageView: NSTextFieldDelegate {
     }
 }
 
+extension EditDeskStageView: NSGestureRecognizerDelegate {
+    /// AppKit asks this only for mouse events, so the press recognizer is left to touches.
+    func gestureRecognizer(_: NSGestureRecognizer, shouldAttemptToRecognizeWith _: NSEvent) -> Bool {
+        false
+    }
+
+    /// Only a draggable shelf card takes a finger's press; elsewhere a long press stays AppKit's context menu.
+    func gestureRecognizerShouldBegin(_ recognizer: NSGestureRecognizer) -> Bool {
+        guard !model.interactionBlocked, let index = cardIndex(at: recognizer.location(in: self)) else { return false }
+        return cards[index].isDraggable
+    }
+}
+
 /// The home page's Esc button runs first once the shelf is up, and sends `cancelOperation:` up the
 /// responder chain rather than through the field editor's key handling the delegate sees.
 private final class StageRenameField: NSTextField {
@@ -2346,5 +2448,56 @@ struct EditDeskStageRepresentable: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: EditDeskStageView, coordinator _: ()) {
         nsView.detach()
+    }
+}
+
+/// Where a finger last landed, in the stage's coordinates.
+struct StageTouch: Equatable {
+    var point: CGPoint
+    /// `CACurrentMediaTime` seconds.
+    var time: TimeInterval
+}
+
+/// Touch never hovers, so a finger's tap on a display shows its hover-only playback controls before a second tap opens it.
+struct StageTouchReveal: Equatable {
+    static let matchDistance: CGFloat = 8
+    static let matchInterval: TimeInterval = 0.5
+    static let duration: Duration = .seconds(3)
+
+    /// The display whose controls a touch is holding open; nil when none is.
+    private(set) var display: StageDisplay.ID?
+    /// Bumped on every reveal, so the timer of an earlier reveal cannot close a later one.
+    private(set) var generation = 0
+
+    /// Whether a click at `point` is the one AppKit simulated for `touch`; a real mouse leaves `touch` nil.
+    static func isSimulatedClick(at point: CGPoint, time: TimeInterval, touch: StageTouch?) -> Bool {
+        guard let touch else { return false }
+        let elapsed = time - touch.time
+        return hypot(point.x - touch.point.x, point.y - touch.point.y) <= matchDistance
+            && elapsed >= 0 && elapsed <= matchInterval
+    }
+
+    /// true when the tap was spent showing the controls, so the display must not also open.
+    mutating func reveal(_ display: StageDisplay.ID, offersControls: Bool, controlsShowing: Bool) -> Bool {
+        guard offersControls, !controlsShowing else { return false }
+        self.display = display
+        generation &+= 1
+        return true
+    }
+
+    mutating func touchLanded(on display: StageDisplay.ID?) {
+        if display != self.display {
+            self.display = nil
+        }
+    }
+
+    mutating func hoverBegan() {
+        display = nil
+    }
+
+    mutating func expire(generation: Int) {
+        if generation == self.generation {
+            display = nil
+        }
     }
 }
