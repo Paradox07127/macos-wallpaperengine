@@ -549,13 +549,20 @@ extension ScreenManager {
         }
     }
 
+    /// A policy rebuild, not a pick: manual pause, the rotation clock and pending imports or automatic picks are left alone.
     func reloadHTMLWallpapers(servedFrom origin: TrustedHTMLOrigin) {
-        for screen in screens where screen.runtimeSession?.wallpaperType == .html {
+        for screen in screens {
             guard let configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
                   case .html(let source, let config) = configuration.activeWallpaper,
                   case .url(let url) = source,
                   TrustedHTMLOrigin(url: url) == origin else { continue }
-            setHTMLWallpaper(source: source, config: config, forceReload: true, for: screen)
+            // A replacement that fails to load keeps the live page, so scripts that just lost trust stop here.
+            if config.allowJavaScript,
+               screen.runtimeSession?.wallpaperType == .html,
+               case .untrustedRemote = HTMLTrust.evaluate(source: source, trustedOrigins: TrustedHostStore.shared.originSet) {
+                releaseRuntimeSession(screen)
+            }
+            restoreWallpaperSession(for: screen, configuration: configuration, preservingState: false)
         }
     }
 

@@ -1549,68 +1549,171 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
-    @Test("Revoking an origin reloads every display showing it and no other display")
+    @Test("Revoking an origin reloads every display configured for it, live page or not, and no other display")
     func revokingOriginReloadsEveryDisplayShowingIt() throws {
-        guard let display = NSScreen.screens.first else {
-            Issue.record("No NSScreen available for ScreenManager coordination test")
-            return
-        }
-        let first = UndoTestManager.makeScreen("Revoke First", x: 0)
-        let second = UndoTestManager.makeScreen("Revoke Second", x: 800)
+        let display = try #require(NSScreen.screens.first)
+        let live = UndoTestManager.makeScreen("Revoke Live", x: 0)
+        let withoutPage = UndoTestManager.makeScreen("Revoke Without Page", x: 800)
         let bystander = UndoTestManager.makeScreen("Revoke Bystander", x: 1600)
-        let screens = [first, second, bystander]
         let revokedHost = "html-revoke-shared-\(UUID().uuidString).example.com"
-        let firstURL = try #require(URL(string: "https://\(revokedHost)/one"))
-        let secondURL = try #require(URL(string: "https://\(revokedHost)/two"))
+        let liveURL = try #require(URL(string: "https://\(revokedHost)/one"))
+        let withoutPageURL = try #require(URL(string: "https://\(revokedHost)/two"))
         let bystanderURL = try #require(URL(string: "https://html-revoke-other-\(UUID().uuidString).example.com/"))
-        let origin = try #require(TrustedHTMLOrigin(url: firstURL))
+        let origin = try #require(TrustedHTMLOrigin(url: liveURL))
         let bystanderOrigin = try #require(TrustedHTMLOrigin(url: bystanderURL))
-        var config = HTMLConfig.default
-        config.allowJavaScript = true
-
-        let originalConfigurations = SettingsManager.shared.loadConfigurations()
-        defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
-        SettingsManager.shared.replaceAllConfigurations(zip(screens, [firstURL, secondURL, bystanderURL]).map { screen, url in
-            ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .url(url), config: config))
-        })
         #expect(TrustedHostStore.shared.trust(origin))
         #expect(TrustedHostStore.shared.trust(bystanderOrigin))
         defer {
             _ = TrustedHostStore.shared.revoke(origin)
             _ = TrustedHostStore.shared.revoke(bystanderOrigin)
         }
-
-        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
-            restoreSavedWallpapers: false,
-            startAutomation: false,
-            powerMonitor: FakePowerMonitor(),
-            fullScreenDetector: FakeFullScreenDetector(),
-            playableVideoLoader: FakePlayableVideoLoader(),
-            // A real NSScreen for refresh-rate lookups: the stand-ins trap on `maximumFramesPerSecond`.
-            displayRegistry: FakeDisplayRegistry(
-                screens: screens,
-                nsScreensByID: Dictionary(uniqueKeysWithValues: screens.map { ($0.id, display) })
-            ),
-            featureCatalog: FeatureCatalog(capabilities: .pro)
-        ))
+        let manager = Self.makeOriginTrustManager(
+            [(live, liveURL), (withoutPage, withoutPageURL), (bystander, bystanderURL)], display: display
+        )
         defer {
             manager.tearDownForTermination()
-            for screen in screens {
+            for screen in [live, withoutPage, bystander] {
                 screen.resetRuntimeSession()
             }
         }
-        for screen in screens {
-            screen.installRuntimeSession(TestRuntimeSession(wallpaperType: .html))
-        }
+        live.installRuntimeSession(TestRuntimeSession(wallpaperType: .html))
+        bystander.installRuntimeSession(TestRuntimeSession(wallpaperType: .html))
         // A reload request starts a new wallpaper transition on that display.
-        let generations = screens.map { manager.bumpTransition(for: $0.id) }
+        let generations = [live, withoutPage, bystander].map { manager.bumpTransition(for: $0.id) }
 
         #expect(TrustedHostStore.shared.revoke(origin))
         manager.reloadHTMLWallpapers(servedFrom: origin)
 
-        #expect(!manager.isCurrentTransition(generations[0], for: first.id), "the first display showing the revoked origin was not reloaded")
-        #expect(!manager.isCurrentTransition(generations[1], for: second.id), "the other display showing the revoked origin was not reloaded")
+        #expect(!manager.isCurrentTransition(generations[0], for: live.id), "the display showing the revoked origin was not reloaded")
+        #expect(!manager.isCurrentTransition(generations[1], for: withoutPage.id), "a display configured for the revoked origin without a live page was not reloaded")
         #expect(manager.isCurrentTransition(generations[2], for: bystander.id), "a display showing a different origin was reloaded")
+    }
+
+    @Test("Revoking an origin drops a candidate still preparing it on a display without a live page", .timeLimit(.minutes(1)))
+    func revokingOriginDropsPreparingCandidate() async throws {
+        let display = try #require(NSScreen.screens.first)
+        let screen = UndoTestManager.makeScreen("Revoke Preparing", x: 0)
+        let url = try #require(URL(string: "https://html-revoke-preparing-\(UUID().uuidString).example.com/"))
+        let origin = try #require(TrustedHTMLOrigin(url: url))
+        #expect(TrustedHostStore.shared.trust(origin))
+        defer { _ = TrustedHostStore.shared.revoke(origin) }
+        let manager = Self.makeOriginTrustManager([(screen, url)], display: display)
+        defer {
+            manager.tearDownForTermination()
+            screen.resetRuntimeSession()
+        }
+        let configuration = try #require(manager.getConfiguration(for: screen))
+        var finishPreparing: CheckedContinuation<Void, Never>?
+        let candidate = TestRuntimeSession(wallpaperType: .html)
+        candidate.prepareAction = {
+            await withCheckedContinuation { finishPreparing = $0 }
+            return .ready
+        }
+        var committed = false
+        let work = manager.beginPreparedAmbientSession(
+            candidate, for: screen, replacing: nil, generation: manager.bumpTransition(for: screen.id),
+            proposedConfiguration: configuration,
+            expectedConfigurationRevision: manager.configurationStore.revision(for: screen.id),
+            timeout: .seconds(30), beforeCommit: { committed = true; return true }, afterCommit: {}
+        )
+        // Superseding the work clears its task handle, so keep it to await the candidate's end.
+        let preparation = work.task
+        while finishPreparing == nil {
+            await Task.yield()
+        }
+
+        #expect(TrustedHostStore.shared.revoke(origin))
+        manager.reloadHTMLWallpapers(servedFrom: origin)
+        finishPreparing?.resume()
+        await preparation?.value
+
+        #expect(!committed, "a candidate prepared with the revoked origin's scripts still committed")
+        #expect(candidate.cleanupCount == 1)
+        #expect((screen.runtimeSession as AnyObject?) !== candidate)
+    }
+
+    @Test("Changing an origin's trust rebuilds another display without clearing its pause or pending import")
+    func originTrustRebuildKeepsOtherDisplayIntent() throws {
+        let display = try #require(NSScreen.screens.first)
+        let changed = UndoTestManager.makeScreen("Trust Changed", x: 0)
+        let paused = UndoTestManager.makeScreen("Trust Paused", x: 800)
+        let host = "html-trust-shared-\(UUID().uuidString).example.com"
+        let changedURL = try #require(URL(string: "https://\(host)/one"))
+        let pausedURL = try #require(URL(string: "https://\(host)/two"))
+        let origin = try #require(TrustedHTMLOrigin(url: changedURL))
+        defer { _ = TrustedHostStore.shared.revoke(origin) }
+        let manager = Self.makeOriginTrustManager([(changed, changedURL), (paused, pausedURL)], display: display)
+        defer {
+            manager.tearDownForTermination()
+            changed.resetRuntimeSession()
+            paused.resetRuntimeSession()
+        }
+        // Wallpapers off: the rebuild commits synchronously, so a pause cleared on commit shows without a live page.
+        manager.wallpapersGloballyEnabled = false
+        paused.installRuntimeSession(TestRuntimeSession(wallpaperType: .html))
+        manager.persistUserPause(true, for: paused)
+        #if !LITE_BUILD
+        let pendingImport = manager.wpeImportTracker.bumpGeneration(for: paused.id)
+        #endif
+        let generation = manager.bumpTransition(for: paused.id)
+
+        #expect(TrustedHostStore.shared.trust(origin))
+        manager.reloadHTMLWallpapers(servedFrom: origin)
+
+        #expect(!manager.isCurrentTransition(generation, for: paused.id), "the paused display showing the origin was not rebuilt")
+        #expect(manager.isUserPaused(paused.id, fingerprint: paused.displayFingerprint), "a trust change cleared another display's manual pause")
+        #if !LITE_BUILD
+        #expect(manager.wpeImportTracker.isCurrentGeneration(pendingImport, for: paused.id), "a trust change cancelled another display's pending import")
+        #endif
+    }
+
+    @Test("Revoking an origin stops a live page's scripts without waiting for its replacement", .timeLimit(.minutes(1)))
+    func revokingOriginStopsLiveScripts() async throws {
+        let display = try #require(NSScreen.screens.first)
+        let screen = UndoTestManager.makeScreen("Revoke Scripts", x: 0)
+        // No host here resolves, so the replacement page never loads.
+        let url = try #require(URL(string: "https://html-revoke-scripts-\(UUID().uuidString).example.com/"))
+        let origin = try #require(TrustedHTMLOrigin(url: url))
+        #expect(TrustedHostStore.shared.trust(origin))
+        defer { _ = TrustedHostStore.shared.revoke(origin) }
+        let manager = Self.makeOriginTrustManager([(screen, url)], display: display)
+        defer {
+            manager.tearDownForTermination()
+            screen.resetRuntimeSession()
+        }
+        let session = TestRuntimeSession(wallpaperType: .html)
+        screen.installRuntimeSession(session)
+
+        #expect(TrustedHostStore.shared.revoke(origin))
+        manager.reloadHTMLWallpapers(servedFrom: origin)
+        await Self.drainMainQueue()
+
+        #expect(session.cleanupCount == 1, "the page whose origin lost trust kept running its scripts")
+        #expect(!Self.isSameSession(screen.runtimeSession, session))
+    }
+
+    /// Every display gets a script-enabled page of its URL; the real NSScreen serves refresh-rate lookups, which the stand-ins trap on.
+    private static func makeOriginTrustManager(_ pages: [(Screen, URL)], display: NSScreen) -> ScreenManager {
+        var config = HTMLConfig.default
+        config.allowJavaScript = true
+        let state = ScreenManagerFixtureState()
+        state.replaceAllConfigurations(pages.map { screen, url in
+            ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .url(url), config: config))
+        })
+        let screens = pages.map(\.0)
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(
+                screens: screens,
+                nsScreensByID: Dictionary(uniqueKeysWithValues: screens.map { ($0.id, display) })
+            ),
+            configurationStore: WallpaperConfigurationStore(persistence: state), userPauseState: state,
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        manager.wallpapersGloballyEnabled = true
+        return manager
     }
 
     // The candidate must be one that can never become ready: an inline source would commit
