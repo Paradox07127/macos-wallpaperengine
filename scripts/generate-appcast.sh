@@ -38,8 +38,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SKU" in
-  pro)  APPCAST="$ROOT/appcast-pro.xml";  TITLE="Loomscreen Pro"; APP_PLIST="$ROOT/LiveWallpaperInfo.plist" ;;
-  lite) APPCAST="$ROOT/appcast-lite.xml"; TITLE="Loomscreen"; APP_PLIST="$ROOT/LoomscreenInfo.plist" ;;
+  pro)  APPCAST="$ROOT/appcast-pro.xml";  TITLE="Loomscreen Pro"; APP_PLIST="$ROOT/LiveWallpaperInfo.plist"; APP_TARGET="LiveWallpaper" ;;
+  lite) APPCAST="$ROOT/appcast-lite.xml"; TITLE="Loomscreen"; APP_PLIST="$ROOT/LoomscreenInfo.plist"; APP_TARGET="LiveWallpaperLite" ;;
   *) echo "ERROR: --sku must be 'pro' or 'lite' (got: ${SKU:-<missing>})" >&2; exit 64 ;;
 esac
 
@@ -224,9 +224,21 @@ print(quoteattr(sys.argv[1]))
 PYXML
 )"
 PUB_DATE="$(date -u "+%a, %d %b %Y %H:%M:%S +0000")"
-# Read the real deployment target rather than hardcoding one that can drift.
-MIN_OS="$(grep -m1 '"MACOSX_DEPLOYMENT_TARGET": ' "$ROOT/LiveWallpaper.xcodeproj/project.xcproj" \
-  | sed 's/.*: *"//; s/".*//')"
+# The shipped app's Release deployment target, the same precedence Xcode applies:
+# target over project, `KEY[config=Release]` over the unqualified `KEY`.
+MIN_OS="$(python3 - "$ROOT/LiveWallpaper.xcodeproj/project.xcproj" "$APP_TARGET" <<'PYMINOS'
+import json, re, sys
+path, target_name = sys.argv[1:]
+with open(path) as f:
+    project = json.loads(re.sub(r",(\s*[}\]])", r"\1", f.read()))
+target = next(t for t in project["targets"] if t["name"] == target_name)
+for settings in (target.get("build-settings", {}), project.get("build-settings", {})):
+    for key in ("MACOSX_DEPLOYMENT_TARGET[config=Release]", "MACOSX_DEPLOYMENT_TARGET"):
+        if key in settings:
+            print(settings[key])
+            sys.exit(0)
+PYMINOS
+)"
 if [[ -z "$MIN_OS" ]]; then
   echo "ERROR: could not read MACOSX_DEPLOYMENT_TARGET from the project" >&2
   exit 1

@@ -58,6 +58,10 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$ ]]; then
   echo "ERROR: --version must be major.minor.patch[bN] (got: $VERSION)" >&2
   exit 64
 fi
+if [[ -n "$NOTES_FILE" && ! -r "$NOTES_FILE" ]]; then
+  echo "ERROR: --notes-file $NOTES_FILE does not exist or is not readable" >&2
+  exit 64
+fi
 # A pre-release ships as its own artifact name and tag so it can never be mistaken for,
 # or overwrite, the final build of the same version.
 PRERELEASE=0
