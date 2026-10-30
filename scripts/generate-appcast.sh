@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_SLUG="Paradox07127/macos-wallpaperengine"
 TAG_PREFIX="loomscreen-v"
 
-SKU=""; VERSION=""; DMG=""; BUILD=""; KEY_FILE=""; DERIVED_DATA=""; NOTES_FILE=""; CHANNEL="stable"
+SKU=""; VERSION=""; DMG=""; APP=""; BUILD=""; KEY_FILE=""; DERIVED_DATA=""; NOTES_FILE=""; CHANNEL="stable"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sku)         SKU="${2:-}"; shift 2 ;;
@@ -24,6 +24,8 @@ while [[ $# -gt 0 ]]; do
     --version)     VERSION="${2:-}"; shift 2 ;;
     --build)       BUILD="${2:-}"; shift 2 ;;
     --dmg)         DMG="${2:-}"; shift 2 ;;
+    # The built .app the DMG ships; its Info.plist holds the minimum macOS Xcode resolved.
+    --app)         APP="${2:-}"; shift 2 ;;
     # For CI, where there is no keychain to prompt against. Locally the key
     # stays in the keychain and this stays unset.
     --ed-key-file) KEY_FILE="${2:-}"; shift 2 ;;
@@ -38,8 +40,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SKU" in
-  pro)  APPCAST="$ROOT/appcast-pro.xml";  TITLE="Loomscreen Pro"; APP_PLIST="$ROOT/LiveWallpaperInfo.plist"; APP_TARGET="LiveWallpaper" ;;
-  lite) APPCAST="$ROOT/appcast-lite.xml"; TITLE="Loomscreen"; APP_PLIST="$ROOT/LoomscreenInfo.plist"; APP_TARGET="LiveWallpaperLite" ;;
+  pro)  APPCAST="$ROOT/appcast-pro.xml";  TITLE="Loomscreen Pro"; APP_PLIST="$ROOT/LiveWallpaperInfo.plist" ;;
+  lite) APPCAST="$ROOT/appcast-lite.xml"; TITLE="Loomscreen"; APP_PLIST="$ROOT/LoomscreenInfo.plist" ;;
   *) echo "ERROR: --sku must be 'pro' or 'lite' (got: ${SKU:-<missing>})" >&2; exit 64 ;;
 esac
 
@@ -55,6 +57,11 @@ if [[ ! "$VERSION" =~ $VERSION_PATTERN ]]; then
   exit 64
 fi
 [[ -f "$DMG" ]] || { echo "ERROR: --dmg not found: ${DMG:-<missing>}" >&2; exit 66; }
+[[ -f "$APP/Contents/Info.plist" ]] || { echo "ERROR: --app has no Contents/Info.plist: ${APP:-<missing>}" >&2; exit 66; }
+if ! MIN_OS="$(plutil -extract LSMinimumSystemVersion raw -- "$APP/Contents/Info.plist" 2>/dev/null)"; then
+  echo "ERROR: $APP/Contents/Info.plist has no LSMinimumSystemVersion" >&2
+  exit 1
+fi
 # Sparkle compares sparkle:version to the running app's CFBundleVersion. Both
 # SKUs set CFBundleVersion to MARKETING_VERSION, so --build must equal --version.
 BUILD="${BUILD:-$VERSION}"
@@ -224,25 +231,6 @@ print(quoteattr(sys.argv[1]))
 PYXML
 )"
 PUB_DATE="$(date -u "+%a, %d %b %Y %H:%M:%S +0000")"
-# The shipped app's Release deployment target, the same precedence Xcode applies:
-# target over project, `KEY[config=Release]` over the unqualified `KEY`.
-MIN_OS="$(python3 - "$ROOT/LiveWallpaper.xcodeproj/project.xcproj" "$APP_TARGET" <<'PYMINOS'
-import json, re, sys
-path, target_name = sys.argv[1:]
-with open(path) as f:
-    project = json.loads(re.sub(r",(\s*[}\]])", r"\1", f.read()))
-target = next(t for t in project["targets"] if t["name"] == target_name)
-for settings in (target.get("build-settings", {}), project.get("build-settings", {})):
-    for key in ("MACOSX_DEPLOYMENT_TARGET[config=Release]", "MACOSX_DEPLOYMENT_TARGET"):
-        if key in settings:
-            print(settings[key])
-            sys.exit(0)
-PYMINOS
-)"
-if [[ -z "$MIN_OS" ]]; then
-  echo "ERROR: could not read MACOSX_DEPLOYMENT_TARGET from the project" >&2
-  exit 1
-fi
 
 CHANNEL_TAG=""
 [[ "$CHANNEL" == "beta" ]] && CHANNEL_TAG=$'\n      <sparkle:channel>beta</sparkle:channel>'

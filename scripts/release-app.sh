@@ -58,8 +58,8 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$ ]]; then
   echo "ERROR: --version must be major.minor.patch[bN] (got: $VERSION)" >&2
   exit 64
 fi
-if [[ -n "$NOTES_FILE" && ! -r "$NOTES_FILE" ]]; then
-  echo "ERROR: --notes-file $NOTES_FILE does not exist or is not readable" >&2
+if [[ -n "$NOTES_FILE" ]] && [[ ! -f "$NOTES_FILE" || ! -r "$NOTES_FILE" ]]; then
+  echo "ERROR: --notes-file $NOTES_FILE is not a readable file" >&2
   exit 64
 fi
 # A pre-release ships as its own artifact name and tag so it can never be mistaken for,
@@ -504,6 +504,7 @@ scripts/generate-appcast.sh \
   --version "$VERSION" \
   --build "$BUILD_NUMBER" \
   --dmg "$DMG_PATH" \
+  --app "$APP_PATH" \
   --derived-data "$DERIVED_DATA" \
   ${NOTES_FILE:+--notes-file "$NOTES_FILE"}
 

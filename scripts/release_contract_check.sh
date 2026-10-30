@@ -239,28 +239,36 @@ grep -q '<key>com.apple.security.app-sandbox</key>' LiveWallpaper/LiveWallpaper.
 grep -q '<key>com.apple.security.app-sandbox</key>' LiveWallpaper/LiveWallpaperLite.entitlements
 
 project_file="LiveWallpaper.xcodeproj/project.xcproj"
-# Each app plist must sign exactly the Debug and Release configurations of its target,
-# whether the configuration sets it or inherits it from its edition xcconfig.
+# Each app target must sign its Debug and Release with its own plist, whether the
+# configuration sets it or inherits it from its edition xcconfig, and no other target
+# may sign with an app's plist. Same mapping as check_entitlements.sh's --sku cases.
 python3 - "$project_file" <<'PYENT' || exit 1
 import json, re, sys
 from pathlib import Path
 # project.xcproj is JSON with trailing commas.
 project = json.loads(re.sub(r",(\s*[}\]])", r"\1", open(sys.argv[1]).read()))
 repo = Path(sys.argv[1]).resolve().parents[1]
-counts = {}
+expected = {
+    "LiveWallpaper": "LiveWallpaper/LiveWallpaper.entitlements",
+    "LiveWallpaperLite": "LiveWallpaper/LiveWallpaperLite.entitlements",
+    "LoomscreenAppStore": "LiveWallpaper/LiveWallpaperAppStore.entitlements",
+}
+missing = sorted(set(expected) - {target["name"] for target in project["targets"]})
+if missing:
+    sys.exit("ERROR: app targets missing from the project: " + ", ".join(missing))
 for target in project["targets"]:
     settings = target.get("build-settings", {})
     xcconfigs = {c["name"]: c["file"] for c in target.get("specialized-configurations", [])}
-    for config in project["configurations"]:
+    for config in ("Debug", "Release"):
         value = settings.get(f"CODE_SIGN_ENTITLEMENTS[config={config}]", settings.get("CODE_SIGN_ENTITLEMENTS"))
         if value is None and config in xcconfigs:
             found = re.search(r"^CODE_SIGN_ENTITLEMENTS = (\S+)$", (repo / xcconfigs[config]).read_text(), re.M)
             value = found and found.group(1)
-        if value:
-            counts[value] = counts.get(value, 0) + 1
-for plist in ("LiveWallpaper/LiveWallpaper.entitlements", "LiveWallpaper/LiveWallpaperLite.entitlements"):
-    if counts.get(plist, 0) != 2:
-        sys.exit(f"ERROR: {plist} signs {counts.get(plist, 0)} build configurations; it must sign exactly its app's Debug and Release.")
+        want = expected.get(target["name"])
+        if want is not None and value != want:
+            sys.exit(f"ERROR: {target['name']} {config} signs with {value}; it must sign with {want}.")
+        if want is None and value in expected.values():
+            sys.exit(f"ERROR: {target['name']} {config} signs with the app plist {value}.")
 PYENT
 
 
@@ -347,18 +355,12 @@ with tempfile.TemporaryDirectory(prefix="loomscreen-appcast-contract-") as tempo
         shutil.copy2(Path("scripts") / name, scripts / name)
     for name in ("LoomscreenInfo.plist", "LiveWallpaperInfo.plist"):
         (root / name).write_bytes(plistlib.dumps({"SUPublicEDKey": base64.b64encode(public_key).decode()}))
-    project = root / "LiveWallpaper.xcodeproj"
-    project.mkdir()
-    # Same shape as the real JSON project, trailing commas included; values differ so the precedence shows.
-    (project / "project.xcproj").write_text('''{
-  "build-settings": {"MACOSX_DEPLOYMENT_TARGET[config=Debug]": "12.0", "MACOSX_DEPLOYMENT_TARGET": "14.6",},
-  "targets": [
-    {"name": "LiveWallpaper", "build-settings": {"MACOSX_DEPLOYMENT_TARGET": "13.0", "MACOSX_DEPLOYMENT_TARGET[config=Release]": "15.2",},},
-    {"name": "LiveWallpaperLite", "build-settings": {},},
-  ],
-}
-''')
+    # The built apps' Info.plists; values differ per SKU so a swapped or ignored --app shows.
     expected_min_os = {"pro": "15.2", "lite": "14.6"}
+    for sku, minimum in expected_min_os.items():
+        contents = root / f"{sku}.app" / "Contents"
+        contents.mkdir(parents=True)
+        (contents / "Info.plist").write_bytes(plistlib.dumps({"LSMinimumSystemVersion": minimum}))
     derived = root / "derived"
     signer = derived / "artifacts/sparkle/Sparkle/bin/sign_update"
     signer.parent.mkdir(parents=True)
@@ -398,7 +400,7 @@ fi
         with (root / "writer.log").open("w+") as log:
             result = subprocess.run(
                 ["bash", str(scripts / "generate-appcast.sh"), "--sku", sku, "--version", "0.9.3",
-                 "--dmg", str(archive), "--derived-data", str(derived)],
+                 "--dmg", str(archive), "--app", str(root / f"{sku}.app"), "--derived-data", str(derived)],
                 env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=90,
             )
             log.seek(0)
@@ -505,19 +507,27 @@ wanted = {
     "com.loomscreen.wallpaper": "Lite extension",
 }
 found = {}
+resolved = set()
 for target in project["targets"]:
     settings = target.get("build-settings", {})
     xcconfigs = {c["name"]: c["file"] for c in target.get("specialized-configurations", [])}
     for config in project["configurations"]:
-        ident = settings.get(f"PRODUCT_BUNDLE_IDENTIFIER[config={config}]", settings.get("PRODUCT_BUNDLE_IDENTIFIER"))
+        ident =settings.get(f"PRODUCT_BUNDLE_IDENTIFIER[config={config}]", settings.get("PRODUCT_BUNDLE_IDENTIFIER"))
         if ident is None and config in xcconfigs:
             # App targets take their bundle ID from their edition's xcconfig.
             match = re.search(r"^PRODUCT_BUNDLE_IDENTIFIER = (\S+)$", (repo / xcconfigs[config]).read_text(), re.M)
             ident = match and match.group(1)
-        version = settings.get(f"MARKETING_VERSION[config={config}]", settings.get("MARKETING_VERSION"))
-        if ident and version and ident in wanted:
-            found.setdefault(ident, set()).add(version)
-missing = [name for ident, name in wanted.items() if ident not in found]
+        if ident in wanted:
+            version = settings.get(f"MARKETING_VERSION[config={config}]", settings.get("MARKETING_VERSION"))
+            if version:
+                found.setdefault(ident, set()).add(version)
+                resolved.add((ident, config))
+missing = [
+    f"{name} {config}"
+    for ident, name in wanted.items()
+    for config in project["configurations"]
+    if (ident, config) not in resolved
+]
 if missing:
     sys.exit("ERROR: no MARKETING_VERSION found for: " + ", ".join(missing))
 versions = {ident: sorted(values) for ident, values in found.items()}
