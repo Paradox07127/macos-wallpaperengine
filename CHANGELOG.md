@@ -12,6 +12,43 @@ schema, UI layout, or feature gating.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [1.0.1] — 2026-10-30
+
+### Changed
+
+- Preview toggles such as Pointer and Interaction show a filled background
+  while they are on, the same as the selected fit mode beside them.
+- The daily Workshop update check asks Steam about 50 installed items per
+  request instead of one at a time (Pro).
+
+### Fixed
+
+- Scene packages that list the same file twice load, keeping the first copy,
+  instead of failing with a duplicate-entry error (Pro).
+- Turning Interaction off during a drag releases the scene's held button, and
+  the next desktop click is no longer swallowed (Pro).
+- Monitor boards keep updating after their options change while the board is
+  being rebuilt.
+- A paused static scene no longer draws an extra frame whenever an unrelated
+  preference changes (Pro).
+- Now Playing no longer restarts its system poll when an unrelated app quits,
+  and its artwork caches no longer keep a copy of each cover image. Each cover
+  is hashed once, off the main thread.
+- Now Playing no longer shows a track from a player that quit or stopped while
+  the app was asking it at launch.
+- Trusting or revoking a web wallpaper's site reloads every display that shows
+  it, including ones still loading, without clearing a manual pause or
+  resetting rotation on other displays. Revoking trust stops the page's
+  scripts at once.
+- Turning Interaction off releases a held right button too (Pro).
+- Remove All in the overlay editor during a drag no longer brings the removed
+  cards back.
+- On macOS 27, tapping outside a text field ends editing in windows whose
+  content is replaced after they become active, and starting a scroll with a
+  finger no longer ends editing.
+- Scene shaders whose array length overflows are rejected instead of compiled
+  with a wrong length (Pro).
+
 ## [1.0.0] — 2026-10-29
 
 ### Added
@@ -1562,6 +1599,7 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[1.0.1]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v1.0.0...loomscreen-v1.0.1
 [1.0.0]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.3...loomscreen-v1.0.0
 [0.9.3]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.2...loomscreen-v0.9.3
 [0.9.2]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.1...loomscreen-v0.9.2
