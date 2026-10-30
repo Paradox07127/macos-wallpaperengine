@@ -260,6 +260,29 @@ struct SceneHotZoneRoutingTests {
         #expect(view.gestureRecognizerShouldBegin(pan))
     }
 
+    @Test("Turning Interaction off mid-press releases the scene's button for a mouse and a touch")
+    func sceneViewInteractionOffReleasesPress() throws {
+        let mouseView = sceneView()
+        let touchView = sceneView()
+        var mouseFrames: [WPEPointerFrame] = []
+        var touchFrames: [WPEPointerFrame] = []
+        mouseView.onPointerFrameChange = { mouseFrames.append($0) }
+        touchView.onPointerFrameChange = { touchFrames.append($0) }
+        mouseView.clickCaptureEnabled = true
+        touchView.clickCaptureEnabled = true
+
+        try mouseView.mouseDown(with: mouseEvent(.leftMouseDown, at: CGPoint(x: 50, y: 25)))
+        touchView.touchPan(.began, atWindowLocation: CGPoint(x: 50, y: 25))
+        mouseView.clickCaptureEnabled = false
+        touchView.clickCaptureEnabled = false
+
+        for (view, frames) in [(mouseView, mouseFrames), (touchView, touchFrames)] {
+            #expect(!view.pointerFrame.isDown, "the scene would keep the button held after Interaction turned off")
+            #expect(frames.map(\.isDown) == [true, false], "the scene would never hear the release")
+            #expect(frames.last?.gesture == frames.first?.gesture && frames.last?.position == SIMD2(0.25, 0.75))
+        }
+    }
+
     @Test("A scene-view touch drag reaches the pointer publisher only while its monitors are installed")
     func sceneViewTouchDragFeedsPublisher() {
         let view = sceneView()

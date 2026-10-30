@@ -8,7 +8,14 @@ import simd
 final class WPEInteractiveMTKView: MTKView {
     /// Flipped by the renderer from the per-screen "Interaction" toggle. Only
     /// while true does this view consume mouse events.
-    var clickCaptureEnabled = false
+    var clickCaptureEnabled = false {
+        // The guarded up/ended handlers never see a press that Interaction cut off, so release it here.
+        didSet {
+            if !clickCaptureEnabled, pointerFrame.isDown {
+                pointerFrame.isDown = false
+            }
+        }
+    }
 
     private(set) var pointerIsInsideView = false
 
