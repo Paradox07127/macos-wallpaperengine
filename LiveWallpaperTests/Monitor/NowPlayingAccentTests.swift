@@ -1,6 +1,7 @@
 import XCTest
 import CoreGraphics
 import ImageIO
+import os
 import UniformTypeIdentifiers
 @testable import LiveWallpaper
 
@@ -108,6 +109,57 @@ final class NowPlayingAccentTests: XCTestCase {
         let cached = await store.accent(for: "stable-track", data: blue)
         XCTAssertEqual(cached, updated)
         XCTAssertEqual(store.extractionCount, 2, "Unchanged bytes must remain cached")
+    }
+
+    /// Bytes whose storage reports when the last `Data` referencing it is freed.
+    private final class ReleaseProbe: Sendable {
+        private let flag = OSAllocatedUnfairLock(initialState: false)
+
+        func data(copying bytes: Data) -> Data {
+            let buffer = UnsafeMutableRawPointer.allocate(byteCount: bytes.count, alignment: 1)
+            bytes.copyBytes(to: buffer.assumingMemoryBound(to: UInt8.self), count: bytes.count)
+            return Data(bytesNoCopy: buffer, count: bytes.count, deallocator: .custom { [flag] pointer, _ in
+                pointer.deallocate()
+                flag.withLock { $0 = true }
+            })
+        }
+
+        /// The detached worker may drop its copy just after its result is delivered.
+        func released() async -> Bool {
+            for _ in 0 ..< 50 where !flag.withLock({ $0 }) {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return flag.withLock { $0 }
+        }
+    }
+
+    @MainActor
+    func testAccentCacheKeepsNoArtworkBytes() async throws {
+        let store = NowPlayingAccentStore(extract: { _ in NowPlayingAccentColor(red: 1, green: 0, blue: 0) })
+        let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        let probe = ReleaseProbe()
+        _ = await store.accent(for: "track", data: probe.data(copying: red))
+        let accentReleased = await probe.released()
+        XCTAssertTrue(accentReleased, "The accent cache retained the raw artwork bytes")
+        _ = await store.accent(for: "track", data: Data(red))
+        XCTAssertEqual(store.extractionCount, 1, "Equal bytes in a new buffer must hit the cache")
+        let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        _ = await store.accent(for: "track", data: blue)
+        XCTAssertEqual(store.extractionCount, 2, "Different bytes for the same track must miss the cache")
+    }
+
+    @MainActor
+    func testArtworkCacheKeepsNoArtworkBytes() async throws {
+        let store = NowPlayingArtworkStore()
+        let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), side: 24)
+        let probe = ReleaseProbe()
+        let decodedResult = await store.image(for: "track", data: probe.data(copying: red))
+        let decoded = try XCTUnwrap(decodedResult)
+        let artworkReleased = await probe.released()
+        XCTAssertTrue(artworkReleased, "The artwork cache retained the raw artwork bytes")
+        XCTAssertTrue(store.cached(for: "track", data: Data(red)) === decoded, "Equal bytes in a new buffer must hit the cache")
+        let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1), side: 24)
+        XCTAssertNil(store.cached(for: "track", data: blue), "Different bytes for the same track must miss the cache")
     }
 
     @MainActor

@@ -251,6 +251,34 @@ struct NowPlayingSystemSourceTests {
         #expect(!box.states.contains { $0.title == "Departed Track" })
     }
 
+    @MainActor
+    @Test("Only the system player quitting between polls restarts the system poll")
+    func unrelatedTerminationKeepsSystemPollSchedule() async throws {
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        var external = MonitorNowPlayingState(phase: .playing, title: "Current Track")
+        external.playerBundleID = "com.colliderli.iina"
+        external.isSystemMedia = true
+        let current = external
+        let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] }, systemProvider: {
+            reads.withLock { $0 += 1 }
+            return current
+        }, systemPollInterval: .seconds(30))
+        let id = UUID()
+        monitor.subscribe(id: id) { _, _ in }
+        defer { monitor.unsubscribe(id: id) }
+        let applied = await waitUntil { monitor.currentState.isSystemMedia == true }
+        try #require(applied)
+
+        monitor.playerDidTerminate(bundleID: "com.apple.TextEdit")
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(reads.withLock { $0 } == 1, "An unrelated app quitting restarted the system poll")
+        #expect(monitor.currentState.title == "Current Track")
+
+        monitor.playerDidTerminate(bundleID: "com.colliderli.iina")
+        let repolled = await waitUntil { reads.withLock { $0 } >= 2 }
+        #expect(repolled, "The departed system player must trigger an immediate re-poll")
+    }
+
     #if !LITE_BUILD
     @Test("System payload validation preserves usable timelines and rejects stale loop anchors")
     func payloadTimeline() async throws {

@@ -1,5 +1,6 @@
 #if !MAS_BUILD
 import SwiftUI
+import CryptoKit
 import ImageIO
 import LiveWallpaperCore
 
@@ -1296,40 +1297,41 @@ private extension View {
 final class NowPlayingArtworkStore {
     static let shared = NowPlayingArtworkStore()
 
-    private var cache: [String: (data: Data, image: CGImage)] = [:]
+    private var cache: [String: (digest: SHA256.Digest, image: CGImage)] = [:]
     private var order: [String] = []
-    private var inFlight: [String: (data: Data, task: Task<CGImage?, Never>)] = [:]
+    private var inFlight: [String: (digest: SHA256.Digest, task: Task<CGImage?, Never>)] = [:]
     private let capacity = 8
 
     func cached(for key: String, data: Data) -> CGImage? {
-        guard let hit = cache[key], hit.data == data else { return nil }
+        guard let hit = cache[key], hit.digest == SHA256.hash(data: data) else { return nil }
         return hit.image
     }
 
     func image(for key: String, data: Data) async -> CGImage? {
-        if let hit = cached(for: key, data: data) {
-            return hit
+        let digest = SHA256.hash(data: data)
+        if let hit = cache[key], hit.digest == digest {
+            return hit.image
         }
-        if let pending = inFlight[key], pending.data == data {
+        if let pending = inFlight[key], pending.digest == digest {
             return await pending.task.value
         }
         let task = Task.detached(priority: .utility) { Self.decode(data) }
-        inFlight[key] = (data, task)
+        inFlight[key] = (digest, task)
         let image = await task.value
-        if inFlight[key]?.data == data {
+        if inFlight[key]?.digest == digest {
             inFlight[key] = nil
             if let image {
-                store(image, for: key, data: data)
+                store(image, for: key, digest: digest)
             }
         }
         return image
     }
 
-    private func store(_ image: CGImage, for key: String, data: Data) {
+    private func store(_ image: CGImage, for key: String, digest: SHA256.Digest) {
         if cache[key] == nil {
             order.append(key)
         }
-        cache[key] = (data, image)
+        cache[key] = (digest, image)
         while order.count > capacity {
             cache[order.removeFirst()] = nil
         }

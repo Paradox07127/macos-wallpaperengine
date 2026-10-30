@@ -89,6 +89,8 @@ final class NowPlayingMonitor: NSObject {
     private var systemTask: Task<Void, Never>?
     private var systemState: MonitorNowPlayingState?
     private var systemGeneration: UInt64 = 0
+    /// True while the current poll loop awaits a provider answer.
+    private var systemRequestPending = false
 
     init(
         registersObservers: Bool = true,
@@ -153,7 +155,8 @@ final class NowPlayingMonitor: NSObject {
         if wasSystemPlayer {
             systemState = nil
         }
-        if systemTask != nil {
+        // An outstanding request may describe any departed app, so it is discarded whoever quit.
+        if systemTask != nil, wasSystemPlayer || systemRequestPending {
             systemGeneration &+= 1
             systemTask?.cancel()
             systemTask = nil
@@ -296,6 +299,7 @@ final class NowPlayingMonitor: NSObject {
             var failures = 0
             var inactivityFactor = 1
             while !Task.isCancelled {
+                self?.systemRequestPending = true
                 do {
                     let state = try await provider()
                     guard !Task.isCancelled else { return }
@@ -315,7 +319,9 @@ final class NowPlayingMonitor: NSObject {
     }
 
     private func applySystemState(_ state: MonitorNowPlayingState?, generation: UInt64) {
-        guard systemGeneration == generation, !subscribers.isEmpty, systemState != state else { return }
+        guard systemGeneration == generation else { return }
+        systemRequestPending = false
+        guard !subscribers.isEmpty, systemState != state else { return }
         systemState = state
         ordinal &+= 1
         notifySubscribers()

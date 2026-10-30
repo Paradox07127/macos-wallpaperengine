@@ -1,7 +1,8 @@
 #if !MAS_BUILD
-import SwiftUI
-import ImageIO
 import CoreGraphics
+import CryptoKit
+import ImageIO
+import SwiftUI
 
 // MARK: - Accent extraction (pure)
 
@@ -107,9 +108,9 @@ final class NowPlayingAccentStore {
     static let shared = NowPlayingAccentStore()
 
     private let extract: @Sendable (Data) -> NowPlayingAccentColor?
-    private var cache: [String: (data: Data, color: NowPlayingAccentColor?)] = [:]
+    private var cache: [String: (digest: SHA256.Digest, color: NowPlayingAccentColor?)] = [:]
     private var order: [String] = []
-    private var inFlight: [String: (data: Data, task: Task<NowPlayingAccentColor?, Never>)] = [:]
+    private var inFlight: [String: (digest: SHA256.Digest, task: Task<NowPlayingAccentColor?, Never>)] = [:]
     private let capacity = 16
     /// Test seam: how many times the extractor actually ran (cache hits must not add).
     private(set) var extractionCount = 0
@@ -119,29 +120,30 @@ final class NowPlayingAccentStore {
     }
 
     func accent(for key: String, data: Data) async -> NowPlayingAccentColor? {
-        if let hit = cache[key], hit.data == data {
+        let digest = SHA256.hash(data: data)
+        if let hit = cache[key], hit.digest == digest {
             return hit.color
         }
-        if let pending = inFlight[key], pending.data == data {
+        if let pending = inFlight[key], pending.digest == digest {
             return await pending.task.value
         }
         extractionCount += 1
         let extract = self.extract
         let task = Task.detached(priority: .utility) { extract(data) }
-        inFlight[key] = (data, task)
+        inFlight[key] = (digest, task)
         let value = await task.value
-        if inFlight[key]?.data == data {
+        if inFlight[key]?.digest == digest {
             inFlight[key] = nil
-            store(value, for: key, data: data)
+            store(value, for: key, digest: digest)
         }
         return value
     }
 
-    private func store(_ value: NowPlayingAccentColor?, for key: String, data: Data) {
+    private func store(_ value: NowPlayingAccentColor?, for key: String, digest: SHA256.Digest) {
         if cache[key] == nil {
             order.append(key)
         }
-        cache[key] = (data, value)
+        cache[key] = (digest, value)
         while order.count > capacity {
             cache.removeValue(forKey: order.removeFirst())
         }
