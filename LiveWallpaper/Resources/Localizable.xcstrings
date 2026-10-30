@@ -58903,6 +58903,7 @@
       }
     },
     "Hover over the preview for audio, scaling and frame-rate controls. Frame rate caps rendering, not playback speed. For web wallpapers, Interaction sends desktop clicks to the page; turn it off to use desktop icons. Controls vary by wallpaper type." : {
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -88730,6 +88731,7 @@
       }
     },
     "Performance controls automatic pausing and memory use. Adjust these options to suit your Mac." : {
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {

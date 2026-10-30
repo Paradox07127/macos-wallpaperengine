@@ -183,12 +183,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             group: .setup,
             title: "General",
             systemImage: "gearshape",
-            keywords: [
-                "language", "login", "dock", "lock screen", "behavior",
-                "Show wallpaper in screen captures", "screenshots", "recording", "screen sharing",
-                "在截屏与共享中显示壁纸", "在截圖與共享中顯示桌布",
-                "画面キャプチャに壁紙を表示", "Mostrar el fondo en capturas de pantalla",
-            ]
+            keywords: generalKeywords
         ),
         SettingsNavigationItem(
             destination: .appearance,
@@ -303,6 +298,12 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     ]
 
     #if MAS_BUILD
+    private static let generalKeywords = [
+        "language", "login", "dock", "behavior",
+        "Show wallpaper in screen captures", "screenshots", "recording", "screen sharing",
+        "在截屏与共享中显示壁纸", "在截圖與共享中顯示桌布",
+        "画面キャプチャに壁紙を表示", "Mostrar el fondo en capturas de pantalla",
+    ]
     private static let advancedKeywords = ["logs", "diagnostics"]
     private static let advancedRows = [
         "Copy Diagnostic Summary", "Export Diagnostics", "Report a Bug", "Log Files", "Reset All Settings",
@@ -314,6 +315,12 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         "组件", "浮层", "浮層", "ウィジェット", "widget",
     ]
     #else
+    private static let generalKeywords = [
+        "language", "login", "dock", "lock screen", "behavior",
+        "Show wallpaper in screen captures", "screenshots", "recording", "screen sharing",
+        "在截屏与共享中显示壁纸", "在截圖與共享中顯示桌布",
+        "画面キャプチャに壁紙を表示", "Mostrar el fondo en capturas de pantalla",
+    ]
     private static let advancedKeywords = ["logs", "diagnostics", "privacy", "hardware", "analytics"]
     private static let advancedRows = [
         "Copy Diagnostic Summary", "Export Diagnostics", "Report a Bug", "Log Files",

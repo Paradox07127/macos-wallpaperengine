@@ -463,7 +463,7 @@ final class OverlayEditorSession {
     /// Whether Remove All has anything to take off.
     var hasObjects: Bool {
         #if MAS_BUILD
-        !interaction.placements.isEmpty || overlay.clock.enabled || effectVisible
+        interaction.placements.contains(where: \.kind.isAvailableInEdition) || overlay.clock.enabled || effectVisible
         #else
         !interaction.placements.isEmpty || overlay.clock.enabled || overlay.music.enabled || effectVisible
         #endif
@@ -477,9 +477,10 @@ final class OverlayEditorSession {
         guard let snapshot = store.read(identity) else { return }
         let removed = OverlayObjects(overlay: snapshot.overlay, weather: snapshot.weather)
         // Straight to the store: through the canvas each widget would be reported to `onWidgetsRemoved` on its own.
-        if !removed.widgets.isEmpty {
+        // Cards this edition cannot show stay in the saved board, so a backup restored in another edition keeps them.
+        if removed.widgets.contains(where: \.kind.isAvailableInEdition) {
             var board = snapshot.overlay.board
-            board.widgets = []
+            board.widgets.removeAll(where: \.kind.isAvailableInEdition)
             store.writeBoard(board, for: identity)
         }
         setClockEnabled(false)

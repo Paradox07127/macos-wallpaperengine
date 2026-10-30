@@ -55,11 +55,16 @@ enum BugReporter {
         let snapshot = SystemSnapshot.capture(activeWallpapers: activeWallpapers)
         let recentLog = sanitizedRecentLogLines()
         let form = issueForm()
+        #if MAS_BUILD
+        // The App Store sandbox cannot enumerate other processes, and this edition ships no wallpaper extension.
+        let extensionLines: [String] = []
+        #else
         let extensionLines = extensionProcessLines(
             running: runningExecutables(),
             bundledAppexPath: SystemWallpaperProviderIdentity.bundledProvider()?.bundlePath,
             form: form
         )
+        #endif
         let body = formatMarkdown(
             snapshot: snapshot, recentLogLines: recentLog, extensionProcessLines: extensionLines, form: form
         )
@@ -151,7 +156,9 @@ enum BugReporter {
             """)
         }
 
-        sections.append("- **System wallpaper extension processes**:\n" + bulletList(extensionLines))
+        if !extensionLines.isEmpty {
+            sections.append("- **System wallpaper extension processes**:\n" + bulletList(extensionLines))
+        }
         sections.append("</details>")
 
         sections.append("""
@@ -198,7 +205,9 @@ enum BugReporter {
             """)
         }
 
-        sections.append("- **系统壁纸扩展进程**：\n" + bulletList(extensionLines))
+        if !extensionLines.isEmpty {
+            sections.append("- **系统壁纸扩展进程**：\n" + bulletList(extensionLines))
+        }
         sections.append("</details>")
 
         sections.append("""
@@ -278,11 +287,8 @@ enum BugReporter {
         return FileManager.default.fileExists(atPath: url.path)
     }
 
+    #if !MAS_BUILD
     private static func runningExecutables() -> [(pid: Int32, path: String)] {
-        #if MAS_BUILD
-        // The App Store sandbox cannot enumerate other processes.
-        return []
-        #else
         // PROC_PIDPATHINFO_MAXSIZE; the macro does not import into Swift.
         var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
         return CodexProcessProbe.allPIDs().compactMap { pid in
@@ -290,8 +296,8 @@ enum BugReporter {
             guard length > 0, let path = String(bytes: buffer.prefix(Int(length)), encoding: .utf8) else { return nil }
             return (pid: pid, path: path)
         }
-        #endif
     }
+    #endif
 
     private static func sanitizedRecentLogLines() -> [String] {
         LogFileSink.shared

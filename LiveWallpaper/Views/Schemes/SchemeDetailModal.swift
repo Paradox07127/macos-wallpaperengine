@@ -411,9 +411,11 @@ enum SchemeDetailRows {
     /// Only switches away from their default, and only where the wallpaper's type reads them.
     private static func otherRows(_ configuration: ScreenConfiguration) -> [Row] {
         var rows: [Row] = []
+        #if !MAS_BUILD
         if configuration.wallpaperType == .video, configuration.setAsLockScreen {
             rows.append(Row(key: .lockScreen, label: String(localized: "On Lock", bundle: .appLanguage), value: String(localized: "On", bundle: .appLanguage)))
         }
+        #endif
         if configuration.wallpaperType == .scene, !configuration.sceneClickCaptureEnabled {
             rows.append(Row(key: .clickCapture, label: String(localized: "Interaction", bundle: .appLanguage), value: String(localized: "Off", bundle: .appLanguage)))
         }

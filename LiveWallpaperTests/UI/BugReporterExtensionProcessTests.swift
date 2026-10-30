@@ -60,4 +60,21 @@ struct BugReporterExtensionProcessTests {
         #expect(chinese.contains("**系统壁纸扩展进程**"))
         #expect(chinese.contains("没有在运行"))
     }
+
+    @Test("An edition without the extension leaves the section out")
+    func noProcessLinesOmitsTheSection() {
+        let snapshot = SystemSnapshot(
+            appVersion: "1.0.0", appBuild: "1", sku: .pro, macOSVersion: "27.0", macOSBuild: "27A1",
+            hardwareModel: "Mac17,8", chip: "Apple M4 Pro", physicalMemoryGiB: 24, displays: [],
+            activeWallpapers: [], bundleIdentifier: "com.loomscreen.pro", localeIdentifier: "en_US"
+        )
+        let english = BugReporter.formatMarkdown(
+            snapshot: snapshot, recentLogLines: [], extensionProcessLines: [], form: .english
+        )
+        #expect(!english.contains("System wallpaper extension processes"))
+        let chinese = BugReporter.formatMarkdown(
+            snapshot: snapshot, recentLogLines: [], extensionProcessLines: [], form: .simplifiedChinese
+        )
+        #expect(!chinese.contains("系统壁纸扩展进程"))
+    }
 }

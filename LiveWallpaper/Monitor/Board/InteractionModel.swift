@@ -113,7 +113,8 @@ final class InteractionModel: ObservableObject {
 
     private func items(excluding excludedID: UUID?) -> [MonitorBoardItem] {
         placements.compactMap { placement in
-            guard placement.id != excludedID else { return nil }
+            // Cards this edition does not draw keep no space, or they would leave an empty area nobody can clear.
+            guard placement.id != excludedID, placement.kind.isAvailableInEdition else { return nil }
             return MonitorBoardItem(
                 id: placement.id,
                 rect: CGRect(origin: pixelOrigin(for: placement), size: footprint(for: placement))
@@ -389,7 +390,7 @@ final class InteractionModel: ObservableObject {
         guard !geometry.isDegenerate else { return }
         let geo = geometry
 
-        for index in placements.indices {
+        for index in placements.indices where placements[index].kind.isAvailableInEdition {
             let footprintSize = geo.pixelSize(for: placements[index].kind, size: placements[index].size)
             let px = LayoutEngine.pixelOrigin(
                 normalized: CGPoint(x: placements[index].x, y: placements[index].y), boardSize: newSize
@@ -400,7 +401,7 @@ final class InteractionModel: ObservableObject {
             placements[index].y = normalized.y
         }
 
-        for index in placements.indices {
+        for index in placements.indices where placements[index].kind.isAvailableInEdition {
             let footprintSize = geo.pixelSize(for: placements[index].kind, size: placements[index].size)
             let px = LayoutEngine.pixelOrigin(
                 normalized: CGPoint(x: placements[index].x, y: placements[index].y), boardSize: newSize

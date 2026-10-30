@@ -19,6 +19,7 @@ struct SystemSnapshot: Sendable {
     enum SKU: String, Sendable {
         case pro = "Pro"
         case lite = "Lite"
+        case appStore = "App Store"
     }
 
     struct DisplayDescriptor: Sendable {
@@ -64,10 +65,12 @@ struct SystemSnapshot: Sendable {
     }
 
     private static var currentSKU: SKU {
-        #if LITE_BUILD
-        return .lite
+        #if MAS_BUILD
+        .appStore
+        #elseif LITE_BUILD
+        .lite
         #else
-        return .pro
+        .pro
         #endif
     }
 
