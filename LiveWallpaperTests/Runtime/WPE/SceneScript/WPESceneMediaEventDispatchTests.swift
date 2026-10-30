@@ -215,8 +215,8 @@ struct WPESceneMediaEventDispatchTests {
     @Test("The palette cache returns the same art unchanged and re-extracts new art")
     func paletteCacheKeysOnTheArtworkBytes() throws {
         var cache = WPEMediaArtworkPaletteCache()
-        let red = try Self.solidImage(SIMD3<Double>(0.9, 0.05, 0.05))
-        let blue = try Self.solidImage(SIMD3<Double>(0.05, 0.05, 0.9))
+        let red = try MonitorNowPlayingArtwork(Self.solidImage(SIMD3<Double>(0.9, 0.05, 0.05)))
+        let blue = try MonitorNowPlayingArtwork(Self.solidImage(SIMD3<Double>(0.05, 0.05, 0.9)))
         let first = cache.thumbnail(for: red)
         #expect(cache.thumbnail(for: red) == first)
         let next = cache.thumbnail(for: blue)

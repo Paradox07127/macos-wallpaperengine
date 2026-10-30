@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import LiveWallpaperProWPE
@@ -37,8 +38,8 @@ final class WPEMediaTextureStore: @unchecked Sendable {
     private let lock = NSLock()
 
     // The dispatcher owns parity artwork identity even without GPU demand. This cache holds at most its pair.
-    private var parityCurrentKey: String?
-    private var parityPreviousKey: String?
+    private var parityCurrentKey: SHA256.Digest?
+    private var parityPreviousKey: SHA256.Digest?
     private var parityCurrent: (any MTLTexture)?
     private var parityPrevious: (any MTLTexture)?
 
@@ -48,13 +49,13 @@ final class WPEMediaTextureStore: @unchecked Sendable {
 
     /// Called on the dispatcher's MainActor after it establishes the source observation's identities.
     /// The same bytes reuse uploaded textures across reload; enabling demand can upload both known covers.
-    func paritySnapshot(revision: UInt64, currentArtwork: Data?, previousArtwork: Data?,
+    func paritySnapshot(revision: UInt64, currentArtwork: MonitorNowPlayingArtwork?, previousArtwork: MonitorNowPlayingArtwork?,
                         currentSystemName: String?, previousSystemName: String?)
         -> (snapshot: ParitySnapshot, diagnostics: [String]) {
-        let currentKey = currentArtwork.map(WPEMediaArtworkPaletteCache.identity)
-        let previousKey = previousArtwork.map(WPEMediaArtworkPaletteCache.identity)
+        let currentKey = currentArtwork?.digest
+        let previousKey = previousArtwork?.digest
         lock.lock()
-        var cached: [String: any MTLTexture] = [:]
+        var cached: [SHA256.Digest: any MTLTexture] = [:]
         if let parityCurrentKey, let parityCurrent {
             cached[parityCurrentKey] = parityCurrent
         }
@@ -66,7 +67,7 @@ final class WPEMediaTextureStore: @unchecked Sendable {
         for (key, bytes) in [(previousKey, previousArtwork), (currentKey, currentArtwork)] {
             guard let key, let bytes, cached[key] == nil else { continue }
             do {
-                cached[key] = try Self.uploadTexture(from: bytes, device: device)
+                cached[key] = try Self.uploadTexture(from: bytes.data, device: device)
             } catch {
                 diagnostics.append("media.artwork-\(error.rawValue)-native-behavior-unverified")
             }

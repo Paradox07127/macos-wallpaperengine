@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import CryptoKit
 import Foundation
 import LiveWallpaperProWPE
 import Metal
@@ -229,7 +230,7 @@ final class WPESceneMediaEventDispatcher {
     private enum ParityArtworkIdentity: Equatable {
         case absent
         case empty
-        case bytes(String)
+        case bytes(SHA256.Digest)
     }
 
     /// The configured parity consumer; nil before `configureParity` and after `stop()`.
@@ -243,8 +244,8 @@ final class WPESceneMediaEventDispatcher {
         var hasPublished = false
         // Names follow raw observations; their upload bytes are retained only when qualified by the Mac decoder.
         var artworkIdentity: ParityArtworkIdentity?
-        var currentArtwork: Data?
-        var previousArtwork: Data?
+        var currentArtwork: MonitorNowPlayingArtwork?
+        var previousArtwork: MonitorNowPlayingArtwork?
         var currentSystemName: String?
         var previousSystemName: String?
         var artworkDiagnostics: [String] = []
@@ -349,10 +350,10 @@ final class WPESceneMediaEventDispatcher {
     @discardableResult
     private func publishParity(state: MonitorNowPlayingState, isReplay: Bool) -> Bool {
         guard let parity, state.phase != .awaitingFirstEvent else { return false }
-        var thumbnail = palette.thumbnail(for: state.artwork)
-        let artworkChanged = updateParityArtwork(parity, artwork: state.artwork, thumbnail: thumbnail)
+        var thumbnail = palette.thumbnail(for: state.artworkPayload)
+        let artworkChanged = updateParityArtwork(parity, artwork: state.artworkPayload, thumbnail: thumbnail)
         var diagnostics = parity.artworkDiagnostics
-        let hasRawArtwork = state.artwork?.isEmpty == false
+        let hasRawArtwork = state.artworkPayload?.data.isEmpty == false
         if hasRawArtwork, !thumbnail.hasThumbnail {
             // Native hasThumbnail tests the byte range, not whether colour analysis found opaque samples.
             thumbnail.hasThumbnail = true
@@ -421,9 +422,10 @@ final class WPESceneMediaEventDispatcher {
         return true
     }
 
-    private func updateParityArtwork(_ parity: ParityState, artwork: Data?, thumbnail: WPESceneMediaThumbnail) -> Bool {
+    private func updateParityArtwork(_ parity: ParityState, artwork: MonitorNowPlayingArtwork?,
+                                     thumbnail: WPESceneMediaThumbnail) -> Bool {
         let identity: ParityArtworkIdentity = if let artwork {
-            artwork.isEmpty ? .empty : .bytes(WPEMediaArtworkPaletteCache.identity(of: artwork))
+            artwork.data.isEmpty ? .empty : .bytes(artwork.digest)
         } else {
             .absent
         }
@@ -434,8 +436,8 @@ final class WPESceneMediaEventDispatcher {
         parity.previousSystemName = parity.currentSystemName
         parity.currentSystemName = "mediaThumbnail_\(parityArtworkRevision).system"
         parity.previousArtwork = parity.currentArtwork
-        if let artwork, !artwork.isEmpty,
-           thumbnail.hasThumbnail || WPEMediaTextureStore.hasDecodableParityArtwork(artwork) {
+        if let artwork, !artwork.data.isEmpty,
+           thumbnail.hasThumbnail || WPEMediaTextureStore.hasDecodableParityArtwork(artwork.data) {
             parity.currentArtwork = artwork
             parity.artworkDiagnostics = []
         } else {

@@ -17,7 +17,7 @@ struct WPEMediaTextureProviderTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let store = WPEMediaTextureStore(device: device)
 
-        let pair = try store.paritySnapshot(revision: 1, currentArtwork: Self.artwork(red: 0.9, size: 1024),
+        let pair = try store.paritySnapshot(revision: 1, currentArtwork: MonitorNowPlayingArtwork(Self.artwork(red: 0.9, size: 1024)),
                                             previousArtwork: nil, currentSystemName: "cover", previousSystemName: nil)
         let texture = try #require(pair.snapshot.current)
         #expect(texture.width <= 256)
@@ -30,7 +30,7 @@ struct WPEMediaTextureProviderTests {
         let store = WPEMediaTextureStore(device: device)
 
         let pair = try store.paritySnapshot(revision: 1,
-                                            currentArtwork: Self.artwork(red: 128.0 / 255, green: 128, blue: 128),
+                                            currentArtwork: MonitorNowPlayingArtwork(Self.artwork(red: 128.0 / 255, green: 128, blue: 128)),
                                             previousArtwork: nil, currentSystemName: "cover", previousSystemName: nil)
         let texture = try #require(pair.snapshot.current)
         var pixel = [UInt8](repeating: 0, count: 4)

@@ -194,24 +194,21 @@ enum WPEMediaArtworkPalette {
 
 /// Keyed on a digest of the bytes: trackID alone is not enough and Data's hash is not stable across launches.
 struct WPEMediaArtworkPaletteCache {
-    private var key: String?
+    private var key: SHA256.Digest?
     private var cached = WPESceneMediaThumbnail.absent
 
-    mutating func thumbnail(for artwork: Data?) -> WPESceneMediaThumbnail {
-        guard let artwork, !artwork.isEmpty else {
+    mutating func thumbnail(for artwork: MonitorNowPlayingArtwork?) -> WPESceneMediaThumbnail {
+        guard let artwork, !artwork.data.isEmpty else {
             key = nil
             cached = .absent
             return .absent
         }
-        let identity = Self.identity(of: artwork)
-        if identity == key { return cached }
-        key = identity
-        cached = WPEMediaArtworkPalette.palette(from: artwork) ?? .absent
+        if artwork.digest == key {
+            return cached
+        }
+        key = artwork.digest
+        cached = WPEMediaArtworkPalette.palette(from: artwork.data) ?? .absent
         return cached
-    }
-
-    static func identity(of artwork: Data) -> String {
-        SHA256.hash(data: artwork).map { String(format: "%02x", $0) }.joined()
     }
 }
 #endif
