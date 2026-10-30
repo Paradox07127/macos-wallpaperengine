@@ -283,6 +283,22 @@ struct SceneHotZoneRoutingTests {
         }
     }
 
+    @Test("Turning Interaction off with both buttons held releases them in one pointer frame")
+    func sceneViewInteractionOffReleasesRightPress() throws {
+        let view = sceneView()
+        var frames: [WPEPointerFrame] = []
+        view.onPointerFrameChange = { frames.append($0) }
+        view.clickCaptureEnabled = true
+
+        try view.mouseDown(with: mouseEvent(.leftMouseDown, at: CGPoint(x: 50, y: 25)))
+        try view.rightMouseDown(with: mouseEvent(.rightMouseDown, at: CGPoint(x: 50, y: 25)))
+        view.clickCaptureEnabled = false
+
+        #expect(!view.pointerFrame.isRightDown, "the mailbox would keep native clicks suppressed after Interaction turned off")
+        #expect(!view.pointerFrame.isDown)
+        #expect(frames.map(\.isRightDown) == [false, true, false], "the release would be split across frames or never heard")
+    }
+
     @Test("A scene-view touch drag reaches the pointer publisher only while its monitors are installed")
     func sceneViewTouchDragFeedsPublisher() {
         let view = sceneView()

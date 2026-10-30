@@ -83,6 +83,8 @@ final class NowPlayingMonitor: NSObject {
     typealias LaunchSnapshotProvider = @MainActor (String) async -> String?
     private let launchSnapshotProvider: LaunchSnapshotProvider
     private var didAttemptLaunchSeed = false
+    /// Per seed candidate, bumped by its every notification and termination; a snapshot answered under an older value is stale.
+    private var seedGenerations: [String: UInt64] = [:]
     typealias SystemProvider = @Sendable () async throws -> MonitorNowPlayingState?
     private let systemProvider: SystemProvider?
     private let systemPollInterval: Duration
@@ -150,6 +152,7 @@ final class NowPlayingMonitor: NSObject {
     }
 
     func playerDidTerminate(bundleID: String) {
+        seedGenerations[bundleID]? &+= 1
         let hadRecord = records.removeValue(forKey: bundleID) != nil
         let wasSystemPlayer = systemState?.playerBundleID == bundleID
         if wasSystemPlayer {
@@ -170,6 +173,7 @@ final class NowPlayingMonitor: NSObject {
     func ingest(name: String, userInfo: [AnyHashable: Any]) {
         guard let mapping = Self.mappings.first(where: { $0.notificationName == name }) else { return }
         ordinal &+= 1
+        seedGenerations[mapping.bundleID]? &+= 1
 
         let stateString = userInfo[mapping.stateKey] as? String
         if stateString == "Stopped" {
@@ -334,10 +338,15 @@ final class NowPlayingMonitor: NSObject {
         let running = runningBundleIDs()
         let candidates = Self.mappings.map(\.bundleID).filter { running.contains($0) }
         guard !candidates.isEmpty else { return }
+        for bundleID in candidates {
+            seedGenerations[bundleID] = 0
+        }
         Task { [weak self] in
             for bundleID in candidates {
                 guard let self else { return }
+                let generation = seedGenerations[bundleID]
                 guard let raw = await self.launchSnapshotProvider(bundleID),
+                      seedGenerations[bundleID] == generation,
                       let seed = Self.parseLaunchSnapshot(raw) else { continue }
                 self.applyLaunchSeed(seed, bundleID: bundleID)
             }

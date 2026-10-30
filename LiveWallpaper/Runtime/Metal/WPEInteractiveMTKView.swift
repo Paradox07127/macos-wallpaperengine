@@ -11,8 +11,11 @@ final class WPEInteractiveMTKView: MTKView {
     var clickCaptureEnabled = false {
         // The guarded up/ended handlers never see a press that Interaction cut off, so release it here.
         didSet {
-            if !clickCaptureEnabled, pointerFrame.isDown {
-                pointerFrame.isDown = false
+            if !clickCaptureEnabled, pointerFrame.isDown || pointerFrame.isRightDown {
+                var frame = pointerFrame
+                frame.isDown = false
+                frame.isRightDown = false
+                pointerFrame = frame
             }
         }
     }

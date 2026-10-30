@@ -1311,6 +1311,42 @@ struct NowPlayingLaunchSeedTests {
     }
 
     @MainActor
+    @Test(
+        "A snapshot answered after its player quit or stopped does not bring the track back",
+        .timeLimit(.minutes(1)),
+        arguments: [true, false]
+    )
+    func lateSeedAfterDepartureIsDropped(terminates: Bool) async {
+        let gate = Gate()
+        let spotifyAsked = OSAllocatedUnfairLock(initialState: false)
+        let monitor = NowPlayingMonitor(
+            registersObservers: false,
+            runningBundleIDs: { ["com.spotify.client", "com.apple.Music"] },
+            launchSnapshotProvider: { bundleID in
+                guard bundleID == "com.spotify.client" else { return "playing\nMusic Track\n" }
+                spotifyAsked.withLock { $0 = true }
+                await gate.wait()
+                return "playing\nRedbone\nChildish Gambino\n"
+            }
+        )
+        let box = NowPlayingStateBox()
+        monitor.subscribe(id: UUID()) { _, state in box.append(state) }
+        #expect(await waitUntil { spotifyAsked.withLock { $0 } })
+
+        if terminates {
+            monitor.playerDidTerminate(bundleID: "com.spotify.client")
+        } else {
+            monitor.ingest(name: Fixture.spotifyName, userInfo: ["Player State": "Stopped"])
+        }
+        await gate.open()
+        // Music is asked after Spotify, so its seed landing means Spotify's answer was already handled.
+        #expect(await waitUntil { box.states.last?.playerBundleID == "com.apple.Music" })
+        monitor.playerDidTerminate(bundleID: "com.apple.Music")
+
+        #expect(monitor.currentState.phase == .awaitingFirstEvent, "the departed player's Playing seed would be restored")
+    }
+
+    @MainActor
     @Test("A player that cannot be asked leaves the cold state untouched")
     func unansweredSeedKeepsAwaitingFirstEvent() async {
         let monitor = NowPlayingMonitor(

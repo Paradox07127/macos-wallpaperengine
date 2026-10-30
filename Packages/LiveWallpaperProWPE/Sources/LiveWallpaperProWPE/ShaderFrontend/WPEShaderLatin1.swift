@@ -74,7 +74,7 @@ enum Latin1 {
         return nil
     }
 
-    /// Python `int(s)` for the decimal forms a define value can take; nil where Python raises.
+    /// Python `int(s)` for the decimal forms a define value can take; nil where Python raises or the value overflows `Int`.
     static func pythonInt(_ s: [UInt8]) -> Int? {
         var lo = 0
         var hi = s.count
@@ -90,8 +90,18 @@ enum Latin1 {
             lo += 1
         }
         guard lo < hi, s[lo ..< hi].allSatisfy(isASCIIDigit) else { return nil }
-        let value = s[lo ..< hi].reduce(0) { $0 &* 10 &+ Int($1 - 0x30) }
-        return negative ? 0 &- value : value
+        // Accumulating with the sign applied keeps Int.min representable.
+        var value = 0
+        for digit in s[lo ..< hi] {
+            let shifted = value.multipliedReportingOverflow(by: 10)
+            let digitValue = Int(digit - 0x30)
+            let next = negative
+                ? shifted.partialValue.subtractingReportingOverflow(digitValue)
+                : shifted.partialValue.addingReportingOverflow(digitValue)
+            guard !shifted.overflow, !next.overflow else { return nil }
+            value = next.partialValue
+        }
+        return value
     }
 }
 

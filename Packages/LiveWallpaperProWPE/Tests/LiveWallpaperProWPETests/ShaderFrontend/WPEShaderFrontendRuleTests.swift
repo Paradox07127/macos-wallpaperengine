@@ -320,6 +320,15 @@ final class WPEShaderFrontendRuleTests: XCTestCase {
         }
     }
 
+    func testOversizedDefinedArrayLengthThrows() {
+        // 2^64 + 1: wrapping arithmetic would land on 1 and pass the range check.
+        let files = ["shaders/a.vert": "uniform float g_x[N];\nvoid main() {\n}\n"]
+        let defines = [WPEShaderDefine(name: "N", value: "18446744073709551617")]
+        XCTAssertThrowsError(try rewrite(files, .init(vertex: "shaders/a.vert"), defines: defines)) { error in
+            XCTAssertEqual(error as? WPEHLSLRewriteError, .nonIntegerDefine(name: "N", value: "18446744073709551617"))
+        }
+    }
+
     func testArrayLengthAtUpperBoundRewrites() throws {
         let files = ["shaders/a.vert": "uniform float g_x[65535];\nvarying vec2 v_x[65535];\nvoid main() {\n}\n"]
         let vs = try text(rewrite(files, .init(vertex: "shaders/a.vert")).vertex)
