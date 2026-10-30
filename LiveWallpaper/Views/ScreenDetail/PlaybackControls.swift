@@ -16,6 +16,7 @@ struct PlaybackControls: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.appearsActive) private var appearsActive
 
     @Binding var muted: Bool
     @Binding var videoVolume: Double
@@ -350,6 +351,14 @@ struct PlaybackControls: View {
             binding.wrappedValue.toggle()
         } label: {
             PreviewControlLabel(systemImage: symbol, title: title, isActive: isOn)
+                .background {
+                    if isOn {
+                        // Negative padding matches the fit-mode segment's 3pt inset without changing the row height.
+                        Capsule()
+                            .fill(GlassSegmentedShell.flatSelectionFill(appearsActive: appearsActive))
+                            .padding(.vertical, -3)
+                    }
+                }
                 .overlay(alignment: .topTrailing) {
                     if badge {
                         Image(systemName: "checkmark.circle.fill")

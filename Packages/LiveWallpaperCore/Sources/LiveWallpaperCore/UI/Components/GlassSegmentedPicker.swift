@@ -114,9 +114,16 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         switch shell {
         case .editDesk: return DesignTokens.EditDesk.Colors.fillSelectedNavItem
         case .detail: return DesignTokens.EditDesk.Colors.fillSelectedChip
-        // `accentColor` stays blue in an inactive window; a native segmented control greys its selection there.
-        case .flat, .glass: return appearsActive ? Color.accentColor.opacity(0.35) : Color.gray.opacity(0.35)
+        case .flat, .glass: return GlassSegmentedShell.flatSelectionFill(appearsActive: appearsActive)
         }
+    }
+}
+
+public extension GlassSegmentedShell {
+    /// Selected `.flat`/`.glass` segment; also the on state of preview toggles that sit beside one.
+    static func flatSelectionFill(appearsActive: Bool) -> Color {
+        // `accentColor` stays blue in an inactive window; a native segmented control greys its selection there.
+        appearsActive ? Color.accentColor.opacity(0.35) : Color.gray.opacity(0.35)
     }
 }
 
