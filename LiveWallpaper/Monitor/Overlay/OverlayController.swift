@@ -907,9 +907,12 @@ final class OverlayController: NSObject {
                 } catch {
                     return
                 }
-                guard let self,
-                      !Task.isCancelled,
-                      hosts.values.contains(where: \.isDeliveringSnapshots) else { return }
+                guard let self, !Task.isCancelled else { return }
+                guard hosts.values.contains(where: \.isDeliveringSnapshots) else {
+                    // Uncancelled means `pumpTask` is still this task: `stopPump` cancels before anything replaces it.
+                    pumpTask = nil
+                    return
+                }
                 pushLatest()
             }
         }

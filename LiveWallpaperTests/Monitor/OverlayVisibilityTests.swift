@@ -309,6 +309,54 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         await runtime.shutdown()
     }
 
+    @MainActor
+    @Test("a board shown after the pump idled out keeps receiving snapshots", .timeLimit(.minutes(1)))
+    func pumpRestartsAfterIdlingOut() async throws {
+        let gate = PipelineStartGate()
+        let runtime = Runtime(
+            grants: MonitorGrantAccess(resolveRoots: { (claude: nil, codex: nil) }, release: {}),
+            sourceFactories: [{ _ in [gate] }]
+        )
+        let controller = OverlayController(runtime: runtime)
+        let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        func overlay(_ kind: MonitorWidgetKind) -> MonitorOverlayConfiguration {
+            MonitorOverlayConfiguration(
+                enabled: true,
+                level: .front,
+                board: MonitorBoardConfiguration(
+                    widgets: [MonitorWidgetPlacement(kind: kind, size: .medium, x: 0, y: 0)],
+                    refreshHz: 2
+                )
+            )
+        }
+        controller.apply(overlay: overlay(.cpu), screenID: 411, screenFrame: frame)
+        await controller.waitUntilRuntimeSettled()
+
+        // Hold the options rebuild so the pump wakes while no board is delivering yet.
+        await gate.holdNextStart()
+        controller.apply(overlay: overlay(.memory), screenID: 412, screenFrame: frame)
+        controller.teardown(screenID: 411)
+        await gate.waitUntilStartHeld()
+        try await Task.sleep(for: .seconds(1))
+        await gate.releaseStart()
+        await controller.waitUntilRuntimeSettled()
+
+        let primed = controller.lastDeliveredData?.history.sampleTimes.count ?? 0
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline,
+              (controller.lastDeliveredData?.history.sampleTimes.count ?? 0) <= primed {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        #expect(
+            (controller.lastDeliveredData?.history.sampleTimes.count ?? 0) > primed,
+            "the new board got only its priming snapshot because the pump never restarted"
+        )
+
+        controller.teardownAll()
+        await controller.waitUntilRuntimeSettled()
+        await runtime.shutdown()
+    }
+
     private static let cpuWidget = MonitorWidgetPlacement(kind: .cpu, size: .medium, x: 0, y: 0)
 
 
@@ -393,4 +441,40 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         #expect(TestHostWindowParking.logicalFrame(window) == target)
     }
 
+}
+
+/// A pipeline source whose start can be held, keeping a runtime rebuild in flight.
+private actor PipelineStartGate: MonitorDataSource {
+    nonisolated let sourceID = "pipeline-start-gate"
+    private var holdsNextStart = false
+    private var isHeld = false
+    private var heldWaiters: [CheckedContinuation<Void, Never>] = []
+    private var heldStart: CheckedContinuation<Void, Never>?
+
+    func holdNextStart() {
+        holdsNextStart = true
+    }
+
+    func start(sink _: any MonitorSnapshotSink) async {
+        guard holdsNextStart else { return }
+        holdsNextStart = false
+        isHeld = true
+        for waiter in heldWaiters {
+            waiter.resume()
+        }
+        heldWaiters.removeAll()
+        await withCheckedContinuation { heldStart = $0 }
+    }
+
+    func stop() async {}
+
+    func waitUntilStartHeld() async {
+        guard !isHeld else { return }
+        await withCheckedContinuation { heldWaiters.append($0) }
+    }
+
+    func releaseStart() {
+        heldStart?.resume()
+        heldStart = nil
+    }
 }
