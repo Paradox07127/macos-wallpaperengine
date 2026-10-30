@@ -132,6 +132,40 @@ final class WPEParityProductRuntimeTests: XCTestCase {
         XCTAssertEqual(animated.activity.latest?.producesFrames, true)
     }
 
+    func testParkedStaticSceneWakesOnlyForAScriptLanguageChange() async throws {
+        let harness = try await makeHarness { Self.edit(&$0) { $0["effects"] = [] } }
+        try await renderFrame(harness)
+        XCTAssertEqual(harness.surface.lastIsPaused, true)
+        var marker = 30
+        // Config commands apply in order, so the marker's frame rate landing means the defaults change applied too.
+        func applyQueuedConfig() async throws {
+            marker += 1
+            harness.actor.submitConfig(.frameRateCeiling(marker))
+            let deadline = Date().addingTimeInterval(5)
+            while harness.surface.lastFramesPerSecond != marker, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(1))
+            }
+            XCTAssertEqual(harness.surface.lastFramesPerSecond, marker)
+        }
+
+        let suite = "parity-runtime-\(UUID().uuidString)"
+        let unrelated = try XCTUnwrap(UserDefaults(suiteName: suite))
+        unrelated.set(true, forKey: "unrelatedPreference")
+        defer { unrelated.removePersistentDomain(forName: suite) }
+        try await applyQueuedConfig()
+        XCTAssertEqual(harness.surface.lastIsPaused, true, "a defaults write that changes no scene input woke the link")
+
+        let defaults = UserDefaults.appScoped()
+        let current = AppLanguagePreference.current(in: defaults).wallpaperEngineLanguageCode()
+        let other: AppLanguagePreference = current == "ja-jp" ? .english : .japanese
+        defaults.set(other.rawValue, forKey: AppLanguagePreference.storageKey)
+        defer { defaults.removeObject(forKey: AppLanguagePreference.storageKey) }
+        try await applyQueuedConfig()
+        XCTAssertEqual(harness.surface.lastIsPaused, false, "a new script language did not wake the parked link")
+        try await renderFrame(harness)
+        XCTAssertEqual(harness.surface.lastIsPaused, true)
+    }
+
     /// The parity sound runtime counts random play intervals down by frame time.
     func testStaticSceneWithSoundKeepsTheLinkRunning() async throws {
         let sound: [String: Any] = [
@@ -380,6 +414,7 @@ private final class PacingRecorder: WPESurfaceControl {
     private struct Pacing {
         var isPaused: Bool?
         var enableSetNeedsDisplay: Bool?
+        var framesPerSecond: Int?
     }
 
     private let last = OSAllocatedUnfairLock(initialState: Pacing())
@@ -392,10 +427,15 @@ private final class PacingRecorder: WPESurfaceControl {
         last.withLock(\.enableSetNeedsDisplay)
     }
 
+    var lastFramesPerSecond: Int? {
+        last.withLock(\.framesPerSecond)
+    }
+
     func applyPacing(_ update: WPERenderPacingUpdate) {
         last.withLock { state in
             state.isPaused = update.isPaused ?? state.isPaused
             state.enableSetNeedsDisplay = update.enableSetNeedsDisplay ?? state.enableSetNeedsDisplay
+            state.framesPerSecond = update.preferredFramesPerSecond ?? state.framesPerSecond
         }
     }
 

@@ -192,8 +192,8 @@ actor WPEDisplayRenderActor {
             cadencePolicyContext = context
             emitCadence(reason: "policy", force: true)
         case let .sceneScriptLanguage(language):
-            if let parityDriver {
-                parityDriver.setSceneScriptLanguage(language)
+            // Every defaults write in the process lands here; only a new language has anything to draw.
+            if let parityDriver, parityDriver.setSceneScriptLanguage(language) {
                 requestParityFrame()
             }
         }

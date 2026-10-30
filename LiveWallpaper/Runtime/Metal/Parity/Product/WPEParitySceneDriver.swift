@@ -1107,11 +1107,14 @@ final class WPEParitySceneDriver {
         }
     }
 
-    func setSceneScriptLanguage(_ language: String) {
-        guard sceneScriptLanguage != language else { return }
+    /// False when the scene already has `language`.
+    @discardableResult
+    func setSceneScriptLanguage(_ language: String) -> Bool {
+        guard sceneScriptLanguage != language else { return false }
         sceneScriptLanguage = language
-        guard let renderer else { return }
+        guard let renderer else { return true }
         do { try deliverScriptLanguage(to: renderer) } catch { recordScriptFailure(error) }
+        return true
     }
 
     private func deliverScriptLanguage(to renderer: WPEParityFrameRenderer) throws {
