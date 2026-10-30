@@ -48,7 +48,13 @@ extension ScreenManager {
         let currentScreen: @MainActor () -> Screen? = { [weak self] in
             self?.screens.first { $0.id == screenID && $0.displayFingerprint == fingerprint }
         }
-        let work = RuntimePreparationWork()
+        // The builder settled scripts by the trust of this moment; losing that trust before commit must keep them off screen.
+        let scriptedSource: HTMLSource? = if case let .html(source, config) = proposedConfiguration.activeWallpaper, config.allowJavaScript {
+            HTMLTrust.evaluate(source: source, trustedOrigins: TrustedHostStore.shared.originSet).effectiveAllowJavaScript(requested: true) ? source : nil
+        } else {
+            nil
+        }
+        let work = RuntimePreparationWork(proposedConfiguration: proposedConfiguration)
         let task = Task { @MainActor [weak self, weak work] in
             guard let self else {
                 candidate.cleanup()
@@ -96,6 +102,14 @@ extension ScreenManager {
                 if revision != expectedConfigurationRevision {
                     Logger.notice(
                         "Wallpaper candidate for screen \(screenID) dropped: configuration revision advanced \(expectedConfigurationRevision) → \(revision)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if let scriptedSource,
+                   case let .untrustedRemote(origin) = HTMLTrust.evaluate(source: scriptedSource, trustedOrigins: TrustedHostStore.shared.originSet) {
+                    Logger.notice(
+                        "Wallpaper candidate for screen \(screenID) dropped: it was prepared with scripts of \(origin.rawValue), which is no longer trusted",
                         category: .screenManager
                     )
                     return false

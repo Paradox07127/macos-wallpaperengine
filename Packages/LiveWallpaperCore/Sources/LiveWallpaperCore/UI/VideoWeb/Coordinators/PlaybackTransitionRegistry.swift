@@ -21,8 +21,12 @@ public final class AssetReadinessWork {
 
 public final class RuntimePreparationWork {
     public var task: Task<Void, Never>?
+    /// What the candidate shows once committed; nil when the preparing path does not say.
+    public let proposedConfiguration: ScreenConfiguration?
 
-    public init() {}
+    public init(proposedConfiguration: ScreenConfiguration? = nil) {
+        self.proposedConfiguration = proposedConfiguration
+    }
 
     public func cancel() {
         task?.cancel()
@@ -87,6 +91,10 @@ public final class PlaybackTransitionRegistry {
         runtimePreparationByScreen[screenID]?.cancel()
         runtimePreparationByScreen[screenID] = work
         return work
+    }
+
+    public func runtimePreparation(for screenID: CGDirectDisplayID) -> RuntimePreparationWork? {
+        runtimePreparationByScreen[screenID]
     }
 
     public func clearRuntimePreparationIfMatch(

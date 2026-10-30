@@ -1603,6 +1603,71 @@ struct ScreenManagerCoordinationTests {
             screen.resetRuntimeSession()
         }
         let configuration = try #require(manager.getConfiguration(for: screen))
+        let (candidate, finish) = await Self.holdPreparingCandidate(configuration, on: screen, manager: manager)
+
+        #expect(TrustedHostStore.shared.revoke(origin))
+        manager.reloadHTMLWallpapers(servedFrom: origin)
+
+        #expect(await !finish(), "a candidate prepared with the revoked origin's scripts still committed")
+        #expect(candidate.cleanupCount == 1)
+        #expect((screen.runtimeSession as AnyObject?) !== candidate)
+    }
+
+    @Test("Revoking an origin keeps a pick of it with scripts off screen while the display still stores other content", .timeLimit(.minutes(1)))
+    func revokingOriginDropsScriptedPickNotYetStored() async throws {
+        let display = try #require(NSScreen.screens.first)
+        let screen = UndoTestManager.makeScreen("Revoke Unsaved Pick", x: 0)
+        let storedURL = try #require(URL(string: "https://html-revoke-stored-\(UUID().uuidString).example.com/"))
+        let pickedURL = try #require(URL(string: "https://html-revoke-picked-\(UUID().uuidString).example.com/"))
+        let origin = try #require(TrustedHTMLOrigin(url: pickedURL))
+        #expect(TrustedHostStore.shared.trust(origin))
+        defer { _ = TrustedHostStore.shared.revoke(origin) }
+        let manager = Self.makeOriginTrustManager([(screen, storedURL)], display: display)
+        defer {
+            manager.tearDownForTermination()
+            screen.resetRuntimeSession()
+        }
+        var config = HTMLConfig.default
+        config.allowJavaScript = true
+        let pick = ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .url(pickedURL), config: config))
+        let (candidate, finish) = await Self.holdPreparingCandidate(pick, on: screen, manager: manager)
+
+        #expect(TrustedHostStore.shared.revoke(origin))
+        manager.reloadHTMLWallpapers(servedFrom: origin)
+
+        #expect(await !finish(), "a pick prepared with scripts of an origin revoked before it was stored still committed")
+        #expect(candidate.cleanupCount == 1)
+    }
+
+    @Test("Changing an origin's trust leaves a pick of other content preparing on a display that stores the origin", .timeLimit(.minutes(1)), arguments: [false, true])
+    func originTrustChangeKeepsPreparingPickOfOtherContent(granting: Bool) async throws {
+        let display = try #require(NSScreen.screens.first)
+        let screen = UndoTestManager.makeScreen("Trust Change Other Pick", x: 0)
+        let storedURL = try #require(URL(string: "https://html-trust-stored-\(UUID().uuidString).example.com/"))
+        let origin = try #require(TrustedHTMLOrigin(url: storedURL))
+        if !granting {
+            #expect(TrustedHostStore.shared.trust(origin))
+        }
+        defer { _ = TrustedHostStore.shared.revoke(origin) }
+        let manager = Self.makeOriginTrustManager([(screen, storedURL)], display: display)
+        defer {
+            manager.tearDownForTermination()
+            screen.resetRuntimeSession()
+        }
+        let pick = ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("other"), config: .default))
+        let (candidate, finish) = await Self.holdPreparingCandidate(pick, on: screen, manager: manager)
+
+        #expect(granting ? TrustedHostStore.shared.trust(origin) : TrustedHostStore.shared.revoke(origin))
+        manager.reloadHTMLWallpapers(servedFrom: origin)
+
+        #expect(await finish(), "a trust change for the stored origin cancelled the display's pick of other content")
+        #expect(Self.isSameSession(screen.runtimeSession, candidate))
+    }
+
+    /// Returns once a candidate for `proposal` is held mid-preparation; `finish` lets it go and reports whether it committed.
+    private static func holdPreparingCandidate(
+        _ proposal: ScreenConfiguration, on screen: Screen, manager: ScreenManager
+    ) async -> (candidate: TestRuntimeSession, finish: () async -> Bool) {
         var finishPreparing: CheckedContinuation<Void, Never>?
         let candidate = TestRuntimeSession(wallpaperType: .html)
         candidate.prepareAction = {
@@ -1612,7 +1677,7 @@ struct ScreenManagerCoordinationTests {
         var committed = false
         let work = manager.beginPreparedAmbientSession(
             candidate, for: screen, replacing: nil, generation: manager.bumpTransition(for: screen.id),
-            proposedConfiguration: configuration,
+            proposedConfiguration: proposal,
             expectedConfigurationRevision: manager.configurationStore.revision(for: screen.id),
             timeout: .seconds(30), beforeCommit: { committed = true; return true }, afterCommit: {}
         )
@@ -1621,15 +1686,11 @@ struct ScreenManagerCoordinationTests {
         while finishPreparing == nil {
             await Task.yield()
         }
-
-        #expect(TrustedHostStore.shared.revoke(origin))
-        manager.reloadHTMLWallpapers(servedFrom: origin)
-        finishPreparing?.resume()
-        await preparation?.value
-
-        #expect(!committed, "a candidate prepared with the revoked origin's scripts still committed")
-        #expect(candidate.cleanupCount == 1)
-        #expect((screen.runtimeSession as AnyObject?) !== candidate)
+        return (candidate, {
+            finishPreparing?.resume()
+            await preparation?.value
+            return committed
+        })
     }
 
     @Test("Changing an origin's trust rebuilds another display without clearing its pause or pending import")

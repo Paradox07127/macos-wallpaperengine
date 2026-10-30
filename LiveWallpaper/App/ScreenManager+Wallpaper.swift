@@ -562,6 +562,16 @@ extension ScreenManager {
                case .untrustedRemote = HTMLTrust.evaluate(source: source, trustedOrigins: TrustedHostStore.shared.originSet) {
                 releaseRuntimeSession(screen)
             }
+            // A pick of other content still preparing here is left to commit: its commit re-checks trust, and a rebuild would cancel it.
+            // Checked after the teardown, which has already cancelled any preparation on this display.
+            if let preparing = transitionRegistry.runtimePreparation(for: screen.id) {
+                let preparesOrigin = if case .html(.url(let preparingURL), _) = preparing.proposedConfiguration?.activeWallpaper {
+                    TrustedHTMLOrigin(url: preparingURL) == origin
+                } else {
+                    false
+                }
+                if !preparesOrigin { continue }
+            }
             restoreWallpaperSession(for: screen, configuration: configuration, preservingState: false)
         }
     }
