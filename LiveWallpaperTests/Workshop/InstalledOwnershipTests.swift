@@ -219,12 +219,8 @@ struct InstalledOwnershipCharacterizationTests {
     @MainActor
     func productionUpdateModelThrottleCacheFlagsAndReimport() async {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        let requests = WorkshopMetadataResponseGate { id in
-            return .http(
-                status: 200,
-                headers: [:],
-                body: Self.metadataPayload(id: id, updated: 900_000)
-            )
+        let requests = WorkshopMetadataResponseGate { ids in
+            .http(status: 200, headers: [:], body: Self.metadataBatchPayload(ids.map { ($0, 900_000) }))
         }
         defer { requests.releaseAll() }
         let service = metadataService { requests.response(for: $0) }
@@ -244,7 +240,7 @@ struct InstalledOwnershipCharacterizationTests {
         model.onAppear()
         await Task.yield()
         await model.checkForUpdatesIfNeeded()
-        #expect(requests.ids.isEmpty)
+        #expect(requests.batches.isEmpty)
         #expect(store.remoteSaveCount == 0)
         #expect(store.lastCheckSaveCount == 0)
 
@@ -254,7 +250,7 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(model.lifecycleOwner.hasActiveUpdate)
         requests.releaseNext()
         await update.value
-        #expect(requests.ids == ["100"])
+        #expect(requests.batches == [["100"]])
         #expect(store.remoteEpochs == ["100": 900_000])
         #expect(store.remoteSaveCount == 1)
         #expect(store.lastUpdateCheckEpoch == now.timeIntervalSince1970)
@@ -267,33 +263,77 @@ struct InstalledOwnershipCharacterizationTests {
         model.onDisappear()
     }
 
+    @Test("production model checks 120 items in three batched requests with per-item results unchanged")
+    @MainActor
+    func productionUpdateModelBatchesFiftyPerRequest() async {
+        let now = Date(timeIntervalSince1970: 3_000_000)
+        let numbers = Array(2000 ..< 2120)
+        let ids = numbers.map(String.init)
+        let failingBatch = Set(ids[50 ..< 100])
+        // Multiples of 7 are absent from Steam's reply; multiples of 5 carry no time_updated.
+        let absent = Set(numbers.filter { $0.isMultiple(of: 7) }.map(String.init))
+        let updatedByID = Dictionary(uniqueKeysWithValues: numbers.filter { !$0.isMultiple(of: 5) }.map { (String($0), $0 * 10) })
+        let requests = WorkshopMetadataResponseGate { requested in
+            if requested.contains(where: failingBatch.contains) {
+                return .http(status: 500, headers: [:], body: Data())
+            }
+            let items = requested.filter { !absent.contains($0) }.map { (id: $0, updated: updatedByID[$0]) }
+            return .http(status: 200, headers: [:], body: Self.metadataBatchPayload(items))
+        }
+        requests.releaseAll()
+        let service = metadataService { requests.response(for: $0) }
+        let store = WorkshopInstalledLibraryStoreProbe(
+            entries: ids.map { entry(id: $0, importedAt: 10) },
+            remoteEpochs: Dictionary(uniqueKeysWithValues: ids.map { ($0, 1) }),
+            now: now,
+            lastUpdateCheckEpoch: now.timeIntervalSince1970 - 86401,
+            makeMetadataService: { service }
+        )
+        let model = InstalledLibraryModel(
+            dependencies: store.dependencies,
+            lifecycleOwner: InstalledPageLifecycleOwner()
+        )
+
+        model.onAppear()
+        await Task.yield()
+        await model.checkForUpdatesIfNeeded()
+
+        var expected: [String: Double] = [:]
+        for id in ids {
+            if failingBatch.contains(id) || absent.contains(id) {
+                expected[id] = 1
+            } else if let updated = updatedByID[id] {
+                expected[id] = Double(updated)
+            }
+        }
+        #expect(requests.batches.map(\.count) == [50, 50, 20])
+        #expect(Array(requests.batches.joined()) == ids)
+        #expect(store.remoteEpochs == expected)
+        #expect(store.remoteSaveCount == 1)
+        #expect(store.lastCheckSaveCount == 1)
+        model.onDisappear()
+    }
+
     @Test("production model preserves unvisited cache entries after 429")
     @MainActor
     func productionUpdateModelRateLimitPartialPreserve() async {
         let now = Date(timeIntervalSince1970: 2_000_000)
-        let requests = WorkshopMetadataResponseGate { id in
-            switch id {
-            case "100":
-                .http(
-                    status: 200,
-                    headers: [:],
-                    body: Self.metadataPayload(id: "100", updated: 444)
-                )
-            case "200":
-                .http(status: 429, headers: ["Retry-After": "60"], body: Data())
-            default:
-                .http(status: 500, headers: [:], body: Data())
+        let ids = (1000 ... 1100).map(String.init)
+        let rateLimitedBatch = Set(ids[50 ..< 100])
+        let requests = WorkshopMetadataResponseGate { requested in
+            if requested.contains(where: rateLimitedBatch.contains) {
+                return .http(status: 429, headers: ["Retry-After": "60"], body: Data())
             }
+            if requested.contains("1100") {
+                return .http(status: 500, headers: [:], body: Data())
+            }
+            return .http(status: 200, headers: [:], body: Self.metadataBatchPayload(requested.map { ($0, 444) }))
         }
         defer { requests.releaseAll() }
         let service = metadataService { requests.response(for: $0) }
         let store = WorkshopInstalledLibraryStoreProbe(
-            entries: [
-                entry(id: "100", importedAt: 10),
-                entry(id: "200", importedAt: 10),
-                entry(id: "300", importedAt: 10),
-            ],
-            remoteEpochs: ["100": 111, "200": 222, "300": 333],
+            entries: ids.map { entry(id: $0, importedAt: 10) },
+            remoteEpochs: Dictionary(uniqueKeysWithValues: ids.map { ($0, 222) }),
             now: now,
             lastUpdateCheckEpoch: now.timeIntervalSince1970,
             makeMetadataService: { service }
@@ -312,13 +352,17 @@ struct InstalledOwnershipCharacterizationTests {
         requests.releaseNext()
         await requests.waitUntilStarted(count: 2)
         #expect(model.lifecycleOwner.hasActiveUpdate)
-        requests.releaseNext()
+        requests.releaseAll()
         await update.value
-        #expect(requests.ids == ["100", "200"])
-        #expect(store.remoteEpochs == ["100": 444, "200": 222, "300": 333])
+        #expect(requests.batches.map(\.count) == [50, 50])
+        var expected = Dictionary(uniqueKeysWithValues: ids.map { ($0, 222.0) })
+        for id in ids[..<50] {
+            expected[id] = 444
+        }
+        #expect(store.remoteEpochs == expected)
         #expect(store.remoteSaveCount == 1)
         #expect(store.lastCheckSaveCount == 1)
-        #expect(model.updatedWorkshopIDs == ["100", "200", "300"])
+        #expect(model.updatedWorkshopIDs == Set(ids))
         model.onDisappear()
     }
 
@@ -600,6 +644,19 @@ struct InstalledOwnershipCharacterizationTests {
         }]}}
         """.utf8)
     }
+
+    /// `updated: nil` omits `time_updated` from that item.
+    private static func metadataBatchPayload(_ items: [(id: String, updated: Int?)]) -> Data {
+        let details = items.map { item in
+            let updatedField = item.updated.map { "\"time_updated\":\($0)," } ?? ""
+            return """
+            {"publishedfileid":"\(item.id)","result":1,"consumer_app_id":431960,\(updatedField)"visibility":0,"banned":0}
+            """
+        }
+        return Data("""
+        {"response":{"result":1,"resultcount":\(items.count),"publishedfiledetails":[\(details.joined(separator: ","))]}}
+        """.utf8)
+    }
 }
 
 @MainActor
@@ -700,11 +757,13 @@ private enum WorkshopMetadataRequestBody {
         return data
     }
 
-    static func publishedFileID(from request: URLRequest) -> String? {
+    static func publishedFileIDs(from request: URLRequest) -> [String] {
         guard let data = data(from: request),
               let body = String(data: data, encoding: .utf8)
-        else { return nil }
-        return body.components(separatedBy: "publishedfileids%5B0%5D=").last
+        else { return [] }
+        return body.components(separatedBy: "&")
+            .filter { $0.hasPrefix("publishedfileids%5B") }
+            .compactMap { $0.components(separatedBy: "=").last }
     }
 }
 
@@ -712,39 +771,41 @@ private final class WorkshopMetadataResponseGate: @unchecked Sendable {
     typealias Plan = WorkshopMetadataURLProtocolStub.Plan
 
     private let condition = NSCondition()
-    private let makeResponse: @Sendable (String) -> Plan
-    private var startedIDs: [String] = []
+    private let makeResponse: @Sendable ([String]) -> Plan
+    private var startedBatches: [[String]] = []
     private var releasedCount = 0
 
-    init(makeResponse: @escaping @Sendable (String) -> Plan) {
+    init(makeResponse: @escaping @Sendable ([String]) -> Plan) {
         self.makeResponse = makeResponse
     }
 
-    var ids: [String] {
+    /// One element per POST, holding the ids that request carried.
+    var batches: [[String]] {
         condition.lock()
         defer { condition.unlock() }
-        return startedIDs
+        return startedBatches
     }
 
     func response(for request: URLRequest) -> Plan {
-        guard let id = WorkshopMetadataRequestBody.publishedFileID(from: request) else {
-            return .error(URLError(.badURL))
-        }
+        let ids = WorkshopMetadataRequestBody.publishedFileIDs(from: request)
+        guard !ids.isEmpty else { return .error(URLError(.badURL)) }
         condition.lock()
-        startedIDs.append(id)
-        let ordinal = startedIDs.count
+        startedBatches.append(ids)
+        let ordinal = startedBatches.count
         condition.broadcast()
         while releasedCount < ordinal {
             condition.wait()
         }
         condition.unlock()
-        return makeResponse(id)
+        return makeResponse(ids)
     }
 
     @MainActor
     func waitUntilStarted(count: Int) async {
         for _ in 0..<10_000 {
-            if ids.count >= count { return }
+            if batches.count >= count {
+                return
+            }
             await Task.yield()
         }
         Issue.record("Metadata request never entered the production URLSession seam")

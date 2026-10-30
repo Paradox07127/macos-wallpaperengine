@@ -85,6 +85,7 @@ final class InstalledLibraryModel {
     static let remoteUpdateEpochsKey = "loomscreen.workshop.updateCheck.remoteEpochs.v1"
     static let lastUpdateCheckEpochKey = "loomscreen.workshop.updateCheck.epoch.v1"
     private static let updateInterval: TimeInterval = 86400
+    private static let metadataFetchBatchSize = 50
 
     init(
         dependencies: Dependencies = .live,
@@ -267,23 +268,27 @@ final class InstalledLibraryModel {
 
         guard let replacement = await lifecycleOwner.replaceUpdate(operation: { ticket -> [String: Double]? in
             var remoteEpochs = initialEpochs
-            fetchLoop: for entry in snapshot {
+            let candidates = snapshot.compactMap { entry in
+                UInt64(entry.origin.workshopID).map { (workshopID: entry.origin.workshopID, id: $0) }
+            }
+            fetchLoop: for start in stride(from: 0, to: candidates.count, by: Self.metadataFetchBatchSize) {
                 guard self.lifecycleOwner.canContinue(ticket) else { return nil }
-                guard let id = UInt64(entry.origin.workshopID) else { continue }
-                let result = await service.fetch(publishedFileID: id)
+                let batch = candidates[start ..< min(start + Self.metadataFetchBatchSize, candidates.count)]
+                let results = await service.fetch(publishedFileIDs: batch.map(\.id))
                 guard self.lifecycleOwner.canContinue(ticket) else { return nil }
-                switch result {
-                case let .success(metadata):
-                    if let remoteUpdated = metadata.timeUpdated {
-                        remoteEpochs[entry.origin.workshopID] = remoteUpdated.timeIntervalSince1970
-                    } else {
-                        remoteEpochs.removeValue(forKey: entry.origin.workshopID)
-                    }
-                case let .failure(error):
-                    if case .rateLimited = error {
+                for candidate in batch {
+                    switch results[candidate.id] {
+                    case let .success(metadata)?:
+                        if let remoteUpdated = metadata.timeUpdated {
+                            remoteEpochs[candidate.workshopID] = remoteUpdated.timeIntervalSince1970
+                        } else {
+                            remoteEpochs.removeValue(forKey: candidate.workshopID)
+                        }
+                    case .failure(.rateLimited)?:
                         break fetchLoop
+                    default:
+                        break
                     }
-                    continue
                 }
             }
             return remoteEpochs
