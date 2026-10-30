@@ -7,33 +7,30 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 1.0.0</title>
-      <pubDate>Thu, 29 Oct 2026 21:14:04 +0000</pubDate>
-      <sparkle:version>1.0.0</sparkle:version>
-      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <title>Version 1.0.1</title>
+      <pubDate>Fri, 30 Oct 2026 18:16:49 +0000</pubDate>
+      <sparkle:version>1.0.1</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>What's New</strong></p>
-<ul>
-<li>The app is now available in German, French, Korean and Brazilian Portuguese.</li>
-<li>On macOS 27, use touch to drag cards and scenes, finish editing and use display and Now Playing controls.</li>
-</ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Releases are signed and notarized, so new downloads open without the quarantine workaround.</li>
-<li>Configuration backups import across editions.</li>
-<li>Lite hides Pro-only leftovers in menus, settings search and copy.</li>
+<li>Preview toggles such as Pointer and Interaction show a filled background while on.</li>
+<li>Pro: the daily Workshop update check asks Steam about 50 items per request.</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Leaving Wallpaper Automation during a preview restores the display's own wallpaper.</li>
-<li>Keep a wallpaper change when a later cleanup step fails, and fix a possible video playback crash.</li>
-<li>Pro: show Workshop text exactly as written, and stop crafted shaders from crashing or hanging the app.</li>
-<li>Pro: improve Now Playing permission retries, timelines and artwork refresh.</li>
+<li>Pro: scene packages that list a file twice load instead of failing with a duplicate-entry error.</li>
+<li>Pro: turning Interaction off mid-drag releases the scene's button and no longer swallows the next desktop click.</li>
+<li>Monitor boards keep updating after their options change.</li>
+<li>Pro: a paused static scene no longer redraws when an unrelated setting changes.</li>
+<li>Now Playing no longer restarts its poll when another app quits, and keeps less artwork in memory.</li>
+<li>Trusting or revoking a web wallpaper's site reloads every display showing it, without clearing pause or rotation elsewhere; revoking stops its scripts at once.</li>
+<li>Remove All in the overlay editor during a drag no longer brings the removed cards back.</li>
 </ul>
-<p><small><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.0">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.0">完整发布说明</a></small></p>
+<p><small><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.1">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v1.0.0/Loomscreen-1.0.0.dmg" type="application/octet-stream" sparkle:edSignature="+N+bHps3mkUamelAlj+FEXbQPkS9eUMBoBLFJCSSlLfBKjjhaC54M2irvBsS4rw1RfzeprKoqaAiVbGSgsAmBQ==" length="17001667" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v1.0.1/Loomscreen-1.0.1.dmg" type="application/octet-stream" sparkle:edSignature="ahyklh+9+XaI7Jf3Y542/lD1B+VrRAm0v1cAFRCy7K4crH3irpKvR50LRu/b8t0yCqvFdEVdutcqn25w3tySAg==" length="17111460" />
     </item>
   </channel>
 </rss>
