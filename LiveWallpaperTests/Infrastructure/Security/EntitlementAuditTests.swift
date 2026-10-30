@@ -29,7 +29,6 @@ struct EntitlementAuditTests {
     private enum AuditError: Error {
         case invalidPropertyList(String)
         case unsupportedValue(key: String)
-        case missingProjectConfiguration(String)
     }
 
     private static let sharedValues: [String: EntitlementValue] = [
@@ -109,15 +108,16 @@ struct EntitlementAuditTests {
 
     @Test("Xcode maps both configurations of each SKU to its own plist")
     func projectMapsEachSKUToItsOwnPlist() throws {
-        let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
-        for objectID in ["0C322C152D6950490033C48B", "0C322C162D6950490033C48B"] {
-            let entitlements = try Self.resolvedSetting("CODE_SIGN_ENTITLEMENTS", configuration: objectID, in: project)
-            #expect(entitlements == "LiveWallpaper/LiveWallpaper.entitlements")
-        }
-        for objectID in ["0CA00000000000000000B006", "0CA00000000000000000B007"] {
-            let entitlements = try Self.resolvedSetting("CODE_SIGN_ENTITLEMENTS", configuration: objectID, in: project)
-            let conditions = try Self.resolvedSetting("SWIFT_ACTIVE_COMPILATION_CONDITIONS", configuration: objectID, in: project)
-            #expect(entitlements == "LiveWallpaper/LiveWallpaperLite.entitlements")
+        let project = try XcodeProjectFile()
+        #expect(project.configurations == ["Debug", "Release"])
+        for configuration in project.configurations {
+            let pro = try project.setting("CODE_SIGN_ENTITLEMENTS", target: "LiveWallpaper", configuration: configuration)
+            #expect(pro == "LiveWallpaper/LiveWallpaper.entitlements")
+            let lite = try project.setting("CODE_SIGN_ENTITLEMENTS", target: "LiveWallpaperLite", configuration: configuration)
+            let conditions = try project.setting(
+                "SWIFT_ACTIVE_COMPILATION_CONDITIONS", target: "LiveWallpaperLite", configuration: configuration
+            )
+            #expect(lite == "LiveWallpaper/LiveWallpaperLite.entitlements")
             #expect(conditions?.split(separator: " ").contains("LITE_BUILD") == true)
         }
     }
@@ -185,41 +185,5 @@ struct EntitlementAuditTests {
             #endif
         }
         return sourceValue
-    }
-
-    private static func projectConfiguration(_ objectID: String, in source: String) throws -> Substring {
-        guard let start = source.range(of: "\t\t\(objectID) /*"),
-              let end = source[start.lowerBound...].range(of: "\n\t\t};") else {
-            throw AuditError.missingProjectConfiguration(objectID)
-        }
-        return source[start.lowerBound ..< end.upperBound]
-    }
-
-    /// The configuration's own value, else the one from the xcconfig it is based on; nil = set in neither.
-    private static func resolvedSetting(_ key: String, configuration objectID: String, in project: String) throws -> String? {
-        let configuration = try projectConfiguration(objectID, in: project)
-        if let value = settingValue(key, in: configuration) {
-            return value
-        }
-        guard let reference = configuration.split(separator: "\n").first(where: { $0.contains("baseConfigurationReference = ") }),
-              let open = reference.range(of: "/* "),
-              let close = reference.range(of: " */") else {
-            return nil
-        }
-        let xcconfig = try RepositoryRoot.source("Config/\(reference[open.upperBound ..< close.lowerBound])")
-        return settingValue(key, in: Substring(xcconfig))
-    }
-
-    private static func settingValue(_ key: String, in settings: Substring) -> String? {
-        for line in settings.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("\(key) = ") else { continue }
-            var value = trimmed.dropFirst(key.count + 3)
-            if value.hasSuffix(";") {
-                value = value.dropLast()
-            }
-            return value.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        }
-        return nil
     }
 }

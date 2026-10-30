@@ -5,7 +5,8 @@
 ## Requirements
 
 - macOS 14.6+ on an **Apple Silicon** Mac
-- **Xcode 27.0**, matching shipping builds and the `xcode-27` CI runner.
+- **Xcode 27.2**, matching shipping builds. The project uses Xcode's JSON
+  project format (`project.xcproj`), which needs Xcode 27 or later.
   The UI also compiles against macOS 26 SDK APIs such as `glassEffect`; the
   macOS 14.6 deployment target does not mean a 14.x SDK can build the app.
 - The **Metal Toolchain** component (Xcode 26 ships it as a separate download):
@@ -86,7 +87,7 @@ signed Pro tests, Pro/Lite Debug/Release link matrix, archive smokes and
 release/signing checks. Run the schemes sequentially when using shared build
 storage; independent jobs require independent DerivedData directories.
 
-The supported shipping and CI toolchain is Xcode 27.0. Local commands use
+The supported shipping toolchain is Xcode 27.2; CI runs on the `xcode-27` runner. Local commands use
 `xcode-select -p`; set `DEVELOPER_DIR` to override the selected toolchain. See [Architecture](architecture.md) for the current
 targets and packages; Video/Web tests live in the app target.
 

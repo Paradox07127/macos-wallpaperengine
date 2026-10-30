@@ -2,7 +2,7 @@
 
 [English](../CONTRIBUTING.md) · **简体中文**
 
-欢迎 issue 和 pull request。先看[构建说明](building.md)配置 Xcode 27.0 与 Metal Toolchain，
+欢迎 issue 和 pull request。先看[构建说明](building.md)配置 Xcode 27.2 与 Metal Toolchain，
 再看[架构说明](architecture.md)了解模块职责。
 
 ## 验证改动

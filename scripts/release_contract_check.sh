@@ -162,8 +162,8 @@ grep -q 'SWIFT_EMIT_LOC_STRINGS=NO' <<<"$pro_release_block"
 # anyway). The RC gate now asserts its ABSENCE from both archives, and the
 # project must not grow the target back.
 grep -Fq 'unexpectedly embeds an XPC service.' "$candidate_script"
-if grep -q 'SceneScriptXPC' "LiveWallpaper.xcodeproj/project.pbxproj"; then
-  echo "ERROR: the retired SceneScript XPC service reappeared in project.pbxproj." >&2
+if grep -q 'SceneScriptXPC' "LiveWallpaper.xcodeproj/project.xcproj"; then
+  echo "ERROR: the retired SceneScript XPC service reappeared in project.xcproj." >&2
   exit 1
 fi
 
@@ -238,23 +238,26 @@ grep -q 'scripts/check_entitlements.sh --sku "$SKU" --app' scripts/release-app.s
 grep -q '<key>com.apple.security.app-sandbox</key>' LiveWallpaper/LiveWallpaper.entitlements
 grep -q '<key>com.apple.security.app-sandbox</key>' LiveWallpaper/LiveWallpaperLite.entitlements
 
-project_file="LiveWallpaper.xcodeproj/project.pbxproj"
+project_file="LiveWallpaper.xcodeproj/project.xcproj"
 # Each app plist must sign exactly the Debug and Release configurations of its target,
 # whether the configuration sets it or inherits it from its edition xcconfig.
 python3 - "$project_file" <<'PYENT' || exit 1
-import re, sys
+import json, re, sys
 from pathlib import Path
-source = open(sys.argv[1]).read()
-config_dir = Path(sys.argv[1]).resolve().parents[1] / "Config"
+# project.xcproj is JSON with trailing commas.
+project = json.loads(re.sub(r",(\s*[}\]])", r"\1", open(sys.argv[1]).read()))
+repo = Path(sys.argv[1]).resolve().parents[1]
 counts = {}
-for block in re.finditer(r"isa = XCBuildConfiguration;(.*?)\n\t\t\};", source, re.S):
-    body = block.group(1)
-    value = re.search(r"CODE_SIGN_ENTITLEMENTS = ([^;]+);", body)
-    xcconfig = re.search(r"baseConfigurationReference = \w+ /\* (\S+\.xcconfig) \*/;", body)
-    if not value and xcconfig:
-        value = re.search(r"^CODE_SIGN_ENTITLEMENTS = (\S+)$", (config_dir / xcconfig.group(1)).read_text(), re.M)
-    if value:
-        counts[value.group(1)] = counts.get(value.group(1), 0) + 1
+for target in project["targets"]:
+    settings = target.get("build-settings", {})
+    xcconfigs = {c["name"]: c["file"] for c in target.get("specialized-configurations", [])}
+    for config in project["configurations"]:
+        value = settings.get(f"CODE_SIGN_ENTITLEMENTS[config={config}]", settings.get("CODE_SIGN_ENTITLEMENTS"))
+        if value is None and config in xcconfigs:
+            found = re.search(r"^CODE_SIGN_ENTITLEMENTS = (\S+)$", (repo / xcconfigs[config]).read_text(), re.M)
+            value = found and found.group(1)
+        if value:
+            counts[value] = counts.get(value, 0) + 1
 for plist in ("LiveWallpaper/LiveWallpaper.entitlements", "LiveWallpaper/LiveWallpaperLite.entitlements"):
     if counts.get(plist, 0) != 2:
         sys.exit(f"ERROR: {plist} signs {counts.get(plist, 0)} build configurations; it must sign exactly its app's Debug and Release.")
@@ -346,7 +349,7 @@ with tempfile.TemporaryDirectory(prefix="loomscreen-appcast-contract-") as tempo
         (root / name).write_bytes(plistlib.dumps({"SUPublicEDKey": base64.b64encode(public_key).decode()}))
     project = root / "LiveWallpaper.xcodeproj"
     project.mkdir()
-    (project / "project.pbxproj").write_text("MACOSX_DEPLOYMENT_TARGET = 14.6;\n")
+    (project / "project.xcproj").write_text('"MACOSX_DEPLOYMENT_TARGET": "14.6",\n')
     derived = root / "derived"
     signer = derived / "artifacts/sparkle/Sparkle/bin/sign_update"
     signer.parent.mkdir(parents=True)
@@ -479,10 +482,10 @@ done
 # embed them — the variable above only makes each target follow its own setting.
 # Derived, never hardcoded: pinning a number here would go red on every release.
 python3 - "$project_file" <<'PYGATE' || exit 1
-import re, sys
+import json, re, sys
 from pathlib import Path
-source = open(sys.argv[1]).read()
-config_dir = Path(sys.argv[1]).resolve().parents[1] / "Config"
+project = json.loads(re.sub(r",(\s*[}\]])", r"\1", open(sys.argv[1]).read()))
+repo = Path(sys.argv[1]).resolve().parents[1]
 wanted = {
     "com.loomscreen.pro": "Pro app",
     "com.loomscreen": "Lite app",
@@ -490,16 +493,18 @@ wanted = {
     "com.loomscreen.wallpaper": "Lite extension",
 }
 found = {}
-for block in re.finditer(r"isa = XCBuildConfiguration;(.*?)\n\t\t\};", source, re.S):
-    body = block.group(1)
-    ident = re.search(r"PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);", body)
-    xcconfig = re.search(r"baseConfigurationReference = \w+ /\* (\S+\.xcconfig) \*/;", body)
-    if not ident and xcconfig:
-        # App targets take their bundle ID from their edition's xcconfig.
-        ident = re.search(r"^PRODUCT_BUNDLE_IDENTIFIER = (\S+)$", (config_dir / xcconfig.group(1)).read_text(), re.M)
-    version = re.search(r"MARKETING_VERSION = ([^;]+);", body)
-    if ident and version and ident.group(1) in wanted:
-        found.setdefault(ident.group(1), set()).add(version.group(1))
+for target in project["targets"]:
+    settings = target.get("build-settings", {})
+    xcconfigs = {c["name"]: c["file"] for c in target.get("specialized-configurations", [])}
+    for config in project["configurations"]:
+        ident = settings.get(f"PRODUCT_BUNDLE_IDENTIFIER[config={config}]", settings.get("PRODUCT_BUNDLE_IDENTIFIER"))
+        if ident is None and config in xcconfigs:
+            # App targets take their bundle ID from their edition's xcconfig.
+            match = re.search(r"^PRODUCT_BUNDLE_IDENTIFIER = (\S+)$", (repo / xcconfigs[config]).read_text(), re.M)
+            ident = match and match.group(1)
+        version = settings.get(f"MARKETING_VERSION[config={config}]", settings.get("MARKETING_VERSION"))
+        if ident and version and ident in wanted:
+            found.setdefault(ident, set()).add(version)
 missing = [name for ident, name in wanted.items() if ident not in found]
 if missing:
     sys.exit("ERROR: no MARKETING_VERSION found for: " + ", ".join(missing))

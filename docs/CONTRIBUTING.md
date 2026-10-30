@@ -3,7 +3,7 @@
 **English** · [简体中文](zh-Hans/CONTRIBUTING.md)
 
 Issues and pull requests are welcome. Start with [Building](en/building.md)
-for Xcode 27.0 and Metal Toolchain setup, and [Architecture](en/architecture.md)
+for Xcode 27.2 and Metal Toolchain setup, and [Architecture](en/architecture.md)
 for module ownership.
 
 ## Validate a change

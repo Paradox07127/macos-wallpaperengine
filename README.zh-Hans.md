@@ -117,7 +117,7 @@ cd macos-wallpaperengine
 open LiveWallpaper.xcodeproj
 ```
 
-Scheme：`LiveWallpaperLite`（Lite）· `LiveWallpaper`（Pro）。出货与 CI 使用 Xcode 27.0，日常验证从 `make verify` 开始，完整发版候选门禁单独运行。[架构说明](docs/zh-Hans/architecture.md) · 环境要求与测试门禁：[docs/zh-Hans/building.md](docs/zh-Hans/building.md)。
+Scheme：`LiveWallpaperLite`（Lite）· `LiveWallpaper`（Pro）。出货构建使用 Xcode 27.2，CI 使用 Xcode 27，日常验证从 `make verify` 开始，完整发版候选门禁单独运行。[架构说明](docs/zh-Hans/architecture.md) · 环境要求与测试门禁：[docs/zh-Hans/building.md](docs/zh-Hans/building.md)。
 
 ## 贡献与许可
 

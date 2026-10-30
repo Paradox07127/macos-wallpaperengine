@@ -248,7 +248,7 @@ PROJECT_MARKETING_VERSION="$(xcodebuild -showBuildSettings \
 
 if [[ "$PROJECT_MARKETING_VERSION" != "$VERSION" ]]; then
   echo "ERROR: --version ($VERSION) does not match $SCHEME MARKETING_VERSION ($PROJECT_MARKETING_VERSION)." >&2
-  echo "       Bump MARKETING_VERSION in project.pbxproj first, commit, then re-run." >&2
+  echo "       Bump MARKETING_VERSION in project.xcproj first, commit, then re-run." >&2
   exit 65
 fi
 
@@ -278,8 +278,8 @@ rm -rf "$ARCHIVE_PATH" "$STAGING_DIR" "$DMG_PATH" "$SHA_PATH" "$DMG_BG_PATH"
 # Single source of truth: the project's own DEVELOPMENT_TEAM. check_entitlements.sh
 # hardcodes the same value, so a mismatch fails the shipped-app audit below
 # rather than producing a quietly wrong-signed build.
-EXPECTED_TEAM_ID="$(grep -m1 'DEVELOPMENT_TEAM = ' LiveWallpaper.xcodeproj/project.pbxproj \
-  | sed 's/.*= *//; s/;.*//')"
+EXPECTED_TEAM_ID="$(grep -m1 '"DEVELOPMENT_TEAM": ' LiveWallpaper.xcodeproj/project.xcproj \
+  | sed 's/.*: *"//; s/".*//')"
 if [[ -z "$EXPECTED_TEAM_ID" ]]; then
   echo "ERROR: could not read DEVELOPMENT_TEAM from the project" >&2
   exit 1

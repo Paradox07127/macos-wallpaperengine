@@ -118,7 +118,7 @@ cd macos-wallpaperengine
 open LiveWallpaper.xcodeproj
 ```
 
-Schemes: `LiveWallpaperLite` (Lite) · `LiveWallpaper` (Pro). Shipping and CI use Xcode 27.0. Start validation with `make verify`; the complete release-candidate gate runs separately. [Architecture](docs/en/architecture.md) · Requirements and test gates: [docs/en/building.md](docs/en/building.md).
+Schemes: `LiveWallpaperLite` (Lite) · `LiveWallpaper` (Pro). Shipping builds use Xcode 27.2; CI runs on Xcode 27. Start validation with `make verify`; the complete release-candidate gate runs separately. [Architecture](docs/en/architecture.md) · Requirements and test gates: [docs/en/building.md](docs/en/building.md).
 
 ## Contributing & license
 

@@ -5,7 +5,7 @@
 ## 环境要求
 
 - Apple Silicon Mac 上的 macOS 14.6+
-- **Xcode 27.0**，与出货构建及 `xcode-27` CI runner 一致。UI 会编译 macOS 26 SDK 的 `glassEffect` 等 API，部署目标 14.6 不代表可用 14.x SDK 构建。
+- **Xcode 27.2**，与出货构建一致。工程使用 Xcode 的 JSON 工程格式（`project.xcproj`），需要 Xcode 27 或更新版本。UI 会编译 macOS 26 SDK 的 `glassEffect` 等 API，部署目标 14.6 不代表可用 14.x SDK 构建。
 - **Metal Toolchain** 组件（Xcode 26 把它作为单独下载项）：
   ```bash
   xcodebuild -downloadComponent MetalToolchain
@@ -76,7 +76,7 @@ Metal 层需要本地图形与签名环境；它不是无硬件检查，也**不
 Pro/Lite Debug/Release 链接矩阵、archive 冒烟和发布/签名检查。
 共用构建存储时串行执行 scheme；独立任务必须使用不同 DerivedData。
 
-支持的出货与 CI 工具链为 Xcode 27.0。本地命令使用 `xcode-select -p` 选择的工具链，
+支持的出货工具链为 Xcode 27.2；CI 运行在 `xcode-27` runner 上。本地命令使用 `xcode-select -p` 选择的工具链，
 可用 `DEVELOPER_DIR` 显式覆盖。
 当前 target 与包见[架构说明](architecture.md)；Video/Web 测试位于应用 target。
 

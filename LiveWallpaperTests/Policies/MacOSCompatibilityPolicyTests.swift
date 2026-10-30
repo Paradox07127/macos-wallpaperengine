@@ -7,23 +7,26 @@ struct MacOSCompatibilityPolicyTests {
 
     @Test("project and package manifests target macOS 14.6")
     func deploymentTargetsAreMacOS14_6() throws {
-        let project = try String(
-            contentsOf: repoRoot.appendingPathComponent("LiveWallpaper.xcodeproj/project.pbxproj"),
-            encoding: .utf8
-        )
-        let projectTargets = project
-            .matches(of: /MACOSX_DEPLOYMENT_TARGET = ([^;]+);/)
-            .map { String($0.output.1) }
-        #expect(!projectTargets.isEmpty)
-        // 14.6 is the app floor; the wallpaper appexes pin 26.0 because the extension
-        // point does not exist earlier — 2 targets x 2 configs = the four occurrences.
+        let project = try XcodeProjectFile()
+        var targetsByDeployment: [String: Set<String>] = [:]
+        for target in project.targets {
+            let name = try #require(target["name"] as? String)
+            for configuration in project.configurations {
+                let deployment = try #require(
+                    try project.setting("MACOSX_DEPLOYMENT_TARGET", target: name, configuration: configuration),
+                    "\(name)/\(configuration) has no deployment target"
+                )
+                targetsByDeployment[deployment, default: []].insert(name)
+            }
+        }
+        // 14.6 is the app floor; the wallpaper appexes pin 26.0 because the extension point does not exist earlier.
         #expect(
-            Set(projectTargets) == ["14.6", "26.0"],
-            Comment(rawValue: "pbxproj has unexpected deployment targets: \(Set(projectTargets).sorted())")
+            Set(targetsByDeployment.keys) == ["14.6", "26.0"],
+            Comment(rawValue: "project has unexpected deployment targets: \(targetsByDeployment.keys.sorted())")
         )
         #expect(
-            projectTargets.filter { $0 == "26.0" }.count == 4,
-            Comment(rawValue: "26.0 is reserved for the two wallpaper appex targets (×2 configs)")
+            targetsByDeployment["26.0"] == ["SystemWallpaperProvider", "SystemWallpaperProviderLite"],
+            Comment(rawValue: "26.0 is reserved for the two wallpaper appex targets")
         )
 
         // SPM has no `.v14_6` case, so the floor is spelled as a version string.

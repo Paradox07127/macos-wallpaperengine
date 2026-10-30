@@ -76,93 +76,85 @@ struct SystemWallpaperGuardTests {
 
     // MARK: - Project wiring
 
-    /// One target's Debug+Release build settings, keyed by configuration name.
-    private static func buildConfigurations(
-        ofTarget target: String,
-        in project: String
-    ) throws -> [String: String] {
-        let listAnchor = "/* Build configuration list for PBXNativeTarget \"\(target)\" */ = {"
-        let listStart = try #require(project.range(of: listAnchor), "no configuration list for target \(target)")
-        let listEnd = try #require(project.range(of: "};", range: listStart.upperBound ..< project.endIndex))
-        let list = String(project[listStart.upperBound ..< listEnd.lowerBound])
-
-        var result: [String: String] = [:]
-        for line in list.split(separator: "\n") {
-            let parts = line.split(separator: "/*")
-            guard parts.count == 2 else { continue }
-            let objectID = parts[0].trimmingCharacters(in: .whitespaces)
-            let configName = parts[1]
-                .replacingOccurrences(of: "*/", with: "")
-                .trimmingCharacters(in: CharacterSet(charactersIn: " ,\t"))
-            guard objectID.count == 24 else { continue }
-
-            let blockAnchor = "\(objectID) /* \(configName) */ = {"
-            guard let blockStart = project.range(of: blockAnchor),
-                  let blockEnd = project.range(of: "\n\t\t};", range: blockStart.upperBound ..< project.endIndex)
-            else { continue }
-            result[configName] = String(project[blockStart.upperBound ..< blockEnd.lowerBound])
-        }
-        #expect(result.count == 2, "\(target): expected Debug and Release configurations, got \(result.keys.sorted())")
-        return result
-    }
-
     @Test("Each appex target points at its own SKU's plist, entitlements and bundle id")
     func projectWiresEachAppexToItsOwnSKU() throws {
-        let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
+        let project = try XcodeProjectFile()
+        #expect(project.configurations == ["Debug", "Release"])
         for sku in Self.skus {
-            let configurations = try Self.buildConfigurations(ofTarget: sku.targetName, in: project)
             let other = Self.skus.first { $0.name != sku.name }!
-            for (configName, settings) in configurations.sorted(by: { $0.key < $1.key }) {
-                let where_ = "\(sku.name)/\(configName)"
+            let ownSettings = try project.target(sku.targetName)["build-settings"] as? [String: Any] ?? [:]
+            #expect(
+                !ownSettings.values.contains { "\($0)".contains(other.infoPlistPath) || "\($0)".contains(other.entitlementsPath) },
+                "\(sku.name): references the other SKU's configuration"
+            )
+            for configuration in project.configurations {
+                let where_ = "\(sku.name)/\(configuration)"
+                func setting(_ key: String) throws -> String? {
+                    try project.setting(key, target: sku.targetName, configuration: configuration)
+                }
                 #expect(
-                    settings.contains("PRODUCT_BUNDLE_IDENTIFIER = \(sku.appexBundleID);"),
+                    try setting("PRODUCT_BUNDLE_IDENTIFIER") == sku.appexBundleID,
                     "\(where_): bundle id must be \(sku.appexBundleID) — Xcode also rejects an embedded binary whose id is not prefixed by the host's"
                 )
+                #expect(try setting("INFOPLIST_FILE") == sku.infoPlistPath, "\(where_): INFOPLIST_FILE must be \(sku.infoPlistPath)")
                 #expect(
-                    settings.contains(sku.infoPlistPath),
-                    "\(where_): INFOPLIST_FILE must be \(sku.infoPlistPath)"
-                )
-                #expect(
-                    settings.contains(sku.entitlementsPath),
+                    try setting("CODE_SIGN_ENTITLEMENTS") == sku.entitlementsPath,
                     "\(where_): CODE_SIGN_ENTITLEMENTS must be \(sku.entitlementsPath) — without it the appex is unsandboxed and pkd silently drops it"
                 )
                 #expect(
-                    !settings.contains(other.infoPlistPath) && !settings.contains(other.entitlementsPath),
-                    "\(where_): references the other SKU's configuration"
-                )
-                #expect(
-                    settings.contains("GENERATE_INFOPLIST_FILE = NO;"),
+                    try setting("GENERATE_INFOPLIST_FILE") == "NO",
                     "\(where_): a generated plist would drop EXExtensionPointIdentifier and the appex would never register"
                 )
-                #expect(settings.contains("ENABLE_APP_SANDBOX = YES;"), "\(where_): sandbox is the registration gate")
+                #expect(try setting("ENABLE_APP_SANDBOX") == "YES", "\(where_): sandbox is the registration gate")
                 #expect(
-                    settings.contains("MACOSX_DEPLOYMENT_TARGET = 26.0;"),
+                    try setting("MACOSX_DEPLOYMENT_TARGET") == "26.0",
                     "\(where_): must match LSMinimumSystemVersion 26.0, or the appex is advertised to systems it cannot load on"
                 )
-                #expect(settings.contains("SWIFT_VERSION = 6.0;"), "\(where_): stay on the app's language mode")
+                #expect(try setting("SWIFT_VERSION") == "6.0", "\(where_): stay on the app's language mode")
             }
         }
     }
 
     @Test("Appexes are embedded into Contents/Extensions, not Contents/PlugIns")
     func appexesEmbedIntoExtensionsFolder() throws {
-        let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")
+        let project = try XcodeProjectFile()
         for sku in Self.skus {
-            let reference = "\(sku.targetName).appex in Embed"
-            #expect(
-                project.contains(reference),
-                "\(sku.name): appex is not in an embed phase — it would never ship inside the app"
+            let product = try #require(
+                Self.fileEntry(path: "<PRODUCTS>/\(sku.targetName).appex", in: project.root["files"]),
+                "\(sku.name): no product entry for the appex"
             )
+            // Each membership names its phase as "<host target>/copy/<phase name>".
+            let phases = (product["target-membership"] as? [[String: Any]] ?? []).compactMap { $0["build-phase"] as? String }
+            #expect(!phases.isEmpty, "\(sku.name): appex is not in an embed phase — it would never ship inside the app")
+            for phase in phases {
+                let parts = phase.split(separator: "/", maxSplits: 2).map(String.init)
+                let host = try project.target(parts[0])
+                let copy = (host["build-phases"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }
+                    .first { $0["kind"] as? String == "copy" && $0["name"] as? String == parts.last }
+                // pkd only scans Contents/Extensions; the generic-extension template
+                // defaults to PlugIns, where the appex is silently invisible.
+                #expect(
+                    copy?["relative-path"] as? String == "$(EXTENSIONS_FOLDER_PATH)",
+                    "\(sku.name): embed phase \(phase) does not target EXTENSIONS_FOLDER_PATH"
+                )
+            }
         }
-        // pkd only scans Contents/Extensions; the generic-extension template
-        // defaults to PlugIns, where the appex is silently invisible.
-        let embedPhases = project.components(separatedBy: "isa = PBXCopyFilesBuildPhase;").dropFirst()
-        for phase in embedPhases where phase.contains(".appex in Embed") {
-            #expect(
-                phase.contains("dstPath = \"$(EXTENSIONS_FOLDER_PATH)\";"),
-                "an appex embed phase does not target EXTENSIONS_FOLDER_PATH"
-            )
+    }
+
+    /// Products sit in a nested group of the `files` tree, so the search recurses.
+    private static func fileEntry(path: String, in node: Any?) -> [String: Any]? {
+        if let entry = node as? [String: Any] {
+            if entry["path"] as? String == path {
+                return entry
+            }
+            return fileEntry(path: path, in: entry["children"])
         }
+        for child in node as? [Any] ?? [] {
+            if let found = fileEntry(path: path, in: child) {
+                return found
+            }
+        }
+        return nil
     }
 
     @Test("The agent proxy is derived per call, never stored")

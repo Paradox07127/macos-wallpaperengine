@@ -225,8 +225,8 @@ PYXML
 )"
 PUB_DATE="$(date -u "+%a, %d %b %Y %H:%M:%S +0000")"
 # Read the real deployment target rather than hardcoding one that can drift.
-MIN_OS="$(grep -m1 'MACOSX_DEPLOYMENT_TARGET = ' "$ROOT/LiveWallpaper.xcodeproj/project.pbxproj" \
-  | sed 's/.*= *//; s/;.*//')"
+MIN_OS="$(grep -m1 '"MACOSX_DEPLOYMENT_TARGET": ' "$ROOT/LiveWallpaper.xcodeproj/project.xcproj" \
+  | sed 's/.*: *"//; s/".*//')"
 if [[ -z "$MIN_OS" ]]; then
   echo "ERROR: could not read MACOSX_DEPLOYMENT_TARGET from the project" >&2
   exit 1
