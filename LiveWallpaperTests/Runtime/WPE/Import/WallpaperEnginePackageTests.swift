@@ -71,16 +71,20 @@ struct WallpaperEnginePackageTests {
         }
     }
 
-    @Test("Rejects duplicate entries")
-    func rejectsDuplicateEntries() {
+    @Test("Duplicate entries keep the first occurrence")
+    func duplicateEntriesKeepFirst() throws {
         let data = makePackage(entries: [
             EntrySpec("same.bin", [0x01]),
-            EntrySpec("same.bin", [0x02])
+            EntrySpec("other.bin", [0x02]),
+            EntrySpec("same.bin", [0x03, 0x04])
         ])
 
-        #expect(throws: WPEPackageError.self) {
-            try parseStreaming(data)
-        }
+        let package = try parseStreaming(data)
+
+        #expect(package.entries.map(\.name) == ["same.bin", "other.bin"])
+        #expect(package.nameIndex["same.bin"]?.dataOffset == 0)
+        #expect(package.nameIndex["same.bin"]?.dataSize == 1)
+        #expect(package.caseFoldCollisions.isEmpty)
     }
 
     @Test("Records case-fold collisions while preserving first-match lookup")
@@ -106,36 +110,34 @@ struct WallpaperEnginePackageTests {
         ])
     }
 
-    @Test("Rejects duplicate entries after path normalization")
-    func rejectsDuplicateCanonicalEntryPaths() {
+    @Test("Entries that normalize to the same path keep the first occurrence")
+    func duplicateCanonicalEntryPathsKeepFirst() throws {
         let data = makePackage(entries: [
             EntrySpec("models/./same.bin", [0x01]),
-            EntrySpec("models/same.bin", [0x02])
+            EntrySpec("models//same.bin", [0x02, 0x03]),
+            EntrySpec("models/same.bin", [0x04, 0x05, 0x06])
         ])
 
-        #expect(throws: WPEPackageError.self) {
-            try parseStreaming(data)
-        }
+        let package = try parseStreaming(data)
+
+        #expect(package.entries.map(\.name) == ["models/same.bin"])
+        #expect(package.nameIndex["models/same.bin"]?.dataSize == 1)
     }
 
-    @Test("Streaming parser rejects duplicate entries after path normalization")
-    func streamingParserRejectsDuplicateCanonicalEntryPaths() throws {
-        let fileManager = FileManager.default
+    @Test("A package with a duplicate entry opens and serves the first entry's bytes")
+    func duplicateEntryPackageServesFirstBytes() async throws {
         let root = temporaryRoot()
-        defer { try? fileManager.removeItem(at: root) }
-        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let url = root.appendingPathComponent("scene.pkg")
-        let data = makePackage(entries: [
-            EntrySpec("models//same.bin", [0x01]),
-            EntrySpec("models/same.bin", [0x02])
-        ])
-        try data.write(to: url)
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
+        try makePackage(entries: [
+            EntrySpec("fonts/a.otf", [0xAA]),
+            EntrySpec("fonts/a.otf", [0xBB, 0xCC])
+        ]).write(to: url)
 
-        #expect(throws: WPEPackageError.self) {
-            try WallpaperEnginePackage.parseIndex(streamingFrom: handle)
-        }
+        let provider = try await WPEPackageSceneAssetProvider.open(packageURL: url)
+
+        #expect(try provider.data(atRelativePath: "fonts/a.otf") == Data([0xAA]))
     }
 
     @Test("Parses UTF-8 names")

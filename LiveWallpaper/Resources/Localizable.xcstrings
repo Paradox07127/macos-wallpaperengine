@@ -129237,65 +129237,6 @@
         }
       }
     },
-    "The scene package contains a duplicate entry: %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das Szenenpaket enthält einen doppelten Eintrag: %@"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The scene package contains a duplicate entry: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El paquete contiene una entrada duplicada: %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le paquet de scène contient une entrée dupliquée : %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンパッケージに重複したエントリがあります：%@"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "씬 패키지에는 중복된 항목이 포함되어 있습니다: %@"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O pacote de cena contém uma entrada duplicada: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景包包含重复条目：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "場景套件包含重複項目：%@"
-          }
-        }
-      }
-    },
     "The scene package exceeds a supported resource limit: %@" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -136,17 +136,15 @@ struct WallpaperEnginePackage: Sendable, Equatable {
                 index: index,
                 maxPathDepth: limits.maxPathDepth
             )
-            guard seenNames.insert(canonicalName).inserted else {
-                throw WPEPackageError.duplicateEntry(name: canonicalName)
-            }
+            let offset = UInt64(try streamReadU32(from: handle, headerBytes: &headerBytes))
+            let size = UInt64(try streamReadU32(from: handle, headerBytes: &headerBytes))
+            // WPE keeps the first entry for a repeated path; published scenes can list a dependency file twice.
+            guard seenNames.insert(canonicalName).inserted else { continue }
             let lookupKey = try accountLowercaseIndexBudget(
                 canonicalName,
                 aggregateBytes: &lowercaseIndexBytes,
                 limits: limits
             )
-
-            let offset = UInt64(try streamReadU32(from: handle, headerBytes: &headerBytes))
-            let size = UInt64(try streamReadU32(from: handle, headerBytes: &headerBytes))
             let entry = Entry(name: canonicalName, dataOffset: offset, dataSize: size)
             entries.append(entry)
             if let winner = nameIndex[lookupKey] {
@@ -340,7 +338,6 @@ enum WPEPackageError: Error, Equatable, Sendable {
     case invalidEntryName(index: Int)
     case entryOutOfBounds(name: String)
     case pathTraversal(name: String)
-    case duplicateEntry(name: String)
     case resourceLimitExceeded(WPEPackageResourceLimit)
 
     var stableReasonCode: String {
@@ -350,7 +347,6 @@ enum WPEPackageError: Error, Equatable, Sendable {
         case .invalidEntryName: return "PKG_INVALID_ENTRY_NAME"
         case .entryOutOfBounds: return "PKG_ENTRY_OUT_OF_BOUNDS"
         case .pathTraversal: return "PKG_PATH_TRAVERSAL"
-        case .duplicateEntry: return "PKG_DUPLICATE_ENTRY"
         case .resourceLimitExceeded(let limit): return limit.rawValue
         }
     }

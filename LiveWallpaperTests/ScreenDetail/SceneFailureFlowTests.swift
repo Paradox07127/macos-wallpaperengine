@@ -235,7 +235,7 @@ struct SceneFailureFlowTests {
 
     @Test("Document, resource, graph, Metal and model failures retain their payloads")
     func remainingErrorFamilies() {
-        let packages: [WPEPackageError] = [.truncatedHeader, .invalidMagic("BAD"), .invalidEntryName(index: 2), .entryOutOfBounds(name: "B"), .pathTraversal(name: "../B"), .duplicateEntry(name: "B"), .resourceLimitExceeded(.entryCount)]
+        let packages: [WPEPackageError] = [.truncatedHeader, .invalidMagic("BAD"), .invalidEntryName(index: 2), .entryOutOfBounds(name: "B"), .pathTraversal(name: "../B"), .resourceLimitExceeded(.entryCount)]
         for error in packages {
             let cause = SceneFailureCause.make(error)
             #expect(cause.code == error.stableReasonCode)

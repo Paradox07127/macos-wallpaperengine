@@ -59,8 +59,6 @@ enum SceneFailureCause {
                 String(localized: "A scene package entry extends beyond the available data: \(name)", bundle: .appLanguage)
             case let .pathTraversal(name):
                 String(localized: "A scene package entry refers outside the project: \(name)", bundle: .appLanguage)
-            case let .duplicateEntry(name):
-                String(localized: "The scene package contains a duplicate entry: \(name)", bundle: .appLanguage)
             case let .resourceLimitExceeded(limit):
                 String(localized: "The scene package exceeds a supported resource limit: \(limit.rawValue)", bundle: .appLanguage)
             }
