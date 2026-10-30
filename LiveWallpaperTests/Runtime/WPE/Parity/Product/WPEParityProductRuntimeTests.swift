@@ -148,7 +148,7 @@ final class WPEParityProductRuntimeTests: XCTestCase {
             XCTAssertEqual(harness.surface.lastFramesPerSecond, marker)
         }
 
-        let suite = "parity-runtime-\(UUID().uuidString)"
+        let suite = "parity-runtime-\(#function)"
         let unrelated = try XCTUnwrap(UserDefaults(suiteName: suite))
         unrelated.set(true, forKey: "unrelatedPreference")
         defer { unrelated.removePersistentDomain(forName: suite) }
