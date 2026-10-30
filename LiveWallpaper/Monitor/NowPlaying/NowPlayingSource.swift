@@ -202,7 +202,9 @@ final actor NowPlayingSource: MonitorDataSource {
             let cached = await fetcher.cachedArtwork(forKey: key)
             guard stillCurrent() else { return }
             if let cached {
-                state.artwork = cached
+                // Every frame of a track brings the same cached bytes; keep the digest already published.
+                let published = lastPublishedState?.artworkPayload
+                state.artworkPayload = published?.data == cached ? published : MonitorNowPlayingArtwork(cached)
             } else if artworkTaskKey != key {
                 // Publish the text-only state below without waiting for the
                 // image; the fetch re-publishes an enriched state on landing.
@@ -348,7 +350,7 @@ actor NowPlayingSystemBridge {
     typealias Query = @Sendable (Bool) async throws -> Data
     private let query: Query
     private var artworkKey: String?
-    private var artwork: Data?
+    private var artwork: MonitorNowPlayingArtwork?
     private var artworkTrack: [String]?
     /// false = `artwork` is nil or belongs to an older artwork identifier of the same track.
     private var artworkIsCurrent = false
@@ -400,14 +402,14 @@ actor NowPlayingSystemBridge {
                 if let encoded = enriched.artwork, encoded.utf8.count <= 2_796_204,
                    let data = Data(base64Encoded: encoded), !data.isEmpty,
                    data.count <= NowPlayingArtworkFetcher.maxImageBytes {
-                    artwork = data
+                    artwork = MonitorNowPlayingArtwork(data)
                     artworkIsCurrent = true
                 }
             } catch {
                 try Task.checkCancellation()
             }
         }
-        state.artwork = artwork
+        state.artworkPayload = artwork
         return state
     }
 

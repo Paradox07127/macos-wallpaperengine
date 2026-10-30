@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum MonitorAgentPhase: String, Codable, Sendable {
@@ -294,7 +295,7 @@ struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var playbackRate: Double?
     var trackID: String?
     var playerBundleID: String?
-    var artwork: Data?
+    var artworkPayload: MonitorNowPlayingArtwork?
     var isSystemMedia: Bool?
     var systemPlayerID: String?
     var systemCommands: [Int]?
@@ -304,6 +305,39 @@ struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var effectivePlaybackRate: Double {
         guard let playbackRate, playbackRate.isFinite, playbackRate >= 0, playbackRate <= 16 else { return 1 }
         return playbackRate
+    }
+
+    /// Setting hashes the bytes on the caller's thread; main-actor code moves `artworkPayload` instead.
+    var artwork: Data? {
+        get { artworkPayload?.data }
+        set { artworkPayload = newValue.map(MonitorNowPlayingArtwork.init) }
+    }
+}
+
+extension MonitorNowPlayingState {
+    init(phase: MonitorNowPlayingPhase, title: String, artwork: Data?) {
+        self.init(phase: phase, title: title)
+        self.artwork = artwork
+    }
+}
+
+/// Cover bytes with their SHA-256, computed once where the bytes arrive; caches compare the digest.
+struct MonitorNowPlayingArtwork: Codable, Sendable, Equatable {
+    let data: Data
+    let digest: SHA256.Digest
+
+    init(_ data: Data) {
+        self.data = data
+        digest = SHA256.hash(data: data)
+    }
+
+    init(from decoder: any Decoder) throws {
+        try self.init(decoder.singleValueContainer().decode(Data.self))
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(data)
     }
 }
 

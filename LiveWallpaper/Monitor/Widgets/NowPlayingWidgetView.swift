@@ -369,8 +369,8 @@ struct NowPlayingWidgetView: View {
 
     /// Accent must recompute when the artwork arrives on a later frame of the
     /// same track (the fetcher publishes text first, image afterwards).
-    private var accentTaskKey: Data? {
-        state?.artwork
+    private var accentTaskKey: SHA256.Digest? {
+        state?.artworkPayload?.digest
     }
 
     /// Turning the switch on must fetch for the track already on screen, so the
@@ -554,11 +554,11 @@ struct NowPlayingWidgetView: View {
     // MARK: Motion drivers
 
     private func refreshAccent(for state: MonitorNowPlayingState) async {
-        guard let artwork = state.artwork, !artwork.isEmpty else {
+        guard let artwork = state.artworkPayload, !artwork.data.isEmpty else {
             accent = nil
             return
         }
-        let value = await NowPlayingAccentStore.shared.accent(for: trackKey, data: artwork)
+        let value = await NowPlayingAccentStore.shared.accent(for: trackKey, artwork: artwork)
         // A changed artwork payload cancels the old extraction's presentation.
         guard !Task.isCancelled else { return }
         accent = value
@@ -827,8 +827,8 @@ struct NowPlayingWidgetView: View {
         let artworkSide = titleSize * 1.15 * options.artworkScale
 
         HStack(alignment: .top, spacing: layout.visible.contains(.artworkThumb) ? eyebrowSize * 0.9 : 0) {
-            if layout.visible.contains(.artworkThumb), let artwork = state.artwork {
-                NowPlayingArtworkView(data: artwork, cacheKey: trackKey, shape: artworkShape(radius: 4))
+            if layout.visible.contains(.artworkThumb), let artwork = state.artworkPayload {
+                NowPlayingArtworkView(artwork: artwork, cacheKey: trackKey, shape: artworkShape(radius: 4))
                     .frame(width: artworkSide, height: artworkSide)
                     .shadow(color: .black.opacity(options.artworkShadow), radius: 7, x: 0, y: 2)
                     .opacity(visibility.art)
@@ -1009,10 +1009,10 @@ struct NowPlayingWidgetView: View {
                         .padding(side * (0.06 + 0.055 * CGFloat(ring)))
                 }
 
-                if layout.visible.contains(.discArtwork), let artwork = state.artwork {
+                if layout.visible.contains(.discArtwork), let artwork = state.artworkPayload {
                     let label = side * discArtworkFraction
                     NowPlayingArtworkView(
-                        data: artwork, cacheKey: trackKey, shape: artworkShape(radius: label * 0.12)
+                        artwork: artwork, cacheKey: trackKey, shape: artworkShape(radius: label * 0.12)
                     )
                     .frame(width: label, height: label)
                 } else {
@@ -1302,20 +1302,20 @@ final class NowPlayingArtworkStore {
     private var inFlight: [String: (digest: SHA256.Digest, task: Task<CGImage?, Never>)] = [:]
     private let capacity = 8
 
-    func cached(for key: String, data: Data) -> CGImage? {
-        guard let hit = cache[key], hit.digest == SHA256.hash(data: data) else { return nil }
+    func cached(for key: String, digest: SHA256.Digest) -> CGImage? {
+        guard let hit = cache[key], hit.digest == digest else { return nil }
         return hit.image
     }
 
-    func image(for key: String, data: Data) async -> CGImage? {
-        let digest = SHA256.hash(data: data)
+    func image(for key: String, artwork: MonitorNowPlayingArtwork) async -> CGImage? {
+        let digest = artwork.digest
         if let hit = cache[key], hit.digest == digest {
             return hit.image
         }
         if let pending = inFlight[key], pending.digest == digest {
             return await pending.task.value
         }
-        let task = Task.detached(priority: .utility) { Self.decode(data) }
+        let task = Task.detached(priority: .utility) { Self.decode(artwork.data) }
         inFlight[key] = (digest, task)
         let image = await task.value
         if inFlight[key]?.digest == digest {
@@ -1356,7 +1356,7 @@ struct NowPlayingArtworkView: View {
         case circle
     }
 
-    let data: Data
+    let artwork: MonitorNowPlayingArtwork
     let cacheKey: String
     var shape: ArtworkShape = .rounded(4)
 
@@ -1377,10 +1377,10 @@ struct NowPlayingArtworkView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipShape(clipShape)
         }
-        .task(id: data) {
-            image = NowPlayingArtworkStore.shared.cached(for: cacheKey, data: data)
+        .task(id: artwork.digest) {
+            image = NowPlayingArtworkStore.shared.cached(for: cacheKey, digest: artwork.digest)
             if image == nil {
-                let decoded = await NowPlayingArtworkStore.shared.image(for: cacheKey, data: data)
+                let decoded = await NowPlayingArtworkStore.shared.image(for: cacheKey, artwork: artwork)
                 guard !Task.isCancelled else { return }
                 image = decoded
             }

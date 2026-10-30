@@ -119,8 +119,8 @@ final class NowPlayingAccentStore {
         self.extract = extract
     }
 
-    func accent(for key: String, data: Data) async -> NowPlayingAccentColor? {
-        let digest = SHA256.hash(data: data)
+    func accent(for key: String, artwork: MonitorNowPlayingArtwork) async -> NowPlayingAccentColor? {
+        let digest = artwork.digest
         if let hit = cache[key], hit.digest == digest {
             return hit.color
         }
@@ -129,7 +129,7 @@ final class NowPlayingAccentStore {
         }
         extractionCount += 1
         let extract = self.extract
-        let task = Task.detached(priority: .utility) { extract(data) }
+        let task = Task.detached(priority: .utility) { extract(artwork.data) }
         inFlight[key] = (digest, task)
         let value = await task.value
         if inFlight[key]?.digest == digest {

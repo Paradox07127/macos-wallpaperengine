@@ -250,7 +250,7 @@ final class NowPlayingMonitor: NSObject {
                     if systemState.playerBundleID == "com.spotify.client" {
                         systemState.trackID = fallback.trackID ?? systemState.trackID
                     }
-                    systemState.artwork = systemState.artwork ?? fallback.artwork
+                    systemState.artworkPayload = systemState.artworkPayload ?? fallback.artworkPayload
                     if systemState.duration == nil, let duration = fallback.duration,
                        duration.isFinite, duration > 0, duration <= 604_800 {
                         systemState.duration = duration

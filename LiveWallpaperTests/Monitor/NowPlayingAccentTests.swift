@@ -1,9 +1,10 @@
-import XCTest
 import CoreGraphics
+import CryptoKit
 import ImageIO
+@testable import LiveWallpaper
 import os
 import UniformTypeIdentifiers
-@testable import LiveWallpaper
+import XCTest
 
 final class NowPlayingAccentTests: XCTestCase {
 
@@ -66,16 +67,16 @@ final class NowPlayingAccentTests: XCTestCase {
         let store = NowPlayingAccentStore(extract: { _ in
             NowPlayingAccentColor(red: 1, green: 0, blue: 0)
         })
-        let data = Data([0x01])
-        let first = await store.accent(for: "track-a", data: data)
+        let artwork = MonitorNowPlayingArtwork(Data([0x01]))
+        let first = await store.accent(for: "track-a", artwork: artwork)
         XCTAssertEqual(first, NowPlayingAccentColor(red: 1, green: 0, blue: 0))
         XCTAssertEqual(store.extractionCount, 1)
 
-        let second = await store.accent(for: "track-a", data: data)
+        let second = await store.accent(for: "track-a", artwork: artwork)
         XCTAssertEqual(second, first)
         XCTAssertEqual(store.extractionCount, 1, "cache hit re-ran the extractor")
 
-        _ = await store.accent(for: "track-b", data: data)
+        _ = await store.accent(for: "track-b", artwork: artwork)
         XCTAssertEqual(store.extractionCount, 2)
     }
 
@@ -84,14 +85,14 @@ final class NowPlayingAccentTests: XCTestCase {
         let store = NowPlayingArtworkStore()
         let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), side: 24)
         let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1), side: 48)
-        let firstResult = await store.image(for: "stable-track", data: red)
+        let firstResult = await store.image(for: "stable-track", artwork: MonitorNowPlayingArtwork(red))
         let first = try XCTUnwrap(firstResult)
         XCTAssertEqual(first.width, 24)
-        let updatedResult = await store.image(for: "stable-track", data: blue)
+        let updatedResult = await store.image(for: "stable-track", artwork: MonitorNowPlayingArtwork(blue))
         let updated = try XCTUnwrap(updatedResult)
         XCTAssertEqual(updated.width, 48, "The same track received a different valid cover payload")
         XCTAssertFalse(first === updated)
-        let cached = await store.image(for: "stable-track", data: blue)
+        let cached = await store.image(for: "stable-track", artwork: MonitorNowPlayingArtwork(blue))
         XCTAssertTrue(updated === cached, "Unchanged cover bytes must reuse the decoded image")
     }
 
@@ -100,13 +101,13 @@ final class NowPlayingAccentTests: XCTestCase {
         let store = NowPlayingAccentStore()
         let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
         let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
-        let firstResult = await store.accent(for: "stable-track", data: red)
+        let firstResult = await store.accent(for: "stable-track", artwork: MonitorNowPlayingArtwork(red))
         let first = try XCTUnwrap(firstResult)
         XCTAssertGreaterThan(first.red, first.blue)
-        let updatedResult = await store.accent(for: "stable-track", data: blue)
+        let updatedResult = await store.accent(for: "stable-track", artwork: MonitorNowPlayingArtwork(blue))
         let updated = try XCTUnwrap(updatedResult)
         XCTAssertGreaterThan(updated.blue, updated.red, "A replacement cover must refresh its extracted accent")
-        let cached = await store.accent(for: "stable-track", data: blue)
+        let cached = await store.accent(for: "stable-track", artwork: MonitorNowPlayingArtwork(blue))
         XCTAssertEqual(cached, updated)
         XCTAssertEqual(store.extractionCount, 2, "Unchanged bytes must remain cached")
     }
@@ -138,13 +139,13 @@ final class NowPlayingAccentTests: XCTestCase {
         let store = NowPlayingAccentStore(extract: { _ in NowPlayingAccentColor(red: 1, green: 0, blue: 0) })
         let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
         let probe = ReleaseProbe()
-        _ = await store.accent(for: "track", data: probe.data(copying: red))
+        _ = await store.accent(for: "track", artwork: MonitorNowPlayingArtwork(probe.data(copying: red)))
         let accentReleased = await probe.released()
         XCTAssertTrue(accentReleased, "The accent cache retained the raw artwork bytes")
-        _ = await store.accent(for: "track", data: Data(red))
+        _ = await store.accent(for: "track", artwork: MonitorNowPlayingArtwork(Data(red)))
         XCTAssertEqual(store.extractionCount, 1, "Equal bytes in a new buffer must hit the cache")
         let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
-        _ = await store.accent(for: "track", data: blue)
+        _ = await store.accent(for: "track", artwork: MonitorNowPlayingArtwork(blue))
         XCTAssertEqual(store.extractionCount, 2, "Different bytes for the same track must miss the cache")
     }
 
@@ -153,20 +154,43 @@ final class NowPlayingAccentTests: XCTestCase {
         let store = NowPlayingArtworkStore()
         let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), side: 24)
         let probe = ReleaseProbe()
-        let decodedResult = await store.image(for: "track", data: probe.data(copying: red))
+        let decodedResult = await store.image(for: "track", artwork: MonitorNowPlayingArtwork(probe.data(copying: red)))
         let decoded = try XCTUnwrap(decodedResult)
         let artworkReleased = await probe.released()
         XCTAssertTrue(artworkReleased, "The artwork cache retained the raw artwork bytes")
-        XCTAssertTrue(store.cached(for: "track", data: Data(red)) === decoded, "Equal bytes in a new buffer must hit the cache")
+        XCTAssertTrue(store.cached(for: "track", digest: SHA256.hash(data: Data(red))) === decoded, "Equal bytes in a new buffer must hit the cache")
         let blue = try pngData(filledWith: CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1), side: 24)
-        XCTAssertNil(store.cached(for: "track", data: blue), "Different bytes for the same track must miss the cache")
+        XCTAssertNil(store.cached(for: "track", digest: SHA256.hash(data: blue)), "Different bytes for the same track must miss the cache")
+    }
+
+    @MainActor
+    func testCoverIsHashedOnceWhereItArrives() async throws {
+        let red = try pngData(filledWith: CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), side: 24)
+        var state = MonitorNowPlayingState(phase: .playing, title: "Track")
+        state.artwork = red
+        let artwork = try XCTUnwrap(state.artworkPayload)
+        XCTAssertEqual(artwork.digest, SHA256.hash(data: red))
+        // The main-actor merge re-assigns the bytes it already holds; that must keep the arrival digest.
+        state.artwork = state.artwork
+        XCTAssertEqual(state.artworkPayload, artwork)
+
+        let images = NowPlayingArtworkStore()
+        XCTAssertNil(images.cached(for: "track", digest: artwork.digest))
+        let decodedResult = await images.image(for: "track", artwork: artwork)
+        let decoded = try XCTUnwrap(decodedResult)
+        XCTAssertTrue(images.cached(for: "track", digest: artwork.digest) === decoded)
+
+        let accents = NowPlayingAccentStore(extract: { _ in NowPlayingAccentColor(red: 1, green: 0, blue: 0) })
+        _ = await accents.accent(for: "track", artwork: artwork)
+        _ = try await accents.accent(for: "track", artwork: XCTUnwrap(state.artworkPayload))
+        XCTAssertEqual(accents.extractionCount, 1, "The same arrival digest must hit the accent cache")
     }
 
     @MainActor
     func testNilResultIsCachedToo() async {
         let store = NowPlayingAccentStore(extract: { _ in nil })
-        _ = await store.accent(for: "gray", data: Data([0x01]))
-        _ = await store.accent(for: "gray", data: Data([0x01]))
+        _ = await store.accent(for: "gray", artwork: MonitorNowPlayingArtwork(Data([0x01])))
+        _ = await store.accent(for: "gray", artwork: MonitorNowPlayingArtwork(Data([0x01])))
         XCTAssertEqual(store.extractionCount, 1)
     }
 }
