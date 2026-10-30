@@ -349,7 +349,16 @@ with tempfile.TemporaryDirectory(prefix="loomscreen-appcast-contract-") as tempo
         (root / name).write_bytes(plistlib.dumps({"SUPublicEDKey": base64.b64encode(public_key).decode()}))
     project = root / "LiveWallpaper.xcodeproj"
     project.mkdir()
-    (project / "project.xcproj").write_text('"MACOSX_DEPLOYMENT_TARGET": "14.6",\n')
+    # Same shape as the real JSON project, trailing commas included; values differ so the precedence shows.
+    (project / "project.xcproj").write_text('''{
+  "build-settings": {"MACOSX_DEPLOYMENT_TARGET[config=Debug]": "12.0", "MACOSX_DEPLOYMENT_TARGET": "14.6",},
+  "targets": [
+    {"name": "LiveWallpaper", "build-settings": {"MACOSX_DEPLOYMENT_TARGET": "13.0", "MACOSX_DEPLOYMENT_TARGET[config=Release]": "15.2",},},
+    {"name": "LiveWallpaperLite", "build-settings": {},},
+  ],
+}
+''')
+    expected_min_os = {"pro": "15.2", "lite": "14.6"}
     derived = root / "derived"
     signer = derived / "artifacts/sparkle/Sparkle/bin/sign_update"
     signer.parent.mkdir(parents=True)
@@ -403,6 +412,9 @@ fi
             assert enclosure is not None
             expected = "https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.9.3/" + quote(archive_name, safe="")
             assert enclosure.attrib["url"] == expected, enclosure.attrib["url"]
+            minimum = ET.fromstring(feed.read_bytes()).find(
+                "./channel/item/{http://www.andymatuschak.org/xml-namespaces/sparkle}minimumSystemVersion")
+            assert minimum is not None and minimum.text == expected_min_os[sku], (sku, minimum is not None and minimum.text)
         assert not list(root.glob(f".appcast-{sku}.xml.*")), "temporary appcast output leaked"
 
     for sku in ("lite", "pro"):
