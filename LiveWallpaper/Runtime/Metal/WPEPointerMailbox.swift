@@ -135,7 +135,7 @@ final class WPEPointerMailbox: Sendable {
             let changed = frame.isDown != state.pointerFrame.isDown
                 || frame.isRightDown != state.pointerFrame.isRightDown
             state.pointerFrame = frame
-            guard state.clickCaptureEnabled else { return }
+            // Ahead of the capture gate: the release of a press held when capture turned off still clears it.
             if state.suppressed {
                 if !frame.isDown, !frame.isRightDown {
                     state.suppressed = false
@@ -143,7 +143,7 @@ final class WPEPointerMailbox: Sendable {
                 }
                 return
             }
-            guard changed else { return }
+            guard state.clickCaptureEnabled, changed else { return }
             guard state.edges.count < buttonCapacity else {
                 Self.cancel(&state)
                 return

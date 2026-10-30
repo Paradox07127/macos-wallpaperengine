@@ -233,6 +233,23 @@ struct WPEPointerMailboxTests {
         #expect(edges.map(\.fromDesktop) == [false])
     }
 
+    @Test("A native release after click capture turns off lets the next desktop click through")
+    func nativeReleaseAfterCaptureOffClearsSuppression() {
+        let mailbox = WPEPointerMailbox()
+        mailbox.setClickCaptureEnabled(true)
+        mailbox.publishPointerFrame(desktopFrame(true))
+        mailbox.setClickCaptureEnabled(false)
+        mailbox.publishPointerFrame(desktopFrame(false))
+        #expect(mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges.isEmpty,
+                "A native frame with capture off would queue an edge")
+        mailbox.publishDesktopButtonFrame(desktopFrame(true), isInsideView: true)
+        mailbox.publishDesktopButtonFrame(desktopFrame(false), isInsideView: true)
+        let edges = mailbox.takeButtonEvents(through: mailbox.read().buttonCursor).edges
+        #expect(edges.map(\.frame) == [desktopFrame(true), desktopFrame(false)],
+                "The first desktop click after capture turned off was swallowed as a held press")
+        #expect(edges.map(\.fromDesktop) == [true, true])
+    }
+
     @Test("Interactive zones republish only on a change beyond tolerance, and the observer sees each change once")
     func interactiveZonesPublishOnChange() {
         let mailbox = WPEPointerMailbox()

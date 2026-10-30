@@ -6,6 +6,7 @@ import AppKit
 enum ClickOutsideEndsEditing {
     private static var monitor: Any?
     private static var keyWindowObserver: (any NSObjectProtocol)?
+    private static var keyWindowContentObservation: NSKeyValueObservation?
     private static let touchObservers = NSHashTable<TouchObserver>.weakObjects()
 
     static func install() {
@@ -19,9 +20,16 @@ enum ClickOutsideEndsEditing {
         keyWindowObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
         ) { _ in
+            MainActor.assumeIsolated(observeKeyWindowContent)
+        }
+        observeKeyWindowContent()
+    }
+
+    /// A content view swapped in after the window became key needs an observer of its own.
+    private static func observeKeyWindowContent() {
+        keyWindowContentObservation = NSApp.keyWindow?.observe(\.contentView, options: .initial) { _, _ in
             MainActor.assumeIsolated(observeKeyWindowTouches)
         }
-        observeKeyWindowTouches()
     }
 
     /// The window whose text editing a click at `point` (window coordinates) ends; nil leaves editing alone.

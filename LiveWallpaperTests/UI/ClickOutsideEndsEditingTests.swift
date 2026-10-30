@@ -239,6 +239,29 @@ struct ClickOutsideEndsEditingTests {
         #expect(ClickOutsideEndsEditing.windowEndingEditing(onClickAt: point, in: nil) == nil)
     }
 
+    // MARK: Touches
+
+    @Test("A content view swapped into the key window gets a touch observer", .timeLimit(.minutes(1)))
+    func swappedContentViewObservesTouches() async throws {
+        guard #available(macOS 27, *) else { return }
+        // The test host is not the active app; only a nonactivating panel can become key in it.
+        let panel = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 600, height: 400),
+                            styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentView = NSView(frame: panel.contentLayoutRect)
+        panel.parkOffScreen()
+        defer { panel.close() }
+        ClickOutsideEndsEditing.install()
+        panel.makeKey()
+        let original = try #require(panel.contentView)
+        let observed = await Self.settle { original.gestureRecognizers.contains { $0 is TouchObserver } }
+        try #require(observed, "control: the window that became key got no touch observer")
+        let replacement = NSView(frame: panel.contentLayoutRect)
+        panel.contentView = replacement
+        #expect(replacement.gestureRecognizers.contains { $0 is TouchObserver },
+                "a content view swapped in after the window became key has no touch observer")
+    }
+
     // MARK: Helpers
 
     private static func endsEditingOnBlankClick(in window: NSWindow) async throws {
