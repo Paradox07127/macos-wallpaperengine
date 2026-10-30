@@ -473,6 +473,12 @@ final class OverlayEditorSession {
     func removeAllObjects() {
         endKeyboardMove()
         guard isActive, let identity, let store else { return }
+        // A live gesture blocks reloading the cleared board, and its end would write the old placements back.
+        interaction.endDrag(bypassSnap: !snapEnabled)
+        endDrag()
+        addDrop = nil
+        addDropRejected = false
+        gestureGeneration += 1
         flushPendingEdits()
         guard let snapshot = store.read(identity) else { return }
         let removed = OverlayObjects(overlay: snapshot.overlay, weather: snapshot.weather)
@@ -624,7 +630,7 @@ final class OverlayEditorSession {
     /// Snaps a music or clock rectangle and keeps it on the board; a guide the clamp moved off is dropped.
     private func place(_ selection: OverlaySelection, free: CGRect, bypassSnap: Bool) -> (rect: CGRect, snap: MonitorSnapResult) {
         var snap = OverlayGeometry.snap(freeRect: free, geometry: interaction.geometry,
-                                        candidates: overlay.enabled ? boardItems : [],
+                                        candidates: overlay.enabled ? interaction.items(excluding: nil) : [],
                                         renderScale: renderScale, enabled: snapEnabled && !bypassSnap)
         let origin: CGPoint
         if selection == .music {
@@ -644,12 +650,6 @@ final class OverlayEditorSession {
             snap.guideY = nil
         }
         return (CGRect(origin: origin, size: free.size), snap)
-    }
-
-    private var boardItems: [MonitorBoardItem] {
-        interaction.placements.map {
-            MonitorBoardItem(id: $0.id, rect: CGRect(origin: interaction.pixelOrigin(for: $0), size: interaction.footprint(for: $0)))
-        }
     }
 
     func endDrag() {
@@ -701,7 +701,7 @@ final class OverlayEditorSession {
         }
         switch item {
         case let .widget(kind):
-            let drop = OverlayGeometry.widgetDrop(kind: kind, at: point, geometry: interaction.geometry, items: boardItems,
+            let drop = OverlayGeometry.widgetDrop(kind: kind, at: point, geometry: interaction.geometry, items: interaction.items(excluding: nil),
                                                   renderScale: renderScale, snaps: snapEnabled && !bypassSnap)
             if let landing = drop.landing {
                 addDrop = .widget(kind, landing: CGRect(origin: landing, size: drop.footprint.size),

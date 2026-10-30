@@ -89,6 +89,55 @@ struct OverlayRemoveAllTests {
         #expect(notices.count == 1)
     }
 
+    @Test("Remove All during a card drag and a pending add keeps the board empty once both gestures end; undo restores it",
+          .timeLimit(.minutes(1)))
+    func removeAllEndsLiveGestures() async throws {
+        let manager = UndoTestManager()
+        let screen = manager.left
+        let bookmarks = BookmarkStore(persistence: RemoveAllBookmarks())
+        let stack = EditDeskUndoStack(
+            manager: manager,
+            router: ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .seconds(5)),
+            bookmarks: bookmarks
+        )
+        let cpu = MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.1, y: 0.1)
+        let gpu = MonitorWidgetPlacement(kind: .gpu, size: .small, x: 0.5, y: 0.4)
+        manager.setMonitorOverlay(MonitorOverlayConfiguration(
+            enabled: true, music: MusicOverlayConfiguration(enabled: false), clock: ClockOverlayConfiguration(enabled: false),
+            board: MonitorBoardConfiguration(widgets: [cpu, gpu])
+        ), for: screen)
+        let defaults = try #require(UserDefaults(suiteName: "OverlayRemoveAllTests.liveGestures"))
+        defer { defaults.removePersistentDomain(forName: "OverlayRemoveAllTests.liveGestures") }
+        let store = RemoveAllStore(manager: manager)
+        let session = OverlayEditorSession(defaults: defaults)
+        session.transition(to: store.identity, store: store, editing: true)
+        defer { session.detach() }
+        session.onObjectsRemoved = { [weak session] objects in
+            stack.recordRemoveAll(of: objects, from: screen) { session?.flushPendingEdits() }
+        }
+
+        session.interaction.beginDrag(cpu.id, grabOffset: .zero)
+        session.interaction.updateDrag(pointInBoard: CGPoint(x: 700, y: 700), bypassSnap: true)
+        session.updateAddDrag(.widget(.memory), boardPoint: CGPoint(x: 1300, y: 200), bypassSnap: true)
+        #expect(session.addDrop != nil)
+        let generation = session.gestureGeneration
+        session.removeAllObjects()
+        #expect(session.gestureGeneration != generation, "the canvas would keep feeding the pre-Remove All gesture")
+
+        session.interaction.endDrag(bypassSnap: true)
+        session.flushPendingEdits()
+        let afterDrag = manager.monitorOverlay(for: screen).board.widgets
+        #expect(afterDrag.isEmpty, "ending the drag wrote back \(afterDrag.map(\.kind))")
+
+        #expect(!session.endAddDrag(commit: true), "the add dragged in before Remove All still landed")
+        session.flushPendingEdits()
+        let afterAdd = manager.monitorOverlay(for: screen).board.widgets
+        #expect(afterAdd.isEmpty, "releasing the add wrote back \(afterAdd.map(\.kind))")
+
+        _ = try #require(await stack.undo())
+        #expect(manager.monitorOverlay(for: screen).board.widgets.map(\.id) == [cpu.id, gpu.id])
+    }
+
     private func expectRemovedObjects(
         manager: UndoTestManager, screen: Screen, session: OverlayEditorSession,
         stack: EditDeskUndoStack, notices: [String]

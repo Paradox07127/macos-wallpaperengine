@@ -111,7 +111,7 @@ final class InteractionModel: ObservableObject {
         )
     }
 
-    private func items(excluding excludedID: UUID?) -> [MonitorBoardItem] {
+    func items(excluding excludedID: UUID?) -> [MonitorBoardItem] {
         placements.compactMap { placement in
             // Cards this edition does not draw keep no space, or they would leave an empty area nobody can clear.
             guard placement.id != excludedID, placement.kind.isAvailableInEdition else { return nil }
