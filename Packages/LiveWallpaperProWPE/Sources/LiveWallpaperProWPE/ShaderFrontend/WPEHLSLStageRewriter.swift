@@ -104,7 +104,14 @@ enum WPEHLSLStageRewriter {
             if let array = match.array {
                 let inner = Array(line[(array.lowerBound + 1) ..< (array.upperBound - 1)])
                 if Latin1.isDigit(inner[0]) {
-                    decl.arraySize = inner.prefix(while: Latin1.isASCIIDigit).reduce(0) { $0 &* 10 &+ Int($1 - 0x30) }
+                    for digit in inner.prefix(while: Latin1.isASCIIDigit) {
+                        let shifted = decl.arraySize.multipliedReportingOverflow(by: 10)
+                        let sum = shifted.partialValue.addingReportingOverflow(Int(digit - 0x30))
+                        guard !shifted.overflow, !sum.overflow else {
+                            throw WPEHLSLRewriteError.arraySizeOutOfRange(name: Latin1.string(decl.name), size: Int.max)
+                        }
+                        decl.arraySize = sum.partialValue
+                    }
                 } else if let value = combos[inner] {
                     guard let size = Latin1.pythonInt(value) else {
                         throw WPEHLSLRewriteError.nonIntegerDefine(name: Latin1.string(inner), value: Latin1.string(value))

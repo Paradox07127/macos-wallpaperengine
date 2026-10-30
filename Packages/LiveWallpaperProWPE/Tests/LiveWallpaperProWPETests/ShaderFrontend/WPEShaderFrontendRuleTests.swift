@@ -309,6 +309,8 @@ final class WPEShaderFrontendRuleTests: XCTestCase {
         let cases: [(decl: String, name: String, size: Int)] = [
             ("uniform float g_x[9223372036854775807];", "g_x", Int.max),
             ("varying vec2 v_x[5000000000000000000];", "v_x", 5_000_000_000_000_000_000),
+            // 2^64 + 1: wrapping arithmetic would land on 1 and pass the range check.
+            ("uniform float g_y[18446744073709551617];", "g_y", Int.max),
         ]
         for (decl, name, size) in cases {
             let files = ["shaders/a.vert": decl + "\nvoid main() {\n}\n"]
