@@ -92,9 +92,7 @@ struct PlaybackControls: View {
             }
         }
         .buttonStyle(.borderless)
-        .htmlOriginTrustDialog(
-            pending: $pendingTrustOrigin, screen: screen, source: webSource, config: htmlConfig?.wrappedValue ?? .default
-        )
+        .htmlOriginTrustDialog(pending: $pendingTrustOrigin, source: webSource)
         .alert(
             "Enable Wallpaper Interaction?",
             isPresented: Binding(

@@ -147,14 +147,8 @@ struct SecurityInspector: View {
             StatusChip("Local", tint: .secondary)
         } else if isTrusted {
             Button("Revoke", role: .destructive) {
-                guard let source else { return }
                 _ = trustStore.revoke(origin)
-                screenManager.setHTMLWallpaper(
-                    source: source,
-                    config: htmlConfig,
-                    forceReload: true,
-                    for: screen
-                )
+                screenManager.reloadHTMLWallpapers(servedFrom: origin)
             }
             .tint(DesignTokens.Colors.Status.danger)
             .fixedSize()
@@ -164,7 +158,7 @@ struct SecurityInspector: View {
             }
             .buttonStyle(.borderedProminent)
             .fixedSize()
-            .htmlOriginTrustDialog(pending: $pendingTrustOrigin, screen: screen, source: source, config: htmlConfig)
+            .htmlOriginTrustDialog(pending: $pendingTrustOrigin, source: source)
         }
     }
 
@@ -187,17 +181,15 @@ struct SecurityInspector: View {
 extension View {
     /// The one confirmation for trusting a web page's origin, shared by this row and the preview HUD.
     func htmlOriginTrustDialog(
-        pending: Binding<TrustedHTMLOrigin?>, screen: Screen, source: HTMLSource?, config: HTMLConfig
+        pending: Binding<TrustedHTMLOrigin?>, source: HTMLSource?
     ) -> some View {
-        modifier(HTMLOriginTrustDialog(pending: pending, screen: screen, source: source, config: config))
+        modifier(HTMLOriginTrustDialog(pending: pending, source: source))
     }
 }
 
 private struct HTMLOriginTrustDialog: ViewModifier {
     @Binding var pending: TrustedHTMLOrigin?
-    let screen: Screen
     let source: HTMLSource?
-    let config: HTMLConfig
 
     @Environment(ScreenManager.self) private var screenManager
 
@@ -219,7 +211,7 @@ private struct HTMLOriginTrustDialog: ViewModifier {
                 defer { pending = nil }
                 guard let source, case let .url(url) = source, TrustedHTMLOrigin(url: url) == origin else { return }
                 _ = TrustedHostStore.shared.trust(origin)
-                screenManager.setHTMLWallpaper(source: source, config: config, forceReload: true, for: screen)
+                screenManager.reloadHTMLWallpapers(servedFrom: origin)
             }
             Button("Cancel", role: .cancel) {
                 pending = nil

@@ -1549,6 +1549,70 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
+    @Test("Revoking an origin reloads every display showing it and no other display")
+    func revokingOriginReloadsEveryDisplayShowingIt() throws {
+        guard let display = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for ScreenManager coordination test")
+            return
+        }
+        let first = UndoTestManager.makeScreen("Revoke First", x: 0)
+        let second = UndoTestManager.makeScreen("Revoke Second", x: 800)
+        let bystander = UndoTestManager.makeScreen("Revoke Bystander", x: 1600)
+        let screens = [first, second, bystander]
+        let revokedHost = "html-revoke-shared-\(UUID().uuidString).example.com"
+        let firstURL = try #require(URL(string: "https://\(revokedHost)/one"))
+        let secondURL = try #require(URL(string: "https://\(revokedHost)/two"))
+        let bystanderURL = try #require(URL(string: "https://html-revoke-other-\(UUID().uuidString).example.com/"))
+        let origin = try #require(TrustedHTMLOrigin(url: firstURL))
+        let bystanderOrigin = try #require(TrustedHTMLOrigin(url: bystanderURL))
+        var config = HTMLConfig.default
+        config.allowJavaScript = true
+
+        let originalConfigurations = SettingsManager.shared.loadConfigurations()
+        defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
+        SettingsManager.shared.replaceAllConfigurations(zip(screens, [firstURL, secondURL, bystanderURL]).map { screen, url in
+            ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .url(url), config: config))
+        })
+        #expect(TrustedHostStore.shared.trust(origin))
+        #expect(TrustedHostStore.shared.trust(bystanderOrigin))
+        defer {
+            _ = TrustedHostStore.shared.revoke(origin)
+            _ = TrustedHostStore.shared.revoke(bystanderOrigin)
+        }
+
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            // A real NSScreen for refresh-rate lookups: the stand-ins trap on `maximumFramesPerSecond`.
+            displayRegistry: FakeDisplayRegistry(
+                screens: screens,
+                nsScreensByID: Dictionary(uniqueKeysWithValues: screens.map { ($0.id, display) })
+            ),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer {
+            manager.tearDownForTermination()
+            for screen in screens {
+                screen.resetRuntimeSession()
+            }
+        }
+        for screen in screens {
+            screen.installRuntimeSession(TestRuntimeSession(wallpaperType: .html))
+        }
+        // A reload request starts a new wallpaper transition on that display.
+        let generations = screens.map { manager.bumpTransition(for: $0.id) }
+
+        #expect(TrustedHostStore.shared.revoke(origin))
+        manager.reloadHTMLWallpapers(servedFrom: origin)
+
+        #expect(!manager.isCurrentTransition(generations[0], for: first.id), "the first display showing the revoked origin was not reloaded")
+        #expect(!manager.isCurrentTransition(generations[1], for: second.id), "the other display showing the revoked origin was not reloaded")
+        #expect(manager.isCurrentTransition(generations[2], for: bystander.id), "a display showing a different origin was reloaded")
+    }
+
     // The candidate must be one that can never become ready: an inline source would commit
     // (`about:blank` is allowed), so this points at a port nothing listens on.
     static let unreachableSource = HTMLSource.url(URL(string: "http://127.0.0.1:1/")!)

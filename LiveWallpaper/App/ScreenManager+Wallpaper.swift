@@ -549,6 +549,16 @@ extension ScreenManager {
         }
     }
 
+    func reloadHTMLWallpapers(servedFrom origin: TrustedHTMLOrigin) {
+        for screen in screens where screen.runtimeSession?.wallpaperType == .html {
+            guard let configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+                  case .html(let source, let config) = configuration.activeWallpaper,
+                  case .url(let url) = source,
+                  TrustedHTMLOrigin(url: url) == origin else { continue }
+            setHTMLWallpaper(source: source, config: config, forceReload: true, for: screen)
+        }
+    }
+
     func setHTMLWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
