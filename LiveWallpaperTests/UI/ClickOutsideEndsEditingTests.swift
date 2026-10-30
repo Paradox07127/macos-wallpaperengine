@@ -241,8 +241,8 @@ struct ClickOutsideEndsEditingTests {
 
     // MARK: Touches
 
-    @Test("A content view swapped into the key window gets a touch observer", .timeLimit(.minutes(1)))
-    func swappedContentViewObservesTouches() async throws {
+    @Test("The key window's content view, and one swapped in later, get a touch tap recognizer", .timeLimit(.minutes(1)))
+    func keyWindowContentGetsTouchTap() async throws {
         guard #available(macOS 27, *) else { return }
         // The test host is not the active app; only a nonactivating panel can become key in it.
         let panel = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 600, height: 400),
@@ -254,15 +254,30 @@ struct ClickOutsideEndsEditingTests {
         ClickOutsideEndsEditing.install()
         panel.makeKey()
         let original = try #require(panel.contentView)
-        let observed = await Self.settle { original.gestureRecognizers.contains { $0 is TouchObserver } }
-        try #require(observed, "control: the window that became key got no touch observer")
+        let installed = await Self.settle { Self.touchTap(on: original) != nil }
+        #expect(installed, "the window that became key got no touch tap recognizer")
+        #expect(!original.gestureRecognizers.contains { $0 is TouchObserver },
+                "the key window's content view ends editing when a finger lands, before a tap and a scroll differ")
         let replacement = NSView(frame: panel.contentLayoutRect)
         panel.contentView = replacement
-        #expect(replacement.gestureRecognizers.contains { $0 is TouchObserver },
-                "a content view swapped in after the window became key has no touch observer")
+        #expect(Self.touchTap(on: replacement) != nil,
+                "a content view swapped in after the window became key has no touch tap recognizer")
     }
 
     // MARK: Helpers
+
+    /// A direct-touch tap recognizer that leaves mouse clicks alone and blocks no other recognizer.
+    private static func touchTap(on view: NSView) -> NSClickGestureRecognizer? {
+        let click = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                       windowNumber: view.window?.windowNumber ?? 0, context: nil,
+                                       eventNumber: 0, clickCount: 1, pressure: 1)
+        return view.gestureRecognizers.lazy.compactMap { $0 as? NSClickGestureRecognizer }.first { tap in
+            guard let delegate = tap.delegate, let click else { return false }
+            return tap.allowedTouchTypes == .direct && !tap.delaysPrimaryMouseButtonEvents
+                && delegate.gestureRecognizer?(tap, shouldAttemptToRecognizeWith: click) == false
+                && delegate.gestureRecognizer?(tap, shouldRecognizeSimultaneouslyWith: NSPanGestureRecognizer()) == true
+        }
+    }
 
     private static func endsEditingOnBlankClick(in window: NSWindow) async throws {
         window.makeKey()

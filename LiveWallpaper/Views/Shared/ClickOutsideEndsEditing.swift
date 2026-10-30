@@ -7,7 +7,6 @@ enum ClickOutsideEndsEditing {
     private static var monitor: Any?
     private static var keyWindowObserver: (any NSObjectProtocol)?
     private static var keyWindowContentObservation: NSKeyValueObservation?
-    private static let touchObservers = NSHashTable<TouchObserver>.weakObjects()
 
     static func install() {
         guard monitor == nil else { return }
@@ -48,11 +47,39 @@ enum ClickOutsideEndsEditing {
     }
 
     private static func observeKeyWindowTouches() {
-        guard let window = NSApp.keyWindow, let content = window.contentView,
-              !touchObservers.allObjects.contains(where: { $0.view === content }) else { return }
-        let observer = TouchObserver.install(in: window) { [weak window] point in
-            endEditing(onClickAt: point, in: window)
+        guard let content = NSApp.keyWindow?.contentView,
+              !content.gestureRecognizers.contains(where: { $0 is TouchTap }) else { return }
+        content.addGestureRecognizer(TouchTap())
+    }
+
+    /// Fires only when a finger lifts without having moved, so a touch that starts a scroll leaves editing alone.
+    private final class TouchTap: NSClickGestureRecognizer, NSGestureRecognizerDelegate {
+        init() {
+            super.init(target: nil, action: nil)
+            target = self
+            action = #selector(tapped)
+            allowedTouchTypes = .direct
+            // Recognizing must not hold back AppKit's tap, pan and long-press mouse simulation.
+            delaysPrimaryMouseButtonEvents = false
+            delegate = self
         }
-        touchObservers.add(observer)
+
+        @available(*, unavailable)
+        required init?(coder _: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        @objc private func tapped() {
+            endEditing(onClickAt: location(in: nil), in: view?.window)
+        }
+
+        /// AppKit asks this only for mouse events; the event monitor already handles those clicks.
+        func gestureRecognizer(_: NSGestureRecognizer, shouldAttemptToRecognizeWith _: NSEvent) -> Bool {
+            false
+        }
+
+        func gestureRecognizer(_: NSGestureRecognizer, shouldRecognizeSimultaneouslyWith _: NSGestureRecognizer) -> Bool {
+            true
+        }
     }
 }
