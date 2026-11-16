@@ -207,7 +207,11 @@ struct SteamConnectorCrashSummary: Codable, Equatable, Sendable {
             frames = threads[faulting]["frames"] as? [[String: Any]] ?? []
         }
         return SteamConnectorCrashSummary(
-            timestamp: header["timestamp"] as? String,
+            // ISO form: with a space before it, the log redactor reads the time as an IPv6 address.
+            timestamp: (header["timestamp"] as? String).map { raw in
+                let parts = raw.split(separator: " ")
+                return parts.count == 3 ? "\(parts[0])T\(parts[1])\(parts[2])" : raw
+            },
             appVersion: header["app_version"] as? String,
             exceptionType: exception?["type"] as? String,
             signal: exception?["signal"] as? String,

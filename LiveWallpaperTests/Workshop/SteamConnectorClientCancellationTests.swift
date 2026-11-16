@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import os
 import Testing
 
@@ -448,7 +449,8 @@ struct SteamConnectorCrashSummaryTests {
         }
         """#
         let summary = try #require(SteamConnectorCrashSummary.parse(ipsText: header + "\n" + body))
-        #expect(summary.timestamp == "2026-11-16 12:34:56.00 -0500")
+        #expect(summary.timestamp == "2026-11-16T12:34:56.00-0500")
+        #expect(LogPrivacyRedactor.scrub(summary.timestamp ?? "") == summary.timestamp, "the crash time was redacted as an IPv6 address")
         #expect(summary.appVersion == "1.0.1")
         #expect(summary.exceptionType == "EXC_BREAKPOINT")
         #expect(summary.signal == "SIGTRAP")
