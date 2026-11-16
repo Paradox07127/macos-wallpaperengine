@@ -53,6 +53,9 @@ struct LogPrivacySourceAuditTests {
             // A fixed Security API name and its OSStatus integer for a refused connection.
             "step": 1,
             "status": 1,
+            // Fixed caller code-signing metadata: a mode literal and a requirement built from bundle and team IDs.
+            "mode": 1,
+            "requirement": 1,
         ],
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/Logger.swift": [
             "level.prefix": 1,

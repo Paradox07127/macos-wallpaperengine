@@ -169,6 +169,19 @@ protocol SteamConnectorProtocol {
     func recentCrashReports(with reply: @escaping @Sendable (Data) -> Void)
 }
 
+/// The code-signing requirement the connector holds its caller to, built from the connector's own signature.
+enum SteamConnectorCallerRequirement {
+    /// nil when there is no Team ID (ad-hoc signing) or an input has a character outside `[A-Za-z0-9.-]`,
+    /// which could otherwise rewrite the requirement's grammar.
+    static func requirement(hostIdentifier: String, teamIdentifier: String?) -> String? {
+        let isSafe = { (value: String) in
+            value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }
+        }
+        guard let teamIdentifier, isSafe(hostIdentifier), isSafe(teamIdentifier) else { return nil }
+        return "anchor apple generic and identifier \"\(hostIdentifier)\" and certificate leaf[subject.OU] = \"\(teamIdentifier)\""
+    }
+}
+
 /// Why the connector process died, taken from one macOS `.ips` crash report.
 struct SteamConnectorCrashSummary: Codable, Equatable, Sendable {
     struct Frame: Codable, Equatable, Sendable {
