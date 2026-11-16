@@ -109,7 +109,7 @@ extension SteamCMDDoctorService {
             if resetIfCancelled(.connector) {
                 return
             }
-            setProbe(.connector, status: .red(message: failure.userFacingReason, command: nil))
+            setProbe(.connector, status: .red(message: failure.userFacingReason, command: nil), connectorFailed: true)
             return
         }
         setProbe(.connector, status: .green(detail: String(

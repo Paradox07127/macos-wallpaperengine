@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import os
 import Testing
 
 @Suite("AF-12: Doctor operation and asset lifecycle", .serialized)
@@ -620,6 +621,135 @@ struct SteamCMDDoctorLifecycleTests {
             .appendingPathComponent("AF12-Lifecycle-\(label)-\(UUID().uuidString)", isDirectory: true)
     }
 
+    // MARK: - Re-checking connector failures
+
+    @MainActor
+    @Test("An identity check the connector dropped is re-run on the next page visit", .timeLimit(.minutes(1)))
+    func connectorFailedIdentityIsRecheckedOnNextVisit() async throws {
+        let delegate = try InspectionConnectorDelegate(dropsFirstInspection: true)
+        let listener = NSXPCListener.anonymous()
+        listener.delegate = delegate
+        listener.resume()
+        let endpoint = listener.endpoint
+        SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
+        let scratch = try TestScratch.defaultsSuite(prefix: "connector-failed-recheck")
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+            scratch.defaults.removePersistentDomain(forName: scratch.name)
+        }
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
+        doctor.binaryPath = "/bin/ls"
+
+        await doctor.runProbe(.binaryIdentity)
+        guard case .yellow? = doctor.probes[.binaryIdentity]?.status else {
+            Issue.record("a dropped connection must leave the identity unverified"); return
+        }
+        try #require(doctor.connectorFailedProbes.contains(.binaryIdentity))
+        try #require(delegate.connector.inspections.withLock { $0 } == 1)
+
+        await doctor.autoConfigureIfNeeded()
+        #expect(
+            delegate.connector.inspections.withLock { $0 } == 2,
+            "returning to the page left the connector failure on screen without asking again"
+        )
+        #expect(!doctor.connectorFailedProbes.contains(.binaryIdentity))
+    }
+
+    @MainActor
+    @Test("An identity SteamCMD itself failed is not re-run on the next page visit", .timeLimit(.minutes(1)))
+    func steamCMDFailedIdentityIsNotRechecked() async throws {
+        let delegate = try InspectionConnectorDelegate(dropsFirstInspection: false)
+        let listener = NSXPCListener.anonymous()
+        listener.delegate = delegate
+        listener.resume()
+        let endpoint = listener.endpoint
+        SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
+        let scratch = try TestScratch.defaultsSuite(prefix: "steamcmd-failed-no-recheck")
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+            scratch.defaults.removePersistentDomain(forName: scratch.name)
+        }
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
+        doctor.binaryPath = "/bin/ls"
+
+        await doctor.runProbe(.binaryIdentity)
+        guard case .red? = doctor.probes[.binaryIdentity]?.status else {
+            Issue.record("a binary not signed by Valve must fail the identity check"); return
+        }
+        try #require(!doctor.connectorFailedProbes.contains(.binaryIdentity))
+
+        await doctor.autoConfigureIfNeeded()
+        #expect(
+            delegate.connector.inspections.withLock { $0 } == 1,
+            "every page visit re-checked a binary SteamCMD already failed"
+        )
+    }
+}
+
+/// Answers every inspection with a binary signed by a foreign team; optionally drops the connection on the first one instead.
+private final class InspectionConnector: NSObject, SteamConnectorProtocol {
+    let inspections = OSAllocatedUnfairLock(initialState: 0)
+    private let dropsFirstInspection: Bool
+    private let foreignInspection: Data
+
+    init(dropsFirstInspection: Bool) throws {
+        self.dropsFirstInspection = dropsFirstInspection
+        foreignInspection = try JSONEncoder().encode(SteamCMDBinaryInspection(
+            exists: true, sha256: "foreign-digest", signatureValid: true, teamIdentifier: "ATTACKER",
+            isHardenedRuntime: true, isQuarantined: false, unavailableReason: nil
+        ))
+    }
+
+    func inspectSteamCMDBinary(path _: String, with reply: @escaping @Sendable (Data) -> Void) {
+        let count = inspections.withLock { count in
+            count += 1
+            return count
+        }
+        if dropsFirstInspection, count == 1 {
+            NSXPCConnection.current()?.invalidate()
+            return
+        }
+        reply(foreignInspection)
+    }
+
+    func recentCrashReports(with _: @escaping @Sendable (Data) -> Void) {}
+    func probeEnvironment(with _: @escaping @Sendable (Data) -> Void) {}
+    func discoverAccounts(with _: @escaping @Sendable (Data) -> Void) {}
+    func probeCachedLogin(accountName _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func installWallpaperEngineAssets(accountName _: String, libraryPath _: String, operationID _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func latestWallpaperEngineBuildID(operationID _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func deleteWorkshopItem(workshopID _: String, libraryPath _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func downloadWorkshopItem(workshopID _: String, accountName _: String, libraryPath _: String, operationID _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func listSubscribedWorkshopItems(accountName _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func bindManualSteamCMDBinary(path _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func clearManualSteamCMDBinary(with _: @escaping @Sendable (Data) -> Void) {}
+    func runSteamCMDProbe(_: Data, with _: @escaping @Sendable (Data) -> Void) {}
+    func diagnoseSteamCMD(_: Data, with _: @escaping @Sendable (Data) -> Void) {}
+    func locateSteamCMDBinary(with _: @escaping @Sendable (Data) -> Void) {}
+    func installManagedSteamCMD(with _: @escaping @Sendable (Data) -> Void) {}
+    func removeManagedSteamCMD(with _: @escaping @Sendable (Data) -> Void) {}
+    func removeAccountSession(accountName _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func signInSteamAccount(_: Data, with _: @escaping @Sendable (Data) -> Void) {}
+    func cancelActiveSteamCMD(operationID _: String, with _: @escaping @Sendable (Data) -> Void) {}
+    func terminateActiveSteamCMDForHostExit(with _: @escaping @Sendable (Data) -> Void) {}
+}
+
+/// `NSXPCListener.delegate` is weak: the test keeps this alive for as long as the listener is used.
+private final class InspectionConnectorDelegate: NSObject, NSXPCListenerDelegate {
+    let connector: InspectionConnector
+
+    init(dropsFirstInspection: Bool) throws {
+        connector = try InspectionConnector(dropsFirstInspection: dropsFirstInspection)
+    }
+
+    func listener(_: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
+        newConnection.exportedInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
+        newConnection.exportedObject = connector
+        newConnection.resume()
+        return true
+    }
 }
 
 private actor AF12Latch {

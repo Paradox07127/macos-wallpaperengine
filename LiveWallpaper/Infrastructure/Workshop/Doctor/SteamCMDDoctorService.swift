@@ -107,6 +107,13 @@ enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
             return failure.userFacingReason
         }
     }
+
+    var isConnectorUnavailable: Bool {
+        switch self {
+        case .connectorUnavailable: true
+        default: false
+        }
+    }
 }
 
 enum WorkshopItemDownloadResult<Imported: Sendable>: Sendable {
@@ -191,6 +198,8 @@ final class SteamCMDDoctorService {
     @ObservationIgnored private let diagnoseBinary: @MainActor @Sendable () async -> Result<SteamCMDDiagnosis, SteamConnectorFailure>
 
     var probes: [DoctorProbeKind: DoctorProbeReport]
+    /// Probes whose current failure is the connector's, not SteamCMD's; the next page visit re-checks them.
+    private(set) var connectorFailedProbes: Set<DoctorProbeKind> = []
     var state: DoctorState = .idle
     var binaryDisplayPath: String?
     var workdirDisplayPath: String?
@@ -401,9 +410,13 @@ final class SteamCMDDoctorService {
     func autoConfigureIfNeeded() async {
         if !hasBoundBinary {
             await autoDetectBinary()
-        } else if case .notRun? = probes[.binaryIdentity]?.status {
+        } else if probes[.binaryIdentity]?.status == .notRun || connectorFailedProbes.contains(.binaryIdentity) {
             // The binding survives relaunch; the probe result does not. Without this, an already-configured SteamCMD stays "unverified" for the whole session.
             await runProbe(.binaryIdentity)
+        }
+        // A red that SteamCMD itself earned is not re-run here: each visit would launch it again.
+        for kind in DoctorProbeKind.allCases where kind != .binaryIdentity && connectorFailedProbes.contains(kind) {
+            await runProbe(kind)
         }
         await autoConfigureWorkdirIfNeeded()
     }
@@ -670,7 +683,11 @@ final class SteamCMDDoctorService {
                 if resetIfCancelled(.binaryIdentity) {
                     return
                 }
-                setProbe(.binaryIdentity, status: .yellow(message: error.localizedDescription, command: nil))
+                setProbe(
+                    .binaryIdentity,
+                    status: .yellow(message: error.localizedDescription, command: nil),
+                    connectorFailed: error.isConnectorUnavailable
+                )
                 return
             }
 
@@ -694,7 +711,11 @@ final class SteamCMDDoctorService {
                     if resetIfCancelled(.binaryIdentity) {
                         return
                     }
-                    setProbe(.binaryIdentity, status: .yellow(message: error.localizedDescription, command: nil))
+                    setProbe(
+                        .binaryIdentity,
+                        status: .yellow(message: error.localizedDescription, command: nil),
+                        connectorFailed: error.isConnectorUnavailable
+                    )
                     return
                 }
                 retriedAfterSelfUpdate = true
@@ -750,7 +771,9 @@ final class SteamCMDDoctorService {
                 if resetIfCancelled(.codeSignature) {
                     return
                 }
-                setProbe(.codeSignature, status: .yellow(message: failure.userFacingReason, command: nil))
+                setProbe(
+                    .codeSignature, status: .yellow(message: failure.userFacingReason, command: nil), connectorFailed: true
+                )
                 return
             case let .success(answer) where answer.unavailableReason != nil:
                 setProbe(.codeSignature, status: .yellow(
@@ -805,12 +828,16 @@ final class SteamCMDDoctorService {
                 if resetIfCancelled(.gatekeeperQuarantine) {
                     return
                 }
-                setProbe(.gatekeeperQuarantine, status: .yellow(message: failure.userFacingReason, command: nil))
+                setProbe(
+                    .gatekeeperQuarantine,
+                    status: .yellow(message: failure.userFacingReason, command: nil),
+                    connectorFailed: true
+                )
                 return
             // Unavailable replies default isQuarantined=false — don't treat as clean.
             case let .success(answer) where answer.unavailableReason != nil:
                 setProbe(.gatekeeperQuarantine, status: .yellow(
-                    message: String(localized: "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
+                    message: String(localized: "Loomscreen's Steam connector was busy, so the quarantine attribute wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
@@ -844,7 +871,11 @@ final class SteamCMDDoctorService {
                 if resetIfCancelled(.gatekeeperQuarantine) {
                     return
                 }
-                setProbe(.gatekeeperQuarantine, status: .yellow(message: error.localizedDescription, command: nil))
+                setProbe(
+                    .gatekeeperQuarantine,
+                    status: .yellow(message: error.localizedDescription, command: nil),
+                    connectorFailed: error.isConnectorUnavailable
+                )
                 return
             }
             let result = await launchSteamCMD(
@@ -943,7 +974,7 @@ final class SteamCMDDoctorService {
             if resetIfCancelled(.cachedLogin) {
                 return
             }
-            setProbe(.cachedLogin, status: .red(message: failure.userFacingReason, command: nil))
+            setProbe(.cachedLogin, status: .red(message: failure.userFacingReason, command: nil), connectorFailed: true)
         }
     }
 
@@ -1589,11 +1620,22 @@ final class SteamCMDDoctorService {
     }
 
     private func setOptional(_ value: String?, forKey key: String) {
-        if let value, !value.isEmpty { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+        if let value, !value.isEmpty {
+            defaults.set(value, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
     }
 
-    func setProbe(_ kind: DoctorProbeKind, status: DoctorProbeStatus, lastRun: Date = Date()) {
+    func setProbe(
+        _ kind: DoctorProbeKind, status: DoctorProbeStatus, lastRun: Date = Date(), connectorFailed: Bool = false
+    ) {
         probes[kind] = DoctorProbeReport(id: kind, status: status, lastRun: lastRun)
+        if connectorFailed {
+            connectorFailedProbes.insert(kind)
+        } else {
+            connectorFailedProbes.remove(kind)
+        }
     }
 
     /// A nil reply after the caller left is no verdict: the probe goes back to unrun so the next visit runs it again.

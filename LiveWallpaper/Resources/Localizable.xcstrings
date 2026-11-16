@@ -69097,65 +69097,6 @@
         }
       }
     },
-    "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again." : {
-      "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Steam-Connector von Loomscreen hat nicht geantwortet, daher wurde das Quarantäne-Attribut nicht überprüft. Versuchen Sie es erneut."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El conector de Steam de Loomscreen no respondió, así que no se comprobó el atributo de cuarentena. Inténtalo de nuevo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le connecteur Steam de Loomscreen n'a pas répondu, donc l'attribut de quarantaine n'a pas été vérifié. Réessayez."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen の Steam コネクタが応答しなかったため、検疫属性を確認できませんでした。もう一度お試しください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen의 Steam 커넥터가 응답하지 않았으므로 격리 속성이 확인되지 않았습니다. 다시 시도하세요."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O conector Steam do Loomscreen não respondeu, então o atributo de quarentena não foi verificado. Tente novamente."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的 Steam 连接器没有响应，因此未检查隔离属性。请重试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的 Steam 連接器沒有回應，因此未檢查隔離屬性。請重試。"
-          }
-        }
-      }
-    },
     "Loomscreen's Steam connector is busy with another SteamCMD task. Try again in a moment." : {
       "comment" : "Workshop setup error when binding SteamCMD while the connector is busy with another SteamCMD operation.",
       "localizations" : {
@@ -69211,6 +69152,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 的 Steam 連接器正忙於另一項 SteamCMD 工作，請稍後再試。"
+          }
+        }
+      }
+    },
+    "Loomscreen's Steam connector was busy, so the quarantine attribute wasn't checked. Try again." : {
+      "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Steam-Anschluss von Loomscreen war beschäftigt, daher wurde das Quarantäne-Attribut nicht überprüft. Versuchen Sie es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen's Steam connector was busy, so the quarantine attribute wasn't checked. Try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El conector de Steam de Loomscreen estaba ocupado, así que no se comprobó el atributo de cuarentena. Inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le connecteur Steam de Loomscreen était occupé, l'attribut de quarantaine n'a donc pas été vérifié. Réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen の Steam コネクタがビジー状態だったため、検疫属性を確認できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen의 Steam 커넥터가 바빴기 때문에 격리 속성이 확인되지 않았습니다. 다시 시도하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O conector Steam do Loomscreen estava ocupado, então o atributo de quarentena não foi verificado. Tente novamente."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 连接器正忙，因此未检查隔离属性。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 連接器忙碌中，因此未檢查隔離屬性。請重試。"
           }
         }
       }
