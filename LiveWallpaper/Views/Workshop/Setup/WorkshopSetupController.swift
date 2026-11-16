@@ -186,7 +186,7 @@ final class WorkshopSetupController {
         if diagnosis.launch?.outcome == .timedOut {
             return String(localized: "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry.", bundle: .appLanguage, comment: "First-run SteamCMD timeout recovery inside the app.")
         }
-        return diagnosis.remedy ?? (bindError ?? .binaryResolution).localizedDescription
+        return diagnosis.unavailableReason ?? diagnosis.remedy ?? (bindError ?? .binaryResolution).localizedDescription
     }
 
     /// Returns true when a binding was recorded, so the caller can update its hint.

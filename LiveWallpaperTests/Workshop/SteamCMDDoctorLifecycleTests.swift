@@ -369,14 +369,13 @@ struct SteamCMDDoctorLifecycleTests {
         let silent = SteamConnectorFailure.fixture()
         #expect(
             WorkshopSetupController.autoDetectFailureMessage(for: .unavailable(silent.userFacingReason), bindError: nil)
-                .contains(silent.userFacingReason)
+                == silent.userFacingReason,
+            "the localized reason must not be wrapped in the connector's English remedy sentence"
         )
 
-        // Controls: a diagnosis that carries a remedy is shown as the connector worded it.
+        // Control: a diagnosis that carries a remedy is shown as the connector worded it.
         let notFound = SteamCMDDiagnosis.notFound(resolutionFailure: nil, rejectedExisting: [])
         #expect(WorkshopSetupController.autoDetectFailureMessage(for: notFound, bindError: nil) == notFound.remedy)
-        let queued = SteamCMDDiagnosis.unavailable("queued")
-        #expect(WorkshopSetupController.autoDetectFailureMessage(for: queued, bindError: .connectorBusy) == queued.remedy)
     }
 
     @Test("A busy or silent connector is no verdict: execution trust keeps the cache and reports why")

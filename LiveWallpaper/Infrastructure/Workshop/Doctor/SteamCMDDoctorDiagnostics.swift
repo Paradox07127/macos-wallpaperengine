@@ -16,7 +16,7 @@ extension SteamCMDDoctorService {
         switch kind {
         case .binaryIdentity:
             let message = diagnosis.needsInAppSetup ? Self.setupRequiredMessage
-                : (diagnosis.remedy ?? (lastAutoDetectBindError ?? .binaryResolution).localizedDescription)
+                : (diagnosis.unavailableReason ?? diagnosis.remedy ?? (lastAutoDetectBindError ?? .binaryResolution).localizedDescription)
             status = diagnosis.unavailableReason == nil
                 ? .red(message: message, command: nil) : .yellow(message: message, command: nil)
         case .codeSignature:
