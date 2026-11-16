@@ -626,7 +626,7 @@ struct SteamCMDDoctorLifecycleTests {
     @MainActor
     @Test("An identity check the connector dropped is re-run on the next page visit", .timeLimit(.minutes(1)))
     func connectorFailedIdentityIsRecheckedOnNextVisit() async throws {
-        let delegate = try InspectionConnectorDelegate(dropsFirstInspection: true)
+        let delegate = try InspectionConnectorDelegate(droppedInspections: 2)
         let listener = NSXPCListener.anonymous()
         listener.delegate = delegate
         listener.resume()
@@ -646,11 +646,11 @@ struct SteamCMDDoctorLifecycleTests {
             Issue.record("a dropped connection must leave the identity unverified"); return
         }
         try #require(doctor.connectorFailedProbes.contains(.binaryIdentity))
-        try #require(delegate.connector.inspections.withLock { $0 } == 1)
+        try #require(delegate.connector.inspections.withLock { $0 } == 2)
 
         await doctor.autoConfigureIfNeeded()
         #expect(
-            delegate.connector.inspections.withLock { $0 } == 2,
+            delegate.connector.inspections.withLock { $0 } == 3,
             "returning to the page left the connector failure on screen without asking again"
         )
         #expect(!doctor.connectorFailedProbes.contains(.binaryIdentity))
@@ -659,7 +659,7 @@ struct SteamCMDDoctorLifecycleTests {
     @MainActor
     @Test("An identity SteamCMD itself failed is not re-run on the next page visit", .timeLimit(.minutes(1)))
     func steamCMDFailedIdentityIsNotRechecked() async throws {
-        let delegate = try InspectionConnectorDelegate(dropsFirstInspection: false)
+        let delegate = try InspectionConnectorDelegate(droppedInspections: 0)
         let listener = NSXPCListener.anonymous()
         listener.delegate = delegate
         listener.resume()
@@ -691,11 +691,12 @@ struct SteamCMDDoctorLifecycleTests {
 /// Answers every inspection with a binary signed by a foreign team; optionally drops the connection on the first one instead.
 private final class InspectionConnector: NSObject, SteamConnectorProtocol {
     let inspections = OSAllocatedUnfairLock(initialState: 0)
-    private let dropsFirstInspection: Bool
+    /// The client retries a dropped inspection once, so 2 makes one probe run fail.
+    private let droppedInspections: Int
     private let foreignInspection: Data
 
-    init(dropsFirstInspection: Bool) throws {
-        self.dropsFirstInspection = dropsFirstInspection
+    init(droppedInspections: Int) throws {
+        self.droppedInspections = droppedInspections
         foreignInspection = try JSONEncoder().encode(SteamCMDBinaryInspection(
             exists: true, sha256: "foreign-digest", signatureValid: true, teamIdentifier: "ATTACKER",
             isHardenedRuntime: true, isQuarantined: false, unavailableReason: nil
@@ -707,7 +708,7 @@ private final class InspectionConnector: NSObject, SteamConnectorProtocol {
             count += 1
             return count
         }
-        if dropsFirstInspection, count == 1 {
+        if count <= droppedInspections {
             NSXPCConnection.current()?.invalidate()
             return
         }
@@ -740,8 +741,8 @@ private final class InspectionConnector: NSObject, SteamConnectorProtocol {
 private final class InspectionConnectorDelegate: NSObject, NSXPCListenerDelegate {
     let connector: InspectionConnector
 
-    init(dropsFirstInspection: Bool) throws {
-        connector = try InspectionConnector(dropsFirstInspection: dropsFirstInspection)
+    init(droppedInspections: Int) throws {
+        connector = try InspectionConnector(droppedInspections: droppedInspections)
     }
 
     func listener(_: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
