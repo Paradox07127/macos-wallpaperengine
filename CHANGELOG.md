@@ -12,6 +12,29 @@ schema, UI layout, or feature gating.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [1.0.2] — 2026-11-16
+
+### Changed
+
+- The Steam connector and the system wallpaper helper accept the app by its
+  signing team and identifier instead of re-checking the whole app bundle on
+  every connection.
+- Read-only Steam connector calls retry once after the connector quits (Pro).
+- Diagnostics re-run checks that failed only because the connector was
+  unavailable when you reopen the page (Pro).
+
+### Fixed
+
+- A file added to the app bundle, such as a `._` file left by copying the app
+  through an external drive, no longer makes every Steam connector and system
+  wallpaper maintenance call fail.
+- Steam connector errors name the cause, such as a timeout, a quit connector
+  or a refused connection, instead of saying only that the connector did not
+  respond (Pro).
+- The app log, the diagnostics export and the bug report record each failed
+  connector call and the connector's recent crash reports (Pro).
+- Finding SteamCMD automatically reports why binding it failed (Pro).
+
 ## [1.0.1] — 2026-10-30
 
 ### Changed
@@ -1599,6 +1622,7 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[1.0.2]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v1.0.1...loomscreen-v1.0.2
 [1.0.1]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v1.0.0...loomscreen-v1.0.1
 [1.0.0]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.3...loomscreen-v1.0.0
 [0.9.3]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.2...loomscreen-v0.9.3
