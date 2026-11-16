@@ -7,30 +7,27 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 1.0.1</title>
-      <pubDate>Fri, 30 Oct 2026 18:16:49 +0000</pubDate>
-      <sparkle:version>1.0.1</sparkle:version>
-      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <title>Version 1.0.2</title>
+      <pubDate>Mon, 16 Nov 2026 14:54:22 +0000</pubDate>
+      <sparkle:version>1.0.2</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Preview toggles such as Pointer and Interaction show a filled background while on.</li>
-<li>Pro: the daily Workshop update check asks Steam about 50 items per request.</li>
+<li>Pro: Steam connector errors name the cause and the error code instead of only saying the connector did not respond.</li>
+<li>Pro: the app log, the diagnostics export and the bug report keep each failed connector call and the connector's recent crash reports.</li>
+<li>Pro: read-only connector calls retry once after the connector quits.</li>
+<li>Pro: Diagnostics re-runs checks that failed only because the connector was unavailable when you open the page again.</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Pro: scene packages that list a file twice load instead of failing with a duplicate-entry error.</li>
-<li>Pro: turning Interaction off mid-drag releases the scene's button and no longer swallows the next desktop click.</li>
-<li>Monitor boards keep updating after their options change.</li>
-<li>Pro: a paused static scene no longer redraws when an unrelated setting changes.</li>
-<li>Now Playing no longer restarts its poll when another app quits, and keeps less artwork in memory.</li>
-<li>Trusting or revoking a web wallpaper's site reloads every display showing it, without clearing pause or rotation elsewhere; revoking stops its scripts at once.</li>
-<li>Remove All in the overlay editor during a drag no longer brings the removed cards back.</li>
+<li>An extra file in the app bundle, such as a ._ file left by copying the app through an external drive, no longer makes every Steam connector or system wallpaper maintenance call fail.</li>
+<li>Pro: finding SteamCMD automatically says why binding it failed.</li>
 </ul>
-<p><small><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.1">完整发布说明</a></small></p>
+<p><small><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.2">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.2">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v1.0.1/Loomscreen-1.0.1.dmg" type="application/octet-stream" sparkle:edSignature="ahyklh+9+XaI7Jf3Y542/lD1B+VrRAm0v1cAFRCy7K4crH3irpKvR50LRu/b8t0yCqvFdEVdutcqn25w3tySAg==" length="17111460" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v1.0.2/Loomscreen-1.0.2.dmg" type="application/octet-stream" sparkle:edSignature="QkSAUg9Trw8XvWv0rm2LqoXdUUZz3Y5smOMaypn5iH0m00MBouIEkpPhT5oNxuu3bLXiWCCpZSDjkYQmyTBXBQ==" length="17141301" />
     </item>
   </channel>
 </rss>
