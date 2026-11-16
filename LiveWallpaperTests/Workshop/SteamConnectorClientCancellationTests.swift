@@ -95,9 +95,13 @@ struct SteamConnectorClientCancellationTests {
             }
         }
 
-        /// Answered at once and not counted: the client asks for this on its own ~10 s after an interrupt, possibly during a later test.
+        /// Not counted and never uses up a planned drop: the client asks for this on its own ~10 s after an interrupt, possibly during a later test.
         func recentCrashReports(with reply: @escaping @Sendable (Data) -> Void) {
-            reply(Data("[]".utf8))
+            if droppedRequests.withLock({ $0 > 0 }) {
+                NSXPCConnection.current()?.invalidate()
+            } else {
+                reply(Data("[]".utf8))
+            }
         }
 
         func probeEnvironment(with reply: @escaping @Sendable (Data) -> Void) {
