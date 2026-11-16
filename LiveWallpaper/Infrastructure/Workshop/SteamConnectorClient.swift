@@ -2,9 +2,57 @@
 import Foundation
 import LiveWallpaperCore
 import os
+import Security
 
 enum SteamCMDOperationScope {
     @TaskLocal static var currentID: String?
+}
+
+/// One connector call that ended without a reply.
+struct SteamConnectorFailure: Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
+        case cancelled
+        case timedOut(seconds: Int)
+        case interrupted
+        /// `hostSignatureStatus` is this app's own static signature check at the moment of failure; 0 = valid.
+        case invalid(hostSignatureStatus: OSStatus)
+        case other
+
+        var label: String {
+            switch self {
+            case .cancelled: "cancelled"
+            case let .timedOut(seconds): "timedOut(\(seconds)s)"
+            case .interrupted: "interrupted"
+            case let .invalid(status): "invalid(hostSignatureStatus=\(status))"
+            case .other: "other"
+            }
+        }
+    }
+
+    let date: Date
+    let call: String
+    let kind: Kind
+    let errorDomain: String?
+    let errorCode: Int?
+    let debugDescription: String?
+
+    /// nil for `.cancelled`: the caller left, so there is nothing to tell the user.
+    var userFacingReason: String? {
+        switch kind {
+        case .cancelled:
+            nil
+        case .interrupted:
+            String(localized: "Loomscreen's Steam connector quit unexpectedly while handling the request (XPC error 4097). Try again. If it keeps happening, use Copy reports under Diagnostics and send the result to the developer.", bundle: .appLanguage, comment: "Steam connector failure when the XPC service process exited mid-request.")
+        case let .invalid(status) where status != errSecSuccess:
+            String(localized: "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus \(status)). Download Loomscreen again and reinstall it.", bundle: .appLanguage, comment: "Steam connector failure when the app's own code signature is broken; %d is the Security framework status code.")
+        case .invalid:
+            String(localized: "Loomscreen's Steam connector could not be started, or macOS closed the connection (XPC error 4099). Quit Loomscreen and open it again.", bundle: .appLanguage, comment: "Steam connector failure when the XPC connection was invalidated while the app's signature is intact.")
+        case let .timedOut(seconds):
+            String(localized: "Loomscreen's Steam connector did not reply within \(seconds) seconds.", bundle: .appLanguage, comment: "Steam connector failure when no reply arrived in time; %lld is the number of seconds.")
+        case .other:
+            String(localized: "Loomscreen's Steam connector failed to communicate (\(errorDomain ?? "XPC") error \(errorCode ?? 0)).", bundle: .appLanguage, comment: "Steam connector failure for any other XPC error; %1$@ is the error domain, %2$lld the error code.")
+        }
+    }
 }
 
 @MainActor
@@ -191,6 +239,115 @@ enum SteamConnectorClient {
             ?? SteamEngineBuildLookup(outcome: .unrecognized, buildID: nil)
     }
 
+    /// nil means the connector was unreachable.
+    static func recentCrashReports() async -> [SteamConnectorCrashSummary]? {
+        let data = await call(timeout: 30) { connector, reply in
+            connector.recentCrashReports(with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode([SteamConnectorCrashSummary].self, from: $0) }
+    }
+
+    // MARK: - Failure record
+
+    private struct CallFailure: Error {
+        enum Cause {
+            case cancelled
+            case timedOut(Int)
+            case transport
+        }
+
+        let cause: Cause
+        /// nil when no XPC error was delivered: cancellation, the timer, or a proxy of the wrong type.
+        var error: NSError?
+    }
+
+    private nonisolated static let failureLimit = 20
+    private nonisolated static let failures = OSAllocatedUnfairLock<[SteamConnectorFailure]>(initialState: [])
+    private nonisolated static let crashLogPending = OSAllocatedUnfairLock(initialState: false)
+    /// The newest report is returned even when no new crash happened; this keeps it from being logged again.
+    private static var lastLoggedCrashTimestamp: String?
+
+    /// Oldest first.
+    nonisolated static var recentFailures: [SteamConnectorFailure] {
+        failures.withLock { $0 }
+    }
+
+    nonisolated static var lastFailure: SteamConnectorFailure? {
+        failures.withLock { $0.last }
+    }
+
+    /// What to tell the user after a call came back nil.
+    nonisolated static var unreachableReason: String {
+        lastFailure?.userFacingReason ?? String(
+            localized: "Loomscreen's Steam connector did not respond.",
+            bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
+        )
+    }
+
+    private nonisolated static func recordFailure(_ failure: CallFailure, call: String) {
+        let error = failure.error
+        let kind: SteamConnectorFailure.Kind
+        switch failure.cause {
+        case .cancelled: kind = .cancelled
+        case let .timedOut(seconds): kind = .timedOut(seconds: seconds)
+        case .transport where error?.domain == NSCocoaErrorDomain && error?.code == NSXPCConnectionInterrupted:
+            kind = .interrupted
+        case .transport where error?.domain == NSCocoaErrorDomain && error?.code == NSXPCConnectionInvalid:
+            var code: SecStaticCode?
+            var status = SecStaticCodeCreateWithPath(Bundle.main.bundleURL as CFURL, [], &code)
+            if status == errSecSuccess, let code {
+                status = SecStaticCodeCheckValidity(code, [], nil)
+            }
+            kind = .invalid(hostSignatureStatus: status)
+        case .transport: kind = .other
+        }
+        let record = SteamConnectorFailure(
+            date: Date(), call: call, kind: kind,
+            errorDomain: error?.domain, errorCode: error?.code,
+            debugDescription: error?.userInfo[NSDebugDescriptionErrorKey] as? String
+        )
+        failures.withLock { list in
+            list.append(record)
+            list.removeFirst(max(0, list.count - failureLimit))
+        }
+        let line = "Steam connector call \(call) failed: \(kind.label)"
+            + (error.map { " \($0.domain) \($0.code)" } ?? "")
+            + (record.debugDescription.map { " — \($0)" } ?? "")
+        if kind == .cancelled {
+            Logger.notice(line, category: .workshop)
+        } else {
+            Logger.warning(line, category: .workshop)
+        }
+        if kind == .interrupted {
+            scheduleCrashSummaryLog()
+        }
+    }
+
+    /// macOS writes the `.ips` a few seconds after the process dies, so the fetch waits before asking.
+    private nonisolated static func scheduleCrashSummaryLog() {
+        let alreadyPending = crashLogPending.withLock { pending in
+            defer { pending = true }
+            return pending
+        }
+        guard !alreadyPending else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 10) {
+            Task { @MainActor in
+                defer { crashLogPending.withLock { $0 = false } }
+                guard let latest = await recentCrashReports()?.first,
+                      latest.timestamp != lastLoggedCrashTimestamp else { return }
+                lastLoggedCrashTimestamp = latest.timestamp
+                let frames = latest.crashedThreadFrames
+                    .map { "\($0.image) \($0.symbol)" + ($0.source.map { " (\($0))" } ?? "") }
+                    .joined(separator: " | ")
+                Logger.warning(
+                    "Steam connector crash \(latest.timestamp ?? "?"): \(latest.exceptionType ?? "?") \(latest.signal ?? "?")"
+                        + " asi=\(latest.asi.joined(separator: " / ")) frames=\(frames)",
+                    category: .workshop
+                )
+            }
+        }
+    }
+
     // MARK: - Transport
 
     private final class ProgressReceiver: NSObject, SteamConnectorProgressProtocol {
@@ -256,6 +413,7 @@ enum SteamConnectorClient {
         // Client timeout above connector's 900s so the service expires first.
         timeout: TimeInterval = 7200,
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil,
+        caller: String = #function,
         _ body: @escaping @Sendable (any SteamConnectorProtocol, @escaping @Sendable (Data) -> Void) -> Void
     ) async -> Data? {
         // `nonisolated(unsafe)`: the cancellation handler is the only off-actor user and it calls `invalidate()`, which NSXPCConnection serves from any thread.
@@ -273,14 +431,21 @@ enum SteamConnectorClient {
         // The reply, the error handler, the timeout and cancellation can all
         // fire; whichever takes the continuation out of the box owns it.
         let pending = OSAllocatedUnfairLock<CheckedContinuation<Data?, Never>?>(initialState: nil)
-        let finish: @Sendable (Data?) -> Void = { value in
+        let finish: @Sendable (Result<Data, CallFailure>) -> Void = { outcome in
             let continuation = pending.withLock { box -> CheckedContinuation<Data?, Never>? in
                 defer { box = nil }
                 return box
             }
             guard let continuation else { return }
             progressReceiver?.close()
-            continuation.resume(returning: value)
+            switch outcome {
+            case let .success(data):
+                continuation.resume(returning: data)
+            case let .failure(failure):
+                // Recorded before resuming so the caller's message describes this failure, not the previous one.
+                recordFailure(failure, call: caller)
+                continuation.resume(returning: nil)
+            }
         }
 
         return await withTaskCancellationHandler {
@@ -288,28 +453,24 @@ enum SteamConnectorClient {
                 pending.withLock { $0 = continuation }
                 // The cancellation handler may already have run before the box was filled.
                 if Task.isCancelled {
-                    finish(nil)
+                    finish(.failure(CallFailure(cause: .cancelled)))
                     return
                 }
                 // Runs on the XPC queue: explicitly @Sendable, or it inherits this function's main-actor isolation and traps there.
                 let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
-                    Logger.warning(
-                        "Steam connector unreachable: \(error.localizedDescription)",
-                        category: .workshop
-                    )
-                    finish(nil)
+                    finish(.failure(CallFailure(cause: .transport, error: error as NSError)))
                 }
                 guard let connector = proxy as? any SteamConnectorProtocol else {
-                    finish(nil)
+                    finish(.failure(CallFailure(cause: .transport)))
                     return
                 }
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                    finish(nil)
+                    finish(.failure(CallFailure(cause: .timedOut(Int(timeout)))))
                 }
-                body(connector) { finish($0) }
+                body(connector) { finish(.success($0)) }
             }
         } onCancel: {
-            finish(nil)
+            finish(.failure(CallFailure(cause: .cancelled)))
             connection.invalidate()
         }
     }

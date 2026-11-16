@@ -41,7 +41,9 @@ extension SteamCMDDoctorService {
         return true
     }
 
-    func diagnosticsJSON() -> String? {
+    func diagnosticsJSON() async -> String? {
+        // Fetched first so a failure of this very request is in the list below.
+        let crashReports = await SteamConnectorClient.recentCrashReports()
         var reports: [String: Any] = [:]
         for kind in DoctorProbeKind.allCases {
             let report = probes[kind]
@@ -103,6 +105,47 @@ extension SteamCMDDoctorService {
             payload["autoDetection"] = detection
         } else {
             payload["autoDetection"] = ["status": "notRun"]
+        }
+        payload["connectorFailures"] = SteamConnectorClient.recentFailures.map { failure -> [String: Any] in
+            var entry: [String: Any] = [
+                "ts": ISO8601DateFormatter().string(from: failure.date),
+                "call": sanitizeForExport(failure.call),
+                "kind": sanitizeForExport(failure.kind.label),
+                "errorDomain": sanitizeForExport(failure.errorDomain),
+                "debugDescription": sanitizeForExport(failure.debugDescription),
+            ]
+            entry["errorCode"] = failure.errorCode
+            if case let .timedOut(seconds) = failure.kind {
+                entry["timeoutSeconds"] = seconds
+            }
+            if case let .invalid(status) = failure.kind {
+                entry["hostSignatureStatus"] = Int(status)
+            }
+            return entry
+        }
+        if let crashReports {
+            payload["connectorCrashReports"] = crashReports.map { report -> [String: Any] in
+                [
+                    "timestamp": sanitizeForExport(report.timestamp),
+                    "appVersion": sanitizeForExport(report.appVersion),
+                    "exceptionType": sanitizeForExport(report.exceptionType),
+                    "signal": sanitizeForExport(report.signal),
+                    "termination": sanitizeForExport(report.termination),
+                    "asi": report.asi.map { sanitizeForExport($0) },
+                    "crashedThreadFrames": report.crashedThreadFrames.map { frame in
+                        [
+                            "image": sanitizeForExport(frame.image),
+                            "symbol": sanitizeForExport(frame.symbol),
+                            "source": sanitizeForExport(frame.source),
+                        ]
+                    },
+                ]
+            }
+        } else {
+            payload["connectorCrashReports"] = [
+                "status": "unavailable",
+                "failure": sanitizeForExport(SteamConnectorClient.lastFailure?.kind.label),
+            ]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else { return nil }
         return String(data: data, encoding: .utf8)

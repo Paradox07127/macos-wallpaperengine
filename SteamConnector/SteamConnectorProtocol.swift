@@ -163,6 +163,70 @@ protocol SteamConnectorProtocol {
     /// the service name is this app's alone. Reply is a JSON `Bool` for
     /// whether anything was signalled.
     func terminateActiveSteamCMDForHostExit(with reply: @escaping @Sendable (Data) -> Void)
+
+    /// The connector's own crash reports from the last 14 days, newest first, at most 3.
+    /// Replies with a JSON-encoded `[SteamConnectorCrashSummary]`.
+    func recentCrashReports(with reply: @escaping @Sendable (Data) -> Void)
+}
+
+/// Why the connector process died, taken from one macOS `.ips` crash report.
+struct SteamConnectorCrashSummary: Codable, Equatable, Sendable {
+    struct Frame: Codable, Equatable, Sendable {
+        let image: String
+        /// The symbol, or the image offset in hex when the report has none.
+        let symbol: String
+        /// `file:line`; nil when the report has no source location for the frame.
+        let source: String?
+    }
+
+    let timestamp: String?
+    let appVersion: String?
+    let exceptionType: String?
+    let signal: String?
+    let termination: String?
+    /// Application-specific information, such as Swift's "Fatal error: …" line.
+    let asi: [String]
+    let crashedThreadFrames: [Frame]
+
+    static let frameLimit = 8
+
+    /// nil when the text is not an `.ips` report: a JSON header line followed by a JSON body.
+    static func parse(ipsText: String) -> SteamConnectorCrashSummary? {
+        guard let newline = ipsText.firstIndex(of: "\n"),
+              let header = try? JSONSerialization.jsonObject(with: Data(ipsText[..<newline].utf8)) as? [String: Any],
+              let body = try? JSONSerialization.jsonObject(
+                  with: Data(ipsText[ipsText.index(after: newline)...].utf8)
+              ) as? [String: Any]
+        else { return nil }
+        let exception = body["exception"] as? [String: Any]
+        let termination = body["termination"] as? [String: Any]
+        let images = body["usedImages"] as? [[String: Any]] ?? []
+        let threads = body["threads"] as? [[String: Any]] ?? []
+        var frames: [[String: Any]] = []
+        if let faulting = body["faultingThread"] as? Int, threads.indices.contains(faulting) {
+            frames = threads[faulting]["frames"] as? [[String: Any]] ?? []
+        }
+        return SteamConnectorCrashSummary(
+            timestamp: header["timestamp"] as? String,
+            appVersion: header["app_version"] as? String,
+            exceptionType: exception?["type"] as? String,
+            signal: exception?["signal"] as? String,
+            termination: (termination?["indicator"] as? String)
+                ?? termination.map { "\($0["namespace"] ?? "") \($0["code"] ?? "")" },
+            asi: (body["asi"] as? [String: [String]] ?? [:]).sorted { $0.key < $1.key }.flatMap(\.value),
+            crashedThreadFrames: frames.prefix(frameLimit).map { frame in
+                let image = (frame["imageIndex"] as? Int).flatMap { index in
+                    images.indices.contains(index) ? images[index]["name"] as? String : nil
+                }
+                let file = frame["sourceFile"] as? String
+                return Frame(
+                    image: image ?? "???",
+                    symbol: frame["symbol"] as? String ?? "0x" + String(frame["imageOffset"] as? Int ?? 0, radix: 16),
+                    source: file.map { file in (frame["sourceLine"] as? Int).map { "\(file):\($0)" } ?? file }
+                )
+            }
+        )
+    }
 }
 
 struct SteamCMDManagedRemovalResult: Codable, Equatable, Sendable {

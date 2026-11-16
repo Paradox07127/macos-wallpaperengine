@@ -254,10 +254,7 @@ final class WorkshopSetupController {
                 // on screen for a removal that is still running.
                 return
             case .connectorUnavailable:
-                setupError = String(
-                    localized: "Loomscreen's Steam connector did not respond.",
-                    bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
-                )
+                setupError = SteamConnectorClient.unreachableReason
                 return
             case .refused:
                 // Don't unbind here: the files still work, and `forget()` keeps the install record

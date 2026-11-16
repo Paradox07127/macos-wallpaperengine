@@ -26,7 +26,7 @@ struct WPEEngineAssetsInstallerTests {
         #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
             installedBuildID: "10",
             lookup: nil
-        ) == .checkFailed(.notRun))
+        ) == .checkFailed(.notRun(reason: SteamConnectorClient.unreachableReason)))
     }
 
     @Test("Each failed lookup keeps its own reason instead of sharing one sentence")

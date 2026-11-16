@@ -104,7 +104,7 @@ enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
         case .connectorBusy:
             return String(localized: "Loomscreen's Steam connector is busy with another SteamCMD task. Try again in a moment.", bundle: .appLanguage, comment: "Workshop setup error when binding SteamCMD while the connector is busy with another SteamCMD operation.")
         case .connectorUnavailable:
-            return String(localized: "Loomscreen's Steam connector did not respond.", bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached.")
+            return SteamConnectorClient.unreachableReason
         }
     }
 }
@@ -642,6 +642,9 @@ final class SteamCMDDoctorService {
                 ))
                 return
             case let .failure(error):
+                if resetIfCancelled(.binaryIdentity) {
+                    return
+                }
                 setProbe(.binaryIdentity, status: .yellow(message: error.localizedDescription, command: nil))
                 return
             }
@@ -663,11 +666,17 @@ final class SteamCMDDoctorService {
                     ))
                     return
                 case let .failure(error):
+                    if resetIfCancelled(.binaryIdentity) {
+                        return
+                    }
                     setProbe(.binaryIdentity, status: .yellow(message: error.localizedDescription, command: nil))
                     return
                 }
                 retriedAfterSelfUpdate = true
                 result = await launchSteamCMD(executionAuthorization, args: ["+quit"])
+            }
+            if result.killed, resetIfCancelled(.binaryIdentity) {
+                return
             }
             if result.timedOut {
                 setProbe(.binaryIdentity, status: .red(
@@ -708,9 +717,12 @@ final class SteamCMDDoctorService {
             let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
             let result = await inspect(path: path)
             guard let result, result.unavailableReason == nil else {
+                if result == nil, resetIfCancelled(.codeSignature) {
+                    return
+                }
                 setProbe(.codeSignature, status: .yellow(
-                    message: result?.unavailableReason == nil
-                        ? String(localized: "Loomscreen's Steam connector did not respond, so the signature wasn't checked.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+                    message: result == nil
+                        ? SteamConnectorClient.unreachableReason
                         : String(localized: "Loomscreen's Steam connector was busy, so the signature wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
@@ -753,8 +765,13 @@ final class SteamCMDDoctorService {
             let quarantineCheck = await inspect(path: path)
             // Unavailable replies default isQuarantined=false — don't treat as clean.
             guard let quarantineCheck, quarantineCheck.unavailableReason == nil else {
+                if quarantineCheck == nil, resetIfCancelled(.gatekeeperQuarantine) {
+                    return
+                }
                 setProbe(.gatekeeperQuarantine, status: .yellow(
-                    message: String(localized: "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
+                    message: quarantineCheck == nil
+                        ? SteamConnectorClient.unreachableReason
+                        : String(localized: "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
@@ -783,12 +800,18 @@ final class SteamCMDDoctorService {
                 ))
                 return
             case let .failure(error):
+                if resetIfCancelled(.gatekeeperQuarantine) {
+                    return
+                }
                 setProbe(.gatekeeperQuarantine, status: .yellow(message: error.localizedDescription, command: nil))
                 return
             }
             let result = await launchSteamCMD(
                 executionAuthorization, args: ["+login", "anonymous", "+quit"]
             )
+            if result.killed, resetIfCancelled(.gatekeeperQuarantine) {
+                return
+            }
             let combined = "\(result.stdout)\n\(result.stderr)"
             if !result.timedOut,
                !result.killed,
@@ -873,13 +896,10 @@ final class SteamCMDDoctorService {
         let result = await SteamConnectorClient.probeCachedLogin(accountName: username)
         guard generation == accountGeneration else { return }
         guard let result else {
-            setProbe(.cachedLogin, status: .red(
-                message: String(
-                    localized: "Loomscreen's Steam connector did not respond.",
-                    bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
-                ),
-                command: nil
-            ))
+            if resetIfCancelled(.cachedLogin) {
+                return
+            }
+            setProbe(.cachedLogin, status: .red(message: SteamConnectorClient.unreachableReason, command: nil))
             return
         }
         applyCachedLoginOutcome(result, username: username, binary: binary, generation: generation)
@@ -1121,10 +1141,7 @@ final class SteamCMDDoctorService {
             }
         )
         guard let result else {
-            return .failed(reason: String(
-                localized: "Loomscreen's Steam connector did not respond.",
-                bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
-            ))
+            return .failed(reason: SteamConnectorClient.unreachableReason)
         }
         noteExecutionReceipt(result.executedBinaryPath)
         switch result.outcome {
@@ -1341,7 +1358,7 @@ final class SteamCMDDoctorService {
             return SteamCMDRunResult(
                 exitCode: nil,
                 stdout: "",
-                stderr: "Loomscreen's Steam connector did not respond.",
+                stderr: SteamConnectorClient.unreachableReason,
                 timedOut: false,
                 killed: true
             )
@@ -1526,6 +1543,13 @@ final class SteamCMDDoctorService {
 
     func setProbe(_ kind: DoctorProbeKind, status: DoctorProbeStatus, lastRun: Date = Date()) {
         probes[kind] = DoctorProbeReport(id: kind, status: status, lastRun: lastRun)
+    }
+
+    /// A nil reply after the caller left is no verdict: the probe goes back to unrun so the next visit runs it again.
+    func resetIfCancelled(_ kind: DoctorProbeKind) -> Bool {
+        guard Task.isCancelled else { return false }
+        setProbe(kind, status: .notRun)
+        return true
     }
 
     private func finishProbeRun() {

@@ -1,18 +1,34 @@
 import Foundation
+import os
 import Security
 
 class ServiceDelegate: NSObject, NSXPCListenerDelegate {
+    private let log = Logger(subsystem: "com.loomscreen.pro.SteamConnector", category: "connection")
+
     func listener(_: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         let hostURL = Bundle.main.bundleURL.resolvingSymlinksInPath().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent()
         var code: SecStaticCode?
         var requirement: SecRequirement?
         var requirementString: CFString?
-        guard SecStaticCodeCreateWithPath(hostURL as CFURL, [], &code) == errSecSuccess, let code,
-              SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess,
-              SecCodeCopyDesignatedRequirement(code, [], &requirement) == errSecSuccess, let requirement,
-              SecRequirementCopyString(requirement, [], &requirementString) == errSecSuccess,
-              let requirementString else { return false }
+        var step = "SecStaticCodeCreateWithPath"
+        var status = SecStaticCodeCreateWithPath(hostURL as CFURL, [], &code)
+        if status == errSecSuccess, let code {
+            step = "SecStaticCodeCheckValidity"
+            status = SecStaticCodeCheckValidity(code, [], nil)
+            if status == errSecSuccess {
+                step = "SecCodeCopyDesignatedRequirement"
+                status = SecCodeCopyDesignatedRequirement(code, [], &requirement)
+            }
+            if status == errSecSuccess, let requirement {
+                step = "SecRequirementCopyString"
+                status = SecRequirementCopyString(requirement, [], &requirementString)
+            }
+        }
+        guard status == errSecSuccess, let requirementString else {
+            log.error("Refused connection: \(step, privacy: .public) returned OSStatus \(status, privacy: .public)")
+            return false
+        }
         newConnection.setCodeSigningRequirement(requirementString as String)
         newConnection.exportedInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
 

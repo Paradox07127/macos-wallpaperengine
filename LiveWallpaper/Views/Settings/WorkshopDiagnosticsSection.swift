@@ -38,7 +38,9 @@ struct WorkshopDiagnosticsSection: View {
                 .controlSize(.small)
                 .disabled(service.state == .probing)
 
-                Button(action: exportDiagnostics) {
+                Button {
+                    Task { await exportDiagnostics() }
+                } label: {
                     Text("Copy reports")
                 }
                 .buttonStyle(.bordered)
@@ -68,8 +70,8 @@ struct WorkshopDiagnosticsSection: View {
 
     // MARK: - Export
 
-    private func exportDiagnostics() {
-        guard let json = service.diagnosticsJSON() else { return }
+    private func exportDiagnostics() async {
+        guard let json = await service.diagnosticsJSON() else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         showingExportToast = pasteboard.setString(json, forType: .string)

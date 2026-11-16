@@ -4,6 +4,306 @@
     "" : {
 
     },
+    "Loomscreen's Steam connector could not be started, or macOS closed the connection (XPC error 4099). Quit Loomscreen and open it again." : {
+      "comment" : "Steam connector failure when the XPC connection was invalidated while the app's signature is intact.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Steam-Anschluss von Loomscreen konnte nicht gestartet werden, oder macOS hat die Verbindung geschlossen (XPC-Fehler 4099). Beenden Sie Loomscreen und öffnen Sie es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen's Steam connector could not be started, or macOS closed the connection (XPC error 4099). Quit Loomscreen and open it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo iniciar el conector de Steam de Loomscreen, o macOS cerró la conexión (error XPC 4099). Sal de Loomscreen y vuelve a abrirlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le connecteur Steam de Loomscreen n'a pas pu démarrer, ou macOS a fermé la connexion (erreur XPC 4099). Quittez Loomscreen, puis rouvrez-le."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen の Steam コネクタを起動できなかったか、macOS が接続を閉じました（XPC エラー 4099）。Loomscreen を終了してから、もう一度開いてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen의 Steam 커넥터를 시작할 수 없거나 macOS가 연결을 닫았습니다(XPC 오류 4099). Loomscreen을 종료한 후 다시 여세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível iniciar o conector Steam do Loomscreen, ou o macOS fechou a conexão (erro XPC 4099). Encerre o Loomscreen e abra-o novamente."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 连接器无法启动，或连接被 macOS 关闭（XPC 错误 4099）。请退出 Loomscreen 后重新打开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 連接器無法啟動，或連線被 macOS 關閉（XPC 錯誤 4099）。請結束 Loomscreen 後重新開啟。"
+          }
+        }
+      }
+    },
+    "Loomscreen's Steam connector did not reply within %lld seconds." : {
+      "comment" : "Steam connector failure when no reply arrived in time; %lld is the number of seconds.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Steam-Anschluss von Loomscreen hat nicht innerhalb von %lld Sekunden geantwortet."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen's Steam connector did not reply within %lld seconds."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El conector de Steam de Loomscreen no respondió en %lld segundos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le connecteur Steam de Loomscreen n'a pas répondu dans les %lld secondes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen の Steam コネクタが %lld 秒以内に応答しませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen의 Steam 커넥터가 %lld초 안에 응답하지 않았습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O conector Steam do Loomscreen não respondeu em %lld segundos."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 连接器在 %lld 秒内没有回复。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 連接器在 %lld 秒內沒有回覆。"
+          }
+        }
+      }
+    },
+    "Loomscreen's Steam connector failed to communicate (%@ error %lld)." : {
+      "comment" : "Steam connector failure for any other XPC error; %1$@ is the error domain, %2$lld the error code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Steam-Anschluss von Loomscreen konnte nicht kommunizieren (%1$@-Fehler %2$lld)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen's Steam connector failed to communicate (%1$@ error %2$lld)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El conector de Steam de Loomscreen no pudo comunicarse (error %2$lld de %1$@)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le connecteur Steam de Loomscreen n'a pas pu communiquer (erreur %1$@ %2$lld)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen の Steam コネクタとの通信に失敗しました（%1$@ エラー %2$lld）。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen의 Steam 커넥터와 통신하지 못했습니다(%1$@ 오류 %2$lld)."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O conector Steam do Loomscreen não conseguiu se comunicar (erro %2$lld de %1$@)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 连接器通信失败（%1$@ 错误 %2$lld）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 連接器通訊失敗（%1$@ 錯誤 %2$lld）。"
+          }
+        }
+      }
+    },
+    "Loomscreen's Steam connector quit unexpectedly while handling the request (XPC error 4097). Try again. If it keeps happening, use Copy reports under Diagnostics and send the result to the developer." : {
+      "comment" : "Steam connector failure when the XPC service process exited mid-request.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Steam-Anschluss von Loomscreen wurde während der Anfrage unerwartet beendet (XPC-Fehler 4097). Versuchen Sie es erneut. Wenn das wiederholt passiert, verwenden Sie „Berichte kopieren“ unter „Diagnose“ und senden Sie das Ergebnis an den Entwickler."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen's Steam connector quit unexpectedly while handling the request (XPC error 4097). Try again. If it keeps happening, use Copy reports under Diagnostics and send the result to the developer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El conector de Steam de Loomscreen se cerró inesperadamente mientras atendía la solicitud (error XPC 4097). Inténtalo de nuevo. Si sigue ocurriendo, usa Copiar informes en Diagnósticos y envía el resultado al desarrollador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le connecteur Steam de Loomscreen s'est fermé de manière inattendue pendant le traitement de la requête (erreur XPC 4097). Réessayez. Si cela se reproduit, utilisez Copier les rapports dans Diagnostic et envoyez le résultat au développeur."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen の Steam コネクタがリクエストの処理中に予期せず終了しました（XPC エラー 4097）。もう一度お試しください。繰り返し発生する場合は、「診断」の「レポートをコピー」を使い、その結果を開発者に送信してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen의 Steam 커넥터가 요청을 처리하는 중 예기치 않게 종료되었습니다(XPC 오류 4097). 다시 시도하세요. 계속 발생하면 진단의 보고서 복사를 사용해 결과를 개발자에게 보내세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O conector Steam do Loomscreen fechou inesperadamente ao processar a solicitação (erro XPC 4097). Tente novamente. Se continuar acontecendo, use Copiar relatórios em Diagnóstico e envie o resultado ao desenvolvedor."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 连接器在处理请求时意外退出（XPC 错误 4097）。请重试；如果反复出现，请在“诊断”中使用“复制报告”并发送给开发者。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 連接器在處理請求時意外結束（XPC 錯誤 4097）。請重試；如果反覆出現，請在「診斷」中複製報告並傳送給開發者。"
+          }
+        }
+      }
+    },
+    "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus %d). Download Loomscreen again and reinstall it." : {
+      "comment" : "Steam connector failure when the app's own code signature is broken; %d is the Security framework status code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Steam-Anschluss von Loomscreen hat die Verbindung abgelehnt, weil die Codesignatur von Loomscreen selbst nicht überprüft werden konnte (OSStatus %d). Laden Sie Loomscreen erneut herunter und installieren Sie es neu."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus %d). Download Loomscreen again and reinstall it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El conector de Steam de Loomscreen rechazó la conexión porque la firma de código del propio Loomscreen no superó la verificación (OSStatus %d). Descarga Loomscreen de nuevo y vuelve a instalarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le connecteur Steam de Loomscreen a refusé la connexion, car la signature de code de Loomscreen lui-même n'a pas pu être vérifiée (OSStatus %d). Téléchargez à nouveau Loomscreen et réinstallez-le."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 自身のコード署名の検証に失敗したため、Loomscreen の Steam コネクタが接続を拒否しました（OSStatus %d）。Loomscreen をもう一度ダウンロードして再インストールしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 자체의 코드 서명 확인에 실패하여 Loomscreen의 Steam 커넥터가 연결을 거부했습니다(OSStatus %d). Loomscreen을 다시 다운로드하여 재설치하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O conector Steam do Loomscreen recusou a conexão porque a assinatura de código do próprio Loomscreen não passou na verificação (OSStatus %d). Baixe o Loomscreen novamente e reinstale-o."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 连接器拒绝了连接，因为 Loomscreen 自身的代码签名校验失败（OSStatus %d）。请重新下载并安装 Loomscreen。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 連接器拒絕了連線，因為 Loomscreen 本身的程式碼簽章驗證失敗（OSStatus %d）。請重新下載並安裝 Loomscreen。"
+          }
+        }
+      }
+    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -68678,60 +68978,6 @@
         }
       }
     },
-    "Loomscreen's background Steam helper didn't answer. Downloads won't run until it does — quitting and reopening Loomscreen usually starts it." : {
-      "comment" : "Connector diagnostic when the XPC service is unreachable.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Steam-Hintergrunddienst von Loomscreen antwortet nicht. Bis er wieder antwortet, sind keine Downloads möglich. Meist hilft es, Loomscreen zu beenden und neu zu öffnen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El asistente de Steam en segundo plano de Loomscreen no respondió. Las descargas no se ejecutarán hasta que lo haga — salir y volver a abrir Loomscreen suele iniciarlo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le service Steam en arrière-plan de Loomscreen ne répond pas. Les téléchargements restent indisponibles tant qu’il ne répond pas. Quitter puis rouvrir Loomscreen le relance généralement."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen のバックグラウンド Steam ヘルパーが応答しませんでした。応答するまでダウンロードは実行できません。Loomscreen を終了して開き直すと起動することがほとんどです。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen의 Steam 백그라운드 도우미가 응답하지 않습니다. 응답할 때까지 다운로드할 수 없습니다. 일반적으로 Loomscreen을 종료한 후 다시 열면 시작됩니다."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O auxiliar Steam em segundo plano do Loomscreen não respondeu. Os downloads ficarão indisponíveis até ele responder. Encerrar e reabrir o Loomscreen geralmente o inicia."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的后台 Steam 助手没有响应。在它响应之前无法下载——退出并重新打开 Loomscreen 通常就能启动它。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的背景 Steam 輔助程式沒有回應。在它回應之前無法下載——結束並重新開啟 Loomscreen 通常就能啟動它。"
-          }
-        }
-      }
-    },
     "Loomscreen's download session is unavailable. Reconnect this account; your Steam app sign-in is separate." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -68787,65 +69033,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 的下載登入工作階段無法使用。請重新連接此帳號；Steam App 的登入狀態獨立管理。"
-          }
-        }
-      }
-    },
-    "Loomscreen's Steam connector did not respond, so the signature wasn't checked." : {
-      "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Steam-Connector von Loomscreen hat nicht geantwortet, daher wurde die Signatur nicht überprüft."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen's Steam connector did not respond, so the signature wasn't checked."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El conector de Steam de Loomscreen no respondió, así que no se comprobó la firma."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le connecteur Steam de Loomscreen n'a pas répondu, donc la signature n'a pas été vérifiée."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen の Steam コネクタが応答しなかったため、署名を確認できませんでした。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen의 Steam 커넥터가 응답하지 않았기 때문에 서명이 확인되지 않았습니다."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O conector Steam do Loomscreen não respondeu, então a assinatura não foi verificada."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的 Steam 连接器没有响应，因此未检查签名。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的 Steam 連接器沒有回應，因此未檢查簽章。"
           }
         }
       }
@@ -130239,65 +130426,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "狀態膠囊顯示系統負載。桌布停止時，先檢查顯示器狀態及「設定 › 效能」的自動暫停規則。關閉視窗後桌布仍會執行，可從選單列再次開啟。"
-          }
-        }
-      }
-    },
-    "The Steam connector did not respond." : {
-      "comment" : "Managed SteamCMD install failure: the XPC service was unreachable.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Steam-Anschluss hat nicht geantwortet."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The Steam connector did not respond."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El conector de Steam no ha respondido."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le connecteur Steam n'a pas répondu."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam コネクタが応答しませんでした。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 커넥터가 응답하지 않았습니다."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O conector Steam não respondeu."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 连接器没有响应。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 連接器沒有回應。"
           }
         }
       }

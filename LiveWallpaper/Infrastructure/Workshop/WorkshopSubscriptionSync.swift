@@ -71,10 +71,7 @@ final class WorkshopSubscriptionSync {
         }
         defer { access.end() }
         guard let result = await listSubscriptions(account) else {
-            fail(String(
-                localized: "Loomscreen's Steam connector did not respond.",
-                bundle: .appLanguage, comment: "Subscription sync error when the XPC connector could not be reached."
-            ))
+            fail(SteamConnectorClient.unreachableReason)
             return
         }
 

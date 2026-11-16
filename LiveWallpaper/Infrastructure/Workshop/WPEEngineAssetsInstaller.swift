@@ -28,8 +28,8 @@ final class WPEEngineAssetsInstaller {
         case checkFailed(CheckFailure)
 
         enum CheckFailure: Equatable, Sendable {
-            /// The connector never answered, so nothing ran.
-            case notRun
+            /// The connector never answered, so nothing ran. `reason` is the connector failure as of that moment.
+            case notRun(reason: String)
             case timedOut
             case steamCMDUnavailable
             /// Steam answered with something the build parser could not use.
@@ -38,11 +38,8 @@ final class WPEEngineAssetsInstaller {
 
             var reason: String {
                 switch self {
-                case .notRun:
-                    String(
-                        localized: "Loomscreen's Steam connector did not respond.",
-                        bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
-                    )
+                case let .notRun(reason):
+                    reason
                 case .timedOut:
                     String(
                         localized: "The update check timed out.",
@@ -71,7 +68,7 @@ final class WPEEngineAssetsInstaller {
             installedBuildID: String?,
             lookup: SteamEngineBuildLookup?
         ) -> UpdateCheckOutcome {
-            guard let lookup else { return .checkFailed(.notRun) }
+            guard let lookup else { return .checkFailed(.notRun(reason: SteamConnectorClient.unreachableReason)) }
             switch lookup.outcome {
             case .timedOut: return .checkFailed(.timedOut)
             case .steamCMDUnavailable: return .checkFailed(.steamCMDUnavailable)
@@ -233,10 +230,7 @@ final class WPEEngineAssetsInstaller {
         guard !Task.isCancelled else { phase = .idle; progress = nil; currentAttempt = nil; return }
 
         guard let result else {
-            fail(String(
-                localized: "Loomscreen's Steam connector did not respond.",
-                bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
-            ))
+            fail(SteamConnectorClient.unreachableReason)
             return
         }
         doctor.noteExecutionReceipt(result.executedBinaryPath)

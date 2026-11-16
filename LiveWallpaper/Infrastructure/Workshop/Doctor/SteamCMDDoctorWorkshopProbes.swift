@@ -106,13 +106,10 @@ extension SteamCMDDoctorService {
     /// Every other failure in this list confuses those two.
     func runConnectorProbe() async {
         guard await SteamConnectorClient.locateSteamCMDBinary() != nil else {
-            setProbe(.connector, status: .red(
-                message: String(
-                    localized: "Loomscreen's background Steam helper didn't answer. Downloads won't run until it does — quitting and reopening Loomscreen usually starts it.",
-                    bundle: .appLanguage, comment: "Connector diagnostic when the XPC service is unreachable."
-                ),
-                command: nil
-            ))
+            if resetIfCancelled(.connector) {
+                return
+            }
+            setProbe(.connector, status: .red(message: SteamConnectorClient.unreachableReason, command: nil))
             return
         }
         setProbe(.connector, status: .green(detail: String(

@@ -76,10 +76,7 @@ final class SteamCMDManagedInstallCoordinator {
         guard attempt == generation else { return status }
 
         guard let result else {
-            return finish(.failed(String(
-                localized: "The Steam connector did not respond.",
-                bundle: .appLanguage, comment: "Managed SteamCMD install failure: the XPC service was unreachable."
-            )))
+            return finish(.failed(SteamConnectorClient.unreachableReason))
         }
         guard result.outcome == .installed, let path = result.canonicalPath else {
             let detail = result.localizedFailureReason.map { " (\($0))" } ?? ""

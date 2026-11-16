@@ -25,7 +25,7 @@ struct SteamCMDDoctorLifecycleTests {
             Issue.record("The refused discovery must remain visible in diagnostics"); return
         }
         #expect(message == SteamCMDDoctorService.setupRequiredMessage)
-        let json = try #require(doctor.diagnosticsJSON())
+        let json = try #require(await doctor.diagnosticsJSON())
         let report = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
         let detection = try #require(report["autoDetection"] as? [String: Any])
         #expect(detection["isQuarantined"] as? Bool == true)
@@ -71,7 +71,7 @@ struct SteamCMDDoctorLifecycleTests {
         let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { diagnosis })
         try doctor.setUsername("probe_account")
         #expect(await doctor.autoDetectBinary() == false)
-        let json = try #require(doctor.diagnosticsJSON())
+        let json = try #require(await doctor.diagnosticsJSON())
         #expect(!json.contains("/opt/private-steamcmd"))
         #expect(!json.contains(secret))
         #expect(!json.contains("probe_account"))

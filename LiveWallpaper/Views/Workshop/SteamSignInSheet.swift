@@ -154,10 +154,7 @@ struct SteamSignInSheet: View {
         case nil:
             // A missing connector reply is distinct from rejected Steam credentials.
             phase = .form
-            errorText = String(
-                localized: "Loomscreen's Steam connector did not respond.",
-                bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
-            )
+            errorText = SteamConnectorClient.unreachableReason
         case .unavailable:
             phase = .form
             errorText = String(

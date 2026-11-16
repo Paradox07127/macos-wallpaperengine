@@ -65,6 +65,12 @@ struct SteamConnectorClientCancellationTests {
         let invoked = OSAllocatedUnfairLock(initialState: false)
         let sawHostExit = OSAllocatedUnfairLock(initialState: false)
         private let held = OSAllocatedUnfairLock<[@Sendable (Data) -> Void]>(initialState: [])
+        /// Drops the client's connection from the listener side as soon as any request arrives.
+        private let dropsConnection: Bool
+
+        init(dropsConnection: Bool = false) {
+            self.dropsConnection = dropsConnection
+        }
 
         var hasReply: Bool {
             held.withLock { !$0.isEmpty }
@@ -77,6 +83,13 @@ struct SteamConnectorClientCancellationTests {
         private func hold(_ reply: @escaping @Sendable (Data) -> Void) {
             invoked.withLock { $0 = true }
             held.withLock { $0.append(reply) }
+            if dropsConnection {
+                NSXPCConnection.current()?.invalidate()
+            }
+        }
+
+        func recentCrashReports(with reply: @escaping @Sendable (Data) -> Void) {
+            hold(reply)
         }
 
         func probeEnvironment(with reply: @escaping @Sendable (Data) -> Void) {
@@ -162,7 +175,12 @@ struct SteamConnectorClientCancellationTests {
     }
 
     private final class Delegate: NSObject, NSXPCListenerDelegate {
-        let connector = SilentConnector()
+        let connector: SilentConnector
+
+        init(dropsConnection: Bool = false) {
+            connector = SilentConnector(dropsConnection: dropsConnection)
+        }
+
         func listener(_: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
             newConnection.exportedInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
             newConnection.exportedObject = connector
@@ -203,6 +221,10 @@ struct SteamConnectorClientCancellationTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(finished.withLock { $0 }, "call() ignored Task.cancel and is waiting for a reply that will never come")
+        #expect(
+            SteamConnectorClient.recentFailures.last { $0.call == "discoverAccounts()" }?.kind == .cancelled,
+            "a cancelled wait was recorded as a connector fault, so the next message blames the connector for the user leaving"
+        )
     }
 
     @Test("quitting signals the connector even when the call in flight has no progress channel", .timeLimit(.minutes(1)))
@@ -321,6 +343,129 @@ struct SteamConnectorClientCancellationTests {
         #expect(published.withLock { $0 } == [99])
     }
 
+    @Test("leaving the page mid-check leaves the identity probe unrun instead of blaming the connector", .timeLimit(.minutes(1)))
+    @MainActor
+    func cancelledIdentityProbeStaysNotRun() async throws {
+        let listener = NSXPCListener.anonymous()
+        let delegate = Delegate()
+        listener.delegate = delegate
+        listener.resume()
+        let endpoint = listener.endpoint
+        SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
+        let scratch = try TestScratch.defaultsSuite(prefix: "connector-cancelled-probe")
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+            scratch.defaults.removePersistentDomain(forName: scratch.name)
+        }
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
+        doctor.binaryPath = "/bin/ls"
+
+        let probe = Task { await doctor.runProbe(.binaryIdentity) }
+        for _ in 0 ..< 50 where !delegate.connector.invoked.withLock({ $0 }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(delegate.connector.invoked.withLock { $0 })
+        probe.cancel()
+        for _ in 0 ..< 150 where doctor.probes[.binaryIdentity]?.status == .running {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(
+            doctor.probes[.binaryIdentity]?.status == .notRun,
+            "a cancelled check was stored as a connector failure, and autoConfigureIfNeeded never re-runs a probe that is not .notRun"
+        )
+    }
+
+    @Test("a connection dropped mid-request records why, and the export carries it", .timeLimit(.minutes(1)))
+    @MainActor
+    func droppedConnectionIsRecordedAndExported() async throws {
+        let listener = NSXPCListener.anonymous()
+        let delegate = Delegate(dropsConnection: true)
+        listener.delegate = delegate
+        listener.resume()
+        let endpoint = listener.endpoint
+        SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
+        let scratch = try TestScratch.defaultsSuite(prefix: "connector-dropped")
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+            scratch.defaults.removePersistentDomain(forName: scratch.name)
+        }
+
+        #expect(await SteamConnectorClient.discoverAccounts().isEmpty)
+        #expect(delegate.connector.invoked.withLock { $0 })
+        let failure = try #require(SteamConnectorClient.recentFailures.last { $0.call == "discoverAccounts()" })
+        // The listener dropping the peer is what a crashed service looks like from the client side.
+        #expect(failure.errorDomain == NSCocoaErrorDomain)
+        #expect(failure.errorCode == NSXPCConnectionInterrupted)
+        #expect(failure.kind == .interrupted)
+        #expect(failure.userFacingReason?.contains("4097") == true)
+        #expect(SteamConnectorClient.unreachableReason == SteamConnectorClient.lastFailure?.userFacingReason)
+
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
+        let json = try #require(await doctor.diagnosticsJSON())
+        let report = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let exported = try #require(report["connectorFailures"] as? [[String: Any]])
+        #expect(exported.contains {
+            $0["call"] as? String == "discoverAccounts()" && $0["kind"] as? String == "interrupted"
+                && $0["errorCode"] as? Int == NSXPCConnectionInterrupted
+        })
+        let crashes = try #require(report["connectorCrashReports"] as? [String: Any])
+        #expect(crashes["status"] as? String == "unavailable")
+    }
+}
+
+@Suite("Steam connector crash report parsing")
+struct SteamConnectorCrashSummaryTests {
+    @Test("an .ips report yields the exception, signal, asi and the crashed thread's frames")
+    func parsesRealShape() throws {
+        let header = #"{"app_name":"SteamConnector","timestamp":"2026-11-16 12:34:56.00 -0500","app_version":"1.0.1","bug_type":"309","name":"SteamConnector"}"#
+        let body = #"""
+        {
+          "uptime" : 100,
+          "exception" : {"codes":"0x0000000000000001, 0x00000001a2b3c4d5","type":"EXC_BREAKPOINT","signal":"SIGTRAP"},
+          "termination" : {"flags":0,"code":5,"namespace":"SIGNAL","indicator":"Trace/BPT trap: 5","byProc":"exc handler","byPid":4242},
+          "asi" : {"libswiftCore.dylib":["SteamConnector/SteamCMDProfile.swift:88: Fatal error: Unexpectedly found nil while unwrapping an Optional value"]},
+          "faultingThread" : 1,
+          "threads" : [
+            {"id":1,"frames":[{"imageOffset":4096,"symbol":"mach_msg2_trap","imageIndex":1}]},
+            {"triggered":true,"id":2,"frames":[
+              {"imageOffset":30000,"symbol":"_assertionFailure(_:_:file:line:flags:)","imageIndex":1},
+              {"imageOffset":5120,"sourceLine":88,"sourceFile":"SteamCMDProfile.swift","symbol":"static SteamCMDProfile.accounts()","imageIndex":0},
+              {"imageOffset":2748,"imageIndex":0},
+              {"imageOffset":12,"imageIndex":9},
+              {"imageOffset":1,"imageIndex":0},
+              {"imageOffset":2,"imageIndex":0},
+              {"imageOffset":3,"imageIndex":0},
+              {"imageOffset":4,"imageIndex":0},
+              {"imageOffset":5,"imageIndex":0}
+            ]}
+          ],
+          "usedImages" : [
+            {"source":"P","arch":"arm64","name":"SteamConnector","path":"\/Applications\/Loomscreen Pro.app\/Contents\/XPCServices\/SteamConnector.xpc\/Contents\/MacOS\/SteamConnector"},
+            {"source":"P","arch":"arm64e","name":"libswiftCore.dylib"}
+          ]
+        }
+        """#
+        let summary = try #require(SteamConnectorCrashSummary.parse(ipsText: header + "\n" + body))
+        #expect(summary.timestamp == "2026-11-16 12:34:56.00 -0500")
+        #expect(summary.appVersion == "1.0.1")
+        #expect(summary.exceptionType == "EXC_BREAKPOINT")
+        #expect(summary.signal == "SIGTRAP")
+        #expect(summary.termination == "Trace/BPT trap: 5")
+        #expect(summary.asi == ["SteamConnector/SteamCMDProfile.swift:88: Fatal error: Unexpectedly found nil while unwrapping an Optional value"])
+        #expect(summary.crashedThreadFrames.count == SteamConnectorCrashSummary.frameLimit)
+        #expect(summary.crashedThreadFrames[0] == .init(image: "libswiftCore.dylib", symbol: "_assertionFailure(_:_:file:line:flags:)", source: nil))
+        #expect(summary.crashedThreadFrames[1] == .init(image: "SteamConnector", symbol: "static SteamCMDProfile.accounts()", source: "SteamCMDProfile.swift:88"))
+        #expect(summary.crashedThreadFrames[2] == .init(image: "SteamConnector", symbol: "0xabc", source: nil))
+        #expect(summary.crashedThreadFrames[3].image == "???")
+    }
+
+    @Test("text that is not an .ips report is rejected")
+    func rejectsNonJSON() {
+        #expect(SteamConnectorCrashSummary.parse(ipsText: "Process: SteamConnector [4242]\nException Type: EXC_CRASH") == nil)
+        #expect(SteamConnectorCrashSummary.parse(ipsText: "") == nil)
+    }
 
 }
 #endif

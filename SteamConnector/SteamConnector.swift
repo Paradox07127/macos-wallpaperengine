@@ -861,6 +861,32 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         reply((try? JSONEncoder().encode(killed)) ?? Data())
     }
 
+    /// Off `steamCMDQueue`: it reads only the diagnostic-report folders.
+    func recentCrashReports(with reply: @escaping @Sendable (Data) -> Void) {
+        let reportsRoot = URL(fileURLWithPath: SteamConnectorEnvironmentProbe.posixHomeDirectory(), isDirectory: true)
+            .appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
+        let cutoff = Date().addingTimeInterval(-14 * 24 * 60 * 60)
+        let summaries = [reportsRoot, reportsRoot.appendingPathComponent("Retired", isDirectory: true)]
+            .flatMap { folder in
+                // `Retired` exists only once macOS has rotated reports into it.
+                (try? FileManager.default.contentsOfDirectory(
+                    at: folder, includingPropertiesForKeys: [.contentModificationDateKey]
+                )) ?? []
+            }
+            .filter { $0.lastPathComponent.hasPrefix("SteamConnector-") && $0.pathExtension == "ips" }
+            .compactMap { url -> (url: URL, date: Date)? in
+                guard let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                      date >= cutoff else { return nil }
+                return (url, date)
+            }
+            .sorted { $0.date > $1.date }
+            .prefix(3)
+            .compactMap { report in
+                (try? String(contentsOf: report.url, encoding: .utf8)).flatMap(SteamConnectorCrashSummary.parse(ipsText:))
+            }
+        reply((try? JSONEncoder().encode(summaries)) ?? Data())
+    }
+
     // MARK: - Doctor probes
 
     func inspectSteamCMDBinary(path: String, with reply: @escaping @Sendable (Data) -> Void) {
