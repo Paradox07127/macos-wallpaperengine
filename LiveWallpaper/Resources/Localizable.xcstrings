@@ -304,6 +304,66 @@
         }
       }
     },
+    "Loomscreen's Steam connector sent a reply this version of Loomscreen can't read. Download Loomscreen again and reinstall it." : {
+      "comment" : "Steam connector failure when the XPC reply could not be decoded, usually a mismatched app and connector build.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Steam-Connector von Loomscreen hat eine Antwort gesendet, die diese Version von Loomscreen nicht lesen kann. Laden Sie Loomscreen erneut herunter und installieren Sie es neu."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen's Steam connector sent a reply this version of Loomscreen can't read. Download Loomscreen again and reinstall it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El conector de Steam de Loomscreen envió una respuesta que esta versión de Loomscreen no puede leer. Vuelve a descargar Loomscreen y reinstálalo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le connecteur Steam de Loomscreen a envoyé une réponse que cette version de Loomscreen ne peut pas lire. Téléchargez à nouveau Loomscreen et réinstallez-le."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen の Steam コネクタから、このバージョンの Loomscreen では読み取れない応答が返されました。Loomscreen をもう一度ダウンロードして再インストールしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen의 Steam 커넥터가 이 버전의 Loomscreen에서 읽을 수 없는 응답을 보냈습니다. Loomscreen을 다시 다운로드하여 재설치하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O conector Steam do Loomscreen enviou uma resposta que esta versão do Loomscreen não consegue ler. Baixe o Loomscreen novamente e reinstale-o."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 连接器返回了当前版本无法识别的回复。请重新下载并安装 Loomscreen。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 的 Steam 連接器傳回了目前版本無法識別的回覆。請重新下載並安裝 Loomscreen。"
+          }
+        }
+      }
+    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -69037,66 +69097,6 @@
         }
       }
     },
-    "Loomscreen's Steam connector did not respond." : {
-      "comment" : "Steam sign-in diagnostic when the XPC connector could not be reached.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Steam-Anschluss von Loomscreen hat nicht geantwortet."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen's Steam connector did not respond."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El conector de Steam de Loomscreen no respondió."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le connecteur Steam de Loomscreen n'a pas répondu."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen の Steam コネクタが応答しませんでした。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen의 Steam 커넥터가 응답하지 않았습니다."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O conector Steam do Loomscreen não respondeu."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的 Steam 连接器没有响应。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 的 Steam 連接器沒有回應。"
-          }
-        }
-      }
-    },
     "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again." : {
       "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
       "localizations" : {
@@ -129369,6 +129369,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向 Steam 的請求失敗（錯誤 %lld）。"
+          }
+        }
+      }
+    },
+    "The request was cancelled before Loomscreen's Steam connector replied." : {
+      "comment" : "Steam connector failure when the caller cancelled the request before a reply arrived.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Anfrage wurde abgebrochen, bevor der Steam-Connector von Loomscreen geantwortet hat."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The request was cancelled before Loomscreen's Steam connector replied."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La solicitud se canceló antes de que respondiera el conector de Steam de Loomscreen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La requête a été annulée avant que le connecteur Steam de Loomscreen ne réponde."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen の Steam コネクタが応答する前にリクエストがキャンセルされました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen의 Steam 커넥터가 응답하기 전에 요청이 취소되었습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A solicitação foi cancelada antes que o conector Steam do Loomscreen respondesse."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求在 Loomscreen 的 Steam 连接器回复前已取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請求在 Loomscreen 的 Steam 連接器回覆前已取消。"
           }
         }
       }

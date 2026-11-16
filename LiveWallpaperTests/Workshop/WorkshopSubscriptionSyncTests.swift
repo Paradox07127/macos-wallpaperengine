@@ -293,7 +293,8 @@ private final class SyncFixture {
                 if let folder = listing.installsBeforeAnswering {
                     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 }
-                return listing.ids.map { SteamSubscribedItemsResult(outcome: .listed, workshopIDs: $0.map(String.init), diagnosticTail: "") }
+                guard let ids = listing.ids else { return .failure(.fixture()) }
+                return .success(SteamSubscribedItemsResult(outcome: .listed, workshopIDs: ids.map(String.init), diagnosticTail: ""))
             }
         )
     }

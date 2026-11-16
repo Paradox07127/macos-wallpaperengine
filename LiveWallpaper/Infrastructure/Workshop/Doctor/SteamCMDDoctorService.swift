@@ -77,7 +77,7 @@ enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
     case steamLibraryInsideContainer(URL)
     case untrustedBinary
     case connectorBusy
-    case connectorUnavailable
+    case connectorUnavailable(SteamConnectorFailure)
 
     var errorDescription: String? {
         switch self {
@@ -103,8 +103,8 @@ enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
             return String(localized: "SteamCMD is not a verified Valve build.", bundle: .appLanguage, comment: "Workshop diagnostics error when the SteamCMD binary is not trusted.")
         case .connectorBusy:
             return String(localized: "Loomscreen's Steam connector is busy with another SteamCMD task. Try again in a moment.", bundle: .appLanguage, comment: "Workshop setup error when binding SteamCMD while the connector is busy with another SteamCMD operation.")
-        case .connectorUnavailable:
-            return SteamConnectorClient.unreachableReason
+        case let .connectorUnavailable(failure):
+            return failure.userFacingReason
         }
     }
 }
@@ -185,10 +185,10 @@ final class SteamCMDDoctorService {
 
     typealias WorkshopDownloadOperation = @MainActor @Sendable (
         String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void
-    ) async -> SteamWorkshopDownloadResult?
+    ) async -> Result<SteamWorkshopDownloadResult, SteamConnectorFailure>
 
     @ObservationIgnored private let downloadOperation: WorkshopDownloadOperation
-    @ObservationIgnored private let diagnoseBinary: @MainActor @Sendable () async -> SteamCMDDiagnosis?
+    @ObservationIgnored private let diagnoseBinary: @MainActor @Sendable () async -> Result<SteamCMDDiagnosis, SteamConnectorFailure>
 
     var probes: [DoctorProbeKind: DoctorProbeReport]
     var state: DoctorState = .idle
@@ -258,7 +258,7 @@ final class SteamCMDDoctorService {
         bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
         workshopFileInventory: (any SteamCMDWorkshopFileInventoryServing)? = nil,
         operationCoordinator: SteamCMDDoctorOperationCoordinator = .shared,
-        diagnoseBinary: @escaping @MainActor @Sendable () async -> SteamCMDDiagnosis? = { await SteamConnectorClient.diagnoseSteamCMD() },
+        diagnoseBinary: @escaping @MainActor @Sendable () async -> Result<SteamCMDDiagnosis, SteamConnectorFailure> = { await SteamConnectorClient.diagnoseSteamCMD() },
         downloadOperation: @escaping WorkshopDownloadOperation = { @Sendable item, account, library, progress in
             await SteamConnectorClient.downloadWorkshopItem(
                 workshopID: item, accountName: account, libraryPath: library, onProgress: progress
@@ -294,11 +294,11 @@ final class SteamCMDDoctorService {
 
     // MARK: - Binding
 
-    func bindResolvedBinary(_ path: String) async throws {
+    func bindResolvedBinary(_ path: String) async throws(SteamCMDDoctorError) {
         beginProbeRun()
         let inspection = await inspect(path: path)
         if let refusal = Self.bindRefusal(for: inspection) {
-            if let reason = inspection?.unavailableReason {
+            if case let .success(answer) = inspection, let reason = answer.unavailableReason {
                 Logger.notice("SteamCMD bind refused, connector busy: \(reason)", category: .workshop)
             }
             throw refusal
@@ -307,7 +307,7 @@ final class SteamCMDDoctorService {
         // A receipt from before the rebind describes a binary the user just
         // replaced; showing it would undo the rebind on screen.
         lastExecutedBinaryPath = nil
-        lastBinarySHA256 = inspection?.sha256
+        lastBinarySHA256 = try? inspection.get().sha256
         verifiedBinarySHA256 = nil
         greenFingerprint = nil
         for kind in DoctorProbeKind.allCases where kind != .workingDirectory {
@@ -322,8 +322,14 @@ final class SteamCMDDoctorService {
         }
     }
 
-    nonisolated static func bindRefusal(for inspection: SteamCMDBinaryInspection?) -> SteamCMDDoctorError? {
-        guard let inspection else { return .connectorUnavailable }
+    nonisolated static func bindRefusal(
+        for reply: Result<SteamCMDBinaryInspection, SteamConnectorFailure>
+    ) -> SteamCMDDoctorError? {
+        let inspection: SteamCMDBinaryInspection
+        switch reply {
+        case let .success(answer): inspection = answer
+        case let .failure(failure): return .connectorUnavailable(failure)
+        }
         if inspection.unavailableReason != nil {
             // Busy is not "bad binary": refusing the bind with a resolution error
             // would tell the user to pick a different file for no reason.
@@ -348,12 +354,16 @@ final class SteamCMDDoctorService {
 
     private(set) var lastAutoDetectDiagnosis: SteamCMDDiagnosis?
     private(set) var lastAutoDetectDate: Date?
+    /// Why binding the copy the diagnosis found as usable was refused; nil when no such bind was attempted.
+    private(set) var lastAutoDetectBindError: SteamCMDDoctorError?
 
     @discardableResult
     func autoDetectBinary() async -> Bool {
         lastAutoDetectDiagnosis = nil
         lastAutoDetectDate = nil
-        if let diagnosis = await diagnoseBinary() {
+        lastAutoDetectBindError = nil
+        switch await diagnoseBinary() {
+        case let .success(diagnosis):
             lastAutoDetectDiagnosis = diagnosis
             lastAutoDetectDate = Date()
             if diagnosis.launch != nil, let executed = diagnosis.canonicalPath {
@@ -366,12 +376,19 @@ final class SteamCMDDoctorService {
                 }
                 return false
             }
-            return (try? await bindResolvedBinary(resolved)) != nil
+            do {
+                try await bindResolvedBinary(resolved)
+                return true
+            } catch {
+                lastAutoDetectBindError = error
+                return false
+            }
+        case let .failure(failure):
+            // Only an unreachable connector falls through.
+            lastAutoDetectDiagnosis = .unavailable(failure.userFacingReason)
+            lastAutoDetectDate = Date()
         }
-        // Only an unreachable connector falls through.
-        lastAutoDetectDiagnosis = .unavailable(SteamCMDDoctorError.connectorUnavailable.localizedDescription)
-        lastAutoDetectDate = Date()
-        guard let located = await SteamConnectorClient.locateSteamCMDBinary(),
+        guard case let .success(located) = await SteamConnectorClient.locateSteamCMDBinary(),
               let path = located.canonicalPath else { return false }
         do {
             try await bindResolvedBinary(path)
@@ -468,18 +485,22 @@ final class SteamCMDDoctorService {
         // The account can change while the connector works; a removal that
         // finished for the previous one must not clear this one's verdict.
         guard generation == accountGeneration else { return false }
-        switch result?.outcome {
-        case .removed, .notFound:
-            forgetSignedInSession()
-            return true
-        case .refused, nil:
-            // Leaving the probe untouched is accurate: the session is still there.
-            Logger.warning(
-                "Removing the saved Steam session was refused: \(result?.failureReason ?? "connector did not respond")",
-                category: .workshop
-            )
-            return false
+        let reason: String
+        switch result {
+        case let .success(removal):
+            switch removal.outcome {
+            case .removed, .notFound:
+                forgetSignedInSession()
+                return true
+            case .refused:
+                reason = removal.failureReason ?? "no reason given"
+            }
+        case let .failure(failure):
+            reason = "connector call failed: \(failure.kind.label)"
         }
+        // Leaving the probe untouched is accurate: the session is still there.
+        Logger.warning("Removing the saved Steam session was refused: \(reason)", category: .workshop)
+        return false
     }
 
     func forgetSignedInSession() {
@@ -537,9 +558,13 @@ final class SteamCMDDoctorService {
         var restored = false
         if let binary = try? resolveBinaryURL() {
             let didStart = binary.startAccessingSecurityScopedResource()
-            defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
+            defer {
+                if didStart {
+                    binary.stopAccessingSecurityScopedResource()
+                }
+            }
             let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            let inspection = await inspect(path: path)
+            let inspection = try? await inspect(path: path).get()
             if let fingerprint = greenFingerprint,
                Self.canRestoreGreen(
                    fingerprint: fingerprint, boundBinaryPath: binaryPath, inspection: inspection
@@ -697,7 +722,7 @@ final class SteamCMDDoctorService {
 
             var detail = Self.identityVerifiedDetail()
             let rehashPath = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            if let currentSHA = await inspect(path: rehashPath)?.sha256 {
+            if let currentSHA = try? await inspect(path: rehashPath).get().sha256 {
                 if let previous = lastBinarySHA256, previous != currentSHA {
                     detail = String(localized: "SteamCMD updated itself (SHA-256 changed) — that's normal.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
                 }
@@ -713,20 +738,28 @@ final class SteamCMDDoctorService {
         do {
             let binary = try resolveBinaryURL()
             let didStart = binary.startAccessingSecurityScopedResource()
-            defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
+            defer {
+                if didStart {
+                    binary.stopAccessingSecurityScopedResource()
+                }
+            }
             let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            let result = await inspect(path: path)
-            guard let result, result.unavailableReason == nil else {
-                if result == nil, resetIfCancelled(.codeSignature) {
+            let result: SteamCMDBinaryInspection
+            switch await inspect(path: path) {
+            case let .failure(failure):
+                if resetIfCancelled(.codeSignature) {
                     return
                 }
+                setProbe(.codeSignature, status: .yellow(message: failure.userFacingReason, command: nil))
+                return
+            case let .success(answer) where answer.unavailableReason != nil:
                 setProbe(.codeSignature, status: .yellow(
-                    message: result == nil
-                        ? SteamConnectorClient.unreachableReason
-                        : String(localized: "Loomscreen's Steam connector was busy, so the signature wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
+                    message: String(localized: "Loomscreen's Steam connector was busy, so the signature wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
+            case let .success(answer):
+                result = answer
             }
             guard result.exists else {
                 setProbe(.codeSignature, status: .red(
@@ -760,21 +793,29 @@ final class SteamCMDDoctorService {
         do {
             let binary = try resolveBinaryURL()
             let didStart = binary.startAccessingSecurityScopedResource()
-            defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
+            defer {
+                if didStart {
+                    binary.stopAccessingSecurityScopedResource()
+                }
+            }
             let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            let quarantineCheck = await inspect(path: path)
-            // Unavailable replies default isQuarantined=false — don't treat as clean.
-            guard let quarantineCheck, quarantineCheck.unavailableReason == nil else {
-                if quarantineCheck == nil, resetIfCancelled(.gatekeeperQuarantine) {
+            let quarantineCheck: SteamCMDBinaryInspection
+            switch await inspect(path: path) {
+            case let .failure(failure):
+                if resetIfCancelled(.gatekeeperQuarantine) {
                     return
                 }
+                setProbe(.gatekeeperQuarantine, status: .yellow(message: failure.userFacingReason, command: nil))
+                return
+            // Unavailable replies default isQuarantined=false — don't treat as clean.
+            case let .success(answer) where answer.unavailableReason != nil:
                 setProbe(.gatekeeperQuarantine, status: .yellow(
-                    message: quarantineCheck == nil
-                        ? SteamConnectorClient.unreachableReason
-                        : String(localized: "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
+                    message: String(localized: "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
+            case let .success(answer):
+                quarantineCheck = answer
             }
             if quarantineCheck.isQuarantined {
                 setProbe(.gatekeeperQuarantine, status: .red(
@@ -895,14 +936,15 @@ final class SteamCMDDoctorService {
         let generation = accountGeneration
         let result = await SteamConnectorClient.probeCachedLogin(accountName: username)
         guard generation == accountGeneration else { return }
-        guard let result else {
+        switch result {
+        case let .success(login):
+            applyCachedLoginOutcome(login, username: username, binary: binary, generation: generation)
+        case let .failure(failure):
             if resetIfCancelled(.cachedLogin) {
                 return
             }
-            setProbe(.cachedLogin, status: .red(message: SteamConnectorClient.unreachableReason, command: nil))
-            return
+            setProbe(.cachedLogin, status: .red(message: failure.userFacingReason, command: nil))
         }
-        applyCachedLoginOutcome(result, username: username, binary: binary, generation: generation)
     }
 
     static var steamUnreachableMessage: String {
@@ -1131,7 +1173,7 @@ final class SteamCMDDoctorService {
 
         let generation = accountGeneration
         let bindingRevision = defaultsRevision
-        let result = await downloadOperation(
+        let reply = await downloadOperation(
             String(itemID),
             username,
             steamRoot.path(percentEncoded: false),
@@ -1140,8 +1182,10 @@ final class SteamCMDDoctorService {
                 onProgress?(update.fraction.map { $0 * 100 }, update.downloadedBytes, update.totalBytes)
             }
         )
-        guard let result else {
-            return .failed(reason: SteamConnectorClient.unreachableReason)
+        let result: SteamWorkshopDownloadResult
+        switch reply {
+        case let .success(download): result = download
+        case let .failure(failure): return .failed(reason: failure.userFacingReason)
         }
         noteExecutionReceipt(result.executedBinaryPath)
         switch result.outcome {
@@ -1314,14 +1358,16 @@ final class SteamCMDDoctorService {
         }
     }
 
-    func inspect(path: String) async -> SteamCMDBinaryInspection? {
-        if let reused = runScopedInspections[path] { return reused }
-        let inspection = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
-        if let inspection, inspection.unavailableReason == nil, inspection.exists {
+    func inspect(path: String) async -> Result<SteamCMDBinaryInspection, SteamConnectorFailure> {
+        if let reused = runScopedInspections[path] {
+            return .success(reused)
+        }
+        let reply = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
+        if case let .success(inspection) = reply, inspection.unavailableReason == nil, inspection.exists {
             lastInspection = inspection
             runScopedInspections[path] = inspection
         }
-        return inspection
+        return reply
     }
 
     typealias SteamCMDProgressHandler = @Sendable (
@@ -1351,14 +1397,15 @@ final class SteamCMDDoctorService {
         args: [String],
         timeout: TimeInterval = SteamCMDDoctorService.probeLaunchTimeout
     ) async -> SteamCMDRunResult {
-        guard let run = await SteamConnectorClient.runSteamCMDProbe(
-            arguments: args,
-            timeout: timeout
-        ) else {
+        let run: SteamCMDProbeRun
+        switch await SteamConnectorClient.runSteamCMDProbe(arguments: args, timeout: timeout) {
+        case let .success(reply):
+            run = reply
+        case let .failure(failure):
             return SteamCMDRunResult(
                 exitCode: nil,
                 stdout: "",
-                stderr: SteamConnectorClient.unreachableReason,
+                stderr: failure.userFacingReason,
                 timedOut: false,
                 killed: true
             )
@@ -1397,10 +1444,14 @@ final class SteamCMDDoctorService {
     /// Busy and unreachable are no verdict, so both keep the cached SHA. A busy reply also reads `exists == false`, so nothing may judge existence ahead of `evaluateTrust`.
     nonisolated static func executionTrust(
         path: String,
-        inspection: SteamCMDBinaryInspection?,
+        inspection reply: Result<SteamCMDBinaryInspection, SteamConnectorFailure>,
         cachedSHA256: String?
     ) -> (result: Result<SteamCMDBinaryExecutionAuthorization, SteamCMDDoctorError>, verifiedSHA256: String?) {
-        guard let inspection else { return (.failure(.connectorUnavailable), cachedSHA256) }
+        let inspection: SteamCMDBinaryInspection
+        switch reply {
+        case let .success(answer): inspection = answer
+        case let .failure(failure): return (.failure(.connectorUnavailable(failure)), cachedSHA256)
+        }
         let decision = evaluateTrust(inspection: inspection, cachedSHA256: cachedSHA256)
         guard inspection.unavailableReason == nil else {
             return (.failure(.connectorBusy), decision.verifiedSHA256)

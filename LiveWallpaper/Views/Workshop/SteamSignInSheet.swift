@@ -123,8 +123,18 @@ struct SteamSignInSheet: View {
         }
     }
 
-    private func handle(_ result: SteamCMDLoginResult?) {
-        switch result?.outcome {
+    private func handle(_ result: Result<SteamCMDLoginResult, SteamConnectorFailure>) {
+        let login: SteamCMDLoginResult
+        switch result {
+        case let .success(reply):
+            login = reply
+        case let .failure(failure):
+            // A missing connector reply is distinct from rejected Steam credentials.
+            phase = .form
+            errorText = failure.userFacingReason
+            return
+        }
+        switch login.outcome {
         case .success:
             password = ""
             guardCode = ""
@@ -151,10 +161,6 @@ struct SteamSignInSheet: View {
         case .timedOut:
             phase = .form
             errorText = String(localized: "Steam didn't confirm the sign-in in time. If Steam Guard asked on your phone, approve it and try again.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
-        case nil:
-            // A missing connector reply is distinct from rejected Steam credentials.
-            phase = .form
-            errorText = SteamConnectorClient.unreachableReason
         case .unavailable:
             phase = .form
             errorText = String(
@@ -163,7 +169,7 @@ struct SteamSignInSheet: View {
             )
         case .failed:
             phase = .form
-            errorText = result?.failureReason.map {
+            errorText = login.failureReason.map {
                 String(
                     localized: "Steam refused the sign-in: \($0)",
                     bundle: .appLanguage, comment: "In-app Steam sign-in failure; the placeholder is Steam's own stated reason."

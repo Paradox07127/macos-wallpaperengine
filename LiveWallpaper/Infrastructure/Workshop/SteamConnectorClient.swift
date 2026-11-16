@@ -8,14 +8,16 @@ enum SteamCMDOperationScope {
     @TaskLocal static var currentID: String?
 }
 
-/// One connector call that ended without a reply.
-struct SteamConnectorFailure: Equatable, Sendable {
+/// One connector call that ended without a usable reply.
+struct SteamConnectorFailure: Error, Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case cancelled
         case timedOut(seconds: Int)
         case interrupted
         /// `hostSignatureStatus` is this app's own static signature check at the moment of failure; 0 = valid.
         case invalid(hostSignatureStatus: OSStatus)
+        /// The connector replied, but with data this build cannot decode.
+        case undecodable
         case other
 
         var label: String {
@@ -24,6 +26,7 @@ struct SteamConnectorFailure: Equatable, Sendable {
             case let .timedOut(seconds): "timedOut(\(seconds)s)"
             case .interrupted: "interrupted"
             case let .invalid(status): "invalid(hostSignatureStatus=\(status))"
+            case .undecodable: "undecodable"
             case .other: "other"
             }
         }
@@ -36,11 +39,12 @@ struct SteamConnectorFailure: Equatable, Sendable {
     let errorCode: Int?
     let debugDescription: String?
 
-    /// nil for `.cancelled`: the caller left, so there is nothing to tell the user.
-    var userFacingReason: String? {
+    var userFacingReason: String {
         switch kind {
         case .cancelled:
-            nil
+            String(localized: "The request was cancelled before Loomscreen's Steam connector replied.", bundle: .appLanguage, comment: "Steam connector failure when the caller cancelled the request before a reply arrived.")
+        case .undecodable:
+            String(localized: "Loomscreen's Steam connector sent a reply this version of Loomscreen can't read. Download Loomscreen again and reinstall it.", bundle: .appLanguage, comment: "Steam connector failure when the XPC reply could not be decoded, usually a mismatched app and connector build.")
         case .interrupted:
             String(localized: "Loomscreen's Steam connector quit unexpectedly while handling the request (XPC error 4097). Try again. If it keeps happening, use Copy reports under Diagnostics and send the result to the developer.", bundle: .appLanguage, comment: "Steam connector failure when the XPC service process exited mid-request.")
         case let .invalid(status) where status != errSecSuccess:
@@ -60,110 +64,122 @@ enum SteamConnectorClient {
     private static let serviceName = "com.loomscreen.pro.SteamConnector"
 
     static func discoverAccounts() async -> [SteamAccountSummary] {
-        guard let data = await call({ connector, reply in
+        let reply = await call { connector, reply in
             connector.discoverAccounts(with: reply)
-        }) else { return [] }
-        return (try? JSONDecoder().decode([SteamAccountSummary].self, from: data)) ?? []
+        }
+        return (try? decode([SteamAccountSummary].self, reply).get()) ?? []
     }
 
-    static func probeCachedLogin(accountName: String) async -> SteamCachedLoginResult? {
-        guard let data = await call({ connector, reply in
+    static func probeCachedLogin(accountName: String) async -> Result<SteamCachedLoginResult, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.probeCachedLogin(accountName: accountName, with: reply)
-        }) else { return nil }
-        return try? JSONDecoder().decode(SteamCachedLoginResult.self, from: data)
+        }
+        return decode(SteamCachedLoginResult.self, reply)
     }
 
-    static func inspectSteamCMDBinary(path: String) async -> SteamCMDBinaryInspection? {
-        let data = await call { connector, reply in
+    static func inspectSteamCMDBinary(path: String) async -> Result<SteamCMDBinaryInspection, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.inspectSteamCMDBinary(path: path, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryInspection.self, from: $0) }
+        return decode(SteamCMDBinaryInspection.self, reply)
     }
 
-    static func bindManualSteamCMDBinary(path: String) async -> SteamCMDManualBindResult? {
-        let data = await call { connector, reply in
+    static func bindManualSteamCMDBinary(path: String) async -> Result<SteamCMDManualBindResult, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.bindManualSteamCMDBinary(path: path, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDManualBindResult.self, from: $0) }
+        return decode(SteamCMDManualBindResult.self, reply)
     }
 
     @discardableResult
     static func clearManualSteamCMDBinary() async -> SteamCMDManualBindResult? {
-        let data = await call { connector, reply in
+        let reply = await call { connector, reply in
             connector.clearManualSteamCMDBinary(with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDManualBindResult.self, from: $0) }
+        return try? decode(SteamCMDManualBindResult.self, reply).get()
     }
 
     /// The Mach-O the connector would execute, resolved from its own candidate
     /// list. Takes no path: the app does not get to name what runs.
-    static func locateSteamCMDBinary() async -> SteamCMDBinaryLocation? {
-        let data = await call { connector, reply in
+    static func locateSteamCMDBinary() async -> Result<SteamCMDBinaryLocation, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.locateSteamCMDBinary(with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryLocation.self, from: $0) }
+        return decode(SteamCMDBinaryLocation.self, reply)
     }
 
-    static func installManagedSteamCMD() async -> SteamCMDManagedInstallResult? {
-        let data = await call { connector, reply in
+    static func installManagedSteamCMD() async -> Result<SteamCMDManagedInstallResult, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.installManagedSteamCMD(with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedInstallResult.self, from: $0) }
+        return decode(SteamCMDManagedInstallResult.self, reply)
     }
 
-    /// nil means the connector was unreachable.
     static func signInSteamAccount(
         accountName: String,
         password: String,
         guardCode: String? = nil
-    ) async -> SteamCMDLoginResult? {
+    ) async -> Result<SteamCMDLoginResult, SteamConnectorFailure> {
         let request = SteamCMDLoginRequest(
             accountName: accountName, password: password, guardCode: guardCode
         )
-        guard let payload = try? JSONEncoder().encode(request) else { return nil }
-        let data = await call { connector, reply in
+        let payload: Data
+        do {
+            payload = try JSONEncoder().encode(request)
+        } catch {
+            return .failure(recordFailure(CallFailure(cause: .transport, error: error as NSError), call: #function))
+        }
+        let reply = await call { connector, reply in
             connector.signInSteamAccount(payload, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDLoginResult.self, from: $0) }
+        return decode(SteamCMDLoginResult.self, reply)
     }
 
-    static func removeManagedSteamCMD() async -> SteamCMDManagedRemovalResult? {
-        let data = await call { connector, reply in
+    static func removeManagedSteamCMD() async -> Result<SteamCMDManagedRemovalResult, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.removeManagedSteamCMD(with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedRemovalResult.self, from: $0) }
+        return decode(SteamCMDManagedRemovalResult.self, reply)
     }
 
-    /// nil means the connector was unreachable.
-    static func removeAccountSession(accountName: String) async -> SteamAccountSessionRemovalResult? {
-        let data = await call { connector, reply in
+    static func removeAccountSession(accountName: String) async -> Result<SteamAccountSessionRemovalResult, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.removeAccountSession(accountName: accountName, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamAccountSessionRemovalResult.self, from: $0) }
+        return decode(SteamAccountSessionRemovalResult.self, reply)
     }
 
-    /// nil means the connector was unreachable.
     static func diagnoseSteamCMD(
         launchTimeout: TimeInterval = SteamCMDDiagnosisProbe.defaultLaunchTimeout
-    ) async -> SteamCMDDiagnosis? {
+    ) async -> Result<SteamCMDDiagnosis, SteamConnectorFailure> {
         let request = SteamCMDDiagnosisRequest(launchTimeout: launchTimeout)
-        guard let payload = try? JSONEncoder().encode(request) else { return nil }
-        let data = await call { connector, reply in
+        let payload: Data
+        do {
+            payload = try JSONEncoder().encode(request)
+        } catch {
+            return .failure(recordFailure(CallFailure(cause: .transport, error: error as NSError), call: #function))
+        }
+        let reply = await call { connector, reply in
             connector.diagnoseSteamCMD(payload, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDDiagnosis.self, from: $0) }
+        return decode(SteamCMDDiagnosis.self, reply)
     }
 
     static func runSteamCMDProbe(
         arguments: [String],
         timeout: TimeInterval
-    ) async -> SteamCMDProbeRun? {
+    ) async -> Result<SteamCMDProbeRun, SteamConnectorFailure> {
         let request = SteamCMDProbeRequest(arguments: arguments, timeout: timeout)
-        guard let payload = try? JSONEncoder().encode(request) else { return nil }
-        let data = await call { connector, reply in
+        let payload: Data
+        do {
+            payload = try JSONEncoder().encode(request)
+        } catch {
+            return .failure(recordFailure(CallFailure(cause: .transport, error: error as NSError), call: #function))
+        }
+        let reply = await call { connector, reply in
             connector.runSteamCMDProbe(payload, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamCMDProbeRun.self, from: $0) }
+        return decode(SteamCMDProbeRun.self, reply)
     }
 
     // MARK: - Long operations
@@ -173,8 +189,8 @@ enum SteamConnectorClient {
         libraryPath: String,
         operationID: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
-    ) async -> SteamEngineAssetsResult? {
-        let data = await call(onProgress: onProgress) { connector, reply in
+    ) async -> Result<SteamEngineAssetsResult, SteamConnectorFailure> {
+        let reply = await call(onProgress: onProgress) { connector, reply in
             connector.installWallpaperEngineAssets(
                 accountName: accountName,
                 libraryPath: libraryPath,
@@ -182,7 +198,7 @@ enum SteamConnectorClient {
                 with: reply
             )
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamEngineAssetsResult.self, from: $0) }
+        return decode(SteamEngineAssetsResult.self, reply)
     }
 
     /// Cancel identity comes from SteamCMDOperationScope, not a parameter. Outside a scope the run still registers under an id nobody holds — uncancellable.
@@ -191,9 +207,9 @@ enum SteamConnectorClient {
         accountName: String,
         libraryPath: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
-    ) async -> SteamWorkshopDownloadResult? {
+    ) async -> Result<SteamWorkshopDownloadResult, SteamConnectorFailure> {
         let operationID = SteamCMDOperationScope.currentID ?? UUID().uuidString
-        let data = await call(onProgress: onProgress) { connector, reply in
+        let reply = await call(onProgress: onProgress) { connector, reply in
             connector.downloadWorkshopItem(
                 workshopID: workshopID,
                 accountName: accountName,
@@ -202,49 +218,64 @@ enum SteamConnectorClient {
                 with: reply
             )
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamWorkshopDownloadResult.self, from: $0) }
+        return decode(SteamWorkshopDownloadResult.self, reply)
     }
 
-    /// nil means the connector was unreachable.
-    static func listSubscribedWorkshopItems(accountName: String) async -> SteamSubscribedItemsResult? {
-        let data = await call { connector, reply in
+    static func listSubscribedWorkshopItems(accountName: String) async -> Result<SteamSubscribedItemsResult, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.listSubscribedWorkshopItems(accountName: accountName, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamSubscribedItemsResult.self, from: $0) }
+        return decode(SteamSubscribedItemsResult.self, reply)
     }
 
     static func deleteWorkshopItem(workshopID: String, libraryPath: String) async -> SteamDeleteResult? {
-        let data = await call { connector, reply in
+        let reply = await call { connector, reply in
             connector.deleteWorkshopItem(workshopID: workshopID, libraryPath: libraryPath, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamDeleteResult.self, from: $0) }
+        return try? decode(SteamDeleteResult.self, reply).get()
     }
 
     /// true = something was signalled; false = a different operation (or none) holds the queue; nil = connector unreachable.
     @discardableResult
     static func cancelActiveSteamCMD(operationID: String) async -> Bool? {
-        let data = await call { connector, reply in
+        let reply = await call { connector, reply in
             connector.cancelActiveSteamCMD(operationID: operationID, with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode(Bool.self, from: $0) }
+        return try? decode(Bool.self, reply).get()
     }
 
-    static func latestWallpaperEngineBuildID(operationID: String) async -> SteamEngineBuildLookup? {
-        let data = await call { connector, reply in
+    static func latestWallpaperEngineBuildID(operationID: String) async -> Result<SteamEngineBuildLookup, SteamConnectorFailure> {
+        let reply = await call { connector, reply in
             connector.latestWallpaperEngineBuildID(operationID: operationID, with: reply)
         }
-        guard let data else { return nil }
-        // A reply we cannot decode is still a reply. Returning nil here would make the caller report the connector did not respond.
-        return (try? JSONDecoder().decode(SteamEngineBuildLookup.self, from: data))
-            ?? SteamEngineBuildLookup(outcome: .unrecognized, buildID: nil)
+        // A reply we cannot decode still proves Steam was asked; the caller reports it as unparsed output.
+        return reply.map { data in
+            (try? JSONDecoder().decode(SteamEngineBuildLookup.self, from: data))
+                ?? SteamEngineBuildLookup(outcome: .unrecognized, buildID: nil)
+        }
     }
 
     /// nil means the connector was unreachable.
     static func recentCrashReports() async -> [SteamConnectorCrashSummary]? {
-        let data = await call(timeout: 30) { connector, reply in
+        let reply = await call(timeout: 30) { connector, reply in
             connector.recentCrashReports(with: reply)
         }
-        return data.flatMap { try? JSONDecoder().decode([SteamConnectorCrashSummary].self, from: $0) }
+        return try? decode([SteamConnectorCrashSummary].self, reply).get()
+    }
+
+    /// A reply that does not decode is recorded as its own failure, so the caller never reports someone else's.
+    private static func decode<Value: Decodable>(
+        _ type: Value.Type,
+        _ reply: Result<Data, SteamConnectorFailure>,
+        caller: String = #function
+    ) -> Result<Value, SteamConnectorFailure> {
+        reply.flatMap { data in
+            do {
+                return try .success(JSONDecoder().decode(type, from: data))
+            } catch {
+                return .failure(recordFailure(CallFailure(cause: .undecodable), call: caller))
+            }
+        }
     }
 
     // MARK: - Failure record
@@ -254,10 +285,11 @@ enum SteamConnectorClient {
             case cancelled
             case timedOut(Int)
             case transport
+            case undecodable
         }
 
         let cause: Cause
-        /// nil when no XPC error was delivered: cancellation, the timer, or a proxy of the wrong type.
+        /// nil when no XPC error was delivered: cancellation, the timer, a proxy of the wrong type, or an undecodable reply.
         var error: NSError?
     }
 
@@ -272,24 +304,13 @@ enum SteamConnectorClient {
         failures.withLock { $0 }
     }
 
-    nonisolated static var lastFailure: SteamConnectorFailure? {
-        failures.withLock { $0.last }
-    }
-
-    /// What to tell the user after a call came back nil.
-    nonisolated static var unreachableReason: String {
-        lastFailure?.userFacingReason ?? String(
-            localized: "Loomscreen's Steam connector did not respond.",
-            bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
-        )
-    }
-
-    private nonisolated static func recordFailure(_ failure: CallFailure, call: String) {
+    private nonisolated static func recordFailure(_ failure: CallFailure, call: String) -> SteamConnectorFailure {
         let error = failure.error
         let kind: SteamConnectorFailure.Kind
         switch failure.cause {
         case .cancelled: kind = .cancelled
         case let .timedOut(seconds): kind = .timedOut(seconds: seconds)
+        case .undecodable: kind = .undecodable
         case .transport where error?.domain == NSCocoaErrorDomain && error?.code == NSXPCConnectionInterrupted:
             kind = .interrupted
         case .transport where error?.domain == NSCocoaErrorDomain && error?.code == NSXPCConnectionInvalid:
@@ -321,6 +342,7 @@ enum SteamConnectorClient {
         if kind == .interrupted {
             scheduleCrashSummaryLog()
         }
+        return record
     }
 
     /// macOS writes the `.ips` a few seconds after the process dies, so the fetch waits before asking.
@@ -374,10 +396,10 @@ enum SteamConnectorClient {
 
     #if DEBUG
     static func probeEnvironmentForTesting() async -> SteamConnectorEnvironmentProbe? {
-        guard let data = await call(timeout: 30, { connector, reply in
+        let reply = await call(timeout: 30) { connector, reply in
             connector.probeEnvironment(with: reply)
-        }) else { return nil }
-        return try? JSONDecoder().decode(SteamConnectorEnvironmentProbe.self, from: data)
+        }
+        return try? decode(SteamConnectorEnvironmentProbe.self, reply).get()
     }
 
     /// Tests substitute an in-process anonymous listener for the XPC service.
@@ -408,14 +430,14 @@ enum SteamConnectorClient {
         return NSXPCConnection(serviceName: serviceName)
     }
 
-    /// One-shot request; nil means connector unreachable (not a Steam "no"). Honours `Task` cancellation: the connection is invalidated, which is how the connector learns the caller is gone — a cancelled operation still waiting in its queue then never runs.
+    /// One-shot request; a failure means the connector gave no reply (not a Steam "no"). Honours `Task` cancellation: the connection is invalidated, which is how the connector learns the caller is gone — a cancelled operation still waiting in its queue then never runs.
     private static func call(
         // Client timeout above connector's 900s so the service expires first.
         timeout: TimeInterval = 7200,
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil,
         caller: String = #function,
         _ body: @escaping @Sendable (any SteamConnectorProtocol, @escaping @Sendable (Data) -> Void) -> Void
-    ) async -> Data? {
+    ) async -> Result<Data, SteamConnectorFailure> {
         // `nonisolated(unsafe)`: the cancellation handler is the only off-actor user and it calls `invalidate()`, which NSXPCConnection serves from any thread.
         nonisolated(unsafe) let connection = makeConnection()
         connection.remoteObjectInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
@@ -430,22 +452,15 @@ enum SteamConnectorClient {
 
         // The reply, the error handler, the timeout and cancellation can all
         // fire; whichever takes the continuation out of the box owns it.
-        let pending = OSAllocatedUnfairLock<CheckedContinuation<Data?, Never>?>(initialState: nil)
+        let pending = OSAllocatedUnfairLock<CheckedContinuation<Result<Data, SteamConnectorFailure>, Never>?>(initialState: nil)
         let finish: @Sendable (Result<Data, CallFailure>) -> Void = { outcome in
-            let continuation = pending.withLock { box -> CheckedContinuation<Data?, Never>? in
+            let continuation = pending.withLock { box -> CheckedContinuation<Result<Data, SteamConnectorFailure>, Never>? in
                 defer { box = nil }
                 return box
             }
             guard let continuation else { return }
             progressReceiver?.close()
-            switch outcome {
-            case let .success(data):
-                continuation.resume(returning: data)
-            case let .failure(failure):
-                // Recorded before resuming so the caller's message describes this failure, not the previous one.
-                recordFailure(failure, call: caller)
-                continuation.resume(returning: nil)
-            }
+            continuation.resume(returning: outcome.mapError { recordFailure($0, call: caller) })
         }
 
         return await withTaskCancellationHandler {

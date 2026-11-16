@@ -400,8 +400,7 @@ struct SteamConnectorClientCancellationTests {
         #expect(failure.errorDomain == NSCocoaErrorDomain)
         #expect(failure.errorCode == NSXPCConnectionInterrupted)
         #expect(failure.kind == .interrupted)
-        #expect(failure.userFacingReason?.contains("4097") == true)
-        #expect(SteamConnectorClient.unreachableReason == SteamConnectorClient.lastFailure?.userFacingReason)
+        #expect(failure.userFacingReason.contains("4097"))
 
         let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
         let json = try #require(await doctor.diagnosticsJSON())
@@ -413,6 +412,101 @@ struct SteamConnectorClientCancellationTests {
         })
         let crashes = try #require(report["connectorCrashReports"] as? [String: Any])
         #expect(crashes["status"] as? String == "unavailable")
+    }
+
+    /// `NSXPCListener.delegate` is weak: the caller keeps `delegate` alive for as long as the listener is used.
+    @MainActor
+    private func listen(_ delegate: Delegate) -> NSXPCListener {
+        let listener = NSXPCListener.anonymous()
+        listener.delegate = delegate
+        listener.resume()
+        let endpoint = listener.endpoint
+        SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
+        return listener
+    }
+
+    @Test("a reply the app cannot read is reported as unreadable, not as an earlier call's failure", .timeLimit(.minutes(1)))
+    @MainActor
+    func undecodableReplyKeepsItsOwnReason() async throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "connector-undecodable")
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            scratch.defaults.removePersistentDomain(forName: scratch.name)
+        }
+        let dropping = Delegate(dropsConnection: true)
+        let droppingListener = listen(dropping)
+        defer { droppingListener.invalidate() }
+        #expect(await SteamConnectorClient.discoverAccounts().isEmpty)
+        try #require(SteamConnectorClient.recentFailures.last?.kind == .interrupted)
+
+        let garbled = Delegate()
+        let garbledListener = listen(garbled)
+        defer { garbledListener.invalidate() }
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
+        doctor.binaryPath = "/bin/ls"
+        let probe = Task { await doctor.runProbe(.codeSignature) }
+        for _ in 0 ..< 50 where !garbled.connector.hasReply {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(garbled.connector.hasReply)
+        garbled.connector.reply(Data("not json".utf8))
+        await probe.value
+
+        guard case let .yellow(message, _) = doctor.probes[.codeSignature]?.status else {
+            Issue.record("an unreadable inspection reply must leave the signature unverified"); return
+        }
+        #expect(!message.contains("4097"), "the probe blamed the earlier dropped connection for a reply it could not read")
+        #expect(message == SteamConnectorFailure.fixture(.undecodable).userFacingReason)
+
+        let direct = Delegate()
+        let directListener = listen(direct)
+        defer { directListener.invalidate() }
+        let inspection = Task { await SteamConnectorClient.inspectSteamCMDBinary(path: "/bin/ls") }
+        for _ in 0 ..< 50 where !direct.connector.hasReply {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(direct.connector.hasReply)
+        direct.connector.reply(Data("not json".utf8))
+        guard case let .failure(failure) = await inspection.value else {
+            Issue.record("a reply that does not decode was returned as an inspection"); return
+        }
+        #expect(failure.kind == .undecodable)
+        #expect(SteamConnectorClient.recentFailures.last { $0.call == "inspectSteamCMDBinary(path:)" } == failure)
+    }
+
+    @Test("a usable copy the bind then refuses as busy says busy, not that the connector is silent", .timeLimit(.minutes(1)))
+    @MainActor
+    func refusedAutoDetectBindShowsTheRefusal() async throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "connector-busy-bind")
+        let connected = Delegate()
+        let listener = listen(connected)
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+            scratch.defaults.removePersistentDomain(forName: scratch.name)
+        }
+        let usable = SteamCMDDiagnosis(
+            source: .homebrew, canonicalPath: "/opt/homebrew/bin/steamcmd", resolutionFailure: nil, sha256: "digest",
+            signature: SteamCMDSignatureVerdict(isValid: true, teamIdentifier: "MXGJJ98X76", isHardenedRuntime: true),
+            isQuarantined: false,
+            launch: SteamCMDLaunchProbe(outcome: .succeeded, arguments: SteamCMDDiagnosisProbe.arguments, exitCode: 0, timeout: 180, outputTail: ""),
+            unavailableReason: nil
+        )
+        try #require(usable.isUsable && usable.remedy == nil)
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { .success(usable) })
+        let controller = WorkshopSetupController(doctor: doctor, defaults: scratch.defaults)
+
+        let detect = controller.autoDetectBinary()
+        for _ in 0 ..< 50 where !connected.connector.hasReply {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(connected.connector.hasReply)
+        try connected.connector.reply(JSONEncoder().encode(SteamCMDBinaryInspection.unavailable("busy")))
+        await detect.value
+
+        #expect(!doctor.hasBoundBinary)
+        #expect(doctor.lastAutoDetectBindError == .connectorBusy)
+        #expect(controller.setupError == SteamCMDDoctorError.connectorBusy.localizedDescription)
     }
 }
 

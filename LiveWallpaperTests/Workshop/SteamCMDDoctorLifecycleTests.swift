@@ -11,7 +11,7 @@ struct SteamCMDDoctorLifecycleTests {
         let scratch = try TestScratch.defaultsSuite(prefix: "AF12-first-run")
         defer { scratch.defaults.removePersistentDomain(forName: scratch.name) }
         let diagnosis = Self.freshDiagnosis(quarantined: true)
-        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { diagnosis })
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { .success(diagnosis) })
         let controller = WorkshopSetupController(doctor: doctor, defaults: scratch.defaults)
         var offeredSetup = false
         await controller.autoDetectBinary(onNeedsSetup: { offeredSetup = true }).value
@@ -47,7 +47,7 @@ struct SteamCMDDoctorLifecycleTests {
         let diagnosis = timeout ? Self.freshDiagnosis(quarantined: false, launch: SteamCMDLaunchProbe(
             outcome: .timedOut, arguments: ["+quit"], exitCode: 0, timeout: 180, outputTail: "Connecting"
         )) : .unavailable("queued behind another operation")
-        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { diagnosis })
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { .success(diagnosis) })
         let controller = WorkshopSetupController(doctor: doctor, defaults: scratch.defaults)
         var offeredSetup = false
         await controller.autoDetectBinary(onNeedsSetup: { offeredSetup = true }).value
@@ -68,7 +68,7 @@ struct SteamCMDDoctorLifecycleTests {
             outcome: .couldNotSpawn, arguments: ["+quit"], exitCode: -1, timeout: 180,
             outputTail: "/opt/private-steamcmd/MacOS/steamcmd key=\(secret) Logging in user 'probe_account' [U:1:12345]"
         ))
-        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { diagnosis })
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults, diagnoseBinary: { .success(diagnosis) })
         try doctor.setUsername("probe_account")
         #expect(await doctor.autoDetectBinary() == false)
         let json = try #require(await doctor.diagnosticsJSON())
@@ -321,24 +321,29 @@ struct SteamCMDDoctorLifecycleTests {
     @Test("A busy connector refuses the bind as busy, never as a folder to choose again")
     func busyConnectorRefusesBindAsBusy() {
         let busy = SteamCMDDoctorService.bindRefusal(
-            for: .unavailable("inspection expired while queued behind another SteamCMD operation")
+            for: .success(.unavailable("inspection expired while queued behind another SteamCMD operation"))
         )
         #expect(busy == .connectorBusy)
         if case .bookmarkResolution? = busy {
             Issue.record("a busy connector must not ask the user to choose the folder again")
         }
 
-        #expect(SteamCMDDoctorService.bindRefusal(for: nil) == .connectorUnavailable)
-        #expect(SteamCMDDoctorService.bindRefusal(for: .missing) == .binaryResolution)
-        #expect(SteamCMDDoctorService.bindRefusal(for: Self.inspection(sha: "identity-1")) == nil)
+        let silent = SteamConnectorFailure.fixture()
+        guard case let .connectorUnavailable(failure)? = SteamCMDDoctorService.bindRefusal(for: .failure(silent)) else {
+            Issue.record("a silent connector must refuse the bind as unreachable"); return
+        }
+        #expect(failure == silent)
+        #expect(SteamCMDDoctorService.bindRefusal(for: .success(.missing)) == .binaryResolution)
+        #expect(SteamCMDDoctorService.bindRefusal(for: .success(Self.inspection(sha: "identity-1"))) == nil)
     }
 
     @MainActor
     @Test("A manual pick the connector never answered is not a refused file")
     func silentManualBindIsNotARefusedFile() {
+        let silent = SteamConnectorFailure.fixture()
         #expect(
-            WorkshopSetupController.manualBindFailureMessage(for: nil)
-                == SteamCMDDoctorError.connectorUnavailable.localizedDescription
+            WorkshopSetupController.manualBindFailureMessage(for: .failure(silent))
+                == silent.userFacingReason
         )
 
         // Controls: a refusal shows its own reason, or the refused-file sentence when it names none.
@@ -347,12 +352,12 @@ struct SteamCMDDoctorLifecycleTests {
             failureReason: "not signed by Valve", failureCode: .signatureNotValve
         )
         #expect(
-            WorkshopSetupController.manualBindFailureMessage(for: untrusted)
+            WorkshopSetupController.manualBindFailureMessage(for: .success(untrusted))
                 == SteamCMDFailureCode.signatureNotValve.localizedMessage([])
         )
         let refused = SteamCMDManualBindResult(outcome: .refused, canonicalPath: nil, failureReason: nil)
         #expect(
-            WorkshopSetupController.manualBindFailureMessage(for: refused)
+            WorkshopSetupController.manualBindFailureMessage(for: .success(refused))
                 == SteamCMDDoctorError.binaryResolution.localizedDescription
         )
     }
@@ -360,16 +365,17 @@ struct SteamCMDDoctorLifecycleTests {
     @MainActor
     @Test("A locate the connector never answered is not reported as not found")
     func silentLocateIsNotReportedAsNotFound() {
+        let silent = SteamConnectorFailure.fixture()
         #expect(
-            WorkshopSetupController.autoDetectFailureMessage(for: nil)
-                == SteamCMDDoctorError.connectorUnavailable.localizedDescription
+            WorkshopSetupController.autoDetectFailureMessage(for: .unavailable(silent.userFacingReason), bindError: nil)
+                .contains(silent.userFacingReason)
         )
 
         // Controls: a diagnosis that carries a remedy is shown as the connector worded it.
         let notFound = SteamCMDDiagnosis.notFound(resolutionFailure: nil, rejectedExisting: [])
-        #expect(WorkshopSetupController.autoDetectFailureMessage(for: notFound) == notFound.remedy)
+        #expect(WorkshopSetupController.autoDetectFailureMessage(for: notFound, bindError: nil) == notFound.remedy)
         let queued = SteamCMDDiagnosis.unavailable("queued")
-        #expect(WorkshopSetupController.autoDetectFailureMessage(for: queued) == queued.remedy)
+        #expect(WorkshopSetupController.autoDetectFailureMessage(for: queued, bindError: .connectorBusy) == queued.remedy)
     }
 
     @Test("A busy or silent connector is no verdict: execution trust keeps the cache and reports why")
@@ -377,26 +383,28 @@ struct SteamCMDDoctorLifecycleTests {
         let path = "/opt/homebrew/bin/steamcmd"
 
         let busy = SteamCMDDoctorService.executionTrust(
-            path: path, inspection: .unavailable("queued"), cachedSHA256: "identity-1"
+            path: path, inspection: .success(.unavailable("queued")), cachedSHA256: "identity-1"
         )
         #expect(busy.result == .failure(.connectorBusy), "a busy connector reads as an unverified build")
         #expect(busy.verifiedSHA256 == "identity-1", "a busy connector cleared the verified SHA")
 
         let silent = SteamCMDDoctorService.executionTrust(
-            path: path, inspection: nil, cachedSHA256: "identity-1"
+            path: path, inspection: .failure(.fixture()), cachedSHA256: "identity-1"
         )
-        #expect(silent.result == .failure(.connectorUnavailable), "an unreachable connector reads as an unverified build")
+        guard case .failure(.connectorUnavailable) = silent.result else {
+            Issue.record("an unreachable connector reads as an unverified build"); return
+        }
         #expect(silent.verifiedSHA256 == "identity-1", "an unreachable connector cleared the verified SHA")
 
         // Controls: verdicts about the binary still refuse it and drop the cache.
         let missing = SteamCMDDoctorService.executionTrust(
-            path: path, inspection: .missing, cachedSHA256: "identity-1"
+            path: path, inspection: .success(.missing), cachedSHA256: "identity-1"
         )
         #expect(missing.result == .failure(.untrustedBinary))
         #expect(missing.verifiedSHA256 == nil)
 
         let unchanged = SteamCMDDoctorService.executionTrust(
-            path: path, inspection: Self.inspection(sha: "identity-1"), cachedSHA256: "identity-1"
+            path: path, inspection: .success(Self.inspection(sha: "identity-1")), cachedSHA256: "identity-1"
         )
         let authorization = SteamCMDDoctorService.SteamCMDBinaryExecutionAuthorization(
             canonicalPath: path, sha256: "identity-1"
@@ -404,7 +412,7 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(unchanged.result == .success(authorization))
 
         let foreign = SteamCMDDoctorService.executionTrust(
-            path: path, inspection: Self.inspection(sha: "identity-2", team: "ATTACKER"), cachedSHA256: "identity-1"
+            path: path, inspection: .success(Self.inspection(sha: "identity-2", team: "ATTACKER")), cachedSHA256: "identity-1"
         )
         #expect(foreign.result == .failure(.untrustedBinary))
         #expect(foreign.verifiedSHA256 == nil)
@@ -588,9 +596,9 @@ struct SteamCMDDoctorLifecycleTests {
         let path = "/opt/homebrew/bin/steamcmd"
         let answer = Self.inspection(sha: "identity-1")
 
-        // No connector in the test host, so a miss is observable: it is nil.
+        // No connector in the test host, so a miss is observable: it is a failure.
         service.runScopedInspections[path] = answer
-        #expect(await service.inspect(path: path) == answer)
+        #expect(await service.inspect(path: path) == .success(answer))
 
         // SteamCMD rewrites its own executable.
         service.runScopedInspections[path] = answer

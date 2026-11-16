@@ -16,7 +16,7 @@ extension SteamCMDDoctorService {
         switch kind {
         case .binaryIdentity:
             let message = diagnosis.needsInAppSetup ? Self.setupRequiredMessage
-                : (diagnosis.remedy ?? SteamCMDDoctorError.connectorUnavailable.localizedDescription)
+                : (diagnosis.remedy ?? (lastAutoDetectBindError ?? .binaryResolution).localizedDescription)
             status = diagnosis.unavailableReason == nil
                 ? .red(message: message, command: nil) : .yellow(message: message, command: nil)
         case .codeSignature:
@@ -144,7 +144,7 @@ extension SteamCMDDoctorService {
         } else {
             payload["connectorCrashReports"] = [
                 "status": "unavailable",
-                "failure": sanitizeForExport(SteamConnectorClient.lastFailure?.kind.label),
+                "failure": sanitizeForExport(SteamConnectorClient.recentFailures.last?.kind.label),
             ]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else { return nil }

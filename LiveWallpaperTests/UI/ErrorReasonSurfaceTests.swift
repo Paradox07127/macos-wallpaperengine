@@ -26,7 +26,7 @@ struct ErrorReasonSurfaceTests {
     func signInSheetSeparatesItsFailures() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/SteamSignInSheet.swift")
         #expect(!source.contains("case .failed, .unavailable, nil:"))
-        #expect(source.contains("case nil:"))
+        #expect(source.contains("case let .failure(failure):"))
         #expect(source.contains("case .unavailable:"))
         #expect(source.contains("case .failed:"))
     }

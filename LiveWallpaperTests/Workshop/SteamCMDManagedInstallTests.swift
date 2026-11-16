@@ -28,15 +28,15 @@ struct SteamCMDManagedInstallRecordTests {
         bootstrapSHA256: String(repeating: "ab", count: 32)
     )
 
-    private func refusingRemoval() -> SteamCMDManagedRemovalResult? {
+    private func refusingRemoval() -> Result<SteamCMDManagedRemovalResult, SteamConnectorFailure> {
         Issue.record("A test tried to remove a real managed install")
-        return nil
+        return .failure(.fixture())
     }
 
     @Test("Control: with nothing stored, there is no install to offer removing")
     func absentRecordReadsAsNil() {
         let coordinator = SteamCMDManagedInstallCoordinator(
-            defaults: scratchDefaults(), remove: { nil }
+            defaults: scratchDefaults(), remove: { .failure(.fixture()) }
         )
         #expect(coordinator.managedInstall == nil)
         #expect(coordinator.status == .idle)
@@ -59,7 +59,7 @@ struct SteamCMDManagedInstallRecordTests {
         try storeRecord(record, in: defaults)
         let coordinator = SteamCMDManagedInstallCoordinator(
             defaults: defaults,
-            remove: { SteamCMDManagedRemovalResult(outcome: .removed, failureReason: nil) }
+            remove: { .success(SteamCMDManagedRemovalResult(outcome: .removed, failureReason: nil)) }
         )
         #expect(coordinator.managedInstall != nil)
 
@@ -78,7 +78,7 @@ struct SteamCMDManagedInstallRecordTests {
     func notInstalledCountsAsRemoved() async {
         let coordinator = SteamCMDManagedInstallCoordinator(
             defaults: scratchDefaults(),
-            remove: { SteamCMDManagedRemovalResult(outcome: .notInstalled, failureReason: nil) }
+            remove: { .success(SteamCMDManagedRemovalResult(outcome: .notInstalled, failureReason: nil)) }
         )
         #expect(await coordinator.forget() == .removed)
     }
@@ -89,7 +89,7 @@ struct SteamCMDManagedInstallRecordTests {
         try storeRecord(record, in: defaults)
         let coordinator = SteamCMDManagedInstallCoordinator(
             defaults: defaults,
-            remove: { SteamCMDManagedRemovalResult(outcome: .refused, failureReason: "nope") }
+            remove: { .success(SteamCMDManagedRemovalResult(outcome: .refused, failureReason: "nope")) }
         )
 
         #expect(await coordinator.forget() == .refused)
@@ -104,9 +104,11 @@ struct SteamCMDManagedInstallRecordTests {
         let defaults = scratchDefaults()
         try storeRecord(record, in: defaults)
         let coordinator = SteamCMDManagedInstallCoordinator(
-            defaults: defaults, remove: { nil }
+            defaults: defaults, remove: { .failure(.fixture()) }
         )
-        #expect(await coordinator.forget() == .connectorUnavailable)
+        guard case .connectorUnavailable = await coordinator.forget() else {
+            Issue.record("an unreachable connector must be reported as unreachable"); return
+        }
         #expect(coordinator.managedInstall == record)
     }
 }
@@ -559,11 +561,11 @@ struct SteamCMDManagedInstallFallbackTests {
 
     private func coordinator(
         defaults: UserDefaults,
-        install: @escaping () async -> SteamCMDManagedInstallResult?
+        install: @escaping () async -> Result<SteamCMDManagedInstallResult, SteamConnectorFailure>
     ) -> SteamCMDManagedInstallCoordinator {
         SteamCMDManagedInstallCoordinator(
             defaults: defaults,
-            remove: { Issue.record("fallback tests must not remove anything"); return nil },
+            remove: { Issue.record("fallback tests must not remove anything"); return .failure(.fixture()) },
             performInstall: install
         )
     }
@@ -577,10 +579,10 @@ struct SteamCMDManagedInstallFallbackTests {
     func successRecords() async throws {
         let defaults = scratchDefaults()
         let coordinator = coordinator(defaults: defaults) {
-            SteamCMDManagedInstallResult(
+            .success(SteamCMDManagedInstallResult(
                 outcome: .installed, canonicalPath: "/probe/steamcmd",
                 sha256: "abc", failureReason: nil
-            )
+            ))
         }
         _ = await coordinator.install()
         #expect(coordinator.managedInstall?.canonicalPath == "/probe/steamcmd")
@@ -592,7 +594,7 @@ struct SteamCMDManagedInstallFallbackTests {
     @Test("An unreachable connector records nothing and says so")
     func unreachableConnectorLeavesNoRecord() async {
         let defaults = scratchDefaults()
-        let coordinator = coordinator(defaults: defaults) { nil }
+        let coordinator = coordinator(defaults: defaults) { .failure(.fixture()) }
 
         let reason = failed(await coordinator.install())
         #expect(reason != nil)
@@ -613,10 +615,10 @@ struct SteamCMDManagedInstallFallbackTests {
     func refusedOutcomesLeaveNoRecord(_ outcome: SteamCMDManagedInstallResult.Outcome) async {
         let defaults = scratchDefaults()
         let coordinator = coordinator(defaults: defaults) {
-            SteamCMDManagedInstallResult(
+            .success(SteamCMDManagedInstallResult(
                 outcome: outcome, canonicalPath: "/probe/steamcmd",
                 sha256: nil, failureReason: nil
-            )
+            ))
         }
 
         let status = await coordinator.install()
@@ -633,12 +635,12 @@ struct SteamCMDManagedInstallFallbackTests {
         var attempts = 0
         let coordinator = coordinator(defaults: defaults) {
             attempts += 1
-            return attempts == 1
+            return .success(attempts == 1
                 ? SteamCMDManagedInstallResult.failed(.extractionFailed, "first attempt")
                 : SteamCMDManagedInstallResult(
                     outcome: .installed, canonicalPath: "/probe/steamcmd",
                     sha256: "abc", failureReason: nil
-                )
+                ))
         }
 
         #expect(failed(await coordinator.install()) != nil)
@@ -669,14 +671,14 @@ struct SteamCMDManagedInstallInterleavingTests {
             defaults: defaults,
             remove: {
                 await gate.wait()
-                return SteamCMDManagedRemovalResult(outcome: .removed, failureReason: nil)
+                return .success(SteamCMDManagedRemovalResult(outcome: .removed, failureReason: nil))
             },
             performInstall: {
                 installAttempts += 1
-                return SteamCMDManagedInstallResult(
+                return .success(SteamCMDManagedInstallResult(
                     outcome: .installed, canonicalPath: "/probe/new/steamcmd",
                     sha256: "abc", failureReason: nil
-                )
+                ))
             }
         )
 
@@ -710,13 +712,13 @@ struct SteamCMDManagedInstallInterleavingTests {
                 call += 1
                 let mine = call
                 await (mine == 1 ? first : second).wait()
-                return SteamCMDManagedRemovalResult(
+                return .success(SteamCMDManagedRemovalResult(
                     outcome: mine == 1 ? .removed : .refused, failureReason: nil
-                )
+                ))
             },
             performInstall: {
                 Issue.record("no install may run during a removal")
-                return nil
+                return .failure(.fixture())
             }
         )
 

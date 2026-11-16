@@ -28,7 +28,7 @@ final class WPEEngineAssetsInstaller {
         case checkFailed(CheckFailure)
 
         enum CheckFailure: Equatable, Sendable {
-            /// The connector never answered, so nothing ran. `reason` is the connector failure as of that moment.
+            /// The connector gave no usable reply, so nothing ran. `reason` is that call's own failure.
             case notRun(reason: String)
             case timedOut
             case steamCMDUnavailable
@@ -66,9 +66,13 @@ final class WPEEngineAssetsInstaller {
 
         static func resolve(
             installedBuildID: String?,
-            lookup: SteamEngineBuildLookup?
+            lookup reply: Result<SteamEngineBuildLookup, SteamConnectorFailure>
         ) -> UpdateCheckOutcome {
-            guard let lookup else { return .checkFailed(.notRun(reason: SteamConnectorClient.unreachableReason)) }
+            let lookup: SteamEngineBuildLookup
+            switch reply {
+            case let .success(answer): lookup = answer
+            case let .failure(failure): return .checkFailed(.notRun(reason: failure.userFacingReason))
+            }
             switch lookup.outcome {
             case .timedOut: return .checkFailed(.timedOut)
             case .steamCMDUnavailable: return .checkFailed(.steamCMDUnavailable)
@@ -134,7 +138,7 @@ final class WPEEngineAssetsInstaller {
 
     func download(
         using doctor: SteamCMDDoctorService,
-        install: @escaping @Sendable (String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void) async -> SteamEngineAssetsResult? = {
+        install: @escaping @Sendable (String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void) async -> Result<SteamEngineAssetsResult, SteamConnectorFailure> = {
             await SteamConnectorClient.installWallpaperEngineAssets(
                 accountName: $0, libraryPath: $1, operationID: $2, onProgress: $3
             )
@@ -184,7 +188,7 @@ final class WPEEngineAssetsInstaller {
     private func run(
         using doctor: SteamCMDDoctorService,
         attempt: UUID,
-        install: @Sendable (String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void) async -> SteamEngineAssetsResult?
+        install: @Sendable (String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void) async -> Result<SteamEngineAssetsResult, SteamConnectorFailure>
     ) async {
         // A first download adopts an install already on disk; an Update must run SteamCMD.
         if !hasManagedInstall, adoptExistingInstallIfPresent(doctor: doctor, attempt: attempt) {
@@ -202,7 +206,7 @@ final class WPEEngineAssetsInstaller {
             return
         }
         let generation = doctor.accountGeneration
-        let result = await install(
+        let reply = await install(
             account,
             steamRoot.path(percentEncoded: false),
             attempt.uuidString,
@@ -229,8 +233,12 @@ final class WPEEngineAssetsInstaller {
         task = nil
         guard !Task.isCancelled else { phase = .idle; progress = nil; currentAttempt = nil; return }
 
-        guard let result else {
-            fail(SteamConnectorClient.unreachableReason)
+        let result: SteamEngineAssetsResult
+        switch reply {
+        case let .success(answer):
+            result = answer
+        case let .failure(failure):
+            fail(failure.userFacingReason)
             return
         }
         doctor.noteExecutionReceipt(result.executedBinaryPath)
@@ -345,7 +353,7 @@ final class WPEEngineAssetsInstaller {
 
     func checkForUpdate(
         binaryResolvable: Bool,
-        fetchLatestBuildID: @escaping @Sendable (String) async -> SteamEngineBuildLookup? = {
+        fetchLatestBuildID: @escaping @Sendable (String) async -> Result<SteamEngineBuildLookup, SteamConnectorFailure> = {
             await SteamConnectorClient.latestWallpaperEngineBuildID(operationID: $0)
         }
     ) {
@@ -363,7 +371,7 @@ final class WPEEngineAssetsInstaller {
             task = nil
             currentAttempt = nil
             phase = .idle
-            latestBuildID = lookup?.buildID
+            latestBuildID = try? lookup.get().buildID
             let outcome = UpdateCheckOutcome.resolve(
                 installedBuildID: installedBuildID,
                 lookup: lookup

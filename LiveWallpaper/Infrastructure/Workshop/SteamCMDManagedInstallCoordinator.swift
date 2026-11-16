@@ -22,8 +22,8 @@ final class SteamCMDManagedInstallCoordinator {
     private var generation: UInt64 = 0
 
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let remove: () async -> SteamCMDManagedRemovalResult?
-    @ObservationIgnored private let performInstall: () async -> SteamCMDManagedInstallResult?
+    @ObservationIgnored private let remove: () async -> Result<SteamCMDManagedRemovalResult, SteamConnectorFailure>
+    @ObservationIgnored private let performInstall: () async -> Result<SteamCMDManagedInstallResult, SteamConnectorFailure>
 
     /// Path + the bootstrap digest that produced it, so a later run can tell a
     /// managed install apart from a directory the user happened to create.
@@ -31,10 +31,10 @@ final class SteamCMDManagedInstallCoordinator {
 
     init(
         defaults: UserDefaults = .appScoped(),
-        remove: @escaping () async -> SteamCMDManagedRemovalResult? = {
+        remove: @escaping () async -> Result<SteamCMDManagedRemovalResult, SteamConnectorFailure> = {
             await SteamConnectorClient.removeManagedSteamCMD()
         },
-        performInstall: @escaping () async -> SteamCMDManagedInstallResult? = {
+        performInstall: @escaping () async -> Result<SteamCMDManagedInstallResult, SteamConnectorFailure> = {
             await SteamConnectorClient.installManagedSteamCMD()
         }
     ) {
@@ -72,11 +72,13 @@ final class SteamCMDManagedInstallCoordinator {
         }
         let attempt = generation
         status = .installing
-        let result = await performInstall()
+        let reply = await performInstall()
         guard attempt == generation else { return status }
 
-        guard let result else {
-            return finish(.failed(SteamConnectorClient.unreachableReason))
+        let result: SteamCMDManagedInstallResult
+        switch reply {
+        case let .success(install): result = install
+        case let .failure(failure): return finish(.failed(failure.userFacingReason))
         }
         guard result.outcome == .installed, let path = result.canonicalPath else {
             let detail = result.localizedFailureReason.map { " (\($0))" } ?? ""
@@ -96,7 +98,7 @@ final class SteamCMDManagedInstallCoordinator {
         /// A newer operation took over; it owns the state and the record now,
         /// and this attempt has nothing to report.
         case superseded
-        case connectorUnavailable
+        case connectorUnavailable(SteamConnectorFailure)
         case refused
     }
 
@@ -105,10 +107,14 @@ final class SteamCMDManagedInstallCoordinator {
         generation &+= 1
         let attempt = generation
         status = .removing
-        let result = await remove()
+        let reply = await remove()
         guard attempt == generation else { return .superseded }
         status = .idle
-        guard let result else { return .connectorUnavailable }
+        let result: SteamCMDManagedRemovalResult
+        switch reply {
+        case let .success(removal): result = removal
+        case let .failure(failure): return .connectorUnavailable(failure)
+        }
         guard result.outcome == .removed || result.outcome == .notInstalled else {
             return .refused
         }

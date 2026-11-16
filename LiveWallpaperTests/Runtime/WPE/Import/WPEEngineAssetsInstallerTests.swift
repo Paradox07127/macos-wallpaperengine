@@ -11,22 +11,23 @@ struct WPEEngineAssetsInstallerTests {
     func updateCheckOutcomeHasStableSettingsStates() {
         #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
             installedBuildID: "10",
-            lookup: .found("11")
+            lookup: .success(.found("11"))
         ) == .available(latestBuildID: "11"))
         #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
             installedBuildID: "10",
-            lookup: .found("10")
+            lookup: .success(.found("10"))
         ) == .upToDate(buildID: "10"))
         #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
             installedBuildID: nil,
-            lookup: .found("11")
+            lookup: .success(.found("11"))
         ) == .unableToCompare)
         // No lookup at all means the connector never answered, which is a
         // different sentence from "Steam answered with something unusable".
+        let silent = SteamConnectorFailure.fixture()
         #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
             installedBuildID: "10",
-            lookup: nil
-        ) == .checkFailed(.notRun(reason: SteamConnectorClient.unreachableReason)))
+            lookup: .failure(silent)
+        ) == .checkFailed(.notRun(reason: silent.userFacingReason)))
     }
 
     @Test("Each failed lookup keeps its own reason instead of sharing one sentence")
@@ -40,7 +41,7 @@ struct WPEEngineAssetsInstallerTests {
         for (outcome, failure) in expected {
             #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
                 installedBuildID: "10",
-                lookup: .failed(outcome)
+                lookup: .success(.failed(outcome))
             ) == .checkFailed(failure))
         }
     }
@@ -51,7 +52,7 @@ struct WPEEngineAssetsInstallerTests {
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: true, installedBuildID: nil)
         )
-        installer.checkForUpdate(binaryResolvable: true, fetchLatestBuildID: { _ in .found("11") })
+        installer.checkForUpdate(binaryResolvable: true, fetchLatestBuildID: { _ in .success(.found("11")) })
         while installer.isBusy { await Task.yield() }
 
         #expect(installer.updateCheckOutcome == .unableToCompare)
@@ -105,7 +106,7 @@ struct WPEEngineAssetsInstallerTests {
         let installCalled = Flag()
         installer.download(using: doctor) { _, _, _, _ in
             await installCalled.raise()
-            return nil
+            return .failure(.fixture())
         }
         while installer.isBusy {
             await Task.yield()
@@ -129,7 +130,7 @@ struct WPEEngineAssetsInstallerTests {
         let installCalled = Flag()
         installer.download(using: doctor) { _, _, _, _ in
             await installCalled.raise()
-            return nil
+            return .failure(.fixture())
         }
         while installer.isBusy {
             await Task.yield()
@@ -162,8 +163,8 @@ struct WPEEngineAssetsInstallerTests {
         let assetsPath = WPEEngineAssetsLibrary.sharedLibraryInstallRoot(steamRoot: steamRoot)
             .appendingPathComponent("assets", isDirectory: true).path
         installer.download(using: doctor) { _, _, _, _ in
-            SteamEngineAssetsResult(outcome: .installed, assetsPath: assetsPath,
-                                    buildID: buildID, diagnosticTail: "")
+            .success(SteamEngineAssetsResult(outcome: .installed, assetsPath: assetsPath,
+                                             buildID: buildID, diagnosticTail: ""))
         }
         while installer.isBusy { await Task.yield() }
 
@@ -188,7 +189,7 @@ struct WPEEngineAssetsInstallerTests {
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
         )
-        installer.checkForUpdate(binaryResolvable: true, fetchLatestBuildID: { _ in .found("11") })
+        installer.checkForUpdate(binaryResolvable: true, fetchLatestBuildID: { _ in .success(.found("11")) })
         while installer.isBusy {
             await Task.yield()
         }
@@ -205,7 +206,7 @@ struct WPEEngineAssetsInstallerTests {
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
         )
-        installer.checkForUpdate(binaryResolvable: false) { _ in nil }
+        installer.checkForUpdate(binaryResolvable: false) { _ in .failure(.fixture()) }
         #expect(installer.isBusy == false)
         #expect(installer.phase == .idle)
         #expect(installer.updateCheckOutcome == .notChecked)
@@ -220,7 +221,7 @@ struct WPEEngineAssetsInstallerTests {
         installer.checkForUpdate(binaryResolvable: true) { _ in
             // Never resolves within the test; cancel() must be what recovers.
             try? await Task.sleep(nanoseconds: 60_000_000_000)
-            return nil
+            return .failure(.fixture())
         }
         #expect(installer.isBusy)
         #expect(installer.phase == .checking)

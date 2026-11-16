@@ -168,24 +168,25 @@ final class WorkshopSetupController {
             endBinaryDetection()
             // `!doctor.hasBoundBinary`, not just `!found`: a parallel detect can bind while
             // this one is out, and its late "not found" would overwrite that.
-            if !found, !doctor.hasBoundBinary {
-                setupError = Self.autoDetectFailureMessage(for: doctor.lastAutoDetectDiagnosis)
-                if doctor.lastAutoDetectDiagnosis?.needsInAppSetup == true {
+            // nil diagnosis: a parallel detect started after this one and will report its own outcome.
+            if !found, !doctor.hasBoundBinary, let diagnosis = doctor.lastAutoDetectDiagnosis {
+                setupError = Self.autoDetectFailureMessage(for: diagnosis, bindError: doctor.lastAutoDetectBindError)
+                if diagnosis.needsInAppSetup {
                     onNeedsSetup()
                 }
             }
         }
     }
 
-    /// No remedy is not "nothing found": the connector never answered, or answered with a usable copy the bind then refused.
-    static func autoDetectFailureMessage(for diagnosis: SteamCMDDiagnosis?) -> String {
-        if diagnosis?.needsInAppSetup == true {
+    /// No remedy is not "nothing found": the connector answered with a usable copy that the bind then refused.
+    static func autoDetectFailureMessage(for diagnosis: SteamCMDDiagnosis, bindError: SteamCMDDoctorError?) -> String {
+        if diagnosis.needsInAppSetup {
             return SteamCMDDoctorService.setupRequiredMessage
         }
-        if diagnosis?.launch?.outcome == .timedOut {
+        if diagnosis.launch?.outcome == .timedOut {
             return String(localized: "SteamCMD is still preparing or could not reach Steam. Check your connection and choose Locate automatically to retry.", bundle: .appLanguage, comment: "First-run SteamCMD timeout recovery inside the app.")
         }
-        return diagnosis?.remedy ?? SteamCMDDoctorError.connectorUnavailable.localizedDescription
+        return diagnosis.remedy ?? (bindError ?? .binaryResolution).localizedDescription
     }
 
     /// Returns true when a binding was recorded, so the caller can update its hint.
@@ -210,7 +211,7 @@ final class WorkshopSetupController {
         let result = await SteamConnectorClient.bindManualSteamCMDBinary(
             path: url.path(percentEncoded: false)
         )
-        guard let result, result.isBound, let canonical = result.canonicalPath else {
+        guard case let .success(binding) = result, binding.isBound, let canonical = binding.canonicalPath else {
             setupError = Self.manualBindFailureMessage(for: result)
             return false
         }
@@ -226,10 +227,14 @@ final class WorkshopSetupController {
         }
     }
 
-    /// nil means the connector never answered; a refusal always comes back with its reason.
-    static func manualBindFailureMessage(for result: SteamCMDManualBindResult?) -> String {
-        guard let result else { return SteamCMDDoctorError.connectorUnavailable.localizedDescription }
-        return result.localizedFailureReason ?? SteamCMDDoctorError.binaryResolution.localizedDescription
+    /// A refusal comes back with its reason; a failed call carries the connector's own.
+    static func manualBindFailureMessage(for result: Result<SteamCMDManualBindResult, SteamConnectorFailure>) -> String {
+        switch result {
+        case let .success(binding):
+            binding.localizedFailureReason ?? SteamCMDDoctorError.binaryResolution.localizedDescription
+        case let .failure(failure):
+            SteamCMDDoctorError.connectorUnavailable(failure).localizedDescription
+        }
     }
 
     func forgetManualBinary() async {
@@ -253,8 +258,8 @@ final class WorkshopSetupController {
                 // Another operation owns the outcome; reporting a failure here would put an error
                 // on screen for a removal that is still running.
                 return
-            case .connectorUnavailable:
-                setupError = SteamConnectorClient.unreachableReason
+            case let .connectorUnavailable(failure):
+                setupError = failure.userFacingReason
                 return
             case .refused:
                 // Don't unbind here: the files still work, and `forget()` keeps the install record

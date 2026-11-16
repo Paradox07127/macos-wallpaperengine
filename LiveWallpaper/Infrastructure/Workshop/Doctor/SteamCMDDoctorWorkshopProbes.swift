@@ -102,14 +102,14 @@ extension SteamCMDDoctorService {
 
     // MARK: - Connector
 
-    /// Whether the unsandboxed helper answers at all. `locateSteamCMDBinary` returns nil only when the XPC connection fails (a successful call that finds nothing still decodes a result), so it separates "the helper is not running" from "there is no SteamCMD".
+    /// Whether the unsandboxed helper answers at all. `locateSteamCMDBinary` fails only when the connector gave no usable reply (a successful call that finds nothing still decodes a result), so it separates "the helper is not running" from "there is no SteamCMD".
     /// Every other failure in this list confuses those two.
     func runConnectorProbe() async {
-        guard await SteamConnectorClient.locateSteamCMDBinary() != nil else {
+        if case let .failure(failure) = await SteamConnectorClient.locateSteamCMDBinary() {
             if resetIfCancelled(.connector) {
                 return
             }
-            setProbe(.connector, status: .red(message: SteamConnectorClient.unreachableReason, command: nil))
+            setProbe(.connector, status: .red(message: failure.userFacingReason, command: nil))
             return
         }
         setProbe(.connector, status: .green(detail: String(

@@ -278,10 +278,10 @@ struct WorkshopDownloadReadinessTests {
                 #expect(item == "100")
                 #expect(account == "someone")
                 #expect(library == fixture.steamRoot.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false))
-                return SteamWorkshopDownloadResult(
+                return .success(SteamWorkshopDownloadResult(
                     outcome: .downloaded, itemPath: "/untrusted/reported-path", diagnosticTail: "",
                     executedBinaryPath: "/tmp/fixture-execution-receipt"
-                )
+                ))
             }
         )
         configureAllGreen(doctor, bookmark: fixture.bookmark)
@@ -340,7 +340,7 @@ struct WorkshopDownloadReadinessTests {
         let doctor = SteamCMDDoctorService(
             defaults: fixture.suite.defaults,
             operationCoordinator: SteamCMDDoctorOperationCoordinator(),
-            downloadOperation: { @Sendable _, _, _, _ in await reply.wait() }
+            downloadOperation: { @Sendable _, _, _, _ in await .success(reply.wait()) }
         )
         configureAllGreen(doctor, bookmark: fixture.bookmark)
         doctor.lastBinarySHA256 = "fixture-sha"

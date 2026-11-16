@@ -29,7 +29,7 @@ final class WorkshopSubscriptionSync {
     @ObservationIgnored private let metadataService: SteamWorkshopMetadataService
     @ObservationIgnored private let downloads: WorkshopDownloadCoordinator
     @ObservationIgnored private let queue: WorkshopDownloadQueue
-    @ObservationIgnored private let listSubscriptions: @MainActor (String) async -> SteamSubscribedItemsResult?
+    @ObservationIgnored private let listSubscriptions: @MainActor (String) async -> Result<SteamSubscribedItemsResult, SteamConnectorFailure>
 
     private static let metadataFetchBatchSize = 50
 
@@ -37,7 +37,7 @@ final class WorkshopSubscriptionSync {
         metadataService: SteamWorkshopMetadataService = SteamWorkshopMetadataService(),
         downloads: WorkshopDownloadCoordinator = .shared,
         queue: WorkshopDownloadQueue = .shared,
-        listSubscriptions: @escaping @MainActor (String) async -> SteamSubscribedItemsResult? = {
+        listSubscriptions: @escaping @MainActor (String) async -> Result<SteamSubscribedItemsResult, SteamConnectorFailure> = {
             await SteamConnectorClient.listSubscribedWorkshopItems(accountName: $0)
         }
     ) {
@@ -70,8 +70,12 @@ final class WorkshopSubscriptionSync {
             return
         }
         defer { access.end() }
-        guard let result = await listSubscriptions(account) else {
-            fail(SteamConnectorClient.unreachableReason)
+        let result: SteamSubscribedItemsResult
+        switch await listSubscriptions(account) {
+        case let .success(listing):
+            result = listing
+        case let .failure(failure):
+            fail(failure.userFacingReason)
             return
         }
 
