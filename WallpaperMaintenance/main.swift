@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 import Security
 
 final class WallpaperMaintenanceService: NSObject, SystemWallpaperMaintenanceProtocol {
@@ -44,6 +45,20 @@ final class WallpaperMaintenanceService: NSObject, SystemWallpaperMaintenancePro
 }
 
 final class WallpaperMaintenanceListener: NSObject, NSXPCListenerDelegate {
+    private static let log = Logger(subsystem: "com.loomscreen.WallpaperMaintenance", category: "connection")
+    /// nil for ad-hoc signing, which has no Team ID.
+    private static let teamIdentifier: String? = {
+        var selfCode: SecCode?
+        var selfStaticCode: SecStaticCode?
+        var signingInformation: CFDictionary?
+        guard SecCodeCopySelf([], &selfCode) == errSecSuccess, let selfCode,
+              SecCodeCopyStaticCode(selfCode, [], &selfStaticCode) == errSecSuccess, let selfStaticCode,
+              SecCodeCopySigningInformation(
+                  selfStaticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &signingInformation
+              ) == errSecSuccess else { return nil }
+        return (signingInformation as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
+    }()
+
     func listener(_: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         let hostURL = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().resolvingSymlinksInPath()
@@ -57,15 +72,41 @@ final class WallpaperMaintenanceListener: NSObject, NSXPCListenerDelegate {
         guard proc_pidpath(connection.processIdentifier, &path, UInt32(path.count)) > 0 else { return false }
         guard let callerPath = String(bytes: path.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, encoding: .utf8),
               URL(fileURLWithPath: callerPath).resolvingSymlinksInPath() == executable else { return false }
-        var code: SecStaticCode?
-        var requirement: SecRequirement?
-        var requirementString: CFString?
-        guard SecStaticCodeCreateWithPath(hostURL as CFURL, [], &code) == errSecSuccess, let code,
-              SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess,
-              SecCodeCopyDesignatedRequirement(code, [], &requirement) == errSecSuccess, let requirement,
-              SecRequirementCopyString(requirement, [], &requirementString) == errSecSuccess,
-              let requirementString else { return false }
-        connection.setCodeSigningRequirement(requirementString as String)
+        let mode: String
+        let requirement: String
+        if let teamRequirement = SystemWallpaperRegistrationPolicy.callerRequirement(
+            hostIdentifier: hostID, teamIdentifier: Self.teamIdentifier
+        ) {
+            mode = "teamRequirement"
+            requirement = teamRequirement
+        } else {
+            // Ad-hoc builds have no Team ID; the host's on-disk designated requirement is the only identity left.
+            var code: SecStaticCode?
+            var designatedRequirement: SecRequirement?
+            var requirementString: CFString?
+            var step = "SecStaticCodeCreateWithPath"
+            var status = SecStaticCodeCreateWithPath(hostURL as CFURL, [], &code)
+            if status == errSecSuccess, let code {
+                step = "SecStaticCodeCheckValidity"
+                status = SecStaticCodeCheckValidity(code, [], nil)
+                if status == errSecSuccess {
+                    step = "SecCodeCopyDesignatedRequirement"
+                    status = SecCodeCopyDesignatedRequirement(code, [], &designatedRequirement)
+                }
+                if status == errSecSuccess, let designatedRequirement {
+                    step = "SecRequirementCopyString"
+                    status = SecRequirementCopyString(designatedRequirement, [], &requirementString)
+                }
+            }
+            guard status == errSecSuccess, let requirementString else {
+                Self.log.error("Refused connection: \(step, privacy: .public) returned OSStatus \(status, privacy: .public)")
+                return false
+            }
+            mode = "hostDesignatedRequirement"
+            requirement = requirementString as String
+        }
+        Self.log.info("Caller requirement \(mode, privacy: .public): \(requirement, privacy: .public)")
+        connection.setCodeSigningRequirement(requirement)
         connection.exportedInterface = NSXPCInterface(with: SystemWallpaperMaintenanceProtocol.self)
         connection.exportedObject = WallpaperMaintenanceService(engine: .init(
             hostPath: hostURL.path, hostID: hostID, home: String(cString: homePointer)

@@ -60,6 +60,29 @@ struct SystemWallpaperMaintenanceTests {
         #expect(try JSONDecoder().decode(SystemWallpaperMaintenanceReport.self, from: JSONEncoder().encode(partial)) == partial)
     }
 
+    @Test func callerRequirementNamesHostAndTeam() {
+        #expect(
+            SystemWallpaperRegistrationPolicy.callerRequirement(hostIdentifier: "com.loomscreen", teamIdentifier: "FWJP4B62U7")
+                == #"anchor apple generic and identifier "com.loomscreen" and certificate leaf[subject.OU] = "FWJP4B62U7""#
+        )
+    }
+
+    @Test func callerRequirementNeedsATeam() {
+        #expect(SystemWallpaperRegistrationPolicy.callerRequirement(hostIdentifier: "com.loomscreen", teamIdentifier: nil) == nil)
+    }
+
+    @Test(arguments: [
+        (#"com.loomscreen" or anchor apple"#, "FWJP4B62U7"),
+        ("com loomscreen", "FWJP4B62U7"),
+        ("com.loomscreen.pró", "FWJP4B62U7"),
+        ("com.loomscreen", #"FWJP4B62U7" or true or "x"#),
+    ])
+    func callerRequirementRefusesCharactersOutsideTheIdentifierAlphabet(hostIdentifier: String, teamIdentifier: String) {
+        #expect(
+            SystemWallpaperRegistrationPolicy.callerRequirement(hostIdentifier: hostIdentifier, teamIdentifier: teamIdentifier) == nil
+        )
+    }
+
     @Test func parsesOnlyExactHostIdentities() {
         let records = SystemWallpaperRegistrationPolicy.registrations(in: """
         --------

@@ -37,6 +37,16 @@ struct SystemWallpaperMaintenanceReport: Codable, Sendable, Equatable {
 enum SystemWallpaperRegistrationPolicy {
     static let hostIDs: Set<String> = ["com.loomscreen", "com.loomscreen.pro"]
 
+    /// The code-signing requirement the helper holds its caller to. nil when there is no Team ID (ad-hoc signing)
+    /// or an input has a character outside `[A-Za-z0-9.-]`, which could otherwise rewrite the requirement's grammar.
+    static func callerRequirement(hostIdentifier: String, teamIdentifier: String?) -> String? {
+        let isSafe = { (value: String) in
+            value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }
+        }
+        guard let teamIdentifier, isSafe(hostIdentifier), isSafe(teamIdentifier) else { return nil }
+        return "anchor apple generic and identifier \"\(hostIdentifier)\" and certificate leaf[subject.OU] = \"\(teamIdentifier)\""
+    }
+
     /// Caps the kept lines, not the dump: they run ~5% of a `-dump Bundle`, so this still bounds the helper's memory.
     static let maxRegistrationTextBytes = 8 * 1024 * 1024
     /// Exactly the line starts `registrations(in:)` reads; everything else is dropped unread.

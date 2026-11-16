@@ -124,62 +124,62 @@
         }
       }
     },
-    "Loomscreen's Steam connector failed to communicate (%@ error %lld)." : {
-      "comment" : "Steam connector failure for any other XPC error; %1$@ is the error domain, %2$lld the error code.",
+    "Loomscreen's Steam connector failed to communicate (%@ error %@)." : {
+      "comment" : "Steam connector failure for any other XPC error; %1$@ is the error domain, %2$@ the error code, unformatted so it can be searched.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Steam-Anschluss von Loomscreen konnte nicht kommunizieren (%1$@-Fehler %2$lld)."
+            "value" : "Der Steam-Anschluss von Loomscreen konnte nicht kommunizieren (%1$@-Fehler %2$@)."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen's Steam connector failed to communicate (%1$@ error %2$lld)."
+            "value" : "Loomscreen's Steam connector failed to communicate (%1$@ error %2$@)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El conector de Steam de Loomscreen no pudo comunicarse (error %2$lld de %1$@)."
+            "value" : "El conector de Steam de Loomscreen no pudo comunicarse (error %2$@ de %1$@)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le connecteur Steam de Loomscreen n'a pas pu communiquer (erreur %1$@ %2$lld)."
+            "value" : "Le connecteur Steam de Loomscreen n'a pas pu communiquer (erreur %1$@ %2$@)."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen の Steam コネクタとの通信に失敗しました（%1$@ エラー %2$lld）。"
+            "value" : "Loomscreen の Steam コネクタとの通信に失敗しました（%1$@ エラー %2$@）。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen의 Steam 커넥터와 통신하지 못했습니다(%1$@ 오류 %2$lld)."
+            "value" : "Loomscreen의 Steam 커넥터와 통신하지 못했습니다(%1$@ 오류 %2$@)."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O conector Steam do Loomscreen não conseguiu se comunicar (erro %2$lld de %1$@)."
+            "value" : "O conector Steam do Loomscreen não conseguiu se comunicar (erro %2$@ de %1$@)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的 Steam 连接器通信失败（%1$@ 错误 %2$lld）。"
+            "value" : "Loomscreen 的 Steam 连接器通信失败（%1$@ 错误 %2$@）。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的 Steam 連接器通訊失敗（%1$@ 錯誤 %2$lld）。"
+            "value" : "Loomscreen 的 Steam 連接器通訊失敗（%1$@ 錯誤 %2$@）。"
           }
         }
       }
@@ -244,62 +244,62 @@
         }
       }
     },
-    "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus %d). Download Loomscreen again and reinstall it." : {
-      "comment" : "Steam connector failure when the app's own code signature is broken; %d is the Security framework status code.",
+    "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus %@). Download Loomscreen again and reinstall it." : {
+      "comment" : "Steam connector failure when the app's own code signature is broken; %@ is the Security framework status code, unformatted so it can be searched.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Steam-Anschluss von Loomscreen hat die Verbindung abgelehnt, weil die Codesignatur von Loomscreen selbst nicht überprüft werden konnte (OSStatus %d). Laden Sie Loomscreen erneut herunter und installieren Sie es neu."
+            "value" : "Der Steam-Anschluss von Loomscreen hat die Verbindung abgelehnt, weil die Codesignatur von Loomscreen selbst nicht überprüft werden konnte (OSStatus %@). Laden Sie Loomscreen erneut herunter und installieren Sie es neu."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus %d). Download Loomscreen again and reinstall it."
+            "value" : "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus %@). Download Loomscreen again and reinstall it."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El conector de Steam de Loomscreen rechazó la conexión porque la firma de código del propio Loomscreen no superó la verificación (OSStatus %d). Descarga Loomscreen de nuevo y vuelve a instalarlo."
+            "value" : "El conector de Steam de Loomscreen rechazó la conexión porque la firma de código del propio Loomscreen no superó la verificación (OSStatus %@). Descarga Loomscreen de nuevo y vuelve a instalarlo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le connecteur Steam de Loomscreen a refusé la connexion, car la signature de code de Loomscreen lui-même n'a pas pu être vérifiée (OSStatus %d). Téléchargez à nouveau Loomscreen et réinstallez-le."
+            "value" : "Le connecteur Steam de Loomscreen a refusé la connexion, car la signature de code de Loomscreen lui-même n'a pas pu être vérifiée (OSStatus %@). Téléchargez à nouveau Loomscreen et réinstallez-le."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 自身のコード署名の検証に失敗したため、Loomscreen の Steam コネクタが接続を拒否しました（OSStatus %d）。Loomscreen をもう一度ダウンロードして再インストールしてください。"
+            "value" : "Loomscreen 自身のコード署名の検証に失敗したため、Loomscreen の Steam コネクタが接続を拒否しました（OSStatus %@）。Loomscreen をもう一度ダウンロードして再インストールしてください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 자체의 코드 서명 확인에 실패하여 Loomscreen의 Steam 커넥터가 연결을 거부했습니다(OSStatus %d). Loomscreen을 다시 다운로드하여 재설치하세요."
+            "value" : "Loomscreen 자체의 코드 서명 확인에 실패하여 Loomscreen의 Steam 커넥터가 연결을 거부했습니다(OSStatus %@). Loomscreen을 다시 다운로드하여 재설치하세요."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O conector Steam do Loomscreen recusou a conexão porque a assinatura de código do próprio Loomscreen não passou na verificação (OSStatus %d). Baixe o Loomscreen novamente e reinstale-o."
+            "value" : "O conector Steam do Loomscreen recusou a conexão porque a assinatura de código do próprio Loomscreen não passou na verificação (OSStatus %@). Baixe o Loomscreen novamente e reinstale-o."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的 Steam 连接器拒绝了连接，因为 Loomscreen 自身的代码签名校验失败（OSStatus %d）。请重新下载并安装 Loomscreen。"
+            "value" : "Loomscreen 的 Steam 连接器拒绝了连接，因为 Loomscreen 自身的代码签名校验失败（OSStatus %@）。请重新下载并安装 Loomscreen。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的 Steam 連接器拒絕了連線，因為 Loomscreen 本身的程式碼簽章驗證失敗（OSStatus %d）。請重新下載並安裝 Loomscreen。"
+            "value" : "Loomscreen 的 Steam 連接器拒絕了連線，因為 Loomscreen 本身的程式碼簽章驗證失敗（OSStatus %@）。請重新下載並安裝 Loomscreen。"
           }
         }
       }

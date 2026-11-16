@@ -57,6 +57,14 @@ struct LogPrivacySourceAuditTests {
             "mode": 1,
             "requirement": 1,
         ],
+        "WallpaperMaintenance/main.swift": [
+            // A fixed Security API name and its OSStatus integer for a refused connection.
+            "step": 1,
+            "status": 1,
+            // Fixed caller code-signing metadata: a mode literal and a requirement built from bundle and team IDs.
+            "mode": 1,
+            "requirement": 1,
+        ],
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/Logger.swift": [
             "level.prefix": 1,
             "fileName": 1,
@@ -75,6 +83,7 @@ struct LogPrivacySourceAuditTests {
         // so it is exactly where an unreviewed public path would survive.
         let extensionFiles = RepositoryRoot.swiftFiles(under: "SystemWallpaperProvider")
             + RepositoryRoot.swiftFiles(under: "SteamConnector")
+            + RepositoryRoot.swiftFiles(under: "WallpaperMaintenance")
         #expect(extensionFiles.count > 10, "Extension target sweep collapsed to \(extensionFiles.count) files")
         let files = appFiles + packageSources + extensionFiles
         #expect(files.count > 450, "Production source sweep collapsed to \(files.count) files")

@@ -3,6 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
 import os
+import Security
 import Testing
 
 /// `.serialized`: the test-only connection factory is process-wide state.
@@ -590,6 +591,45 @@ struct SteamConnectorClientCancellationTests {
         let recorded = SteamConnectorClient.recentFailures.filter { $0.date >= start && $0.call == "inspectSteamCMDBinary(path:)" }
         #expect(recorded.map(\.kind) == [.interrupted, .interrupted])
         #expect(recorded.last == failure)
+    }
+
+    @Test("a dropped connection while this app's own signature is broken asks for a reinstall and is not retried", .timeLimit(.minutes(1)))
+    @MainActor
+    func droppedConnectionWithBrokenHostSignatureIsInvalid() async {
+        SteamConnectorClient.hostSignatureStatusForTesting = { -67054 }
+        let delegate = Delegate(droppedRequests: .max)
+        let listener = listen(delegate)
+        defer {
+            SteamConnectorClient.hostSignatureStatusForTesting = nil
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+        }
+
+        guard case let .failure(failure) = await SteamConnectorClient.inspectSteamCMDBinary(path: "/bin/ls") else {
+            Issue.record("a dropped connection returned an inspection"); return
+        }
+        #expect(failure.errorCode == NSXPCConnectionInterrupted)
+        #expect(failure.kind == .invalid(hostSignatureStatus: -67054))
+        #expect(failure.userFacingReason.contains("-67054"))
+        #expect(delegate.connector.requestCount.withLock { $0 } == 1, "the call was retried although the connector refuses this app's broken signature every time")
+    }
+
+    @Test("a dropped connection while this app's own signature is intact stays an interruption", .timeLimit(.minutes(1)))
+    @MainActor
+    func droppedConnectionWithIntactHostSignatureIsInterrupted() async {
+        SteamConnectorClient.hostSignatureStatusForTesting = { errSecSuccess }
+        let delegate = Delegate(droppedRequests: .max)
+        let listener = listen(delegate)
+        defer {
+            SteamConnectorClient.hostSignatureStatusForTesting = nil
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+        }
+
+        guard case let .failure(failure) = await SteamConnectorClient.inspectSteamCMDBinary(path: "/bin/ls") else {
+            Issue.record("a dropped connection returned an inspection"); return
+        }
+        #expect(failure.kind == .interrupted)
     }
 }
 

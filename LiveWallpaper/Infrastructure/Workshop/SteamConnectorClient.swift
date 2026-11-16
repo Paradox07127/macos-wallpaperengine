@@ -48,13 +48,13 @@ struct SteamConnectorFailure: Error, Equatable, Sendable {
         case .interrupted:
             String(localized: "Loomscreen's Steam connector quit unexpectedly while handling the request (XPC error 4097). Try again. If it keeps happening, use Copy reports under Diagnostics and send the result to the developer.", bundle: .appLanguage, comment: "Steam connector failure when the XPC service process exited mid-request.")
         case let .invalid(status) where status != errSecSuccess:
-            String(localized: "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus \(status)). Download Loomscreen again and reinstall it.", bundle: .appLanguage, comment: "Steam connector failure when the app's own code signature is broken; %d is the Security framework status code.")
+            String(localized: "Loomscreen's Steam connector refused the connection because Loomscreen's own code signature failed verification (OSStatus \(String(status))). Download Loomscreen again and reinstall it.", bundle: .appLanguage, comment: "Steam connector failure when the app's own code signature is broken; %@ is the Security framework status code, unformatted so it can be searched.")
         case .invalid:
             String(localized: "Loomscreen's Steam connector could not be started, or macOS closed the connection (XPC error 4099). Quit Loomscreen and open it again.", bundle: .appLanguage, comment: "Steam connector failure when the XPC connection was invalidated while the app's signature is intact.")
         case let .timedOut(seconds):
             String(localized: "Loomscreen's Steam connector did not reply within \(seconds) seconds.", bundle: .appLanguage, comment: "Steam connector failure when no reply arrived in time; %lld is the number of seconds.")
         case .other:
-            String(localized: "Loomscreen's Steam connector failed to communicate (\(errorDomain ?? "XPC") error \(errorCode ?? 0)).", bundle: .appLanguage, comment: "Steam connector failure for any other XPC error; %1$@ is the error domain, %2$lld the error code.")
+            String(localized: "Loomscreen's Steam connector failed to communicate (\(errorDomain ?? "XPC") error \(String(errorCode ?? 0))).", bundle: .appLanguage, comment: "Steam connector failure for any other XPC error; %1$@ is the error domain, %2$@ the error code, unformatted so it can be searched.")
         }
     }
 }
@@ -312,14 +312,11 @@ enum SteamConnectorClient {
         case let .timedOut(seconds): kind = .timedOut(seconds: seconds)
         case .undecodable: kind = .undecodable
         case .transport where error?.domain == NSCocoaErrorDomain && error?.code == NSXPCConnectionInterrupted:
-            kind = .interrupted
+            // A connector that refuses this app's broken signature reads as 4097 here, not 4099.
+            let status = hostSignatureStatus()
+            kind = status == errSecSuccess ? .interrupted : .invalid(hostSignatureStatus: status)
         case .transport where error?.domain == NSCocoaErrorDomain && error?.code == NSXPCConnectionInvalid:
-            var code: SecStaticCode?
-            var status = SecStaticCodeCreateWithPath(Bundle.main.bundleURL as CFURL, [], &code)
-            if status == errSecSuccess, let code {
-                status = SecStaticCodeCheckValidity(code, [], nil)
-            }
-            kind = .invalid(hostSignatureStatus: status)
+            kind = .invalid(hostSignatureStatus: hostSignatureStatus())
         case .transport: kind = .other
         }
         let record = SteamConnectorFailure(
@@ -343,6 +340,21 @@ enum SteamConnectorClient {
             scheduleCrashSummaryLog()
         }
         return record
+    }
+
+    /// This app's own static signature check; 0 = valid.
+    private nonisolated static func hostSignatureStatus() -> OSStatus {
+        #if DEBUG
+        if let hostSignatureStatusForTesting {
+            return hostSignatureStatusForTesting()
+        }
+        #endif
+        var code: SecStaticCode?
+        var status = SecStaticCodeCreateWithPath(Bundle.main.bundleURL as CFURL, [], &code)
+        if status == errSecSuccess, let code {
+            status = SecStaticCodeCheckValidity(code, [], nil)
+        }
+        return status
     }
 
     /// macOS writes the `.ips` a few seconds after the process dies, so the fetch waits before asking.
@@ -404,6 +416,8 @@ enum SteamConnectorClient {
 
     /// Tests substitute an in-process anonymous listener for the XPC service.
     nonisolated(unsafe) static var connectionFactoryForTesting: (@Sendable () -> NSXPCConnection)?
+    /// Tests substitute this app's signature check. `nonisolated(unsafe)`: only the `.serialized` connector suite sets it, before its calls start and after they end.
+    nonisolated(unsafe) static var hostSignatureStatusForTesting: (@Sendable () -> OSStatus)?
     #endif
 
     /// Sticky: a wait cancelled by termination has already returned, yet the child it started may still be running.
