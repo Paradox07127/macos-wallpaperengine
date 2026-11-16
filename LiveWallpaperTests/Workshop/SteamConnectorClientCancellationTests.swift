@@ -64,13 +64,14 @@ struct SteamConnectorClientCancellationTests {
     /// Holds every reply block and never invokes it, so the client's wait can end only by cancellation (or the 7200 s timer).
     private final class SilentConnector: NSObject, SteamConnectorProtocol {
         let invoked = OSAllocatedUnfairLock(initialState: false)
+        let requestCount = OSAllocatedUnfairLock(initialState: 0)
         let sawHostExit = OSAllocatedUnfairLock(initialState: false)
         private let held = OSAllocatedUnfairLock<[@Sendable (Data) -> Void]>(initialState: [])
-        /// Drops the client's connection from the listener side as soon as any request arrives.
-        private let dropsConnection: Bool
+        /// How many of the next requests drop the client's connection from the listener side as soon as they arrive.
+        private let droppedRequests: OSAllocatedUnfairLock<Int>
 
-        init(dropsConnection: Bool = false) {
-            self.dropsConnection = dropsConnection
+        init(droppedRequests: Int = 0) {
+            self.droppedRequests = OSAllocatedUnfairLock(initialState: droppedRequests)
         }
 
         var hasReply: Bool {
@@ -83,14 +84,20 @@ struct SteamConnectorClientCancellationTests {
 
         private func hold(_ reply: @escaping @Sendable (Data) -> Void) {
             invoked.withLock { $0 = true }
+            requestCount.withLock { $0 += 1 }
             held.withLock { $0.append(reply) }
-            if dropsConnection {
+            let drops = droppedRequests.withLock { remaining in
+                defer { remaining = max(0, remaining - 1) }
+                return remaining > 0
+            }
+            if drops {
                 NSXPCConnection.current()?.invalidate()
             }
         }
 
+        /// Answered at once and not counted: the client asks for this on its own ~10 s after an interrupt, possibly during a later test.
         func recentCrashReports(with reply: @escaping @Sendable (Data) -> Void) {
-            hold(reply)
+            reply(Data("[]".utf8))
         }
 
         func probeEnvironment(with reply: @escaping @Sendable (Data) -> Void) {
@@ -178,8 +185,8 @@ struct SteamConnectorClientCancellationTests {
     private final class Delegate: NSObject, NSXPCListenerDelegate {
         let connector: SilentConnector
 
-        init(dropsConnection: Bool = false) {
-            connector = SilentConnector(dropsConnection: dropsConnection)
+        init(droppedRequests: Int = 0) {
+            connector = SilentConnector(droppedRequests: droppedRequests)
         }
 
         func listener(_: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
@@ -381,7 +388,7 @@ struct SteamConnectorClientCancellationTests {
     @MainActor
     func droppedConnectionIsRecordedAndExported() async throws {
         let listener = NSXPCListener.anonymous()
-        let delegate = Delegate(dropsConnection: true)
+        let delegate = Delegate(droppedRequests: .max)
         listener.delegate = delegate
         listener.resume()
         let endpoint = listener.endpoint
@@ -433,7 +440,7 @@ struct SteamConnectorClientCancellationTests {
             SteamConnectorClient.connectionFactoryForTesting = nil
             scratch.defaults.removePersistentDomain(forName: scratch.name)
         }
-        let dropping = Delegate(dropsConnection: true)
+        let dropping = Delegate(droppedRequests: .max)
         let droppingListener = listen(dropping)
         defer { droppingListener.invalidate() }
         #expect(await SteamConnectorClient.discoverAccounts().isEmpty)
@@ -507,6 +514,78 @@ struct SteamConnectorClientCancellationTests {
         #expect(!doctor.hasBoundBinary)
         #expect(doctor.lastAutoDetectBindError == .connectorBusy)
         #expect(controller.setupError == SteamCMDDoctorError.connectorBusy.localizedDescription)
+    }
+
+    @Test("a read-only call the connector quit on is asked once more and returns the second reply", .timeLimit(.minutes(1)))
+    @MainActor
+    func interruptedReadOnlyCallRetriesOnce() async throws {
+        let delegate = Delegate(droppedRequests: 1)
+        let listener = listen(delegate)
+        defer { SteamConnectorClient.connectionFactoryForTesting = nil; listener.invalidate() }
+        let start = Date()
+
+        let inspection = Task { await SteamConnectorClient.inspectSteamCMDBinary(path: "/bin/ls") }
+        for _ in 0 ..< 150 where delegate.connector.requestCount.withLock({ $0 }) < 2 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(delegate.connector.requestCount.withLock { $0 } == 2, "the call gave up after the connector quit instead of asking the relaunched one")
+        try delegate.connector.reply(JSONEncoder().encode(SteamCMDBinaryInspection.unavailable("busy")))
+        guard case .success = await inspection.value else {
+            Issue.record("the retried call's reply was not returned"); return
+        }
+        #expect(delegate.connector.requestCount.withLock { $0 } == 2)
+        let recorded = SteamConnectorClient.recentFailures.filter { $0.date >= start && $0.call == "inspectSteamCMDBinary(path:)" }
+        #expect(recorded.map(\.kind) == [.interrupted], "the first attempt's failure was lost from the diagnostics record")
+    }
+
+    @Test("a call that starts SteamCMD is not asked again after the connector quits", .timeLimit(.minutes(1)))
+    @MainActor
+    func interruptedSteamCMDCallDoesNotRetry() async throws {
+        let delegate = Delegate(droppedRequests: 1)
+        let listener = listen(delegate)
+        defer { SteamConnectorClient.connectionFactoryForTesting = nil; listener.invalidate() }
+
+        // Polled, never awaited: a wrong retry waits on a held reply until the 7200 s timer.
+        let outcome = OSAllocatedUnfairLock<Result<SteamEngineBuildLookup, SteamConnectorFailure>?>(initialState: nil)
+        let lookup = Task {
+            let result = await SteamConnectorClient.latestWallpaperEngineBuildID(operationID: "lookup")
+            outcome.withLock { $0 = result }
+        }
+        defer { lookup.cancel() }
+        for _ in 0 ..< 150 where outcome.withLock({ $0 }) == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case let .failure(failure)? = outcome.withLock({ $0 }) else {
+            Issue.record("the lookup did not end with the connector's failure"); return
+        }
+        #expect(failure.kind == .interrupted)
+        #expect(delegate.connector.requestCount.withLock { $0 } == 1, "a second SteamCMD run was started beside the one the crashed connector left behind")
+    }
+
+    @Test("a read-only call interrupted twice returns the second failure without a third attempt", .timeLimit(.minutes(1)))
+    @MainActor
+    func twiceInterruptedCallStopsAfterOneRetry() async throws {
+        let delegate = Delegate(droppedRequests: 2)
+        let listener = listen(delegate)
+        defer { SteamConnectorClient.connectionFactoryForTesting = nil; listener.invalidate() }
+        let start = Date()
+
+        let outcome = OSAllocatedUnfairLock<Result<SteamCMDBinaryInspection, SteamConnectorFailure>?>(initialState: nil)
+        let inspection = Task {
+            let result = await SteamConnectorClient.inspectSteamCMDBinary(path: "/bin/ls")
+            outcome.withLock { $0 = result }
+        }
+        defer { inspection.cancel() }
+        for _ in 0 ..< 150 where outcome.withLock({ $0 }) == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case let .failure(failure)? = outcome.withLock({ $0 }) else {
+            Issue.record("the call did not end with the second attempt's failure"); return
+        }
+        #expect(delegate.connector.requestCount.withLock { $0 } == 2)
+        let recorded = SteamConnectorClient.recentFailures.filter { $0.date >= start && $0.call == "inspectSteamCMDBinary(path:)" }
+        #expect(recorded.map(\.kind) == [.interrupted, .interrupted])
+        #expect(recorded.last == failure)
     }
 }
 

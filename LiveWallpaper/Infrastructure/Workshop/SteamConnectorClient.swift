@@ -64,7 +64,7 @@ enum SteamConnectorClient {
     private static let serviceName = "com.loomscreen.pro.SteamConnector"
 
     static func discoverAccounts() async -> [SteamAccountSummary] {
-        let reply = await call { connector, reply in
+        let reply = await call(retryOnInterrupt: true) { connector, reply in
             connector.discoverAccounts(with: reply)
         }
         return (try? decode([SteamAccountSummary].self, reply).get()) ?? []
@@ -78,7 +78,7 @@ enum SteamConnectorClient {
     }
 
     static func inspectSteamCMDBinary(path: String) async -> Result<SteamCMDBinaryInspection, SteamConnectorFailure> {
-        let reply = await call { connector, reply in
+        let reply = await call(retryOnInterrupt: true) { connector, reply in
             connector.inspectSteamCMDBinary(path: path, with: reply)
         }
         return decode(SteamCMDBinaryInspection.self, reply)
@@ -102,7 +102,7 @@ enum SteamConnectorClient {
     /// The Mach-O the connector would execute, resolved from its own candidate
     /// list. Takes no path: the app does not get to name what runs.
     static func locateSteamCMDBinary() async -> Result<SteamCMDBinaryLocation, SteamConnectorFailure> {
-        let reply = await call { connector, reply in
+        let reply = await call(retryOnInterrupt: true) { connector, reply in
             connector.locateSteamCMDBinary(with: reply)
         }
         return decode(SteamCMDBinaryLocation.self, reply)
@@ -257,7 +257,7 @@ enum SteamConnectorClient {
 
     /// nil means the connector was unreachable.
     static func recentCrashReports() async -> [SteamConnectorCrashSummary]? {
-        let reply = await call(timeout: 30) { connector, reply in
+        let reply = await call(timeout: 5, retryOnInterrupt: true) { connector, reply in
             connector.recentCrashReports(with: reply)
         }
         return try? decode([SteamConnectorCrashSummary].self, reply).get()
@@ -435,9 +435,21 @@ enum SteamConnectorClient {
         // Client timeout above connector's 900s so the service expires first.
         timeout: TimeInterval = 7200,
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil,
+        // Only for calls that never start SteamCMD: a crashed connector can leave its steamcmd child running, and a second one would share its directory.
+        retryOnInterrupt: Bool = false,
         caller: String = #function,
         _ body: @escaping @Sendable (any SteamConnectorProtocol, @escaping @Sendable (Data) -> Void) -> Void
     ) async -> Result<Data, SteamConnectorFailure> {
+        if retryOnInterrupt {
+            precondition(onProgress == nil, "a retried call would replay progress the caller already saw")
+            let first = await call(timeout: timeout, caller: caller, body)
+            guard case let .failure(failure) = first, failure.kind == .interrupted, !Task.isCancelled else { return first }
+            let second = await call(timeout: timeout, caller: caller, body)
+            if case .success = second {
+                Logger.notice("Steam connector call \(caller) succeeded on retry after the connector quit", category: .workshop)
+            }
+            return second
+        }
         // `nonisolated(unsafe)`: the cancellation handler is the only off-actor user and it calls `invalidate()`, which NSXPCConnection serves from any thread.
         nonisolated(unsafe) let connection = makeConnection()
         connection.remoteObjectInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
