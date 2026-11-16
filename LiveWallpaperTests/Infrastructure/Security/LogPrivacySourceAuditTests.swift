@@ -49,6 +49,11 @@ struct LogPrivacySourceAuditTests {
             "check.className": 1,
             "check.ivarName": 1,
         ],
+        "SteamConnector/main.swift": [
+            // A fixed Security API name and its OSStatus integer for a refused connection.
+            "step": 1,
+            "status": 1,
+        ],
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/Logger.swift": [
             "level.prefix": 1,
             "fileName": 1,
