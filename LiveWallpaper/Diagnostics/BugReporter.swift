@@ -65,8 +65,27 @@ enum BugReporter {
             form: form
         )
         #endif
+        #if LITE_BUILD
+        let connectorFailureLines: [String] = []
+        #else
+        let connectorFailureLines = SteamConnectorClient.recentFailures
+            .filter { $0.kind != .cancelled }
+            .suffix(recentLogLineCount)
+            .map { failure in
+                let domain = failure.errorDomain ?? "-"
+                let code = failure.errorCode.map(String.init) ?? "-"
+                let line = LogPrivacyRedactor.scrub(
+                    "\(failure.date.ISO8601Format()) \(failure.call) \(failure.kind.label) \(domain) \(code)"
+                )
+                return line.count > maxLogLineLength ? String(line.prefix(maxLogLineLength)) + "…" : line
+            }
+        #endif
         let body = formatMarkdown(
-            snapshot: snapshot, recentLogLines: recentLog, extensionProcessLines: extensionLines, form: form
+            snapshot: snapshot,
+            recentLogLines: recentLog,
+            extensionProcessLines: extensionLines,
+            connectorFailureLines: connectorFailureLines,
+            form: form
         )
         let failureText = failureContext.map { fencedLog([$0.diagnosticText]) + "\n\n" } ?? ""
         let fullMarkdown = failureText + body
@@ -89,14 +108,23 @@ enum BugReporter {
         snapshot: SystemSnapshot,
         recentLogLines: [String],
         extensionProcessLines: [String],
+        connectorFailureLines: [String] = [],
         form: IssueForm
     ) -> String {
         switch form {
         case .english:
-            englishMarkdown(snapshot: snapshot, recentLogLines: recentLogLines, extensionLines: extensionProcessLines)
+            englishMarkdown(
+                snapshot: snapshot,
+                recentLogLines: recentLogLines,
+                extensionLines: extensionProcessLines,
+                connectorFailureLines: connectorFailureLines
+            )
         case .simplifiedChinese:
             simplifiedChineseMarkdown(
-                snapshot: snapshot, recentLogLines: recentLogLines, extensionLines: extensionProcessLines
+                snapshot: snapshot,
+                recentLogLines: recentLogLines,
+                extensionLines: extensionProcessLines,
+                connectorFailureLines: connectorFailureLines
             )
         }
     }
@@ -130,7 +158,7 @@ enum BugReporter {
     }
 
     private static func englishMarkdown(
-        snapshot: SystemSnapshot, recentLogLines: [String], extensionLines: [String]
+        snapshot: SystemSnapshot, recentLogLines: [String], extensionLines: [String], connectorFailureLines: [String]
     ) -> String {
         var sections: [String] = []
 
@@ -156,6 +184,13 @@ enum BugReporter {
             """)
         }
 
+        if !connectorFailureLines.isEmpty {
+            sections.append(
+                "- **Steam connector failures** (last \(connectorFailureLines.count)):\n\n"
+                    + fencedLog(connectorFailureLines)
+            )
+        }
+
         if !extensionLines.isEmpty {
             sections.append("- **System wallpaper extension processes**:\n" + bulletList(extensionLines))
         }
@@ -179,7 +214,7 @@ enum BugReporter {
     }
 
     private static func simplifiedChineseMarkdown(
-        snapshot: SystemSnapshot, recentLogLines: [String], extensionLines: [String]
+        snapshot: SystemSnapshot, recentLogLines: [String], extensionLines: [String], connectorFailureLines: [String]
     ) -> String {
         var sections: [String] = []
 
@@ -203,6 +238,13 @@ enum BugReporter {
 
             \(fencedLog(recentLogLines))
             """)
+        }
+
+        if !connectorFailureLines.isEmpty {
+            sections.append(
+                "- **Steam 连接器失败**（最近 \(connectorFailureLines.count) 条）：\n\n"
+                    + fencedLog(connectorFailureLines)
+            )
         }
 
         if !extensionLines.isEmpty {

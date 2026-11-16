@@ -155,6 +155,42 @@ struct BugReporterBodyLanguageTests {
         #expect(english.contains("(none recorded)"))
     }
 
+    @Test("Steam connector failures get their own section in both forms")
+    func connectorFailuresAppearInBothForms() {
+        let lines = [
+            "2026-11-16T08:00:00Z listSubscriptions timedOut(30s) - -",
+            "2026-11-16T08:01:00Z download interrupted NSCocoaErrorDomain 4097",
+        ]
+        let english = BugReporter.formatMarkdown(
+            snapshot: Self.snapshot(), recentLogLines: [], extensionProcessLines: [],
+            connectorFailureLines: lines, form: .english
+        )
+        #expect(english.contains("- **Steam connector failures** (last 2):"))
+        let chinese = BugReporter.formatMarkdown(
+            snapshot: Self.snapshot(), recentLogLines: [], extensionProcessLines: [],
+            connectorFailureLines: lines, form: .simplifiedChinese
+        )
+        #expect(chinese.contains("- **Steam 连接器失败**（最近 2 条）："))
+        for line in lines {
+            #expect(english.contains(line), "English form dropped \(line)")
+            #expect(chinese.contains(line), "Chinese form dropped \(line)")
+        }
+    }
+
+    @Test("No connector failures means no connector section")
+    func noConnectorFailuresOmitsTheSection() {
+        let english = BugReporter.formatMarkdown(
+            snapshot: Self.snapshot(), recentLogLines: [], extensionProcessLines: [],
+            connectorFailureLines: [], form: .english
+        )
+        #expect(!english.contains("Steam connector failures"))
+        let chinese = BugReporter.formatMarkdown(
+            snapshot: Self.snapshot(), recentLogLines: [], extensionProcessLines: [],
+            connectorFailureLines: [], form: .simplifiedChinese
+        )
+        #expect(!chinese.contains("Steam 连接器失败"))
+    }
+
     @Test("Both display lists keep the same measurements")
     func displayCountsMatchAcrossForms() {
         let snapshot = Self.snapshot()
