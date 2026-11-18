@@ -11,20 +11,20 @@ final class DisplaySettingsCoordinatorTests {
     private static let looksLike1512 = DisplayModeKey(width: 1512, height: 982, pixelWidth: 3024, pixelHeight: 1964, refreshRate: 120)
     private static let looksLike1800 = DisplayModeKey(width: 1800, height: 1169, pixelWidth: 3600, pixelHeight: 2338, refreshRate: 120)
 
-    private let suiteName = "DisplaySettingsCoordinatorTests.\(UUID().uuidString)"
-    private let defaults: UserDefaults
     private let displays = FakeDisplays()
+    /// Named after the first test function that asks for it; every coordinator in that test shares it.
+    private var suite: TestScratch.DefaultsSuite?
 
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: suiteName))
+    isolated deinit {
+        suite?.discard()
     }
 
-    deinit {
-        UserDefaults().removePersistentDomain(forName: suiteName)
-    }
-
-    private func makeCoordinator(confirmationTimeout: TimeInterval = 15) -> DisplaySettingsCoordinator {
-        DisplaySettingsCoordinator(hardware: displays.hardware, defaults: defaults, confirmationTimeout: confirmationTimeout)
+    private func makeCoordinator(
+        confirmationTimeout: TimeInterval = 15, function: String = #function
+    ) throws -> DisplaySettingsCoordinator {
+        let suite = try suite ?? TestScratch.defaultsSuite(prefix: "LiveWallpaperTests.DisplaySettingsCoordinator", function: function)
+        self.suite = suite
+        return DisplaySettingsCoordinator(hardware: displays.hardware, defaults: suite.defaults, confirmationTimeout: confirmationTimeout)
     }
 
     /// No NSScreenNumber, so the fingerprint is keyed by the name and the ID derives from the frame.
@@ -35,7 +35,7 @@ final class DisplaySettingsCoordinatorTests {
     }
 
     @Test func turningOffRecordsTheDisplayAndTheRecordSurvivesRelaunch() async throws {
-        let coordinator = makeCoordinator()
+        let coordinator = try makeCoordinator()
         let screen = Self.makeScreen(1)
 
         try await coordinator.turnOff(screen)
@@ -49,33 +49,33 @@ final class DisplaySettingsCoordinatorTests {
         )
         #expect(displays.calls == [.setEnabled(false, screen.id)])
         #expect(coordinator.disabledDisplays == [expected])
-        #expect(makeCoordinator().disabledDisplays == [expected])
+        #expect(try makeCoordinator().disabledDisplays == [expected])
     }
 
     @Test func failedTurnOffRecordsNothing() async throws {
-        let coordinator = makeCoordinator()
+        let coordinator = try makeCoordinator()
         let screen = Self.makeScreen(1)
         displays.fail(screen.id)
 
         await #expect(throws: FakeDisplayFailure.self) { try await coordinator.turnOff(screen) }
 
         #expect(coordinator.disabledDisplays.isEmpty)
-        #expect(makeCoordinator().disabledDisplays.isEmpty)
+        #expect(try makeCoordinator().disabledDisplays.isEmpty)
     }
 
     @Test func failedTurnOffThatBlankedTheDisplayKeepsItsRecord() async throws {
-        let coordinator = makeCoordinator()
+        let coordinator = try makeCoordinator()
         let screen = Self.makeScreen(1)
         displays.failAfterBlanking(screen.id)
 
         await #expect(throws: FakeDisplayFailure.self) { try await coordinator.turnOff(screen) }
 
         #expect(coordinator.disabledDisplays.map(\.fingerprint) == [screen.displayFingerprint])
-        #expect(makeCoordinator().disabledDisplays.map(\.fingerprint) == [screen.displayFingerprint])
+        #expect(try makeCoordinator().disabledDisplays.map(\.fingerprint) == [screen.displayFingerprint])
     }
 
     @Test func turnOnRemovesTheRecordOnlyWhenItSucceeds() async throws {
-        let coordinator = makeCoordinator()
+        let coordinator = try makeCoordinator()
         let succeeding = Self.makeScreen(1)
         let failing = Self.makeScreen(2)
         try await coordinator.turnOff(succeeding)
@@ -87,11 +87,11 @@ final class DisplaySettingsCoordinatorTests {
         await #expect(throws: FakeDisplayFailure.self) { try await coordinator.turnOn(records[1]) }
 
         #expect(coordinator.disabledDisplays.map(\.fingerprint) == [failing.displayFingerprint])
-        #expect(makeCoordinator().disabledDisplays.map(\.fingerprint) == [failing.displayFingerprint])
+        #expect(try makeCoordinator().disabledDisplays.map(\.fingerprint) == [failing.displayFingerprint])
     }
 
     @Test func restoreAllSwitchesEveryRecordOnPastAFailure() async throws {
-        let coordinator = makeCoordinator()
+        let coordinator = try makeCoordinator()
         let screens = [Self.makeScreen(1), Self.makeScreen(2), Self.makeScreen(3)]
         for screen in screens {
             try await coordinator.turnOff(screen)
@@ -106,7 +106,7 @@ final class DisplaySettingsCoordinatorTests {
     }
 
     @Test func aRecordIsDroppedWhenItsDisplayComesBackOnline() async throws {
-        let coordinator = makeCoordinator()
+        let coordinator = try makeCoordinator()
         let returning = Self.makeScreen(1)
         let stillOff = Self.makeScreen(2)
         try await coordinator.turnOff(returning)
@@ -115,12 +115,12 @@ final class DisplaySettingsCoordinatorTests {
         coordinator.forgetDisplaysBackOnline(in: [returning, Self.makeScreen(3)])
 
         #expect(coordinator.disabledDisplays.map(\.fingerprint) == [stillOff.displayFingerprint])
-        #expect(makeCoordinator().disabledDisplays.map(\.fingerprint) == [stillOff.displayFingerprint])
+        #expect(try makeCoordinator().disabledDisplays.map(\.fingerprint) == [stillOff.displayFingerprint])
     }
 
     @Test(.timeLimit(.minutes(1)))
     func anUnconfirmedModeChangeRevertsAfterTheTimeout() async throws {
-        let coordinator = makeCoordinator(confirmationTimeout: 0.05)
+        let coordinator = try makeCoordinator(confirmationTimeout: 0.05)
         let screen = Self.makeScreen(1)
         displays.setMode(Self.native, for: screen.id)
 
@@ -136,7 +136,7 @@ final class DisplaySettingsCoordinatorTests {
 
     @Test(.timeLimit(.minutes(1)))
     func aKeptModeChangeIsNotReverted() async throws {
-        let coordinator = makeCoordinator(confirmationTimeout: 0.05)
+        let coordinator = try makeCoordinator(confirmationTimeout: 0.05)
         let screen = Self.makeScreen(1)
         displays.setMode(Self.native, for: screen.id)
 
@@ -151,7 +151,7 @@ final class DisplaySettingsCoordinatorTests {
 
     @Test(.timeLimit(.minutes(1)))
     func aSecondChangeKeepsTheFirst() async throws {
-        let coordinator = makeCoordinator(confirmationTimeout: 0.1)
+        let coordinator = try makeCoordinator(confirmationTimeout: 0.1)
         let screen = Self.makeScreen(1)
         displays.setMode(Self.native, for: screen.id)
 
