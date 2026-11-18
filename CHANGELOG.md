@@ -12,6 +12,19 @@ schema, UI layout, or feature gating.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [1.0.3] — 2026-11-17
+
+### Added
+
+- Each display's detail page has a Display section with power, resolution,
+  refresh rate, rotation and HDR controls.
+- A display can be turned off without unplugging it (Apple Silicon). It stays
+  on the wallpaper shelf as a gray display; clicking it turns the display back
+  on. Displays turned off this way come back on when the app quits or the next
+  time it starts.
+- A resolution, refresh rate or rotation change reverts after 15 seconds unless
+  it is kept.
+
 ## [1.0.2] — 2026-11-16
 
 ### Changed
@@ -1622,6 +1635,7 @@ codebase, distributed via GitHub Releases.
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
 
+[1.0.3]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v1.0.2...loomscreen-v1.0.3
 [1.0.2]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v1.0.1...loomscreen-v1.0.2
 [1.0.1]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v1.0.0...loomscreen-v1.0.1
 [1.0.0]: https://github.com/Paradox07127/macos-wallpaperengine/compare/loomscreen-v0.9.3...loomscreen-v1.0.0
