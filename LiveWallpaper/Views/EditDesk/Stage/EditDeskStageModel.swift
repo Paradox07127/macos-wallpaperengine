@@ -165,7 +165,8 @@ struct NowPlayingBadge: Equatable {
 
     /// nil when the wallpaper is set on none of `displays`.
     init?(on ids: [StageDisplay.ID], among displays: [StageDisplay]) {
-        let set = displays.filter { ids.contains($0.id) }.sorted { $0.frame.minX < $1.frame.minX }
+        // A switched-off placeholder keeps its ID while its wallpaper no longer reaches any screen.
+        let set = displays.filter { ids.contains($0.id) && $0.state != .switchedOff }.sorted { $0.frame.minX < $1.frame.minX }
         guard !set.isEmpty else { return nil }
         displayNames = set.map(\.name)
         isLive = set.contains { $0.state == .ok }

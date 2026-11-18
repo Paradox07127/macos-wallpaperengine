@@ -239,6 +239,20 @@ struct EditDeskStageModelTests {
         #expect(try #require(NowPlayingBadge(on: [1, 2], among: mixed)).isLive, "one display drawing it is enough")
     }
 
+    @Test("A switched-off display placeholder is not named by the now-playing badge")
+    func nowPlayingSkipsSwitchedOffDisplays() throws {
+        func display(_ id: StageDisplay.ID, _ name: String, x: CGFloat, _ state: StageDisplay.State) -> StageDisplay {
+            StageDisplay(
+                id: id, fingerprint: name, frame: CGRect(x: x, y: 0, width: 1920, height: 1080), isBuiltin: false,
+                name: name, badgeText: "", statusText: "", cover: nil, state: state
+            )
+        }
+        let off = display(3, "BenQ", x: 1920, .switchedOff)
+        #expect(NowPlayingBadge(on: [3], among: [display(1, "Built-in", x: 0, .ok), off]) == nil)
+        let badge = try #require(NowPlayingBadge(on: [1, 3], among: [display(1, "Built-in", x: 0, .ok), off]))
+        #expect(badge.displayNames == ["Built-in"])
+    }
+
     @Test("VoiceOver reads the displays drawing a wallpaper apart from the ones it is only set on")
     func nowPlayingReadsDrawingAndIdleDisplaysApart() throws {
         func display(_ id: StageDisplay.ID, _ name: String, x: CGFloat, _ state: StageDisplay.State) -> StageDisplay {
