@@ -92,6 +92,9 @@ extension ScreenManager {
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.screensDidChange(arrivedScreenIDs: reloadIDs)
         }
+        #if !MAS_BUILD
+        displaySettings.forgetDisplaysBackOnline(in: newScreens)
+        #endif
         NotificationCenter.default.post(name: .screensRefreshed, object: nil)
     }
 

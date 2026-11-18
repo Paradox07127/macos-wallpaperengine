@@ -21,6 +21,7 @@ final class ScreenManager {
     let wpeImportTracker = WPEImportTracker()
     #endif
     let bookmarkDisplayNameCache = BookmarkDisplayNameCache()
+    let displaySettings: DisplaySettingsCoordinator
     /// Monitor overlay per display, keyed by `displayFingerprint`; write-through
     /// to global settings. Observed so the sidebar page and menu bar track edits.
     var monitorOverlays: [String: MonitorOverlayConfiguration] = SettingsManager.shared.loadMonitorOverlays()
@@ -407,6 +408,7 @@ final class ScreenManager {
         absenceRevalidationGrace = startupOptions.absenceRevalidationGrace
         absenceRevalidationPollInterval = startupOptions.absenceRevalidationPollInterval
         restoresSavedWallpapersOnScreenRefresh = startupOptions.restoreSavedWallpapers
+        displaySettings = DisplaySettingsCoordinator()
 
         Logger.debug("ScreenManager initializing", category: .screenManager)
         setupPowerMonitoring()

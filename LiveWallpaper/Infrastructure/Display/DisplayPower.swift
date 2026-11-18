@@ -59,8 +59,10 @@ enum DisplayPower {
         _ = configureDisplayEnabled(config, display, enabled)
         _ = CGCompleteDisplayConfiguration(config, DisplayControl.configurationScope)
         // The online list can trail the commit; waits up to 3 s.
-        for _ in 0..<30 {
-            if onlineDisplayIDs().contains(display) == enabled { return }
+        for _ in 0 ..< 30 {
+            if onlineDisplayIDs().contains(display) == enabled {
+                return
+            }
             try await Task.sleep(for: .milliseconds(100))
         }
         throw DisplayControlError.stateNotReached

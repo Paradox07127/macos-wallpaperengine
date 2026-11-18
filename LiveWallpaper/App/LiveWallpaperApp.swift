@@ -240,6 +240,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let manager = ScreenManager(startupOptions: startupPlan.screenManagerOptions)
         screenManager = manager
         #if !MAS_BUILD
+        // A crash or force quit leaves the displays this app switched off dark; the system does not bring them back.
+        lifecycle.schedule { [weak manager] in
+            await manager?.displaySettings.restoreAll()
+        }
         if !runtimeOptions.isTesting, #available(macOS 26.0, *) {
             let selection = SystemWallpaperSelectionCoordinator(service: wallpaperExportService)
             systemWallpaperSelection = selection
@@ -455,6 +459,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeApplicationWindowsForTermination()
         SystemMonitor.shared.shutdown()
         screenManager?.tearDownForTermination()
+        #if !MAS_BUILD
+        let displaySettings = screenManager?.displaySettings
+        #endif
         #if DEBUG
         QAControlPlane.shutdown()
         #endif
@@ -484,9 +491,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A SteamCMD child outlives this process otherwise: it sits in its own process group inside an XPC service launchd reaps with SIGKILL.
             async let steamCMDTerminated: Void = SteamConnectorClient.terminateActiveSteamCMDForHostExit()
             #endif
+            #if !MAS_BUILD
+            // Displays switched off with app-only scope stay dark after this process exits.
+            async let displaysRestored: Void? = displaySettings?.restoreAll()
+            #endif
             await AppTerminationCoordinator.shutdownForApplication()
             #if !LITE_BUILD
             await steamCMDTerminated
+            #endif
+            #if !MAS_BUILD
+            _ = await displaysRestored
             #endif
             watchdog.cancel()
             reply()
