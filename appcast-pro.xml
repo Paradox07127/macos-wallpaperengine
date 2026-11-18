@@ -7,27 +7,23 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 1.0.2</title>
-      <pubDate>Mon, 16 Nov 2026 14:59:36 +0000</pubDate>
-      <sparkle:version>1.0.2</sparkle:version>
-      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+      <title>Version 1.0.3</title>
+      <pubDate>Wed, 18 Nov 2026 06:05:46 +0000</pubDate>
+      <sparkle:version>1.0.3</sparkle:version>
+      <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>Improvements</strong></p>
+<p><strong>What's New</strong></p>
 <ul>
-<li>Pro: Steam connector errors name the cause and the error code instead of only saying the connector did not respond.</li>
-<li>Pro: the app log, the diagnostics export and the bug report keep each failed connector call and the connector's recent crash reports.</li>
-<li>Pro: read-only connector calls retry once after the connector quits.</li>
-<li>Pro: Diagnostics re-runs checks that failed only because the connector was unavailable when you open the page again.</li>
+<li>Each display's detail page has a Display section: power, resolution, refresh rate, rotation and HDR.</li>
+<li>Turn a display off without unplugging it (Apple Silicon). It shows as a gray display on the wallpaper shelf; click it to turn the display back on.</li>
+<li>Displays you turned off come back on when you quit Loomscreen, or the next time it starts.</li>
+<li>A resolution, refresh rate or rotation change goes back after 15 seconds unless you keep it.</li>
+<li>The home page background ripples faintly under the pointer and where you click empty space. Turn it off in Settings › Appearance.</li>
 </ul>
-<p><strong>Bug Fixes</strong></p>
-<ul>
-<li>An extra file in the app bundle, such as a ._ file left by copying the app through an external drive, no longer makes every Steam connector or system wallpaper maintenance call fail.</li>
-<li>Pro: finding SteamCMD automatically says why binding it failed.</li>
-</ul>
-<p><small><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.2">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.2">完整发布说明</a></small></p>
+<p><small><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.3">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.3">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v1.0.2/Loomscreen-Pro-1.0.2.dmg" type="application/octet-stream" sparkle:edSignature="utyNjizGQ97dMFjMA6vx6lhPrDg4JKvqhwu9yKDvKhXNXKvyHPhw0Wws2RCMMaZ35QquZfxbZP36tdDS7j6dBA==" length="35424950" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v1.0.3/Loomscreen-Pro-1.0.3.dmg" type="application/octet-stream" sparkle:edSignature="ayum2in4DpL5mqjbGFXwuDGO+b+pv+XkmXp/hf+Ud8295FVCmEybyeU4Z+PNA2umMFoHH5A7/1AS2x0huSyuDw==" length="35462191" />
     </item>
   </channel>
 </rss>
