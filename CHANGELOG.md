@@ -24,6 +24,8 @@ what shipped at that time; current behavior is documented in `docs/`.
   time it starts.
 - A resolution, refresh rate or rotation change reverts after 15 seconds unless
   it is kept.
+- The home page background ripples faintly under the pointer and where empty
+  space is clicked. Settings › Appearance turns it off.
 
 ## [1.0.2] — 2026-11-16
 
