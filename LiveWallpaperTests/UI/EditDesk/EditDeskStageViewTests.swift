@@ -1006,6 +1006,25 @@ struct EditDeskStageViewTests {
         #expect(view.ownsPoint(onCard, clicking: false))
     }
 
+    @Test("A click on a switched-off placeholder's name turns it on instead of renaming it", .timeLimit(.minutes(1)))
+    func clickingASwitchedOffNameTurnsItOn() async throws {
+        let model = makeModel()
+        model.displays[0].state = .switchedOff
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[1])
+        let nameRect = shell.layer.convert(shell.nameFrame, to: root)
+        let onName = CGPoint(x: nameRect.midX, y: nameRect.midY)
+
+        var events = model.events.makeAsyncIterator()
+        view.tap(at: onName)
+        #expect(!view.subviews.contains { $0 is NSTextField }, "a switched-off placeholder cannot be renamed")
+        #expect(await events.next() == .displayTapped(1))
+    }
+
     @Test("A click on a display's name opens a rename field over it; the rest of the display still opens the display", .timeLimit(.minutes(1)))
     func clickingTheNameRenamesTheDisplay() async throws {
         let model = makeModel()

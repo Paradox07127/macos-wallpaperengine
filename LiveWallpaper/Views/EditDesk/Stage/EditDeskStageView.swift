@@ -1562,9 +1562,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// Hit-tests the name text only, never the dot or the status after it.
     func nameDisplayID(at point: CGPoint) -> StageDisplay.ID? {
         guard arrangementLayer.opacity > 0, let root = layer else { return nil }
-        // A switched-off placeholder cannot be renamed; a click on its name turns it on like the rest of it.
         return ShelfGestureController.display(at: point, frames: displays.compactMap {
-            guard $0.state != .switchedOff, let shell = displayLayers[$0.id] else { return nil }
+            guard let shell = displayLayers[$0.id] else { return nil }
             return ($0.id, shell.layer.convert(shell.nameFrame, to: root))
         })
     }
@@ -1586,7 +1585,12 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         } else if let id = displayID(at: point) {
             model.emit(.displayTapped(id))
         } else if let id = nameDisplayID(at: point) {
-            beginRename(id)
+            // A switched-off placeholder cannot be renamed; a click on its name turns it on like the rest of it.
+            if displays.first(where: { $0.id == id })?.state == .switchedOff {
+                model.emit(.displayTapped(id))
+            } else {
+                beginRename(id)
+            }
         }
     }
 
