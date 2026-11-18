@@ -677,6 +677,8 @@ public enum DesignTokens {
                 light: .black.withAlphaComponent(0.10), dark: .black.withAlphaComponent(0.35)
             )
             public static let dotGrid = ink("DotGrid", 0.06)
+            /// The home ripples' heaviest glyph; shallower water scales it down.
+            public static let rippleGlyph = ink("RippleGlyph", 0.16)
 
             /// S4 scrim: the design's near-black `.62` blacks out a light canvas, so light halves it.
             public static let modalScrim = adaptive(

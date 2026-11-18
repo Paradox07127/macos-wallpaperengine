@@ -87,6 +87,8 @@ struct HomePage: View {
     private var statusCapsuleRaw = EditDeskPreferences.statusCapsuleContentDefault.rawValue
     @AppStorage(EditDeskPreferences.homeDefaultState, store: .appScoped())
     private var homeDefaultRaw = EditDeskPreferences.homeDefaultStateDefault.rawValue
+    @AppStorage(EditDeskPreferences.homeRipples, store: .appScoped())
+    private var homeRipples = EditDeskPreferences.homeRipplesDefault
 
     /// Applies run beside the event loop, not inside it: the stage stream has a single consumer, so
     /// awaiting a Workshop import in the loop stalls every later tap, snap and drop behind it.
@@ -397,6 +399,11 @@ struct HomePage: View {
             EditDeskDotGrid(stage: stage)
                 .zIndex(-1)
                 .modifier(CoveredByDetail(covered: detailCovers))
+            if homeRipples, !reduceMotion, router.page == .home {
+                EditDeskRipples(stage: stage)
+                    .zIndex(-1)
+                    .modifier(CoveredByDetail(covered: detailCovers))
+            }
             EditDeskShelfScrim(stage: stage)
                 .zIndex(-1)
                 .modifier(CoveredByDetail(covered: detailCovers))

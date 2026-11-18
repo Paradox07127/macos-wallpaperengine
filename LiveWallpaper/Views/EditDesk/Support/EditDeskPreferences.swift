@@ -7,6 +7,7 @@ enum EditDeskPreferences {
     static let hoverAutoplayPreview = "loomscreen.editDesk.hoverAutoplayPreview"
     static let statusCapsuleContent = "loomscreen.editDesk.statusCapsuleContent"
     static let homeDefaultState = "loomscreen.editDesk.homeDefaultState"
+    static let homeRipples = "loomscreen.editDesk.homeRipples"
 
     static let shelfStyleDefault: ShelfStyle = .facingIn
     static let backgroundDefault: EditDeskBackground = .opaque
@@ -14,6 +15,7 @@ enum EditDeskPreferences {
     static let hoverAutoplayPreviewDefault = true
     static let statusCapsuleContentDefault: StatusCapsuleContent = .systemHealth
     static let homeDefaultStateDefault: HomeDefaultState = .hidden
+    static let homeRipplesDefault = true
 }
 
 /// Whether the Edit Desk paints its own canvas or lets the desktop blur through it.

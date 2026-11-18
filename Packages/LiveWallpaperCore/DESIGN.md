@@ -154,6 +154,7 @@ Tokens for Edit Desk. Values are literal px/hex, not the Dynamic Type scale abov
 | `Colors.nowPlayingGlyph` | `#4ade80` (fixed) |
 | `Colors.shelfScrim` | black `.35`; light `.10` |
 | `Colors.dotGrid` | `rgba(255,255,255,.06)` |
+| `Colors.rippleGlyph` | `rgba(255,255,255,.16)` |
 | `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black |
 | `Colors.mediaChipFill` | black `.6` (fixed) |
 | `Colors.gradientWorkshopCardBottom` | black `.85` (fixed) |

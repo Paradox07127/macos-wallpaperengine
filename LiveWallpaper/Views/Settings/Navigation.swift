@@ -476,8 +476,8 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Window",
                     anchor: .appearanceWindow,
-                    rows: ["Appearance", "Light", "Dark", "Main window background"],
-                    keywords: ["appearance", "theme", "dark", "light", "background"]
+                    rows: ["Appearance", "Light", "Dark", "Main window background", "Home background ripples"],
+                    keywords: ["appearance", "theme", "dark", "light", "background", "ripple", "ripples", "水波"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Library & Shelf",

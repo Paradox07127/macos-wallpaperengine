@@ -158,6 +158,20 @@ struct MainWindowBackgroundRow: View {
     }
 }
 
+struct HomeRipplesRow: View {
+    @AppStorage(EditDeskPreferences.homeRipples, store: .appScoped())
+    private var homeRipples = EditDeskPreferences.homeRipplesDefault
+
+    var body: some View {
+        SettingRow(icon: "water.waves", iconColor: .teal, title: "Home background ripples") {
+            Toggle("", isOn: $homeRipples)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(Text("Home background ripples"))
+        }
+    }
+}
+
 /// A view of its own so it renders without the Edit Desk flag that gates `ShelfSettingsRows`.
 struct HoverAutoplayPreviewRow: View {
     @AppStorage(EditDeskPreferences.hoverAutoplayPreview, store: .appScoped())

@@ -18,6 +18,7 @@ struct AppearanceSettingsView: View {
                 }
 
                 MainWindowBackgroundRow()
+                HomeRipplesRow()
             } header: {
                 SettingsSearchSectionHeader("Window", anchor: .appearanceWindow)
             }

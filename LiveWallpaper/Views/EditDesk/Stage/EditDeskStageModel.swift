@@ -387,6 +387,8 @@ final class EditDeskStageModel {
     /// The stage view's own bounds. SwiftUI's geometry reader sees the safe-area-reduced height,
     /// which put the chrome 28pt off the shelf it is supposed to ride on.
     private(set) var stageSize = StageGeometry.designWindow
+    /// The home background's water: the stage view pokes it on hover, the ripple layer on presses over bare canvas.
+    @ObservationIgnored let ripples = EditDeskRippleField(size: StageGeometry.designWindow)
 
     /// Single consumer: `HomePage` owns the read loop; a second `for await` would split the events.
     let events: AsyncStream<StageEvent>
@@ -511,6 +513,7 @@ final class EditDeskStageModel {
     func report(stageSize: CGSize) {
         if self.stageSize != stageSize, stageSize.width > 0, stageSize.height > 0 {
             self.stageSize = stageSize
+            ripples.resize(to: stageSize)
         }
     }
 

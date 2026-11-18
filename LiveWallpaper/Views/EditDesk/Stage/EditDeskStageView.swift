@@ -1643,7 +1643,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     override func mouseMoved(with event: NSEvent) {
         guard !model.interactionBlocked, flights.isEmpty else { return }
         touchReveal.hoverBegan()
-        pointer = convert(event.locationInWindow, from: nil)
+        let point = convert(event.locationInWindow, from: nil)
+        pointer = point
+        model.ripples.hover(at: point)
         resolveHover()
         withoutActions { render() }
         startDisplayLinkIfNeeded()
@@ -1670,6 +1672,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     override func mouseExited(with _: NSEvent) {
+        model.ripples.endTrail()
         clearHover()
         withoutActions { render() }
         startDisplayLinkIfNeeded()
