@@ -696,7 +696,8 @@ struct DisplayDetailHost: View {
 
     /// Left to right as arranged in System Settings › Displays, the upper of a stacked pair first; tags, ⌘1–9 and swipes share it.
     static func displayOrder(_ displays: [StageDisplay]) -> [StageDisplay] {
-        displays.sorted { lhs, rhs in
+        // A switched-off placeholder has no detail page to show.
+        displays.filter { $0.state != .switchedOff }.sorted { lhs, rhs in
             if lhs.frame.minX != rhs.frame.minX {
                 return lhs.frame.minX < rhs.frame.minX
             }
