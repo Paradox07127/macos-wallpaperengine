@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
@@ -17,6 +18,8 @@ struct DisplayHardware: Sendable {
     var currentRotation: @Sendable (CGDirectDisplayID) -> DisplayRotation?
     var isBuiltin: @Sendable (CGDirectDisplayID) -> Bool
     var isOnline: @Sendable (CGDirectDisplayID) -> Bool
+    /// The display's current ID when it came back under a different one; nil = keep `lastDisplayID`.
+    var resolveDisplayID: @Sendable (DisabledDisplay) -> CGDirectDisplayID?
     #endif
 
     #if MAS_BUILD
@@ -32,7 +35,20 @@ struct DisplayHardware: Sendable {
         setRotation: { try DisplayRotation.set($0, for: $1) },
         currentRotation: { DisplayRotation.current(for: $0) },
         isBuiltin: { CGDisplayIsBuiltin($0) != 0 },
-        isOnline: { DisplayPower.onlineDisplayIDs().contains($0) }
+        isOnline: { DisplayPower.onlineDisplayIDs().contains($0) },
+        resolveDisplayID: { display in
+            // nil from a missing SkyLight symbol is fine: switching on throws `.unavailable` there anyway.
+            guard let ids = try? DisplayPower.allDisplayIDs(), !ids.contains(display.lastDisplayID) else { return nil }
+            return ids.first { id in
+                DisplayFingerprint.make(
+                    vendor: CGDisplayVendorNumber(id),
+                    model: CGDisplayModelNumber(id),
+                    serial: CGDisplaySerialNumber(id),
+                    uuid: NSScreen.displayUUID(for: id),
+                    localizedName: display.name
+                ) == display.fingerprint
+            }
+        }
     )
     #endif
 }
@@ -82,6 +98,8 @@ final class DisplaySettingsCoordinator {
     /// Seconds a mode or rotation change waits for `keepPendingChange()` before reverting.
     @ObservationIgnored private let confirmationTimeout: TimeInterval
     @ObservationIgnored private var confirmationTimeoutTask: Task<Void, Never>?
+    /// The latest mode, rotation or revert call; each new one waits for it.
+    @ObservationIgnored private var configurationTask: Task<Void, any Error>?
 
     init(hardware: DisplayHardware = .live, defaults: UserDefaults = .appScoped(), confirmationTimeout: TimeInterval = 15) {
         self.hardware = hardware
@@ -100,10 +118,24 @@ final class DisplaySettingsCoordinator {
 
     func applyMode(_ key: DisplayModeKey, to screen: Screen) async throws {
         let displayID = screen.id
-        guard let original = hardware.currentMode(displayID) else { throw DisplayControlError.displayNotFound }
-        keepPendingChange()
-        try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
-        awaitConfirmation(restoring: .mode(original), on: displayID)
+        try await afterPreviousConfiguration { [self] in
+            guard let original = hardware.currentMode(displayID) else { throw DisplayControlError.displayNotFound }
+            guard key != original else { return }
+            keepPendingChange()
+            try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
+            awaitConfirmation(restoring: .mode(original), on: displayID)
+        }
+    }
+
+    /// `body` must read the display's current state itself; read before this call, it misses a revert still running.
+    private func afterPreviousConfiguration(_ body: @escaping @MainActor () async throws -> Void) async throws {
+        let previous = configurationTask
+        let task = Task {
+            _ = await previous?.result
+            try await body()
+        }
+        configurationTask = task
+        try await task.value
     }
 
     func keepPendingChange() {
@@ -119,13 +151,15 @@ final class DisplaySettingsCoordinator {
         pendingConfirmation = nil
         let displayID = pending.displayID
         do {
-            switch pending.restore {
-            case let .mode(key):
-                try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
-            #if !MAS_BUILD
-            case let .rotation(rotation):
-                try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
-            #endif
+            try await afterPreviousConfiguration { [hardware] in
+                switch pending.restore {
+                case let .mode(key):
+                    try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
+                #if !MAS_BUILD
+                case let .rotation(rotation):
+                    try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
+                #endif
+                }
             }
         } catch {
             Logger.error("Could not revert the configuration change on display \(displayID): \(error)", category: .screenManager)
@@ -149,10 +183,13 @@ final class DisplaySettingsCoordinator {
     #if !MAS_BUILD
     func applyRotation(_ rotation: DisplayRotation, to screen: Screen) async throws {
         let displayID = screen.id
-        guard let original = hardware.currentRotation(displayID) else { throw DisplayControlError.unavailable }
-        keepPendingChange()
-        try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
-        awaitConfirmation(restoring: .rotation(original), on: displayID)
+        try await afterPreviousConfiguration { [self] in
+            guard let original = hardware.currentRotation(displayID) else { throw DisplayControlError.unavailable }
+            guard rotation != original else { return }
+            keepPendingChange()
+            try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
+            awaitConfirmation(restoring: .rotation(original), on: displayID)
+        }
     }
 
     func turnOff(_ screen: Screen) async throws {
@@ -165,7 +202,7 @@ final class DisplaySettingsCoordinator {
             isBuiltin: hardware.isBuiltin(screen.id)
         )
         // Saved before the call: a commit that blanks the display yet reports failure must still be restored.
-        disabledDisplays.removeAll { $0.fingerprint == record.fingerprint }
+        disabledDisplays.removeAll { $0.fingerprint == record.fingerprint || $0.lastDisplayID == record.lastDisplayID }
         disabledDisplays.append(record)
         saveDisabledDisplays()
         do {
@@ -180,7 +217,7 @@ final class DisplaySettingsCoordinator {
     }
 
     func turnOn(_ display: DisabledDisplay) async throws {
-        try await hardware.setEnabled(true, display.lastDisplayID)
+        try await hardware.setEnabled(true, hardware.resolveDisplayID(display) ?? display.lastDisplayID)
         disabledDisplays.removeAll { $0.fingerprint == display.fingerprint }
         saveDisabledDisplays()
     }

@@ -28,10 +28,73 @@ final class DisplaySettingsCoordinatorTests {
     }
 
     /// No NSScreenNumber, so the fingerprint is keyed by the name and the ID derives from the frame.
-    private static func makeScreen(_ index: Int) -> Screen {
+    private static func makeScreen(_ index: Int, nameIndex: Int? = nil) -> Screen {
         let nsScreen = FakeNSScreen()
         nsScreen.index = index
+        nsScreen.nameIndex = nameIndex
         return Screen(nsScreen: nsScreen, displayPixelSize: { _ in nil })
+    }
+
+    @Test func turnOnUsesTheNewIDOfADisplayThatCameBackUnderAnotherOne() async throws {
+        let coordinator = try makeCoordinator()
+        let screen = Self.makeScreen(1)
+        try await coordinator.turnOff(screen)
+        let newID = screen.id &+ 1
+        displays.resolve(screen.displayFingerprint, to: newID)
+
+        try await coordinator.turnOn(coordinator.disabledDisplays[0])
+
+        #expect(displays.calls == [.setEnabled(false, screen.id), .setEnabled(true, newID)])
+        #expect(coordinator.disabledDisplays.isEmpty)
+    }
+
+    @Test func turningOffKeepsOneRecordPerDisplayID() async throws {
+        let coordinator = try makeCoordinator()
+        let earlier = Self.makeScreen(1)
+        let sameID = Self.makeScreen(1, nameIndex: 2)
+        try #require(sameID.id == earlier.id && sameID.displayFingerprint != earlier.displayFingerprint)
+
+        try await coordinator.turnOff(earlier)
+        try await coordinator.turnOff(sameID)
+
+        #expect(coordinator.disabledDisplays.map(\.fingerprint) == [sameID.displayFingerprint])
+    }
+
+    @Test func choosingTheCurrentModeChangesNothing() async throws {
+        let coordinator = try makeCoordinator()
+        let screen = Self.makeScreen(1)
+        displays.setMode(Self.native, for: screen.id)
+
+        try await coordinator.applyMode(Self.native, to: screen)
+
+        #expect(displays.calls.isEmpty)
+        #expect(coordinator.pendingConfirmation == nil)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aChangeMadeWhileARevertRunsLandsAfterIt() async throws {
+        let coordinator = try makeCoordinator(confirmationTimeout: 0.05)
+        let screen = Self.makeScreen(1)
+        displays.setMode(Self.native, for: screen.id)
+        displays.delay(Self.native, by: 0.3)
+
+        try await coordinator.applyMode(Self.looksLike1512, to: screen)
+        // The revert clears the pending change before its hardware call starts.
+        while coordinator.pendingConfirmation != nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try await coordinator.applyMode(Self.looksLike1800, to: screen)
+        coordinator.keepPendingChange()
+        while displays.calls.count < 3 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(displays.calls == [
+            .applyMode(Self.looksLike1512, screen.id),
+            .applyMode(Self.native, screen.id),
+            .applyMode(Self.looksLike1800, screen.id),
+        ])
+        #expect(displays.mode(of: screen.id) == Self.looksLike1800)
     }
 
     @Test func turningOffRecordsTheDisplayAndTheRecordSurvivesRelaunch() async throws {
@@ -192,6 +255,17 @@ private final class FakeDisplays: Sendable {
         var modes: [CGDirectDisplayID: DisplayModeKey] = [:]
         var failingIDs: Set<CGDirectDisplayID> = []
         var offlineIDs: Set<CGDirectDisplayID> = []
+        var resolvedIDs: [String: CGDirectDisplayID] = [:]
+        var modeDelays: [DisplayModeKey: TimeInterval] = [:]
+    }
+
+    func resolve(_ fingerprint: String, to displayID: CGDirectDisplayID) {
+        state.withLock { $0.resolvedIDs[fingerprint] = displayID }
+    }
+
+    /// Applying `key` blocks this long before it is recorded, so calls are listed in the order they finish.
+    func delay(_ key: DisplayModeKey, by seconds: TimeInterval) {
+        state.withLock { $0.modeDelays[key] = seconds }
     }
 
     /// The display goes dark even though the call reports failure.
@@ -223,6 +297,9 @@ private final class FakeDisplays: Sendable {
     var hardware: DisplayHardware {
         DisplayHardware(
             applyMode: { key, displayID in
+                if let delay = self.state.withLock({ $0.modeDelays[key] }) {
+                    Thread.sleep(forTimeInterval: delay)
+                }
                 try self.record(.applyMode(key, displayID))
                 self.setMode(key, for: displayID)
             },
@@ -231,7 +308,8 @@ private final class FakeDisplays: Sendable {
             setRotation: { try self.record(.setRotation($0, $1)) },
             currentRotation: { _ in .degrees0 },
             isBuiltin: { _ in false },
-            isOnline: { id in self.state.withLock { !$0.offlineIDs.contains(id) } }
+            isOnline: { id in self.state.withLock { !$0.offlineIDs.contains(id) } },
+            resolveDisplayID: { display in self.state.withLock { $0.resolvedIDs[display.fingerprint] } }
         )
     }
 
@@ -247,6 +325,8 @@ private final class FakeDisplays: Sendable {
 
 private final class FakeNSScreen: NSScreen {
     var index = 0
+    /// nil = named after `index`.
+    var nameIndex: Int?
 
     override var frame: NSRect {
         NSRect(x: CGFloat(index) * 1000, y: 0, width: 800, height: 600)
@@ -257,6 +337,6 @@ private final class FakeNSScreen: NSScreen {
     }
 
     override var localizedName: String {
-        "Display Settings Test \(index)"
+        "Display Settings Test \(nameIndex ?? index)"
     }
 }
