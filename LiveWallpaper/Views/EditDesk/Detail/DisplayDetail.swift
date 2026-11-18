@@ -13,10 +13,11 @@ struct DetailPreviewFrameKey: PreferenceKey {
     }
 }
 
-/// The top bar's segment selects the wallpaper preview or overlay editing surface.
+/// The top bar's segment selects the wallpaper preview, overlay editing surface or display settings.
 enum DetailSection: Hashable {
     case wallpaper
     case overlay
+    case display
 }
 
 /// Everything the detail shell hands back out; the host owns the side effects.
@@ -47,6 +48,8 @@ struct DetailActions {
     var switchBackToWebPage: (() -> Void)?
     var applyWebSource: (HTMLSource) -> Void = { _ in }
     var swipe: (DetailSwipeStep) -> Void = { _ in }
+    /// Takes the localized text of a failed display-control call.
+    var reportDisplayFailure: (String) -> Void = { _ in }
     var backLabel: LocalizedStringKey = "Overview"
 }
 
@@ -146,7 +149,12 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: V
 
     @ViewBuilder
     private var workspace: some View {
-        if section == .overlay {
+        if section == .display {
+            if let screen {
+                DisplaySettingsPage(screen: screen, reportFailure: actions.reportDisplayFailure)
+                    .opacity(heroVisible ? 1 : 0)
+            }
+        } else if section == .overlay {
             // Measured, not taken from the stage's size: the stage is sized by this page, so it would hold a shrinking window at its old height.
             GeometryReader { proxy in
                 overlayCanvas(proxy.size)

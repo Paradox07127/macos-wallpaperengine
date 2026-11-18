@@ -844,7 +844,9 @@ struct DisplayDetailHost: View {
             switchBackToVideo: switchBack.contains(.video) ? { switchToSaved(.video, on: screen) } : nil,
             switchBackToWebPage: switchBack.contains(.html) ? { switchToSaved(.html, on: screen) } : nil,
             applyWebSource: { apply(.html($0), screen.id) },
-            swipe: { swipe($0) }, backLabel: backLabel
+            swipe: { swipe($0) },
+            reportDisplayFailure: { toasts.post($0, style: .failure, screenID: screen.id) },
+            backLabel: backLabel
         )
     }
 

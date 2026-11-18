@@ -32,12 +32,16 @@ struct DetailTopBar: View {
             AdaptiveGlassContainer(spacing: GlassToolbarMetrics.containerSpacing) {
                 HStack(spacing: GlassToolbarMetrics.groupSpacing) {
                     sectionPicker.pageGuideTarget(.detailLayers)
+                    // Kept in place but dimmed on the Display section, so the slots stay put across sections.
                     GlassToolbarGroup { displayActions }.pageGuideTarget(.detailActions)
+                        .disabled(section == .display)
                     GlassToolbarGroup { sharedActions }.pageGuideTarget(.detailShared)
+                        .disabled(section == .display)
                     GlassToolbarGroup {
-                        PageGuideButton(context: section == .wallpaper ? .configuration : .overlays, grouped: true)
+                        PageGuideButton(context: section == .overlay ? .overlays : .configuration, grouped: true)
+                            .disabled(section == .display)
                         icon("sidebar.right", "Settings") { inspectorVisible.toggle() }
-                            .disabled(section == .wallpaper && !hasWallpaper)
+                            .disabled(section == .display || (section == .wallpaper && !hasWallpaper))
                     }
                 }
             }
@@ -54,7 +58,7 @@ struct DetailTopBar: View {
     /// First capsule: what this display shows — change, clear; snapping in the overlay section.
     @ViewBuilder
     private var displayActions: some View {
-        if section == .wallpaper {
+        if section != .overlay {
             NativeMenuButton(toolbarItem: true) { changeMenu } label: {
                 menuIcon("rectangle.2.swap")
             }
@@ -166,12 +170,17 @@ struct DetailTopBar: View {
     }
 
     private var sectionPicker: some View {
-        GlassSegmentedPicker(selection: $section, values: [DetailSection.wallpaper, .overlay], shell: .detail) { item, _ in
-            Image(systemName: item == .wallpaper ? "photo" : "square.3.layers.3d")
+        GlassSegmentedPicker(selection: $section, values: [DetailSection.wallpaper, .overlay, .display], shell: .detail) { item, _ in
+            let segment: (symbol: String, name: LocalizedStringKey, id: String) = switch item {
+            case .wallpaper: ("photo", "Wallpaper", "detail.wallpaper")
+            case .overlay: ("square.3.layers.3d", "Overlays", "detail.overlay")
+            case .display: ("display", "Display", "detail.display")
+            }
+            Image(systemName: segment.symbol)
                 .imageScale(.large)
-                .help(Text(item == .wallpaper ? "Wallpaper" : "Overlays"))
-                .accessibilityLabel(Text(item == .wallpaper ? "Wallpaper" : "Overlays"))
-                .accessibilityIdentifier(item == .wallpaper ? "detail.wallpaper" : "detail.overlay")
+                .help(Text(segment.name))
+                .accessibilityLabel(Text(segment.name))
+                .accessibilityIdentifier(segment.id)
         }
         .accessibilityElement(children: .contain)
         .fixedSize()
