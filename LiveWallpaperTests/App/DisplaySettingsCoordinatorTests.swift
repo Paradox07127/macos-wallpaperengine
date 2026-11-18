@@ -85,7 +85,7 @@ final class DisplaySettingsCoordinatorTests {
         }
         try await coordinator.applyMode(Self.looksLike1800, to: screen)
         coordinator.keepPendingChange()
-        while displays.calls.count < 3 {
+        while displays.calls.count < 4 {
             try await Task.sleep(for: .milliseconds(10))
         }
 
@@ -93,6 +93,7 @@ final class DisplaySettingsCoordinatorTests {
             .applyMode(Self.looksLike1512, screen.id),
             .applyMode(Self.native, screen.id),
             .applyMode(Self.looksLike1800, screen.id),
+            .persistMode(screen.id),
         ])
         #expect(displays.mode(of: screen.id) == Self.looksLike1800)
     }
@@ -209,7 +210,7 @@ final class DisplaySettingsCoordinatorTests {
 
         #expect(coordinator.pendingConfirmation == nil)
         #expect(displays.mode(of: screen.id) == Self.looksLike1512)
-        #expect(displays.calls == [.applyMode(Self.looksLike1512, screen.id)])
+        #expect(displays.calls == [.applyMode(Self.looksLike1512, screen.id), .persistMode(screen.id)])
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -232,6 +233,37 @@ final class DisplaySettingsCoordinatorTests {
             .applyMode(Self.looksLike1512, screen.id),
         ])
     }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aChangeOnAnotherDisplayRevertsTheUnconfirmedOne() async throws {
+        let coordinator = try makeCoordinator()
+        let first = Self.makeScreen(1)
+        let second = Self.makeScreen(2)
+        displays.setMode(Self.native, for: first.id)
+        displays.setMode(Self.native, for: second.id)
+
+        try await coordinator.applyMode(Self.looksLike1512, to: first)
+        try await coordinator.applyMode(Self.looksLike1800, to: second)
+
+        #expect(displays.mode(of: first.id) == Self.native)
+        #expect(coordinator.pendingConfirmation?.displayID == second.id)
+        #expect(!displays.calls.contains(.persistMode(first.id)))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aFailedChangeLeavesThePreviousOneAwaitingConfirmation() async throws {
+        let coordinator = try makeCoordinator()
+        let screen = Self.makeScreen(1)
+        displays.setMode(Self.native, for: screen.id)
+
+        try await coordinator.applyMode(Self.looksLike1512, to: screen)
+        displays.fail(screen.id)
+        await #expect(throws: FakeDisplayFailure.self) {
+            try await coordinator.applyMode(Self.looksLike1800, to: screen)
+        }
+
+        #expect(coordinator.pendingConfirmation?.displayID == screen.id)
+    }
 }
 
 private struct FakeDisplayFailure: Error {}
@@ -239,11 +271,12 @@ private struct FakeDisplayFailure: Error {}
 private enum FakeDisplayCall: Equatable {
     case setEnabled(Bool, CGDirectDisplayID)
     case applyMode(DisplayModeKey, CGDirectDisplayID)
+    case persistMode(CGDirectDisplayID)
     case setRotation(DisplayRotation, CGDirectDisplayID)
 
     var displayID: CGDirectDisplayID {
         switch self {
-        case let .setEnabled(_, id), let .applyMode(_, id), let .setRotation(_, id): id
+        case let .setEnabled(_, id), let .applyMode(_, id), let .persistMode(id), let .setRotation(_, id): id
         }
     }
 }
@@ -303,6 +336,7 @@ private final class FakeDisplays: Sendable {
                 try self.record(.applyMode(key, displayID))
                 self.setMode(key, for: displayID)
             },
+            persistMode: { try self.record(.persistMode($0)) },
             currentMode: { self.mode(of: $0) },
             setEnabled: { try self.record(.setEnabled($0, $1)) },
             setRotation: { try self.record(.setRotation($0, $1)) },

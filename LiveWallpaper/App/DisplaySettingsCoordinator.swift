@@ -8,6 +8,8 @@ import Observation
 struct DisplayHardware: Sendable {
     /// Blocks until the window server commits; callers keep it off the main thread.
     var applyMode: @Sendable (DisplayModeKey, CGDirectDisplayID) throws -> Void
+    /// Re-commits the running mode so it outlives this app; `applyMode` changes revert when the app quits.
+    var persistMode: @Sendable (CGDirectDisplayID) throws -> Void
     /// nil = CoreGraphics does not know the display.
     var currentMode: @Sendable (CGDirectDisplayID) -> DisplayModeKey?
     #if !MAS_BUILD
@@ -25,11 +27,13 @@ struct DisplayHardware: Sendable {
     #if MAS_BUILD
     static let live = DisplayHardware(
         applyMode: { try DisplayModes.apply($0, to: $1) },
+        persistMode: { try DisplayModes.persistCurrentMode(of: $0) },
         currentMode: { CGDisplayCopyDisplayMode($0).map(DisplayModeKey.init) }
     )
     #else
     static let live = DisplayHardware(
         applyMode: { try DisplayModes.apply($0, to: $1) },
+        persistMode: { try DisplayModes.persistCurrentMode(of: $0) },
         currentMode: { CGDisplayCopyDisplayMode($0).map(DisplayModeKey.init) },
         setEnabled: { try await DisplayPower.setEnabled($0, for: $1) },
         setRotation: { try DisplayRotation.set($0, for: $1) },
@@ -121,8 +125,13 @@ final class DisplaySettingsCoordinator {
         try await afterPreviousConfiguration { [self] in
             guard let original = hardware.currentMode(displayID) else { throw DisplayControlError.displayNotFound }
             guard key != original else { return }
-            keepPendingChange()
-            try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
+            let previous = await settlePendingChange(before: displayID)
+            do {
+                try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
+            } catch {
+                previous.map { awaitConfirmation(restoring: $0.restore, on: $0.displayID) }
+                throw error
+            }
             awaitConfirmation(restoring: .mode(original), on: displayID)
         }
     }
@@ -139,30 +148,60 @@ final class DisplaySettingsCoordinator {
     }
 
     func keepPendingChange() {
+        guard let pending = pendingConfirmation else { return }
+        clearPendingConfirmation()
+        guard case .mode = pending.restore else { return }
+        let displayID = pending.displayID
+        Task {
+            do {
+                try await afterPreviousConfiguration { [persistMode = hardware.persistMode] in
+                    try await Task.detached { try persistMode(displayID) }.value
+                }
+            } catch {
+                Logger.error("Could not keep the mode of display \(displayID) past this session: \(error)", category: .screenManager)
+            }
+        }
+    }
+
+    func revertPendingChange() async {
+        guard let pending = pendingConfirmation else { return }
+        clearPendingConfirmation()
+        do {
+            try await afterPreviousConfiguration { [self] in try await restore(pending) }
+        } catch {
+            Logger.error("Could not revert the configuration change on display \(pending.displayID): \(error)", category: .screenManager)
+        }
+    }
+
+    private func clearPendingConfirmation() {
         confirmationTimeoutTask?.cancel()
         confirmationTimeoutTask = nil
         pendingConfirmation = nil
     }
 
-    func revertPendingChange() async {
-        guard let pending = pendingConfirmation else { return }
-        confirmationTimeoutTask?.cancel()
-        confirmationTimeoutTask = nil
-        pendingConfirmation = nil
-        let displayID = pending.displayID
+    /// Runs inside `afterPreviousConfiguration`. Reverts an unconfirmed change on another display;
+    /// returns one on `displayID` so a failed change can put it back.
+    private func settlePendingChange(before displayID: CGDirectDisplayID) async -> PendingDisplayChange? {
+        guard let pending = pendingConfirmation else { return nil }
+        clearPendingConfirmation()
+        guard pending.displayID != displayID else { return pending }
         do {
-            try await afterPreviousConfiguration { [hardware] in
-                switch pending.restore {
-                case let .mode(key):
-                    try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
-                #if !MAS_BUILD
-                case let .rotation(rotation):
-                    try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
-                #endif
-                }
-            }
+            try await restore(pending)
         } catch {
-            Logger.error("Could not revert the configuration change on display \(displayID): \(error)", category: .screenManager)
+            Logger.error("Could not revert the configuration change on display \(pending.displayID): \(error)", category: .screenManager)
+        }
+        return nil
+    }
+
+    private func restore(_ pending: PendingDisplayChange) async throws {
+        let displayID = pending.displayID
+        switch pending.restore {
+        case let .mode(key):
+            try await Task.detached { [applyMode = hardware.applyMode] in try applyMode(key, displayID) }.value
+        #if !MAS_BUILD
+        case let .rotation(rotation):
+            try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
+        #endif
         }
     }
 
@@ -186,8 +225,13 @@ final class DisplaySettingsCoordinator {
         try await afterPreviousConfiguration { [self] in
             guard let original = hardware.currentRotation(displayID) else { throw DisplayControlError.unavailable }
             guard rotation != original else { return }
-            keepPendingChange()
-            try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
+            let previous = await settlePendingChange(before: displayID)
+            do {
+                try await Task.detached { [setRotation = hardware.setRotation] in try setRotation(rotation, displayID) }.value
+            } catch {
+                previous.map { awaitConfirmation(restoring: $0.restore, on: $0.displayID) }
+                throw error
+            }
             awaitConfirmation(restoring: .rotation(original), on: displayID)
         }
     }

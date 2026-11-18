@@ -71,6 +71,15 @@ enum DisplayModes {
         guard let mode = firstMode(matching: key, in: usableModes(for: display), keyOf: DisplayModeKey.init) else {
             throw DisplayControlError.modeNotFound
         }
+        try commit(mode, to: display, scope: DisplayControl.configurationScope)
+    }
+
+    static func persistCurrentMode(of display: CGDirectDisplayID) throws {
+        guard let mode = CGDisplayCopyDisplayMode(display) else { throw DisplayControlError.displayNotFound }
+        try commit(mode, to: display, scope: .permanently)
+    }
+
+    private static func commit(_ mode: CGDisplayMode, to display: CGDirectDisplayID, scope: CGConfigureOption) throws {
         var config: CGDisplayConfigRef?
         let begin = CGBeginDisplayConfiguration(&config)
         guard begin == .success, let config else { throw DisplayControlError.windowServer(begin) }
@@ -79,7 +88,7 @@ enum DisplayModes {
             CGCancelDisplayConfiguration(config)
             throw DisplayControlError.windowServer(configure)
         }
-        let complete = CGCompleteDisplayConfiguration(config, DisplayControl.configurationScope)
+        let complete = CGCompleteDisplayConfiguration(config, scope)
         guard complete == .success else { throw DisplayControlError.windowServer(complete) }
     }
 
