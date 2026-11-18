@@ -113,10 +113,16 @@ final class DisplayShellLayer {
         }
         self.display = display
         layoutRect = nil
-        normalStroke = display.state == .empty ? palette.emptyShellStroke : palette.shellStroke
+        let switchedOff = display.state == .switchedOff
+        let blank = display.state == .empty || switchedOff
+        normalStroke = switch display.state {
+        case .empty: palette.emptyShellStroke
+        case .switchedOff: palette.textTertiary
+        default: palette.shellStroke
+        }
         hotStroke = palette.strokeHotShell
         shell.strokeColor = normalStroke
-        shell.fillColor = palette.fillShell
+        shell.fillColor = switchedOff ? palette.fillEmptyScreen : palette.fillShell
         shell.shadowColor = palette.shellShadow
         shell.shadowRadius = DesignTokens.EditDesk.Shadow.shell.radius
         shell.shadowOffset = CGSize(width: 0, height: DesignTokens.EditDesk.Shadow.shell.y)
@@ -126,6 +132,7 @@ final class DisplayShellLayer {
         base.backgroundColor = stand.backgroundColor
         notch.fillColor = palette.background
         badge.string = display.badgeText
+        badge.isHidden = switchedOff
         badge.backgroundColor = palette.background
         badge.borderColor = palette.strokeBadge
         badge.foregroundColor = palette.textCapsule
@@ -157,10 +164,10 @@ final class DisplayShellLayer {
         stateGroup.isHidden = true
         stateLabel.isHidden = true
         stateSymbol.isHidden = true
-        cover.isHidden = display.state == .empty
-        gradient.isHidden = display.state == .empty
-        title.isHidden = display.state == .empty
-        meta.isHidden = display.state == .empty
+        cover.isHidden = blank
+        gradient.isHidden = blank
+        title.isHidden = blank
+        meta.isHidden = blank
         shell.lineDashPattern = display.state == .empty ? [5, 4] : nil
         switch display.state {
         case let .failed(chip):
@@ -183,6 +190,13 @@ final class DisplayShellLayer {
             default: "pause.fill"
             }
             stateSymbol.contents = StageLayerStyle.symbol(glyph, tint: palette.textCapsule)
+        case .switchedOff:
+            stateGroup.isHidden = false
+            stateLabel.isHidden = false
+            stateSymbol.isHidden = false
+            stateLabel.string = StageDisplay.switchedOffText
+            stateLabel.foregroundColor = palette.textSecondary
+            stateSymbol.contents = StageLayerStyle.symbol(StageDisplay.switchedOffSymbol, tint: palette.textTertiary)
         case .ok, .empty:
             break
         }
@@ -196,7 +210,7 @@ final class DisplayShellLayer {
         case .paused: palette.warning
         case let .failed(chip): palette.tint(for: chip.failureClass)
         case .preparing: palette.textSecondary
-        case .off, .empty: palette.textTertiary
+        case .off, .empty, .switchedOff: palette.textTertiary
         }
     }
 
@@ -268,7 +282,11 @@ final class DisplayShellLayer {
         meta.frame = CGRect(x: 10, y: size.height - 25, width: lineWidth, height: 17)
         veil.frame = content.bounds
         let width = min(stateWidth, max(0, size.width - 20))
-        stateGroup.frame = CGRect(x: stateChipTrails ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
+        stateGroup.frame = if display?.state == .switchedOff {
+            CGRect(x: (size.width - width) / 2, y: (size.height - 24) / 2, width: width, height: 24)
+        } else {
+            CGRect(x: stateChipTrails ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
+        }
         stateGroup.cornerRadius = stateGroup.bounds.height / 2
         stateLabel.frame = CGRect(x: 27, y: 4, width: max(0, width - 34), height: 17)
         stateSymbol.frame = CGRect(x: 8, y: 6, width: 13, height: 13)

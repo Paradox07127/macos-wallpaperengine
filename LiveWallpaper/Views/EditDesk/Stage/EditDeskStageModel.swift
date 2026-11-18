@@ -15,6 +15,8 @@ struct StageDisplay: Identifiable, Equatable {
         /// The master switch is off: the display keeps its wallpaper but draws none.
         case off(text: String)
         case empty
+        /// A placeholder for a display this app switched off: it is not in `NSScreen.screens`.
+        case switchedOff
     }
 
     let id: ID
@@ -62,8 +64,19 @@ struct StageDisplay: Identifiable, Equatable {
             [wallpaperTitle, chip.text].filter { !$0.isEmpty }.joined(separator: ", ")
         case let .paused(text), let .preparing(text), let .off(text):
             [wallpaperTitle, text].filter { !$0.isEmpty }.joined(separator: ", ")
+        case .switchedOff:
+            Self.switchedOffText
         }
     }
+
+    static var switchedOffText: String {
+        String(
+            localized: "Switched Off", bundle: .appLanguage,
+            comment: "Label inside a display placeholder on the home page stage, and its VoiceOver value: the app switched this display off."
+        )
+    }
+
+    static let switchedOffSymbol = "power"
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id

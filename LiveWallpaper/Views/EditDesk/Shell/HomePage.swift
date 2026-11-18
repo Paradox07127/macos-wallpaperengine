@@ -45,6 +45,10 @@ struct HomePage: View {
     @State private var workshopCoverNotBefore: [CGDirectDisplayID: ContinuousClock.Instant] = [:]
     #endif
     @State private var applies = ApplyQueue()
+    #if !MAS_BUILD
+    /// Fingerprints of switched-off displays whose turn-on call has not returned yet.
+    @State private var turningOn: Set<String> = []
+    #endif
     /// The library item the S4 modal shows; nil when closed.
     @State private var presentedItemID: String?
     @State private var modalDetailTarget: CGDirectDisplayID?
@@ -199,6 +203,9 @@ struct HomePage: View {
         func body(content: Content) -> some View {
             content
                 .onChange(of: page.screenManager.screens.map(\.id)) { page.syncDisplays() }
+                #if !MAS_BUILD
+                .onChange(of: page.screenManager.displaySettings.disabledDisplays) { page.syncDisplays() }
+                #endif
                 .onChange(of: page.screenManager.suspendReasonsByScreen) { page.refreshAllStates() }
                 .onChange(of: page.screenManager.screens.map { page.screenManager.wallpaperLoads.attempt(for: $0)?.failure }) {
                     page.refreshAllStates()
@@ -603,6 +610,17 @@ struct HomePage: View {
     }
 
     private func displayMenuSections(for id: CGDirectDisplayID) -> [[StageMenuItem]] {
+        #if !MAS_BUILD
+        if let record = switchedOffRecord(for: id) {
+            return [[StageMenuItem(
+                title: String(
+                    localized: "Turn On Display", bundle: .appLanguage,
+                    comment: "Context menu item and VoiceOver action on a switched-off display placeholder on the home page stage."
+                ),
+                isEnabled: true
+            ) { turnOn(record) }]]
+        }
+        #endif
         guard let screen = screenManager.screens.first(where: { $0.id == id }) else { return [] }
         let configured = screenManager.getConfiguration(for: screen) != nil
         let others = screenManager.screens.filter { $0.id != screen.id }.sorted { $0.frame.minX < $1.frame.minX }
@@ -1336,7 +1354,7 @@ struct HomePage: View {
             coverTasks.removeValue(forKey: id)?.cancel()
             coverGenerations[id, default: 0] &+= 1
         }
-        stage.displays = screenManager.screens.map { screen in
+        var displays = screenManager.screens.map { screen in
             let presentation = ScreenPresentation.presentation(
                 for: screen, refreshRate: screenManager.getScreenRefreshRate(for: screen.id)
             )
@@ -1361,12 +1379,64 @@ struct HomePage: View {
             }
             return display
         }
-        for display in stage.displays where display.cover == nil && display.state != .empty {
+        #if !MAS_BUILD
+        displays += Self.switchedOffPlaceholders(for: screenManager.displaySettings.disabledDisplays, besides: displays)
+        #endif
+        stage.displays = displays
+        for display in stage.displays where display.cover == nil && display.state != .empty && display.state != .switchedOff {
             refreshCover(for: display.id, crossfade: false)
         }
         // The shelf's now-playing capsules name the leftmost display, so a rename or a new arrangement relabels them.
         syncShelf()
     }
+
+    #if !MAS_BUILD
+    /// Placed in a row right of the online displays, bottom-aligned: the system may have moved another display
+    /// onto a recorded origin. Edge to edge here, they still get `StageGeometry.displayColumnGap` from the arrangement.
+    static func switchedOffPlaceholders(for records: [DisabledDisplay], besides online: [StageDisplay]) -> [StageDisplay] {
+        let onlineIDs = Set(online.map(\.id))
+        let union = online.reduce(CGRect.null) { $0.union($1.frame) }
+        // A null union's origin is infinite, which the arrangement would turn into NaN layer frames.
+        var x = union.isNull ? 0 : union.maxX
+        let bottom = union.isNull ? 0 : union.minY
+        return records.compactMap { record in
+            guard !onlineIDs.contains(record.lastDisplayID) else {
+                Logger.info(
+                    "No placeholder for switched-off display \(record.name): its ID \(record.lastDisplayID) now belongs to an online display",
+                    category: .screenManager
+                )
+                return nil
+            }
+            defer { x += record.frame.width }
+            return StageDisplay(
+                id: record.lastDisplayID, fingerprint: record.fingerprint,
+                frame: CGRect(x: x, y: bottom, width: record.frame.width, height: record.frame.height),
+                isBuiltin: record.isBuiltin, name: record.name, badgeText: "", statusText: "", cover: nil, state: .switchedOff
+            )
+        }
+    }
+
+    private func switchedOffRecord(for id: CGDirectDisplayID) -> DisabledDisplay? {
+        guard let placeholder = stage.displays.first(where: { $0.id == id }), placeholder.state == .switchedOff else { return nil }
+        return screenManager.displaySettings.disabledDisplays.first { $0.fingerprint == placeholder.fingerprint }
+    }
+
+    private func turnOn(_ record: DisabledDisplay) {
+        guard turningOn.insert(record.fingerprint).inserted else { return }
+        Task {
+            defer { turningOn.remove(record.fingerprint) }
+            do {
+                try await screenManager.displaySettings.turnOn(record)
+            } catch {
+                Logger.error("Could not switch display \(record.lastDisplayID) back on: \(error)", category: .screenManager)
+                toasts.post(String(
+                    localized: "Couldn't turn on \(record.name)", bundle: .appLanguage,
+                    comment: "Toast after turning a switched-off display back on from the home page stage failed. Placeholder is the display's name."
+                ), style: .failure)
+            }
+        }
+    }
+    #endif
 
     private func state(for screen: Screen) -> StageDisplay.State {
         // The menu bar's own reading of the master switch; a failure chip from before it went off is stale.
@@ -1402,7 +1472,7 @@ struct HomePage: View {
             refreshState(for: display.id)
             // An old cover can remain while the replacement warms up. Retry unfulfilled generations
             // on runtime changes as well as on startup, without stacking concurrent requests.
-            if display.state != .empty, coverTasks[display.id] == nil,
+            if display.state != .empty, display.state != .switchedOff, coverTasks[display.id] == nil,
                display.cover == nil || coverGenerations[display.id] != landedCoverGenerations[display.id] {
                 refreshCover(for: display.id, crossfade: true)
             }
@@ -1805,6 +1875,12 @@ struct HomePage: View {
         for await event in stage.events {
             switch event {
             case let .displayTapped(id):
+                #if !MAS_BUILD
+                if let record = switchedOffRecord(for: id) {
+                    turnOn(record)
+                    continue
+                }
+                #endif
                 let screen = screenManager.screens.first { $0.id == id }
                 router.showDetail(id, failureID: screen.flatMap { screenManager.wallpaperLoads.attempt(for: $0)?.failure?.id })
             case let .displayRenamed(id, name):

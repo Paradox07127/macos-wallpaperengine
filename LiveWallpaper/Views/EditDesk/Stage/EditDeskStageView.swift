@@ -680,7 +680,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         // A tracked swipe jumps the spring every frame, so a settled spring alone can still sit between two states.
         guard !model.interactionBlocked, flights.isEmpty, !dragging, arrangementInset.isSettled,
               progress.isSettled, progress.value == progress.value.rounded(),
-              let display = displays.first(where: { $0.id == id }), display.state != .empty,
+              let display = displays.first(where: { $0.id == id }), display.state != .empty, display.state != .switchedOff,
               let shell = displayLayers[id], !shell.isShaking, let root = layer else {
             return nil
         }
@@ -1802,10 +1802,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         return nil
     }
 
-    /// A display being dragged is never its own drop target.
+    /// A display being dragged is never its own drop target, and a switched-off one never takes a drop.
     private func dropTargetID(at point: CGPoint) -> StageDisplay.ID? {
-        let id = displayID(at: point)
-        return id.map(DragGhostLayer.Source.display) == ghost.source ? nil : id
+        guard let id = displayID(at: point), DragGhostLayer.Source.display(id) != ghost.source,
+              displays.first(where: { $0.id == id })?.state != .switchedOff else { return nil }
+        return id
     }
 
     private func movePress(to point: CGPoint) {
@@ -1985,7 +1986,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// only while the shelf is not on its way to the grid.
     private func fileDropTarget(at point: CGPoint) -> StageFileDropTarget? {
         if let id = displayID(at: point) {
-            return .display(id)
+            return displays.first(where: { $0.id == id })?.state == .switchedOff ? nil : .display(id)
         }
         guard progress.target <= 1, point.y >= StageGeometry.shelfDropTop(windowSize: bounds.size) else { return nil }
         return .shelf
@@ -2112,6 +2113,15 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     private func displayActions(for display: StageDisplay) -> [NSAccessibilityCustomAction] {
         let id = display.id
+        if display.state == .switchedOff {
+            return [displayAction(
+                String(
+                    localized: "Turn On Display", bundle: .appLanguage,
+                    comment: "Context menu item and VoiceOver action on a switched-off display placeholder on the home page stage."
+                ),
+                emitting: .displayTapped(id)
+            )]
+        }
         // VoiceOver-only: the stage draws no buttons in an empty display; the visible counterparts are in its detail page's empty state.
         if display.state == .empty {
             return [
